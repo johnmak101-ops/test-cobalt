@@ -11,6 +11,7 @@ import customersRouter from './routes/customers.js'
 import forwardersRouter from './routes/forwarders.js'
 import purchaseOrdersRouter from './routes/purchase-orders.js'
 import vendorsRouter from './routes/vendors.js'
+import emailIntegrationsRouter from './routes/email-integrations.js'
 
 /**
  * Shared Hono routes — runtime-agnostic.
@@ -42,5 +43,6 @@ app.route('/api', customersRouter)
 app.route('/api', forwardersRouter)
 app.route('/api', purchaseOrdersRouter)
 app.route('/api', vendorsRouter)
+app.route('/api', emailIntegrationsRouter)
 
 export default app

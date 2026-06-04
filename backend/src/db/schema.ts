@@ -323,6 +323,34 @@ export const shipmentHistory = sqliteTable('shipment_history', {
 })
 
 // ============================================
+// Email Integrations (Microsoft Graph API)
+// ============================================
+export const emailIntegrations = sqliteTable('email_integrations', {
+  id: text('id').primaryKey().default('default'), // single-row config
+  // Microsoft Graph API / Azure AD credentials
+  tenantId: text('tenant_id').notNull(),
+  clientId: text('client_id').notNull(),
+  clientSecret: text('client_secret').notNull(), // plain text (learning exercise)
+  // Mailbox to monitor (auto-detected on test connection, or manually set)
+  mailboxEmail: text('mailbox_email'),
+  // Sync state
+  isActive: integer('is_active', { mode: 'boolean' }).notNull().default(false),
+  lastSyncAt: integer('last_sync_at', { mode: 'timestamp' }),
+  lastSyncStatus: text('last_sync_status', {
+    enum: ['SUCCESS', 'PARTIAL', 'FAILED'],
+  }),
+  lastSyncError: text('last_sync_error'),
+  lastSyncCount: integer('last_sync_count').default(0),
+  // Metadata
+  createdAt: integer('created_at', { mode: 'timestamp' })
+    .notNull()
+    .default(sql`(unixepoch())`),
+  updatedAt: integer('updated_at', { mode: 'timestamp' })
+    .notNull()
+    .default(sql`(unixepoch())`),
+})
+
+// ============================================
 // Vendors / Factories
 // ============================================
 export const vendors = sqliteTable('vendors', {

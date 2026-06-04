@@ -1,0 +1,118 @@
+{
+  "version": "1.0",
+  "todos": [
+    {
+      "id": 1,
+      "text": "Write implementation plan for Graph API email integration + Settings UI",
+      "priority": "high",
+      "status": "completed",
+      "blockedBy": [],
+      "blocks": [],
+      "created": "2026-06-04T07:43:32.317Z",
+      "updated": "2026-06-04T07:44:52.879Z"
+    },
+    {
+      "id": 2,
+      "text": "Add email_integrations table to schema.ts",
+      "priority": "high",
+      "status": "completed",
+      "blockedBy": [],
+      "blocks": [],
+      "created": "2026-06-04T07:51:27.448Z",
+      "updated": "2026-06-04T07:51:48.098Z"
+    },
+    {
+      "id": 3,
+      "text": "Update local.ts with CREATE TABLE for email_integrations",
+      "priority": "high",
+      "status": "completed",
+      "blockedBy": [],
+      "blocks": [],
+      "created": "2026-06-04T07:51:27.453Z",
+      "updated": "2026-06-04T07:52:06.078Z"
+    },
+    {
+      "id": 4,
+      "text": "Create backend/src/services/graph-mail.ts (Graph API client)",
+      "priority": "high",
+      "status": "completed",
+      "blockedBy": [],
+      "blocks": [],
+      "created": "2026-06-04T07:51:27.457Z",
+      "updated": "2026-06-04T07:52:56.372Z"
+    },
+    {
+      "id": 5,
+      "text": "Create backend/src/services/email-sync.ts (sync orchestrator)",
+      "priority": "high",
+      "status": "completed",
+      "blockedBy": [],
+      "blocks": [],
+      "created": "2026-06-04T07:51:27.460Z",
+      "updated": "2026-06-04T07:53:34.989Z"
+    },
+    {
+      "id": 6,
+      "text": "Create backend/src/routes/email-integrations.ts (API routes)",
+      "priority": "high",
+      "status": "completed",
+      "blockedBy": [],
+      "blocks": [],
+      "created": "2026-06-04T07:51:27.462Z",
+      "updated": "2026-06-04T07:54:24.816Z"
+    },
+    {
+      "id": 7,
+      "text": "Register email-integrations router in app.ts + add background sync in index.ts",
+      "priority": "high",
+      "status": "completed",
+      "blockedBy": [],
+      "blocks": [],
+      "created": "2026-06-04T07:51:27.463Z",
+      "updated": "2026-06-04T07:55:15.000Z"
+    },
+    {
+      "id": 8,
+      "text": "Create frontend/src/hooks/use-email-integrations.ts",
+      "priority": "high",
+      "status": "completed",
+      "blockedBy": [],
+      "blocks": [],
+      "created": "2026-06-04T07:51:27.465Z",
+      "updated": "2026-06-04T08:02:04.196Z"
+    },
+    {
+      "id": 9,
+      "text": "Add Email Integration tab to SettingsPage.tsx",
+      "priority": "high",
+      "status": "completed",
+      "blockedBy": [],
+      "blocks": [],
+      "created": "2026-06-04T07:51:27.466Z",
+      "updated": "2026-06-04T08:05:02.357Z"
+    },
+    {
+      "id": 10,
+      "text": "Run drizzle-kit generate for migration",
+      "priority": "medium",
+      "status": "completed",
+      "blockedBy": [],
+      "blocks": [],
+      "created": "2026-06-04T07:51:27.467Z",
+      "updated": "2026-06-04T08:05:18.855Z"
+    },
+    {
+      "id": 11,
+      "text": "TypeScript type check (tsc --noEmit)",
+      "priority": "medium",
+      "status": "completed",
+      "blockedBy": [],
+      "blocks": [],
+      "created": "2026-06-04T07:51:27.468Z",
+      "updated": "2026-06-04T08:06:24.514Z"
+    }
+  ],
+  "nextId": 12,
+  "created": "2026-06-04T07:43:32.317Z",
+  "updated": "2026-06-04T08:06:24.514Z"
+}

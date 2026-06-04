@@ -86,6 +86,7 @@ function AppRoutes() {
         <Route path="/review-queue" element={<ReviewQueuePage />} />
         <Route path="/alerts" element={<AlertsPage />} />
         <Route path="/settings" element={<SettingsPage />} />
+        <Route path="/settings/email" element={<SettingsPage />} />
         <Route path="/settings/alerts" element={<SettingsPage />} />
         <Route path="/settings/vendors" element={<SettingsPage />} />
       </Route>

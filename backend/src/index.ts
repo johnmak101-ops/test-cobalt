@@ -2,8 +2,10 @@ import { serve } from '@hono/node-server'
 import { Hono } from 'hono'
 import { db } from './db/index.js'
 import { users } from './db/schema.js'
+import { emailIntegrations } from './db/schema.js'
 import { eq } from 'drizzle-orm'
 import { seed } from './db/seed.js'
+import { runEmailSync } from './services/email-sync.js'
 import app from './app.js'
 
 /**
@@ -36,6 +38,22 @@ async function startServer() {
     fetch: server.fetch,
     port,
   })
+
+  // Background email sync — polls every 5 minutes when active
+  const SYNC_INTERVAL = 5 * 60 * 1000
+  setInterval(async () => {
+    try {
+      const config = await db.select().from(emailIntegrations).get()
+      if (config?.isActive && config.tenantId && config.clientId && config.clientSecret && config.mailboxEmail) {
+        console.log('[EmailSync] Running scheduled sync...')
+        const result = await runEmailSync(db)
+        console.log(`[EmailSync] Scheduled sync complete: ${result.synced} synced, ${result.errors.length} errors`)
+      }
+    } catch (err) {
+      console.error('[EmailSync] Scheduled sync error:', err)
+    }
+  }, SYNC_INTERVAL)
+  console.log('[EmailSync] Background sync enabled (5 min interval)')
 }
 
 startServer()
