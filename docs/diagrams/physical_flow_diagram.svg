@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 140">
+  <defs>
+    <marker id="arrowhead" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="#6366f1"/>
+    </marker>
+    <filter id="shadow" x="-5%" y="-5%" width="110%" height="120%">
+      <feDropShadow dx="0" dy="1" stdDeviation="2" flood-opacity="0.15"/>
+    </filter>
+  </defs>
+  
+  <!-- Background -->
+  <rect width="900" height="140" fill="#f8fafc" rx="6"/>
+  
+  <!-- Step 1: Factory - using light fill with dark text -->
+  <rect x="20" y="25" width="120" height="55" rx="6" fill="#e0e7ff" stroke="#4338ca" stroke-width="2" filter="url(#shadow)"/>
+  <text x="80" y="48" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" font-weight="bold" fill="#1e1b4b">Cobalt Factory</text>
+  <text x="80" y="65" text-anchor="middle" font-family="Arial, sans-serif" font-size="9" fill="#4338ca">(goods ready)</text>
+  
+  <!-- Arrow 1 -->
+  <line x1="140" y1="52" x2="175" y2="52" stroke="#6366f1" stroke-width="2" marker-end="url(#arrowhead)"/>
+  
+  <!-- Step 2: CFS Warehouse -->
+  <rect x="180" y="25" width="120" height="55" rx="6" fill="#fef3c7" stroke="#b45309" stroke-width="2" filter="url(#shadow)"/>
+  <text x="240" y="48" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" font-weight="bold" fill="#78350f">CFS Warehouse</text>
+  <text x="240" y="65" text-anchor="middle" font-family="Arial, sans-serif" font-size="9" fill="#b45309">(cut-off)</text>
+  
+  <!-- Arrow 2 -->
+  <line x1="300" y1="52" x2="335" y2="52" stroke="#6366f1" stroke-width="2" marker-end="url(#arrowhead)"/>
+  
+  <!-- Step 3: Port POL -->
+  <rect x="340" y="25" width="100" height="55" rx="6" fill="#ccfbf1" stroke="#0f766e" stroke-width="2" filter="url(#shadow)"/>
+  <text x="390" y="48" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" font-weight="bold" fill="#134e4a">Port (POL)</text>
+  <text x="390" y="65" text-anchor="middle" font-family="Arial, sans-serif" font-size="9" fill="#0f766e">(loading)</text>
+  
+  <!-- Arrow 3 -->
+  <line x1="440" y1="52" x2="475" y2="52" stroke="#6366f1" stroke-width="2" marker-end="url(#arrowhead)"/>
+  
+  <!-- Step 4: Vessel -->
+  <rect x="480" y="25" width="100" height="55" rx="6" fill="#dbeafe" stroke="#1e40af" stroke-width="2" filter="url(#shadow)"/>
+  <text x="530" y="48" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" font-weight="bold" fill="#1e3a8a">Vessel</text>
+  <text x="530" y="65" text-anchor="middle" font-family="Arial, sans-serif" font-size="9" fill="#1e40af">(ETD &#8594; ETA)</text>
+  
+  <!-- Arrow 4 -->
+  <line x1="580" y1="52" x2="615" y2="52" stroke="#6366f1" stroke-width="2" marker-end="url(#arrowhead)"/>
+  
+  <!-- Step 5: Destination Port -->
+  <rect x="620" y="25" width="100" height="55" rx="6" fill="#ede9fe" stroke="#6d28d9" stroke-width="2" filter="url(#shadow)"/>
+  <text x="670" y="48" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" font-weight="bold" fill="#4c1d95">Port (POD)</text>
+  <text x="670" y="65" text-anchor="middle" font-family="Arial, sans-serif" font-size="9" fill="#6d28d9">(arrival)</text>
+  
+  <!-- Arrow 5 -->
+  <line x1="720" y1="52" x2="755" y2="52" stroke="#6366f1" stroke-width="2" marker-end="url(#arrowhead)"/>
+  
+  <!-- Step 6: Brand Warehouse -->
+  <rect x="760" y="25" width="120" height="55" rx="6" fill="#dcfce7" stroke="#16a34a" stroke-width="2" filter="url(#shadow)"/>
+  <text x="820" y="48" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" font-weight="bold" fill="#14532d">Brand Warehouse</text>
+  <text x="820" y="65" text-anchor="middle" font-family="Arial, sans-serif" font-size="9" fill="#16a34a">(delivered)</text>
+  
+  <!-- Legend -->
+  <rect x="180" y="95" width="540" height="30" rx="4" fill="#f1f5f9" stroke="#cbd5e1" stroke-width="1"/>
+  <text x="450" y="115" text-anchor="middle" font-family="Arial, sans-serif" font-size="10" fill="#334155">CFS = Container Freight Station | POL = Port of Loading | POD = Port of Discharge | ETD/ETA = Estimated Departure/Arrival</text>
+</svg>

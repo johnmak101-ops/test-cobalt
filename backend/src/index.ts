@@ -1,44 +1,41 @@
 import { serve } from '@hono/node-server'
 import { Hono } from 'hono'
-import { cors } from 'hono/cors'
-import { logger } from 'hono/logger'
-import { db } from './db'
-import { messages } from './db/schema'
+import { db } from './db/index.js'
+import { users } from './db/schema.js'
+import { eq } from 'drizzle-orm'
+import { seed } from './db/seed.js'
+import app from './app.js'
 
-const app = new Hono()
+/**
+ * Node.js entry point for local development and production.
+ * Injects the better-sqlite3 DB into Hono context,
+ * then mounts the shared routes.
+ */
+const server = new Hono<{ Variables: { db: typeof db } }>()
 
-// Middleware
-app.use('*', logger())
-app.use('*', cors())
-
-// Routes
-app.get('/', (c) => {
-  return c.json({ message: 'Pave App API' })
+// Inject local DB into context for all routes
+server.use('*', async (c, next) => {
+  c.set('db' as any, db)
+  await next()
 })
 
-app.get('/api/hello', async (c) => {
-  // Insert a message into the database
-  const result = await db.insert(messages).values({
-    content: `Hello from the API! Generated at ${new Date().toISOString()}`,
-  }).returning()
-
-  return c.json({
-    message: result[0].content,
-    id: result[0].id,
-    createdAt: result[0].createdAt,
-  })
-})
-
-app.get('/api/messages', async (c) => {
-  const allMessages = await db.select().from(messages).orderBy(messages.createdAt)
-  return c.json({ messages: allMessages })
-})
+server.route('/', app)
 
 const port = parseInt(process.env.PORT ?? '3000', 10)
 
-console.log(`🚀 Server is running on http://localhost:${port}`)
+// Auto-seed if database is empty (ensures login always works after a fresh start)
+async function startServer() {
+  const existingUsers = await db.select().from(users)
+  if (existingUsers.length === 0) {
+    console.log('Database is empty — running seed...')
+    await seed()
+  }
 
-serve({
-  fetch: app.fetch,
-  port,
-})
+  console.log(`Server is running on http://localhost:${port}`)
+  serve({
+    fetch: server.fetch,
+    port,
+  })
+}
+
+startServer()

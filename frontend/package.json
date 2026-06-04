@@ -9,16 +9,23 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@tanstack/react-query": "^5.97.0",
+    "clsx": "^2.1.1",
+    "date-fns": "^4.1.0",
+    "lucide-react": "^1.8.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
+    "react-router-dom": "^7.14.0",
     "zustand": "^5.0.2"
   },
   "devDependencies": {
     "@babel/parser": "^7.27.0",
+    "@tailwindcss/vite": "^4.2.2",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "^4.3.4",
     "magic-string": "^0.30.0",
+    "tailwindcss": "^4.2.2",
     "typescript": "^5.8.3",
     "vite": "^7.3.0"
   }

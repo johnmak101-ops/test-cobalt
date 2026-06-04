@@ -1,0 +1,118 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 480">
+  <defs>
+    <filter id="shadow" x="-5%" y="-5%" width="110%" height="110%">
+      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-opacity="0.12"/>
+    </filter>
+    <linearGradient id="headerGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#1a1a2e"/>
+      <stop offset="100%" style="stop-color:#16213e"/>
+    </linearGradient>
+    <marker id="arrowDown" markerWidth="10" markerHeight="8" refX="5" refY="8" orient="auto">
+      <polygon points="0 0, 10 0, 5 8" fill="#667eea"/>
+    </marker>
+  </defs>
+  
+  <!-- Background -->
+  <rect width="900" height="480" fill="#f8fafc" rx="8"/>
+  
+  <!-- Header -->
+  <rect x="0" y="0" width="900" height="50" fill="url(#headerGrad)" rx="8"/>
+  <rect x="0" y="40" width="900" height="15" fill="url(#headerGrad)"/>
+  <text x="30" y="32" font-family="Arial, sans-serif" font-size="18" font-weight="bold" fill="white">Email Processing Pipeline</text>
+  <text x="870" y="32" text-anchor="end" font-family="Arial, sans-serif" font-size="11" fill="#aaa">4-Step AI Extraction</text>
+
+  <!-- STEP 1: CLASSIFY -->
+  <rect x="30" y="70" width="840" height="85" rx="8" fill="white" filter="url(#shadow)" stroke="#667eea" stroke-width="2"/>
+  
+  <!-- Step number circle - light bg with dark text for better contrast -->
+  <circle cx="70" cy="112" r="22" fill="#e0e7ff" stroke="#667eea" stroke-width="2"/>
+  <text x="70" y="119" text-anchor="middle" font-family="Arial, sans-serif" font-size="16" font-weight="bold" fill="#3730a3">1</text>
+  
+  <!-- Step content -->
+  <text x="105" y="100" font-family="Arial, sans-serif" font-size="14" font-weight="bold" fill="#1a1a2e">CLASSIFY</text>
+  <text x="105" y="118" font-family="Arial, sans-serif" font-size="11" fill="#666">Identify email type using keywords:</text>
+  
+  <!-- Keywords boxes -->
+  <rect x="105" y="128" width="280" height="22" rx="4" fill="#e0e7ff"/>
+  <text x="115" y="143" font-family="Arial, sans-serif" font-size="10" fill="#4338ca">Chinese: 入仓单, 请核对提单, 开船提单, 电放提单</text>
+  
+  <rect x="395" y="128" width="280" height="22" rx="4" fill="#e0e7ff"/>
+  <text x="405" y="143" font-family="Arial, sans-serif" font-size="10" fill="#4338ca">English: SO#, HBL, BOOKING, TELEX, RELEASE</text>
+  
+  <!-- Output -->
+  <rect x="700" y="95" width="150" height="40" rx="6" fill="#667eea"/>
+  <text x="775" y="112" text-anchor="middle" font-family="Arial, sans-serif" font-size="10" fill="white">Output:</text>
+  <text x="775" y="126" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" font-weight="bold" fill="white">Email Type</text>
+  
+  <!-- Arrow down -->
+  <line x1="450" y1="155" x2="450" y2="175" stroke="#667eea" stroke-width="3" marker-end="url(#arrowDown)"/>
+
+  <!-- STEP 2: EXTRACT -->
+  <rect x="30" y="180" width="840" height="85" rx="8" fill="white" filter="url(#shadow)" stroke="#14b8a6" stroke-width="2"/>
+  
+  <!-- Step number circle - light bg with dark text for better contrast -->
+  <circle cx="70" cy="222" r="22" fill="#ccfbf1" stroke="#14b8a6" stroke-width="2"/>
+  <text x="70" y="229" text-anchor="middle" font-family="Arial, sans-serif" font-size="16" font-weight="bold" fill="#0f766e">2</text>
+  
+  <!-- Step content -->
+  <text x="105" y="210" font-family="Arial, sans-serif" font-size="14" font-weight="bold" fill="#1a1a2e">EXTRACT (AI)</text>
+  <text x="105" y="228" font-family="Arial, sans-serif" font-size="11" fill="#666">Feed full email (subject + body) to Claude. Extract structured data from any format.</text>
+  
+  <!-- Fields boxes -->
+  <rect x="105" y="238" width="560" height="22" rx="4" fill="#ccfbf1"/>
+  <text x="115" y="253" font-family="Arial, sans-serif" font-size="10" fill="#0f766e">Fields: PO#, Customer, Forwarder, Route, CRD, CFS Cut-off, HBL#, Vessel, Voyage, ETD, ETA</text>
+  
+  <!-- Output -->
+  <rect x="700" y="205" width="150" height="40" rx="6" fill="#14b8a6"/>
+  <text x="775" y="222" text-anchor="middle" font-family="Arial, sans-serif" font-size="10" fill="white">Output:</text>
+  <text x="775" y="236" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" font-weight="bold" fill="white">Structured JSON</text>
+  
+  <!-- Arrow down -->
+  <line x1="450" y1="265" x2="450" y2="285" stroke="#667eea" stroke-width="3" marker-end="url(#arrowDown)"/>
+
+  <!-- STEP 3: VALIDATE -->
+  <rect x="30" y="290" width="840" height="85" rx="8" fill="white" filter="url(#shadow)" stroke="#f59e0b" stroke-width="2"/>
+  
+  <!-- Step number circle - light bg with dark text for better contrast -->
+  <circle cx="70" cy="332" r="22" fill="#fef3c7" stroke="#f59e0b" stroke-width="2"/>
+  <text x="70" y="339" text-anchor="middle" font-family="Arial, sans-serif" font-size="16" font-weight="bold" fill="#92400e">3</text>
+  
+  <!-- Step content -->
+  <text x="105" y="320" font-family="Arial, sans-serif" font-size="14" font-weight="bold" fill="#1a1a2e">VALIDATE</text>
+  <text x="105" y="338" font-family="Arial, sans-serif" font-size="11" fill="#666">Check data quality and match against existing records:</text>
+  
+  <!-- Validation checks -->
+  <rect x="105" y="348" width="180" height="22" rx="4" fill="#fef3c7"/>
+  <text x="115" y="363" font-family="Arial, sans-serif" font-size="10" fill="#92400e">PO# format check</text>
+  
+  <rect x="295" y="348" width="200" height="22" rx="4" fill="#fef3c7"/>
+  <text x="305" y="363" font-family="Arial, sans-serif" font-size="10" fill="#92400e">Date sanity (ETA after ETD)</text>
+  
+  <rect x="505" y="348" width="160" height="22" rx="4" fill="#fef3c7"/>
+  <text x="515" y="363" font-family="Arial, sans-serif" font-size="10" fill="#92400e">Match to shipment</text>
+  
+  <!-- Output -->
+  <rect x="700" y="315" width="150" height="40" rx="6" fill="#f59e0b"/>
+  <text x="775" y="332" text-anchor="middle" font-family="Arial, sans-serif" font-size="10" fill="white">Output:</text>
+  <text x="775" y="346" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" font-weight="bold" fill="white">Validated Data</text>
+  
+  <!-- Arrow down -->
+  <line x1="450" y1="375" x2="450" y2="395" stroke="#667eea" stroke-width="3" marker-end="url(#arrowDown)"/>
+
+  <!-- STEP 4: STORE & ALERT -->
+  <rect x="30" y="400" width="840" height="65" rx="8" fill="white" filter="url(#shadow)" stroke="#22c55e" stroke-width="2"/>
+  
+  <!-- Step number circle - light bg with dark text for better contrast -->
+  <circle cx="70" cy="432" r="22" fill="#dcfce7" stroke="#22c55e" stroke-width="2"/>
+  <text x="70" y="439" text-anchor="middle" font-family="Arial, sans-serif" font-size="16" font-weight="bold" fill="#166534">4</text>
+  
+  <!-- Step content -->
+  <text x="105" y="425" font-family="Arial, sans-serif" font-size="14" font-weight="bold" fill="#1a1a2e">STORE &amp; ALERT</text>
+  <text x="105" y="443" font-family="Arial, sans-serif" font-size="11" fill="#666">Link to existing shipment or create new. Update milestone status. Check for overdue alerts.</text>
+  
+  <!-- Output -->
+  <rect x="700" y="415" width="150" height="40" rx="6" fill="#22c55e"/>
+  <text x="775" y="432" text-anchor="middle" font-family="Arial, sans-serif" font-size="10" fill="white">Output:</text>
+  <text x="775" y="446" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" font-weight="bold" fill="white">Dashboard Update</text>
+</svg>
