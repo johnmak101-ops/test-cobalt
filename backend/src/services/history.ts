@@ -26,6 +26,16 @@ const TRACKED_FIELDS: Record<string, HistoryField> = {
   voyageNumber: 'voyage_number',
   quantityShipped: 'quantity_shipped',
   riskLevel: 'risk_level',
+  bookingNo: 'booking_no',
+  soNumber: 'so_number',
+  itemStyleNo: 'item_style_no',
+  consigneeName: 'consignee_name',
+  consigneeAddress: 'consignee_address',
+  mblNumber: 'mbl_number',
+  containerNo: 'container_no',
+  warehouseStartDate: 'warehouse_start_date',
+  warehouseEndDate: 'warehouse_end_date',
+  inDcDate: 'in_dc_date',
 }
 
 // Format a value for display in history records

@@ -31,6 +31,7 @@ export const shipments = sqliteTable('shipments', {
   id: text('id').primaryKey(),
   poNumbers: text('po_numbers').notNull(), // JSON array of strings
   customerId: text('customer_id').references(() => customers.id),
+  vendorId: text('vendor_id').references(() => vendors.id),
   forwarderId: text('forwarder_id').references(() => forwarders.id),
   route: text('route'), // "SZ→UK" format
 
@@ -46,6 +47,15 @@ export const shipments = sqliteTable('shipments', {
     .notNull()
     .default('ON_TRACK'),
 
+  // Order details
+  bookingNo: text('booking_no'),
+  soNumber: text('so_number'),
+  itemStyleNo: text('item_style_no'),
+  consigneeName: text('consignee_name'),
+  consigneeAddress: text('consignee_address'),
+  containerNo: text('container_no'),
+  mblNumber: text('mbl_number'),
+
   // Dates (stored as unix timestamps)
   crd: integer('crd', { mode: 'timestamp' }),
   cfsCutoff: integer('cfs_cutoff', { mode: 'timestamp' }),
@@ -53,6 +63,9 @@ export const shipments = sqliteTable('shipments', {
   eta: integer('eta', { mode: 'timestamp' }),
   actualDeparture: integer('actual_departure', { mode: 'timestamp' }),
   actualArrival: integer('actual_arrival', { mode: 'timestamp' }),
+  warehouseStartDate: integer('warehouse_start_date', { mode: 'timestamp' }),
+  warehouseEndDate: integer('warehouse_end_date', { mode: 'timestamp' }),
+  inDcDate: integer('in_dc_date', { mode: 'timestamp' }),
 
   // Extracted data
   hblNumber: text('hbl_number'),
@@ -301,6 +314,9 @@ export const shipmentHistory = sqliteTable('shipment_history', {
     enum: [
       'etd', 'eta', 'vessel_name', 'status', 'cfs_cutoff',
       'hbl_number', 'voyage_number', 'quantity_shipped', 'risk_level',
+      'booking_no', 'so_number', 'item_style_no', 'consignee_name',
+      'consignee_address', 'mbl_number', 'container_no',
+      'warehouse_start_date', 'warehouse_end_date', 'in_dc_date',
     ],
   }).notNull(),
   oldValue: text('old_value'),
@@ -356,6 +372,7 @@ export const emailIntegrations = sqliteTable('email_integrations', {
 export const vendors = sqliteTable('vendors', {
   id: text('id').primaryKey(),
   name: text('name').notNull(),
+  code: text('code'),
   type: text('type', {
     enum: ['factory', 'subcontractor', 'agent'],
   }).notNull().default('factory'),

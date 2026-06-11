@@ -5,24 +5,38 @@ export interface Shipment {
   id: string
   poNumbers: string
   customerId: string | null
+  vendorId: string | null
   forwarderId: string | null
   route: string | null
   status: string
   riskLevel: string
+  bookingNo: string | null
+  soNumber: string | null
+  itemStyleNo: string | null
+  consigneeName: string | null
+  consigneeAddress: string | null
+  containerNo: string | null
+  mblNumber: string | null
   crd: string | null
   cfsCutoff: string | null
   etd: string | null
   eta: string | null
   actualDeparture: string | null
   actualArrival: string | null
+  warehouseStartDate: string | null
+  warehouseEndDate: string | null
+  inDcDate: string | null
   hblNumber: string | null
   vesselName: string | null
   voyageNumber: string | null
   warehouseAddress: string | null
+  quantityShipped: number | null
+  quantityUnit: string | null
   createdAt: string
   updatedAt: string
   customer?: { id: string; name: string; code: string } | null
   forwarder?: { id: string; name: string } | null
+  vendor?: { id: string; name: string; code: string } | null
 }
 
 export interface ShipmentDetail extends Shipment {

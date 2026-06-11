@@ -8,8 +8,8 @@ import { MilestoneTimeline } from '../components/shipments/MilestoneTimeline'
 import { KeyDatesCard } from '../components/shipments/KeyDatesCard'
 import { ShipmentHistoryTimeline } from '../components/shipments/ShipmentHistoryTimeline'
 import { AlertCard } from '../components/alerts/AlertCard'
-import { parsePONumbers, formatRelativeTime, cn } from '../lib/utils'
-import { ArrowLeft, Mail, Clock } from 'lucide-react'
+import { parsePONumbers, formatRelativeTime, formatDate, cn } from '../lib/utils'
+import { ArrowLeft, Mail, Clock, ClipboardList, Package, Ship, Calendar } from 'lucide-react'
 
 export default function ShipmentDetailPage() {
   const { id } = useParams<{ id: string }>()
@@ -85,32 +85,63 @@ export default function ShipmentDetailPage() {
             eta={shipment.eta}
             actualDeparture={shipment.actualDeparture}
             actualArrival={shipment.actualArrival}
+            warehouseStartDate={shipment.warehouseStartDate}
+            warehouseEndDate={shipment.warehouseEndDate}
+            inDcDate={shipment.inDcDate}
           />
 
-          {/* Extracted Data */}
+          {/* Order Details */}
           <Card>
-            <h4 className="mb-4 text-sm font-semibold text-text-primary">Extracted Data</h4>
-            <div className="grid grid-cols-2 gap-x-6 gap-y-3">
-              {[
-                { label: 'HBL#', value: shipment.hblNumber },
-                { label: 'Vessel', value: shipment.vesselName },
-                { label: 'Voyage', value: shipment.voyageNumber },
-                { label: 'Warehouse', value: shipment.warehouseAddress },
-                {
-                  label: 'Qty Shipped',
-                  value:
-                    (shipment as any).quantityShipped != null
-                      ? `${(shipment as any).quantityShipped} ${(shipment as any).quantityUnit ?? ''}`
-                      : null,
-                },
-              ].map((item) => (
-                <div key={item.label}>
-                  <span className="text-xs text-text-muted">{item.label}</span>
-                  <p className="font-mono text-sm text-text-primary">
-                    {item.value ?? <span className="italic text-text-muted">(pending)</span>}
-                  </p>
-                </div>
-              ))}
+            <h4 className="mb-4 text-sm font-semibold text-text-primary">Order Details</h4>
+            <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+              {/* Section 1: Order Info */}
+              <DetailSection title="Order Info" icon={<ClipboardList size={14} className="text-text-muted" />}>
+                <DetailRow label="Customer Code" value={shipment.customer?.code ?? null} />
+                <DetailRow label="Vendor Code" value={shipment.vendor?.code ?? null} />
+                <DetailRow label="Customer PO" value={poNumbers.join(', ')} />
+                <DetailRow label="Booking No." value={shipment.bookingNo} />
+                <DetailRow label="SO#" value={shipment.soNumber} />
+                <DetailRow label="Item / Style No." value={shipment.itemStyleNo} />
+                <DetailRow label="Email Date" value={formatDate(shipment.createdAt)} />
+              </DetailSection>
+
+              {/* Section 2: Cargo & Logistics */}
+              <DetailSection title="Cargo & Logistics" icon={<Package size={14} className="text-text-muted" />}>
+                <DetailRow
+                  label="Qty"
+                  value={
+                    shipment.quantityShipped != null
+                      ? `${shipment.quantityShipped}${shipment.quantityUnit ? ` ${shipment.quantityUnit}` : ''}`
+                      : null
+                  }
+                />
+                <DetailRow label="Container No." value={shipment.containerNo} />
+                <DetailRow label="HBL / AWB / FCR No." value={shipment.hblNumber} />
+                <DetailRow label="MBL" value={shipment.mblNumber} />
+                <DetailRow label="Warehouse" value={shipment.warehouseAddress} />
+              </DetailSection>
+
+              {/* Section 3: Shipping */}
+              <DetailSection title="Shipping" icon={<Ship size={14} className="text-text-muted" />}>
+                <DetailRow label="Forwarder" value={shipment.forwarder?.name ?? null} />
+                <DetailRow label="Consignee Name" value={shipment.consigneeName} />
+                <DetailRow label="Consignee Address" value={shipment.consigneeAddress} />
+                <DetailRow label="Vessel" value={shipment.vesselName} />
+                <DetailRow label="Voyage" value={shipment.voyageNumber} />
+                <DetailRow label="Route" value={shipment.route} />
+              </DetailSection>
+
+              {/* Section 4: Key Dates */}
+              <DetailSection title="Key Dates" icon={<Calendar size={14} className="text-text-muted" />}>
+                <DetailRow label="Cargo Ready Date" value={formatDate(shipment.crd)} />
+                <DetailRow label="WH Start Date" value={formatDate(shipment.warehouseStartDate)} />
+                <DetailRow label="WH End Date" value={formatDate(shipment.warehouseEndDate)} />
+                <DetailRow label="CFS Cut-off" value={formatDate(shipment.cfsCutoff)} />
+                <DetailRow label="ETD" value={formatDate(shipment.etd)} />
+                <DetailRow label="ATD" value={formatDate(shipment.actualDeparture)} />
+                <DetailRow label="ETA" value={formatDate(shipment.eta)} />
+                <DetailRow label="In DC Date" value={formatDate(shipment.inDcDate)} />
+              </DetailSection>
             </div>
           </Card>
 
@@ -202,6 +233,29 @@ export default function ShipmentDetailPage() {
           )}
         </div>
       </div>
+    </div>
+  )
+}
+
+function DetailSection({ title, icon, children }: { title: string; icon: React.ReactNode; children: React.ReactNode }) {
+  return (
+    <div>
+      <div className="mb-3 flex items-center gap-1.5">
+        {icon}
+        <span className="text-[11px] font-semibold uppercase tracking-wider text-text-muted">{title}</span>
+      </div>
+      <div className="space-y-2.5">{children}</div>
+    </div>
+  )
+}
+
+function DetailRow({ label, value }: { label: string; value: string | null | undefined }) {
+  return (
+    <div className="flex items-center justify-between gap-4">
+      <span className="text-xs text-text-muted">{label}</span>
+      <span className="font-mono text-sm text-text-primary text-right">
+        {value ?? <span className="italic text-text-muted">(pending)</span>}
+      </span>
     </div>
   )
 }

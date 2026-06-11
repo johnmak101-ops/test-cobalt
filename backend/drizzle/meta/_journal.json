@@ -8,6 +8,13 @@
       "when": 1780560310181,
       "tag": "0000_lucky_orphan",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1781149868600,
+      "tag": "0001_loud_banshee",
+      "breakpoints": true
     }
   ]
 }

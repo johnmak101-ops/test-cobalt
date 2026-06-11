@@ -190,19 +190,7 @@ export default function ReviewQueuePage() {
                         <h5 className="mb-2 text-xs font-semibold text-text-muted">
                           EXTRACTED DATA
                         </h5>
-                        <div className="space-y-1.5">
-                          {Object.entries(extractedData).map(([key, value]) => (
-                            <div key={key} className="flex justify-between gap-2 text-xs">
-                              <span className="text-text-muted">{key}</span>
-                              <span className="font-mono text-text-primary">
-                                {String(value ?? '—')}
-                              </span>
-                            </div>
-                          ))}
-                          {Object.keys(extractedData).length === 0 && (
-                            <p className="text-xs italic text-text-muted">No data extracted</p>
-                          )}
-                        </div>
+                        <ExtractedDataDisplay data={extractedData} />
 
                         {/* Linked shipment info */}
                         {email.shipment && (
@@ -299,4 +287,88 @@ function ReviewStatusBadge({ status }: { status: string | null }) {
       {labels[status] ?? status}
     </span>
   )
+}
+
+// Mapping from extraction keys to human-readable labels
+const FIELD_LABELS: Record<string, string> = {
+  po_numbers: 'Customer PO',
+  customer: 'Customer',
+  forwarder: 'Forwarder',
+  route: 'Route',
+  crd: 'Cargo Ready Date',
+  cfs_cutoff: 'CFS Cut-off',
+  hbl_number: 'HBL / AWB / FCR No.',
+  vessel: 'Vessel',
+  voyage_number: 'Voyage No.',
+  etd: 'ETD',
+  eta: 'ETA',
+  warehouse_address: 'Warehouse',
+  quantity: 'Qty',
+  quantity_unit: 'Unit',
+  quantity_raw: 'Qty (raw)',
+  booking_no: 'Booking No.',
+  so_number: 'SO#',
+  item_style_no: 'Item / Style No.',
+  consignee_name: 'Consignee Name',
+  consignee_address: 'Consignee Address',
+  mbl_number: 'MBL',
+  container_no: 'Container No.',
+  warehouse_start_date: 'WH Start Date',
+  warehouse_end_date: 'WH End Date',
+  in_dc_date: 'In DC Date',
+}
+
+// Group fields into logical sections
+const FIELD_SECTIONS: Record<string, string[]> = {
+  'Order Info': ['po_numbers', 'customer', 'forwarder', 'route', 'booking_no', 'so_number', 'item_style_no'],
+  'Cargo & Logistics': ['quantity', 'quantity_unit', 'quantity_raw', 'container_no', 'hbl_number', 'mbl_number', 'warehouse_address'],
+  'Shipping Parties': ['consignee_name', 'consignee_address', 'vessel', 'voyage_number'],
+  'Dates': ['crd', 'cfs_cutoff', 'warehouse_start_date', 'warehouse_end_date', 'etd', 'eta', 'in_dc_date'],
+}
+
+function ExtractedDataDisplay({ data }: { data: Record<string, unknown> }) {
+  if (Object.keys(data).length === 0) {
+    return <p className="text-xs italic text-text-muted">No data extracted</p>
+  }
+
+  return (
+    <div className="space-y-3">
+      {Object.entries(FIELD_SECTIONS).map(([sectionTitle, fields]) => {
+        const sectionData = fields.filter((f) => data[f] !== undefined && data[f] !== null && data[f] !== '')
+        if (sectionData.length === 0) return null
+        return (
+          <div key={sectionTitle}>
+            <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-text-muted">
+              {sectionTitle}
+            </div>
+            <div className="space-y-1">
+              {sectionData.map((field) => (
+                <div key={field} className="flex justify-between gap-2 text-xs">
+                  <span className="text-text-muted">{FIELD_LABELS[field] ?? field}</span>
+                  <span className="font-mono text-text-primary text-right">
+                    {formatExtractedValue(data[field])}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+function formatExtractedValue(value: unknown): string {
+  if (value === null || value === undefined) return '—'
+  if (Array.isArray(value)) return value.join(', ') || '—'
+  if (typeof value === 'number') return String(value)
+  // Date-like strings
+  if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}/.test(value)) {
+    try {
+      return new Date(value).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+    } catch {
+      return value
+    }
+  }
+  return String(value)
 }

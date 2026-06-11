@@ -4,6 +4,7 @@ import {
   shipments,
   customers,
   forwarders,
+  vendors,
   shipmentMilestones,
   shippingEmails,
   alerts,
@@ -45,7 +46,7 @@ shipmentsRouter.get('/shipments', async (c) => {
     results = await query
   }
 
-  // Attach customer and forwarder names
+  // Attach customer, forwarder, and vendor names
   const enriched = []
   for (const s of results) {
     const customer = s.customerId
@@ -54,10 +55,14 @@ shipmentsRouter.get('/shipments', async (c) => {
     const forwarder = s.forwarderId
       ? await db.select().from(forwarders).where(eq(forwarders.id, s.forwarderId)).get()
       : null
+    const vendor = s.vendorId
+      ? await db.select().from(vendors).where(eq(vendors.id, s.vendorId)).get()
+      : null
     enriched.push({
       ...s,
       customer: customer ? { id: customer.id, name: customer.name, code: customer.code } : null,
       forwarder: forwarder ? { id: forwarder.id, name: forwarder.name } : null,
+      vendor: vendor ? { id: vendor.id, name: vendor.name, code: vendor.code } : null,
     })
   }
 
@@ -79,6 +84,9 @@ shipmentsRouter.get('/shipments/:id', async (c) => {
     : null
   const forwarder = shipment.forwarderId
     ? await db.select().from(forwarders).where(eq(forwarders.id, shipment.forwarderId)).get()
+    : null
+  const vendor = shipment.vendorId
+    ? await db.select().from(vendors).where(eq(vendors.id, shipment.vendorId)).get()
     : null
 
   const milestones = await db
@@ -103,6 +111,7 @@ shipmentsRouter.get('/shipments/:id', async (c) => {
     ...shipment,
     customer: customer ? { id: customer.id, name: customer.name, code: customer.code } : null,
     forwarder: forwarder ? { id: forwarder.id, name: forwarder.name } : null,
+    vendor: vendor ? { id: vendor.id, name: vendor.name, code: vendor.code } : null,
     milestones,
     emails,
     alerts: shipmentAlerts,
@@ -121,18 +130,33 @@ shipmentsRouter.post('/shipments', async (c) => {
     id,
     poNumbers: JSON.stringify(body.poNumbers ?? []),
     customerId: body.customerId ?? null,
+    vendorId: body.vendorId ?? null,
     forwarderId: body.forwarderId ?? null,
     route: body.route ?? null,
     status: body.status ?? 'BOOKED',
     riskLevel: body.riskLevel ?? 'ON_TRACK',
+    bookingNo: body.bookingNo ?? null,
+    soNumber: body.soNumber ?? null,
+    itemStyleNo: body.itemStyleNo ?? null,
+    consigneeName: body.consigneeName ?? null,
+    consigneeAddress: body.consigneeAddress ?? null,
+    containerNo: body.containerNo ?? null,
+    mblNumber: body.mblNumber ?? null,
     crd: body.crd ? new Date(body.crd) : null,
     cfsCutoff: body.cfsCutoff ? new Date(body.cfsCutoff) : null,
     etd: body.etd ? new Date(body.etd) : null,
     eta: body.eta ? new Date(body.eta) : null,
+    actualDeparture: body.actualDeparture ? new Date(body.actualDeparture) : null,
+    actualArrival: body.actualArrival ? new Date(body.actualArrival) : null,
+    warehouseStartDate: body.warehouseStartDate ? new Date(body.warehouseStartDate) : null,
+    warehouseEndDate: body.warehouseEndDate ? new Date(body.warehouseEndDate) : null,
+    inDcDate: body.inDcDate ? new Date(body.inDcDate) : null,
     hblNumber: body.hblNumber ?? null,
     vesselName: body.vesselName ?? null,
     voyageNumber: body.voyageNumber ?? null,
     warehouseAddress: body.warehouseAddress ?? null,
+    quantityShipped: body.quantityShipped ?? null,
+    quantityUnit: body.quantityUnit ?? null,
     createdAt: now,
     updatedAt: now,
   })
@@ -166,12 +190,25 @@ shipmentsRouter.patch('/shipments/:id', async (c) => {
   if (body.riskLevel !== undefined) updates.riskLevel = body.riskLevel
   if (body.poNumbers !== undefined) updates.poNumbers = JSON.stringify(body.poNumbers)
   if (body.customerId !== undefined) updates.customerId = body.customerId
+  if (body.vendorId !== undefined) updates.vendorId = body.vendorId
   if (body.forwarderId !== undefined) updates.forwarderId = body.forwarderId
   if (body.route !== undefined) updates.route = body.route
+  if (body.bookingNo !== undefined) updates.bookingNo = body.bookingNo
+  if (body.soNumber !== undefined) updates.soNumber = body.soNumber
+  if (body.itemStyleNo !== undefined) updates.itemStyleNo = body.itemStyleNo
+  if (body.consigneeName !== undefined) updates.consigneeName = body.consigneeName
+  if (body.consigneeAddress !== undefined) updates.consigneeAddress = body.consigneeAddress
+  if (body.containerNo !== undefined) updates.containerNo = body.containerNo
+  if (body.mblNumber !== undefined) updates.mblNumber = body.mblNumber
   if (body.crd !== undefined) updates.crd = body.crd ? new Date(body.crd) : null
   if (body.cfsCutoff !== undefined) updates.cfsCutoff = body.cfsCutoff ? new Date(body.cfsCutoff) : null
   if (body.etd !== undefined) updates.etd = body.etd ? new Date(body.etd) : null
   if (body.eta !== undefined) updates.eta = body.eta ? new Date(body.eta) : null
+  if (body.actualDeparture !== undefined) updates.actualDeparture = body.actualDeparture ? new Date(body.actualDeparture) : null
+  if (body.actualArrival !== undefined) updates.actualArrival = body.actualArrival ? new Date(body.actualArrival) : null
+  if (body.warehouseStartDate !== undefined) updates.warehouseStartDate = body.warehouseStartDate ? new Date(body.warehouseStartDate) : null
+  if (body.warehouseEndDate !== undefined) updates.warehouseEndDate = body.warehouseEndDate ? new Date(body.warehouseEndDate) : null
+  if (body.inDcDate !== undefined) updates.inDcDate = body.inDcDate ? new Date(body.inDcDate) : null
   if (body.hblNumber !== undefined) updates.hblNumber = body.hblNumber
   if (body.vesselName !== undefined) updates.vesselName = body.vesselName
   if (body.voyageNumber !== undefined) updates.voyageNumber = body.voyageNumber

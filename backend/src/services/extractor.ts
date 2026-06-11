@@ -24,6 +24,17 @@ export interface ExtractedData {
   quantity: number | null
   quantity_unit: 'cartons' | 'pieces' | 'cbm' | null
   quantity_raw: string | null  // Original text for verification
+  // New order detail fields
+  booking_no: string | null
+  so_number: string | null
+  item_style_no: string | null
+  consignee_name: string | null
+  consignee_address: string | null
+  mbl_number: string | null
+  container_no: string | null
+  warehouse_start_date: string | null
+  warehouse_end_date: string | null
+  in_dc_date: string | null
 }
 
 export interface ExtractionResult {
@@ -39,12 +50,20 @@ Your job is to extract structured shipping data from emails exchanged between Co
 These emails may be in English, Chinese, or a mix of both. They often contain shipping industry terminology including:
 - PO numbers (purchase order references, various formats)
 - HBL numbers (House Bill of Lading)
+- MBL numbers (Master Bill of Lading)
+- Booking numbers (订舱号)
+- Shipping Order (SO) numbers
+- Item/Style numbers (style or product references)
+- Consignee names and addresses (收货人)
+- Container numbers (集装箱号)
 - Vessel names and voyage numbers
 - Port codes and route shorthand (e.g., SZ→UK means Shenzhen to United Kingdom)
 - CFS cut-off dates (Container Freight Station deadline)
 - CRD (Cargo Ready Date)
 - ETD/ETA (Estimated Time of Departure/Arrival)
-- SO (Shipping Order)
+- ATD (Actual Time of Departure)
+- Warehouse start/end dates (入仓日期范围)
+- In DC date (arrival at distribution center)
 - B/L (Bill of Lading)
 - Cargo quantities (cartons, pieces, CBM/cubic meters)
 
@@ -54,6 +73,8 @@ Common Chinese shipping terms:
 - 电放 = Telex Release
 - 订舱 = Booking
 - 截仓 = CFS Cut-off
+- 收货人 = Consignee
+- 集装箱号 = Container Number
 - 箱 = cartons
 - 件 = pieces
 - 立方米/CBM = cubic meters
@@ -69,21 +90,31 @@ IMPORTANT:
 const EXTRACTION_PROMPT = `Extract the following shipping data from this email. Return ONLY a JSON object with these exact fields:
 
 {
-  "po_numbers": [],        // Array of PO/order reference strings found
-  "customer": null,        // Customer/buyer name if mentioned
-  "forwarder": null,       // Freight forwarder name if mentioned
-  "route": null,           // Shipping route in "XX→YY" format
-  "crd": null,             // Cargo Ready Date (ISO 8601)
-  "cfs_cutoff": null,      // CFS cut-off deadline (ISO 8601)
-  "hbl_number": null,      // House Bill of Lading number
-  "vessel": null,          // Vessel/ship name
-  "voyage_number": null,   // Voyage number
-  "etd": null,             // Estimated Time of Departure (ISO 8601)
-  "eta": null,             // Estimated Time of Arrival (ISO 8601)
+  "po_numbers": [],          // Array of PO/order reference strings found
+  "customer": null,          // Customer/buyer name if mentioned
+  "forwarder": null,         // Freight forwarder name if mentioned
+  "route": null,             // Shipping route in "XX→YY" format
+  "crd": null,               // Cargo Ready Date (ISO 8601)
+  "cfs_cutoff": null,        // CFS cut-off deadline (ISO 8601)
+  "hbl_number": null,        // House Bill of Lading number
+  "vessel": null,            // Vessel/ship name
+  "voyage_number": null,     // Voyage number
+  "etd": null,               // Estimated Time of Departure (ISO 8601)
+  "eta": null,               // Estimated Time of Arrival (ISO 8601)
   "warehouse_address": null, // Warehouse/CFS address if mentioned
-  "quantity": null,        // Total cargo quantity (number)
-  "quantity_unit": null,   // Unit: "cartons", "pieces", or "cbm"
-  "quantity_raw": null     // Original quantity text from email (e.g. "120 cartons", "29箱")
+  "quantity": null,          // Total cargo quantity (number)
+  "quantity_unit": null,     // Unit: "cartons", "pieces", or "cbm"
+  "quantity_raw": null,      // Original quantity text from email (e.g. "120 cartons", "29箱")
+  "booking_no": null,        // Booking number (订舱号)
+  "so_number": null,         // Shipping Order number
+  "item_style_no": null,     // Item number or Style number
+  "consignee_name": null,    // Consignee name (收货人)
+  "consignee_address": null, // Consignee address
+  "mbl_number": null,        // Master Bill of Lading number
+  "container_no": null,      // Container number (集装箱号)
+  "warehouse_start_date": null, // Warehouse start date (入仓开始日期, ISO 8601)
+  "warehouse_end_date": null,   // Warehouse end date (入仓截止日期, ISO 8601)
+  "in_dc_date": null         // In DC / arrival at distribution center date (ISO 8601)
 }
 
 Return ONLY the JSON object, no explanations or markdown formatting.
@@ -125,6 +156,16 @@ const EMPTY_EXTRACTED_DATA: ExtractedData = {
   quantity: null,
   quantity_unit: null,
   quantity_raw: null,
+  booking_no: null,
+  so_number: null,
+  item_style_no: null,
+  consignee_name: null,
+  consignee_address: null,
+  mbl_number: null,
+  container_no: null,
+  warehouse_start_date: null,
+  warehouse_end_date: null,
+  in_dc_date: null,
 }
 
 export async function extractEmailData(
@@ -178,6 +219,16 @@ export async function extractEmailData(
         ? parsed.quantity_unit
         : null,
       quantity_raw: parsed.quantity_raw ?? null,
+      booking_no: parsed.booking_no ?? null,
+      so_number: parsed.so_number ?? null,
+      item_style_no: parsed.item_style_no ?? null,
+      consignee_name: parsed.consignee_name ?? null,
+      consignee_address: parsed.consignee_address ?? null,
+      mbl_number: parsed.mbl_number ?? null,
+      container_no: parsed.container_no ?? null,
+      warehouse_start_date: parsed.warehouse_start_date ?? null,
+      warehouse_end_date: parsed.warehouse_end_date ?? null,
+      in_dc_date: parsed.in_dc_date ?? null,
     }
 
     // Calculate confidence based on how many fields were extracted
@@ -187,7 +238,7 @@ export async function extractEmailData(
       return val !== null
     }).length
 
-    const confidence = Math.min(0.95, 0.3 + (fieldsFilled / 14) * 0.65)
+    const confidence = Math.min(0.95, 0.3 + (fieldsFilled / 22) * 0.65)
 
     return {
       data,
@@ -302,5 +353,15 @@ export function extractEmailDataFallback(
     quantity,
     quantity_unit: quantityUnit,
     quantity_raw: quantityRaw,
+    booking_no: null,
+    so_number: null,
+    item_style_no: null,
+    consignee_name: null,
+    consignee_address: null,
+    mbl_number: null,
+    container_no: null,
+    warehouse_start_date: null,
+    warehouse_end_date: null,
+    in_dc_date: null,
   }
 }

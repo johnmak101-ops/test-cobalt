@@ -8,6 +8,9 @@ interface KeyDatesCardProps {
   eta: string | null
   actualDeparture: string | null
   actualArrival: string | null
+  warehouseStartDate?: string | null
+  warehouseEndDate?: string | null
+  inDcDate?: string | null
 }
 
 export function KeyDatesCard({
@@ -17,14 +20,20 @@ export function KeyDatesCard({
   eta,
   actualDeparture,
   actualArrival,
+  warehouseStartDate,
+  warehouseEndDate,
+  inDcDate,
 }: KeyDatesCardProps) {
   const dates = [
     { label: 'CRD (Cargo Ready)', value: crd },
+    { label: 'WH Start', value: warehouseStartDate },
+    { label: 'WH End', value: warehouseEndDate },
     { label: 'CFS Cut-off', value: cfsCutoff },
     { label: 'ETD', value: etd },
+    { label: 'ATD', value: actualDeparture },
     { label: 'ETA', value: eta },
-    { label: 'Actual Departure', value: actualDeparture },
-    { label: 'Actual Arrival', value: actualArrival },
+    { label: 'ATA', value: actualArrival },
+    { label: 'In DC', value: inDcDate },
   ].filter((d) => d.value)
 
   return (

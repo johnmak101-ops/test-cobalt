@@ -228,6 +228,16 @@ export async function processEmail(
     if (extractedData.warehouse_address) updates.warehouseAddress = extractedData.warehouse_address
     if (extractedData.quantity != null) updates.quantityShipped = extractedData.quantity
     if (extractedData.quantity_unit) updates.quantityUnit = extractedData.quantity_unit
+    if (extractedData.booking_no) updates.bookingNo = extractedData.booking_no
+    if (extractedData.so_number) updates.soNumber = extractedData.so_number
+    if (extractedData.item_style_no) updates.itemStyleNo = extractedData.item_style_no
+    if (extractedData.consignee_name) updates.consigneeName = extractedData.consignee_name
+    if (extractedData.consignee_address) updates.consigneeAddress = extractedData.consignee_address
+    if (extractedData.mbl_number) updates.mblNumber = extractedData.mbl_number
+    if (extractedData.container_no) updates.containerNo = extractedData.container_no
+    if (extractedData.warehouse_start_date) updates.warehouseStartDate = new Date(extractedData.warehouse_start_date)
+    if (extractedData.warehouse_end_date) updates.warehouseEndDate = new Date(extractedData.warehouse_end_date)
+    if (extractedData.in_dc_date) updates.inDcDate = new Date(extractedData.in_dc_date)
 
     // Transition shipment status based on email type
     const newStatus = EMAIL_TYPE_TO_STATUS[classification.emailType]

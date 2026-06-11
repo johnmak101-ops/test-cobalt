@@ -57,6 +57,16 @@ export type HistoryField =
   | 'voyage_number'
   | 'quantity_shipped'
   | 'risk_level'
+  | 'booking_no'
+  | 'so_number'
+  | 'item_style_no'
+  | 'consignee_name'
+  | 'consignee_address'
+  | 'mbl_number'
+  | 'container_no'
+  | 'warehouse_start_date'
+  | 'warehouse_end_date'
+  | 'in_dc_date'
 
 // Vendor/Factory types
 export type VendorType = 'factory' | 'subcontractor' | 'agent'
