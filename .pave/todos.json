@@ -190,9 +190,19 @@
       "blocks": [],
       "created": "2026-06-11T03:59:16.839Z",
       "updated": "2026-06-11T03:59:16.839Z"
+    },
+    {
+      "id": 34,
+      "text": "Simplify LoginPage with quick one-click sign-in buttons",
+      "priority": "high",
+      "status": "completed",
+      "blockedBy": [],
+      "blocks": [],
+      "created": "2026-06-11T10:33:55.383Z",
+      "updated": "2026-06-11T10:34:24.222Z"
     }
   ],
-  "nextId": 34,
+  "nextId": 35,
   "created": "2026-06-04T07:43:32.317Z",
-  "updated": "2026-06-11T04:00:37.493Z"
+  "updated": "2026-06-11T10:34:24.223Z"
 }
