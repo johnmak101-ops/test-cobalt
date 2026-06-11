@@ -3,10 +3,13 @@ import { EmailCard } from '../components/emails/EmailCard'
 import { Search, RefreshCw } from 'lucide-react'
 import { useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
+import { Pagination, usePagination, PageSizeSelect } from '../components/ui/Pagination'
 
 export default function InboxPage() {
   const { data, isLoading } = useEmails()
   const [search, setSearch] = useState('')
+  const [page, setPage] = useState(1)
+  const [perPage, setPerPage] = useState(25)
   const qc = useQueryClient()
 
   const emails = (data?.emails ?? []).filter((e) => {
@@ -19,28 +22,44 @@ export default function InboxPage() {
     )
   })
 
+  const { totalItems, totalPages, pageSize, getPage } = usePagination(emails, perPage)
+  const pageEmails = getPage(page)
+
+  const handleSearch = (v: string) => {
+    setSearch(v)
+    setPage(1)
+  }
+
+  const handlePageSizeChange = (size: number) => {
+    setPerPage(size)
+    setPage(1)
+  }
+
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between">
         <h1 className="text-lg font-semibold text-text-primary">Shipping Inbox</h1>
-        <button
-          onClick={() => qc.invalidateQueries({ queryKey: ['emails'] })}
-          className="inline-flex items-center gap-1.5 rounded-lg bg-surface-700 px-3 py-1.5 text-xs font-medium text-text-secondary hover:bg-surface-600 hover:text-text-primary"
-        >
-          <RefreshCw size={14} />
-          Refresh
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => qc.invalidateQueries({ queryKey: ['emails'] })}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-surface-700 px-3 py-1.5 text-xs font-medium text-text-secondary hover:bg-surface-600 hover:text-text-primary"
+          >
+            <RefreshCw size={14} />
+            Refresh
+          </button>
+          <PageSizeSelect value={perPage} onChange={handlePageSizeChange} />
+        </div>
       </div>
 
       {/* Search */}
       <div className="relative">
-        <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
+        <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
         <input
           type="text"
           placeholder="Search emails..."
           value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="h-10 w-full rounded-lg border border-border bg-surface-700 pl-9 pr-4 text-sm text-text-primary placeholder:text-text-muted focus:border-cobalt-primary focus:outline-none"
+          onChange={(e) => handleSearch(e.target.value)}
+          className="h-9 w-full rounded-lg border border-border bg-surface-800 pl-9 pr-3 text-sm text-text-primary placeholder:text-text-muted"
         />
       </div>
 
@@ -60,9 +79,16 @@ export default function InboxPage() {
         </div>
       ) : (
         <div className="space-y-3">
-          {emails.map((email) => (
+          {pageEmails.map((email) => (
             <EmailCard key={email.id} email={email} />
           ))}
+          <Pagination
+            currentPage={page}
+            totalPages={totalPages}
+            totalItems={totalItems}
+            pageSize={pageSize}
+            onPageChange={setPage}
+          />
         </div>
       )}
     </div>

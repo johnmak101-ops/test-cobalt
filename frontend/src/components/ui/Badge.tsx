@@ -35,6 +35,15 @@ const emailTypeLabels: Record<string, string> = {
   OTHER: 'UNCLASSIFIED',
 }
 
+const statusLabels: Record<string, string> = {
+  BOOKED: 'Booking Request',
+  CONFIRMED: 'SO Received',
+  AT_WAREHOUSE: 'Draft B/L',
+  SAILED: 'Final B/L',
+  RELEASED: 'Telex Release',
+  DELIVERED: 'Delivered',
+}
+
 interface BadgeProps {
   variant?: 'severity' | 'status' | 'emailType'
   value: string
@@ -50,7 +59,7 @@ export function Badge({ variant = 'severity', value, className }: BadgeProps) {
         : severityStyles
 
   const label = variant === 'emailType' ? emailTypeLabels[value] ?? value : value
-  const displayLabel = variant === 'status' ? value.replace('_', ' ') : label
+  const displayLabel = variant === 'status' ? statusLabels[value] ?? value.replace('_', ' ') : label
 
   return (
     <span

@@ -48,7 +48,7 @@ export function MilestoneTimeline({ milestones, currentStatus: _currentStatus }:
     <div className="space-y-0">
       {milestoneOrder.map((type, idx) => {
         const completed = completedTypes.has(type)
-        const isCurrent = idx === currentIndex
+        const isNext = idx === currentIndex + 1
         const milestone = milestoneMap.get(type)
 
         return (
@@ -60,7 +60,7 @@ export function MilestoneTimeline({ milestones, currentStatus: _currentStatus }:
                   'flex h-7 w-7 shrink-0 items-center justify-center rounded-full border-2',
                   completed
                     ? 'border-cobalt-primary bg-cobalt-primary text-white'
-                    : isCurrent
+                    : isNext
                       ? 'border-cobalt-primary bg-transparent'
                       : 'border-border bg-transparent'
                 )}

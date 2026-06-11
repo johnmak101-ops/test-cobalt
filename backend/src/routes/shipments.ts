@@ -13,6 +13,7 @@ import {
   purchaseOrders,
 } from '../db/schema.js'
 import { trackShipmentUpdate } from '../services/history.js'
+import { recomputeShipmentStatus } from '../services/milestone-status.js'
 import crypto from 'node:crypto'
 
 type Env = { Variables: { db: any } }
@@ -46,7 +47,7 @@ shipmentsRouter.get('/shipments', async (c) => {
     results = await query
   }
 
-  // Attach customer, forwarder, and vendor names
+  // Attach customer, forwarder, vendor names and linked POs
   const enriched = []
   for (const s of results) {
     const customer = s.customerId
@@ -58,11 +59,36 @@ shipmentsRouter.get('/shipments', async (c) => {
     const vendor = s.vendorId
       ? await db.select().from(vendors).where(eq(vendors.id, s.vendorId)).get()
       : null
+
+    // Fetch linked POs via junction table
+    const poLinks = await db
+      .select()
+      .from(shipmentPos)
+      .where(eq(shipmentPos.shipmentId, s.id))
+    const linkedPOs = []
+    for (const link of poLinks) {
+      const po = await db.select().from(purchaseOrders).where(eq(purchaseOrders.id, link.poId)).get()
+      if (po) {
+        const poVendor = po.vendorId
+          ? await db.select().from(vendors).where(eq(vendors.id, po.vendorId)).get()
+          : null
+        linkedPOs.push({
+          id: po.id,
+          poNumber: po.poNumber,
+          quantity: link.quantity,
+          totalQuantity: po.totalQuantity,
+          quantityUnit: po.quantityUnit,
+          vendor: poVendor ? { id: poVendor.id, name: poVendor.name, code: poVendor.code } : null,
+        })
+      }
+    }
+
     enriched.push({
       ...s,
       customer: customer ? { id: customer.id, name: customer.name, code: customer.code } : null,
       forwarder: forwarder ? { id: forwarder.id, name: forwarder.name } : null,
       vendor: vendor ? { id: vendor.id, name: vendor.name, code: vendor.code } : null,
+      linkedPOs,
     })
   }
 
@@ -107,6 +133,34 @@ shipmentsRouter.get('/shipments/:id', async (c) => {
     .where(eq(alerts.shipmentId, id))
     .orderBy(desc(alerts.triggeredAt))
 
+  // Fetch linked POs via junction table
+  const poLinks = await db
+    .select()
+    .from(shipmentPos)
+    .where(eq(shipmentPos.shipmentId, id))
+  const linkedPOs = []
+  for (const link of poLinks) {
+    const po = await db.select().from(purchaseOrders).where(eq(purchaseOrders.id, link.poId)).get()
+    if (po) {
+      const poCustomer = po.customerId
+        ? await db.select().from(customers).where(eq(customers.id, po.customerId)).get()
+        : null
+      const poVendor = po.vendorId
+        ? await db.select().from(vendors).where(eq(vendors.id, po.vendorId)).get()
+        : null
+      linkedPOs.push({
+        id: po.id,
+        poNumber: po.poNumber,
+        quantity: link.quantity,
+        totalQuantity: po.totalQuantity,
+        quantityUnit: po.quantityUnit,
+        notes: po.notes,
+        vendor: poVendor ? { id: poVendor.id, name: poVendor.name, code: poVendor.code } : null,
+        customer: poCustomer ? { id: poCustomer.id, name: poCustomer.name, code: poCustomer.code } : null,
+      })
+    }
+  }
+
   return c.json({
     ...shipment,
     customer: customer ? { id: customer.id, name: customer.name, code: customer.code } : null,
@@ -115,6 +169,7 @@ shipmentsRouter.get('/shipments/:id', async (c) => {
     milestones,
     emails,
     alerts: shipmentAlerts,
+    linkedPOs,
   })
 })
 
@@ -133,7 +188,7 @@ shipmentsRouter.post('/shipments', async (c) => {
     vendorId: body.vendorId ?? null,
     forwarderId: body.forwarderId ?? null,
     route: body.route ?? null,
-    status: body.status ?? 'BOOKED',
+    status: 'BOOKED',
     riskLevel: body.riskLevel ?? 'ON_TRACK',
     bookingNo: body.bookingNo ?? null,
     soNumber: body.soNumber ?? null,
@@ -186,7 +241,8 @@ shipmentsRouter.patch('/shipments/:id', async (c) => {
   }
 
   const updates: Record<string, any> = {}
-  if (body.status !== undefined) updates.status = body.status
+  // Status is derived from milestones — not directly writable via PATCH.
+  // Use POST /shipments/:id/milestones to advance status.
   if (body.riskLevel !== undefined) updates.riskLevel = body.riskLevel
   if (body.poNumbers !== undefined) updates.poNumbers = JSON.stringify(body.poNumbers)
   if (body.customerId !== undefined) updates.customerId = body.customerId
@@ -282,6 +338,61 @@ shipmentsRouter.get('/shipments/:id/purchase-orders', async (c) => {
   }
 
   return c.json({ purchaseOrders: pos })
+})
+
+// POST /shipments/:id/milestones - Create a milestone (recomputes shipment status)
+shipmentsRouter.post('/shipments/:id/milestones', async (c) => {
+  const db = c.get('db')
+  const shipmentId = c.req.param('id')
+  const body = await c.req.json()
+
+  // Validate shipment exists
+  const shipment = await db.select().from(shipments).where(eq(shipments.id, shipmentId)).get()
+  if (!shipment) {
+    return c.json({ error: 'Shipment not found' }, 404)
+  }
+
+  const milestoneType = body.milestoneType
+  if (!milestoneType) {
+    return c.json({ error: 'milestoneType is required' }, 400)
+  }
+
+  // Check milestone doesn't already exist
+  const existing = await db
+    .select()
+    .from(shipmentMilestones)
+    .where(eq(shipmentMilestones.shipmentId, shipmentId))
+
+  const alreadyExists = existing.some((m: any) => m.milestoneType === milestoneType)
+  if (alreadyExists) {
+    return c.json({ error: `Milestone ${milestoneType} already exists` }, 409)
+  }
+
+  // Create the milestone
+  const milestoneId = crypto.randomUUID()
+  await db.insert(shipmentMilestones).values({
+    id: milestoneId,
+    shipmentId,
+    milestoneType,
+    occurredAt: body.occurredAt ? new Date(body.occurredAt) : new Date(),
+    emailId: body.emailId ?? null,
+    notes: body.notes ?? null,
+  })
+
+  // Recompute status from milestones (single source of truth)
+  const newStatus = await recomputeShipmentStatus(db, shipmentId)
+
+  // Track the status change in audit trail
+  await trackShipmentUpdate(db, shipmentId, { status: newStatus }, {
+    sourceType: 'manual',
+    changedBy: body.changedBy ?? null,
+    notes: `Milestone ${milestoneType} recorded`,
+  })
+
+  return c.json({
+    milestone: { id: milestoneId, milestoneType, shipmentId },
+    newStatus,
+  }, 201)
 })
 
 export default shipmentsRouter

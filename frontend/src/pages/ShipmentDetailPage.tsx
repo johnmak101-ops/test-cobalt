@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import { useShipment } from '../hooks/use-shipments'
 import { useShipmentHistory } from '../hooks/use-shipment-history'
 import { Badge } from '../components/ui/Badge'
@@ -8,12 +8,14 @@ import { MilestoneTimeline } from '../components/shipments/MilestoneTimeline'
 import { KeyDatesCard } from '../components/shipments/KeyDatesCard'
 import { ShipmentHistoryTimeline } from '../components/shipments/ShipmentHistoryTimeline'
 import { AlertCard } from '../components/alerts/AlertCard'
-import { parsePONumbers, formatRelativeTime, formatDate, cn } from '../lib/utils'
-import { ArrowLeft, Mail, Clock, ClipboardList, Package, Ship, Calendar } from 'lucide-react'
+import { formatRelativeTime, formatDate, cn } from '../lib/utils'
+import { ArrowLeft, Mail, Clock, ClipboardList, Package, Ship, Calendar, AlertTriangle, AlertCircle, Info } from 'lucide-react'
 
 export default function ShipmentDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
+  const location = useLocation()
+  const fromAlerts = (location.state as { fromAlerts?: boolean })?.fromAlerts
   const { data: shipment, isLoading } = useShipment(id!)
   const { data: historyData } = useShipmentHistory(id!)
   const [activeTab, setActiveTab] = useState<'details' | 'history'>('details')
@@ -34,23 +36,30 @@ export default function ShipmentDetailPage() {
     )
   }
 
-  const poNumbers = parsePONumbers(shipment.poNumbers)
+  const shortId = shipment.bookingNo ?? shipment.id.slice(0, 12)
+  const linkedPOs = shipment.linkedPOs ?? []
+  const activeAlerts = (shipment.alerts ?? []).filter((a) => a.status === 'ACTIVE')
+  const criticalCount = activeAlerts.filter((a) => a.severity === 'CRITICAL').length
+  const warningCount = activeAlerts.filter((a) => a.severity === 'WARNING').length
+  const infoCount = activeAlerts.filter((a) => a.severity === 'INFO').length
+  const topSeverity = criticalCount > 0 ? 'CRITICAL' : warningCount > 0 ? 'WARNING' : 'INFO'
 
   return (
     <div className="space-y-6">
+
       {/* Header */}
       <div>
         <button
-          onClick={() => navigate('/shipments')}
+          onClick={() => navigate(fromAlerts ? '/alerts' : '/shipments')}
           className="mb-3 inline-flex items-center gap-1.5 text-sm text-text-muted hover:text-text-primary"
         >
           <ArrowLeft size={14} />
-          Back to Shipments
+          {fromAlerts ? 'Back to Alerts' : 'Back to Shipments'}
         </button>
         <div className="flex items-start justify-between">
           <div>
             <h1 className="font-mono text-xl font-semibold text-text-primary">
-              PO# {poNumbers.join(', ')}
+              {shortId}
             </h1>
             <p className="mt-1 text-sm text-text-secondary">
               {shipment.customer?.name ?? 'Unknown Customer'}
@@ -61,6 +70,89 @@ export default function ShipmentDetailPage() {
           <Badge variant="status" value={shipment.status} />
         </div>
       </div>
+
+      {/* Alert banner */}
+      {activeAlerts.length > 0 && (
+        <div
+          className={cn(
+            'flex items-center gap-3 rounded-lg border px-4 py-3',
+            topSeverity === 'CRITICAL'
+              ? 'border-status-critical/30 bg-status-critical/10 text-status-critical'
+              : topSeverity === 'WARNING'
+                ? 'border-status-warning/30 bg-status-warning/10 text-status-warning'
+                : 'border-status-info/30 bg-status-info/10 text-status-info'
+          )}
+        >
+          {topSeverity === 'CRITICAL' ? (
+            <AlertCircle size={18} className="shrink-0" />
+          ) : topSeverity === 'WARNING' ? (
+            <AlertTriangle size={18} className="shrink-0" />
+          ) : (
+            <Info size={18} className="shrink-0" />
+          )}
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-medium">
+              {activeAlerts.length === 1
+                ? activeAlerts[0].message
+                : `${activeAlerts.length} active alerts on this shipment`}
+            </p>
+            {activeAlerts.length > 1 && (
+              <p className="mt-0.5 text-xs opacity-75">
+                {[
+                  criticalCount > 0 && `${criticalCount} critical`,
+                  warningCount > 0 && `${warningCount} warning`,
+                  infoCount > 0 && `${infoCount} info`,
+                ]
+                  .filter(Boolean)
+                  .join(' · ')}
+              </p>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Linked POs card */}
+      {linkedPOs.length > 0 && (
+        <Card>
+          <div className="mb-3 flex items-center gap-2">
+            <Package size={14} className="text-text-muted" />
+            <h4 className="text-sm font-semibold text-text-primary">
+              Purchase Orders
+              <span className="ml-2 text-xs font-normal text-text-muted">
+                {linkedPOs.length} PO{linkedPOs.length !== 1 ? 's' : ''} on this shipment
+              </span>
+            </h4>
+          </div>
+          <div className="overflow-hidden rounded-lg border border-border">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b border-border bg-surface-900/50">
+                  <th className="px-3 py-2 text-left text-[11px] font-medium text-text-muted">PO#</th>
+                  <th className="px-3 py-2 text-left text-[11px] font-medium text-text-muted">Vendor</th>
+                  <th className="px-3 py-2 text-right text-[11px] font-medium text-text-muted">Shipped</th>
+                  <th className="px-3 py-2 text-right text-[11px] font-medium text-text-muted">Total</th>
+                  <th className="px-3 py-2 text-left text-[11px] font-medium text-text-muted">Unit</th>
+                </tr>
+              </thead>
+              <tbody>
+                {linkedPOs.map((po) => (
+                  <tr
+                    key={po.id}
+                    onClick={() => navigate(`/purchase-orders/${po.id}`, { state: { fromShipment: id } })}
+                    className="cursor-pointer border-b border-border last:border-0 transition-colors hover:bg-surface-700"
+                  >
+                    <td className="px-3 py-2 font-mono text-sm text-cobalt-primary-light">{po.poNumber}</td>
+                    <td className="px-3 py-2 text-sm text-text-secondary">{po.vendor?.name ?? '—'}</td>
+                    <td className="px-3 py-2 text-right font-mono text-sm text-text-primary">{po.quantity ?? '—'}</td>
+                    <td className="px-3 py-2 text-right font-mono text-sm text-text-muted">{po.totalQuantity ?? '—'}</td>
+                    <td className="px-3 py-2 text-xs text-text-muted">{po.quantityUnit ?? ''}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      )}
 
       {/* Main content grid */}
       <div className="grid gap-6 lg:grid-cols-3">
@@ -98,7 +190,7 @@ export default function ShipmentDetailPage() {
               <DetailSection title="Order Info" icon={<ClipboardList size={14} className="text-text-muted" />}>
                 <DetailRow label="Customer Code" value={shipment.customer?.code ?? null} />
                 <DetailRow label="Vendor Code" value={shipment.vendor?.code ?? null} />
-                <DetailRow label="Customer PO" value={poNumbers.join(', ')} />
+                <DetailRow label="PO#" value={linkedPOs.length > 0 ? linkedPOs.map(p => p.poNumber).join(', ') : '—'} />
                 <DetailRow label="Booking No." value={shipment.bookingNo} />
                 <DetailRow label="SO#" value={shipment.soNumber} />
                 <DetailRow label="Item / Style No." value={shipment.itemStyleNo} />

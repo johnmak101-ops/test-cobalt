@@ -28,24 +28,28 @@ export default function DashboardPage() {
           label="Active Shipments"
           value={stats.activeShipments}
           color="bg-cobalt-primary/15 text-cobalt-primary-light"
+          onClick={() => navigate('/shipments')}
         />
         <KPICard
           icon={AlertTriangle}
           label="At Risk"
           value={stats.atRiskShipments}
           color="bg-status-warning/15 text-status-warning"
+          onClick={() => navigate('/alerts')}
         />
         <KPICard
           icon={AlertCircle}
           label="Critical Alerts"
           value={stats.criticalAlerts}
           color="bg-status-critical/15 text-status-critical"
+          onClick={() => navigate('/alerts?severity=CRITICAL')}
         />
         <KPICard
           icon={Mail}
           label="New Emails"
           value={stats.newEmails}
           color="bg-cobalt-teal/15 text-cobalt-teal"
+          onClick={() => navigate('/inbox')}
         />
       </div>
 

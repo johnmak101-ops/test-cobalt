@@ -1,9 +1,23 @@
 import { Badge } from '../ui/Badge'
 import { formatRelativeTime } from '../../lib/utils'
 import { Link } from 'react-router-dom'
-import { ChevronDown, ChevronUp, Link as LinkIcon, AlertTriangle } from 'lucide-react'
-import { useState } from 'react'
+import { ChevronDown, ChevronUp, Link as LinkIcon, AlertTriangle, Paperclip, FileText, FileSpreadsheet, File, Download } from 'lucide-react'
+import { useState, useEffect } from 'react'
 import type { ShippingEmail } from '../../hooks/use-emails'
+import { useEmailAttachments, useMarkEmailRead } from '../../hooks/use-emails'
+
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
+function getFileIcon(mimeType: string) {
+  if (mimeType === 'application/pdf') return FileText
+  if (mimeType.includes('spreadsheet') || mimeType.includes('excel') || mimeType.includes('csv'))
+    return FileSpreadsheet
+  return File
+}
 
 interface EmailCardProps {
   email: ShippingEmail
@@ -11,6 +25,16 @@ interface EmailCardProps {
 
 export function EmailCard({ email }: EmailCardProps) {
   const [expanded, setExpanded] = useState(true)
+  const { data: attachmentsData } = useEmailAttachments(email.id)
+  const markRead = useMarkEmailRead()
+  const attachments = attachmentsData?.attachments ?? []
+
+  // Mark as read when expanded
+  useEffect(() => {
+    if (expanded && !email.isRead) {
+      markRead.mutate(email.id)
+    }
+  }, [expanded, email.isRead, email.id])
 
   let extracted: Record<string, unknown> | null = null
   if (email.extractedData) {
@@ -27,6 +51,9 @@ export function EmailCard({ email }: EmailCardProps) {
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
+            {!email.isRead && (
+              <span className="h-2 w-2 shrink-0 rounded-full bg-cobalt-primary" />
+            )}
             <span className="text-sm font-medium text-text-primary">{email.sender}</span>
             {email.emailType && (
               <Badge variant="emailType" value={email.emailType} />
@@ -86,6 +113,53 @@ export function EmailCard({ email }: EmailCardProps) {
               </div>
             </div>
           )}
+        </div>
+      )}
+      {/* Attachments */}
+      {attachments.length > 0 && (
+        <div className="mt-3">
+          <div className="flex items-center gap-1.5 text-xs font-medium text-text-muted">
+            <Paperclip size={12} />
+            ATTACHMENTS ({attachments.length})
+          </div>
+          <div className="mt-2 space-y-1.5">
+            {attachments.map((att) => {
+              const Icon = getFileIcon(att.mimeType)
+              return (
+                <div
+                  key={att.id}
+                  className="flex items-center justify-between rounded-lg bg-surface-900 px-3 py-2"
+                >
+                  <div className="flex items-center gap-2 min-w-0">
+                    <Icon size={14} className="shrink-0 text-cobalt-primary-light" />
+                    <a
+                      href={`/api/attachments/${att.id}/download`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={(e) => e.stopPropagation()}
+                      className="truncate text-xs text-text-primary hover:text-cobalt-primary-light hover:underline cursor-pointer"
+                      title={`Open ${att.filename}`}
+                    >
+                      {att.filename}
+                    </a>
+                    <span className="shrink-0 text-[10px] text-text-muted">
+                      {formatFileSize(att.sizeBytes)}
+                    </span>
+                  </div>
+                  <a
+                    href={`/api/attachments/${att.id}/download`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={(e) => e.stopPropagation()}
+                    className="shrink-0 rounded p-1 text-text-muted hover:bg-surface-700 hover:text-cobalt-primary-light"
+                    title={`Download ${att.filename}`}
+                  >
+                    <Download size={13} />
+                  </a>
+                </div>
+              )
+            })}
+          </div>
         </div>
       )}
     </div>

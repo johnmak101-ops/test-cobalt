@@ -14,11 +14,20 @@ const dotColors: Record<string, string> = {
   DELIVERED: 'bg-state-delivered',
 }
 
+const statusLabels: Record<string, string> = {
+  BOOKED: 'Booking Request',
+  CONFIRMED: 'SO Received',
+  AT_WAREHOUSE: 'Draft B/L',
+  SAILED: 'Final B/L',
+  RELEASED: 'Telex Release',
+  DELIVERED: 'Delivered',
+}
+
 export function StatusBadge({ status, className }: StatusBadgeProps) {
   return (
     <span className={cn('inline-flex items-center gap-1.5 text-sm', className)}>
       <span className={cn('h-2 w-2 rounded-full', dotColors[status] ?? 'bg-text-muted')} />
-      <span className="text-text-primary">{status.replace('_', ' ')}</span>
+      <span className="text-text-primary">{statusLabels[status] ?? status.replace('_', ' ')}</span>
     </span>
   )
 }

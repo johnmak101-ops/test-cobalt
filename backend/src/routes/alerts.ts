@@ -90,6 +90,32 @@ alertsRouter.patch('/alerts/:id/snooze', async (c) => {
   return c.json({ success: true })
 })
 
+// PATCH /alerts/:id/read - Mark alert as read (keeps it visible)
+alertsRouter.patch('/alerts/:id/read', async (c) => {
+  const db = c.get('db')
+  const id = c.req.param('id')
+
+  await db
+    .update(alerts)
+    .set({ readAt: new Date() })
+    .where(eq(alerts.id, id))
+
+  return c.json({ success: true })
+})
+
+// PATCH /alerts/:id/unread - Mark alert as unread
+alertsRouter.patch('/alerts/:id/unread', async (c) => {
+  const db = c.get('db')
+  const id = c.req.param('id')
+
+  await db
+    .update(alerts)
+    .set({ readAt: null })
+    .where(eq(alerts.id, id))
+
+  return c.json({ success: true })
+})
+
 // POST /alerts/evaluate - Re-evaluate all alert rules against all active shipments
 alertsRouter.post('/alerts/evaluate', async (c) => {
   const db = c.get('db')

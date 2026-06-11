@@ -21,6 +21,12 @@ type AppEnv = { Variables: { db: any } }
 
 const app = new Hono<AppEnv>()
 
+// Global error handler
+app.onError((err, c) => {
+  console.error('Unhandled error:', err.message, err.stack)
+  return c.json({ error: err.message }, 500)
+})
+
 // Middleware
 app.use('*', logger())
 app.use('*', cors())

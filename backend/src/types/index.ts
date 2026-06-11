@@ -35,14 +35,16 @@ export type ProcessingStatus = 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED'
 // Quantity tracking (partial shipments)
 export type QuantityUnit = 'cartons' | 'pieces' | 'cbm'
 
-// Review queue (low-confidence extractions)
+// Review queue (confidence-based)
+// HIGH (>= 0.8) → AUTO_ACCEPTED, skips review queue
+// MED (0.5–0.8) → NEEDS_REVIEW, enters review queue
+// LOW (< 0.5) → NEEDS_REVIEW, enters review queue
 export type ReviewStatus =
-  | 'AUTO_ACCEPTED'       // Confidence > 0.9, auto-linked
-  | 'FLAGGED'             // Confidence 0.7-0.9, accepted but flagged
-  | 'NEEDS_REVIEW'        // Confidence 0.5-0.7, queued for review
+  | 'AUTO_ACCEPTED'       // High confidence, auto-linked
+  | 'NEEDS_REVIEW'        // Med/Low confidence, queued for review
   | 'REVIEWED_OK'         // Manually approved
   | 'REVIEWED_CORRECTED'  // Manually corrected
-  | 'REJECTED'            // Not a shipping email
+  | 'REJECTED'            // Not a shipping email (emailType = OTHER)
 
 // Shipment history (audit trail)
 export type HistorySourceType = 'email' | 'manual' | 'system'

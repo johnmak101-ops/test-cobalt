@@ -1,8 +1,8 @@
 import { Badge } from '../ui/Badge'
 import { parsePONumbers, formatRelativeTime } from '../../lib/utils'
 import { useNavigate } from 'react-router-dom'
-import { useDismissAlert, useSnoozeAlert } from '../../hooks/use-alerts'
-import { Eye, X, Clock } from 'lucide-react'
+import { useMarkAlertRead, useMarkAlertUnread } from '../../hooks/use-alerts'
+import { CheckCircle, CircleDot } from 'lucide-react'
 import { cn } from '../../lib/utils'
 
 interface AlertCardProps {
@@ -14,6 +14,7 @@ interface AlertCardProps {
     message: string
     status: string
     triggeredAt: string
+    readAt?: string | null
     shipment?: {
       id: string
       poNumbers: string
@@ -32,16 +33,19 @@ const severityBorder: Record<string, string> = {
 
 export function AlertCard({ alert, compact }: AlertCardProps) {
   const navigate = useNavigate()
-  const dismiss = useDismissAlert()
-  const snooze = useSnoozeAlert()
+  const markRead = useMarkAlertRead()
+  const markUnread = useMarkAlertUnread()
 
+  const isRead = !!alert.readAt
   const poNumbers = alert.shipment ? parsePONumbers(alert.shipment.poNumbers) : []
 
   return (
     <div
+      onClick={() => navigate(`/shipments/${alert.shipmentId}`, { state: { fromAlerts: true } })}
       className={cn(
-        'rounded-lg border border-border border-l-4 bg-surface-800',
+        'cursor-pointer rounded-lg border border-border border-l-4 bg-surface-800 transition-colors hover:bg-surface-700',
         severityBorder[alert.severity],
+        isRead && 'opacity-50',
         compact ? 'p-3' : 'p-4'
       )}
     >
@@ -59,6 +63,9 @@ export function AlertCard({ alert, compact }: AlertCardProps) {
                 {alert.shipment.customer.name}
               </span>
             )}
+            {isRead && (
+              <span className="text-xs text-text-muted">(read)</span>
+            )}
           </div>
           <p className="mt-1.5 text-sm text-text-secondary">{alert.message}</p>
           <p className="mt-1 text-xs text-text-muted">
@@ -68,29 +75,25 @@ export function AlertCard({ alert, compact }: AlertCardProps) {
         </div>
 
         {!compact && (
-          <div className="flex shrink-0 items-center gap-1">
-            <button
-              onClick={() => navigate(`/shipments/${alert.shipmentId}`)}
-              className="rounded-md p-1.5 text-text-muted hover:bg-surface-700 hover:text-text-primary"
-              title="View Shipment"
-            >
-              <Eye size={14} />
-            </button>
-            <button
-              onClick={() => snooze.mutate({ id: alert.id, hours: 24 })}
-              className="rounded-md p-1.5 text-text-muted hover:bg-surface-700 hover:text-text-primary"
-              title="Snooze 24h"
-            >
-              <Clock size={14} />
-            </button>
-            <button
-              onClick={() => dismiss.mutate(alert.id)}
-              className="rounded-md p-1.5 text-text-muted hover:bg-surface-700 hover:text-status-critical"
-              title="Dismiss"
-            >
-              <X size={14} />
-            </button>
-          </div>
+          <button
+            onClick={(e) => {
+              e.stopPropagation()
+              if (isRead) {
+                markUnread.mutate(alert.id)
+              } else {
+                markRead.mutate(alert.id)
+              }
+            }}
+            className={cn(
+              'shrink-0 rounded-md p-1.5 text-text-muted hover:bg-surface-600',
+              isRead
+                ? 'hover:text-status-warning'
+                : 'hover:text-status-success'
+            )}
+            title={isRead ? 'Mark as Unread' : 'Mark as Read'}
+          >
+            {isRead ? <CircleDot size={14} /> : <CheckCircle size={14} />}
+          </button>
         )}
       </div>
     </div>

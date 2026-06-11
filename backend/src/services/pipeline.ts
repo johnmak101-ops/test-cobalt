@@ -1,7 +1,7 @@
 import { eq } from 'drizzle-orm'
 import crypto from 'node:crypto'
 import { shippingEmails, shipments, shipmentMilestones } from '../db/schema.js'
-import type { EmailType, MilestoneType, ShipmentStatus, ReviewStatus } from '../types/index.js'
+import type { EmailType, MilestoneType, ReviewStatus } from '../types/index.js'
 import { classifyEmail } from './classifier.js'
 import {
   extractEmailData,
@@ -11,6 +11,7 @@ import {
 import { validateExtractedData, matchToShipment } from './matcher.js'
 import { evaluateAlertsForShipment } from './alert-evaluator.js'
 import { trackShipmentUpdate } from './history.js'
+import { recomputeShipmentStatus } from './milestone-status.js'
 
 /**
  * Pipeline Orchestrator — coordinates the 4-step email processing pipeline:
@@ -20,10 +21,9 @@ import { trackShipmentUpdate } from './history.js'
  * 4. STORE & ALERT (update shipment with audit trail, create milestone, evaluate alerts)
  *
  * Review status thresholds:
- *   > 0.9  → AUTO_ACCEPTED  (auto-linked to shipment)
- *   0.7–0.9 → FLAGGED       (accepted but flagged for review)
- *   0.5–0.7 → NEEDS_REVIEW  (queued, NOT auto-linked)
- *   < 0.5  → REJECTED       (not a shipping email / too uncertain)
+ *   >= 0.8 → AUTO_ACCEPTED  (auto-linked to shipment, skips review)
+ *   < 0.8  → NEEDS_REVIEW  (queued for manual review)
+ *   OTHER  → REJECTED      (not a shipping email)
  *
  * Target: < 30 seconds from email arrival to dashboard update.
  */
@@ -38,18 +38,13 @@ const EMAIL_TYPE_TO_MILESTONE: Partial<Record<EmailType, MilestoneType>> = {
 }
 
 // Maps email type to the shipment status it transitions to
-const EMAIL_TYPE_TO_STATUS: Partial<Record<EmailType, ShipmentStatus>> = {
-  SHIPPING_ORDER: 'CONFIRMED',
-  DRAFT_BL: 'AT_WAREHOUSE',
-  FINAL_BL: 'SAILED',
-  TELEX_RELEASE: 'RELEASED',
-}
+// (status is now derived from milestones — see milestone-status.ts)
 
 // Review status thresholds
+// HIGH (>= 0.8) → AUTO_ACCEPTED (skip review queue)
+// MED/LOW (< 0.8) → NEEDS_REVIEW (enter review queue)
 const REVIEW_THRESHOLDS = {
-  autoAccept: 0.9,
-  flag: 0.7,
-  needsReview: 0.5,
+  autoAccept: 0.8,
 }
 
 export interface PipelineResult {
@@ -85,13 +80,14 @@ interface ProcessEmailInput {
 
 /**
  * Determine review status based on final confidence score.
+ * HIGH (>= 0.8) → AUTO_ACCEPTED
+ * MED/LOW (< 0.8) → NEEDS_REVIEW
+ * OTHER email type → REJECTED
  */
 function determineReviewStatus(confidence: number, emailType: EmailType): ReviewStatus {
   if (emailType === 'OTHER') return 'REJECTED'
   if (confidence >= REVIEW_THRESHOLDS.autoAccept) return 'AUTO_ACCEPTED'
-  if (confidence >= REVIEW_THRESHOLDS.flag) return 'FLAGGED'
-  if (confidence >= REVIEW_THRESHOLDS.needsReview) return 'NEEDS_REVIEW'
-  return 'REJECTED'
+  return 'NEEDS_REVIEW'
 }
 
 /**
@@ -183,7 +179,7 @@ export async function processEmail(
   const reviewStatus = determineReviewStatus(finalConfidence, classification.emailType)
 
   // For NEEDS_REVIEW and REJECTED, do NOT auto-link to shipment
-  const shouldAutoLink = reviewStatus === 'AUTO_ACCEPTED' || reviewStatus === 'FLAGGED'
+  const shouldAutoLink = reviewStatus === 'AUTO_ACCEPTED'
 
   // ============================================
   // Step 4: STORE & ALERT
@@ -216,7 +212,8 @@ export async function processEmail(
   let delaysDetected = 0
 
   if (shipmentId && shouldAutoLink && extractedData) {
-    // Build updates from extracted data
+    // Build updates from extracted data (no direct status writes —
+    // status is derived from milestones after milestone creation below)
     const updates: Record<string, any> = {}
 
     if (extractedData.hbl_number) updates.hblNumber = extractedData.hbl_number
@@ -238,21 +235,6 @@ export async function processEmail(
     if (extractedData.warehouse_start_date) updates.warehouseStartDate = new Date(extractedData.warehouse_start_date)
     if (extractedData.warehouse_end_date) updates.warehouseEndDate = new Date(extractedData.warehouse_end_date)
     if (extractedData.in_dc_date) updates.inDcDate = new Date(extractedData.in_dc_date)
-
-    // Transition shipment status based on email type
-    const newStatus = EMAIL_TYPE_TO_STATUS[classification.emailType]
-    if (newStatus) {
-      const currentShipment = await db
-        .select()
-        .from(shipments)
-        .where(eq(shipments.id, shipmentId))
-        .get()
-
-      // Only advance status forward (never go backward)
-      if (currentShipment && shouldAdvanceStatus(currentShipment.status, newStatus)) {
-        updates.status = newStatus
-      }
-    }
 
     // Apply updates with audit trail via trackShipmentUpdate
     if (Object.keys(updates).length > 0) {
@@ -292,6 +274,12 @@ export async function processEmail(
       }
     }
 
+    // Recompute shipment status from all milestones (single source of truth)
+    if (milestoneCreated) {
+      await recomputeShipmentStatus(db, shipmentId)
+      shipmentUpdated = true
+    }
+
     // Evaluate alerts for this shipment
     const alertResult = await evaluateAlertsForShipment(db, shipmentId)
     alertsCreated = alertResult.created
@@ -323,21 +311,3 @@ export async function processEmail(
   }
 }
 
-// Status order for determining if we should advance
-const STATUS_ORDER: ShipmentStatus[] = [
-  'BOOKED',
-  'CONFIRMED',
-  'AT_WAREHOUSE',
-  'SAILED',
-  'RELEASED',
-  'DELIVERED',
-]
-
-function shouldAdvanceStatus(
-  current: string,
-  next: ShipmentStatus
-): boolean {
-  const currentIdx = STATUS_ORDER.indexOf(current as ShipmentStatus)
-  const nextIdx = STATUS_ORDER.indexOf(next)
-  return nextIdx > currentIdx
-}

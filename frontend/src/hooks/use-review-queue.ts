@@ -10,6 +10,7 @@ export interface ReviewEmail {
   bodyText: string | null
   emailType: string | null
   extractedData: string | null
+  originalExtractedData: string | null
   extractionConfidence: number | null
   shipmentId: string | null
   isMatched: boolean
@@ -33,11 +34,9 @@ interface ReviewQueueResponse {
 
 export interface ReviewCounts {
   NEEDS_REVIEW: number
-  FLAGGED: number
   AUTO_ACCEPTED: number
   REVIEWED_OK: number
   REVIEWED_CORRECTED: number
-  REJECTED: number
   total: number
   pending: number
 }
@@ -94,6 +93,11 @@ export function useReviewEmail() {
       queryClient.invalidateQueries({ queryKey: ['review-counts'] })
       queryClient.invalidateQueries({ queryKey: ['emails'] })
       queryClient.invalidateQueries({ queryKey: ['shipments'] })
+      queryClient.invalidateQueries({ queryKey: ['shipment'] })
+      queryClient.invalidateQueries({ queryKey: ['purchase-orders'] })
+      queryClient.invalidateQueries({ queryKey: ['purchase-order'] })
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] })
+      queryClient.invalidateQueries({ queryKey: ['alerts'] })
     },
   })
 }

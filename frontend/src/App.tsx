@@ -8,6 +8,7 @@ import ShipmentTrackerPage from './pages/ShipmentTrackerPage'
 import ShipmentDetailPage from './pages/ShipmentDetailPage'
 import InboxPage from './pages/InboxPage'
 import AlertsPage from './pages/AlertsPage'
+import AlertRulesPage from './pages/AlertRulesPage'
 import SettingsPage from './pages/SettingsPage'
 import ReviewQueuePage from './pages/ReviewQueuePage'
 import PurchaseOrdersPage from './pages/PurchaseOrdersPage'
@@ -85,6 +86,7 @@ function AppRoutes() {
         <Route path="/inbox" element={<InboxPage />} />
         <Route path="/review-queue" element={<ReviewQueuePage />} />
         <Route path="/alerts" element={<AlertsPage />} />
+        <Route path="/alerts/rules" element={<AlertRulesPage />} />
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="/settings/email" element={<SettingsPage />} />
         <Route path="/settings/alerts" element={<SettingsPage />} />

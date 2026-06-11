@@ -1,16 +1,18 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { usePurchaseOrders, useCreatePurchaseOrder } from '../hooks/use-purchase-orders'
+import { usePurchaseOrders } from '../hooks/use-purchase-orders'
 import { cn } from '../lib/utils'
-import { Package, Plus, Search } from 'lucide-react'
+import { Package, Search, RefreshCw } from 'lucide-react'
+import { Pagination, usePagination, PageSizeSelect } from '../components/ui/Pagination'
+import { useQueryClient } from '@tanstack/react-query'
 
 export default function PurchaseOrdersPage() {
   const navigate = useNavigate()
   const { data, isLoading } = usePurchaseOrders()
-  const createPO = useCreatePurchaseOrder()
   const [search, setSearch] = useState('')
-  const [showCreate, setShowCreate] = useState(false)
-  const [newPO, setNewPO] = useState({ poNumber: '', totalQuantity: '', quantityUnit: 'cartons' })
+  const [page, setPage] = useState(1)
+  const [perPage, setPerPage] = useState(25)
+  const qc = useQueryClient()
 
   const purchaseOrders = data?.purchaseOrders ?? []
 
@@ -23,21 +25,17 @@ export default function PurchaseOrdersPage() {
       )
     : purchaseOrders
 
-  const handleCreate = () => {
-    if (!newPO.poNumber.trim()) return
-    createPO.mutate(
-      {
-        poNumber: newPO.poNumber.trim(),
-        totalQuantity: newPO.totalQuantity ? parseFloat(newPO.totalQuantity) : undefined,
-        quantityUnit: newPO.quantityUnit,
-      },
-      {
-        onSuccess: () => {
-          setNewPO({ poNumber: '', totalQuantity: '', quantityUnit: 'cartons' })
-          setShowCreate(false)
-        },
-      }
-    )
+  const { totalItems, totalPages, pageSize, getPage } = usePagination(filtered, perPage)
+  const pageItems = getPage(page)
+
+  const handleSearch = (v: string) => {
+    setSearch(v)
+    setPage(1)
+  }
+
+  const handlePageSizeChange = (size: number) => {
+    setPerPage(size)
+    setPage(1)
   }
 
   return (
@@ -50,67 +48,17 @@ export default function PurchaseOrdersPage() {
             Track POs across multiple partial shipments
           </p>
         </div>
-        <button
-          onClick={() => setShowCreate(!showCreate)}
-          className="flex items-center gap-1.5 rounded-lg bg-cobalt-primary px-3 py-2 text-sm font-medium text-white hover:bg-cobalt-primary-light"
-        >
-          <Plus size={14} />
-          New PO
-        </button>
-      </div>
-
-      {/* Quick create form */}
-      {showCreate && (
-        <div className="rounded-xl border border-border bg-surface-800 p-4">
-          <h3 className="mb-3 text-sm font-semibold text-text-primary">Create Purchase Order</h3>
-          <div className="flex flex-wrap items-end gap-3">
-            <div>
-              <label className="text-xs text-text-muted">PO Number *</label>
-              <input
-                type="text"
-                value={newPO.poNumber}
-                onChange={(e) => setNewPO({ ...newPO, poNumber: e.target.value })}
-                placeholder="e.g. PO-2024-001"
-                className="mt-1 block h-9 w-48 rounded-lg border border-border bg-surface-700 px-3 text-sm text-text-primary placeholder:text-text-muted"
-              />
-            </div>
-            <div>
-              <label className="text-xs text-text-muted">Total Quantity</label>
-              <input
-                type="number"
-                value={newPO.totalQuantity}
-                onChange={(e) => setNewPO({ ...newPO, totalQuantity: e.target.value })}
-                placeholder="0"
-                className="mt-1 block h-9 w-28 rounded-lg border border-border bg-surface-700 px-3 text-sm text-text-primary placeholder:text-text-muted"
-              />
-            </div>
-            <div>
-              <label className="text-xs text-text-muted">Unit</label>
-              <select
-                value={newPO.quantityUnit}
-                onChange={(e) => setNewPO({ ...newPO, quantityUnit: e.target.value })}
-                className="mt-1 block h-9 rounded-lg border border-border bg-surface-700 px-3 text-sm text-text-primary"
-              >
-                <option value="cartons">Cartons</option>
-                <option value="pieces">Pieces</option>
-                <option value="cbm">CBM</option>
-              </select>
-            </div>
-            <button
-              onClick={handleCreate}
-              disabled={!newPO.poNumber.trim() || createPO.isPending}
-              className="h-9 rounded-lg bg-cobalt-primary px-4 text-sm font-medium text-white hover:bg-cobalt-primary-light disabled:opacity-50"
-            >
-              {createPO.isPending ? 'Creating...' : 'Create'}
-            </button>
-          </div>
-          {createPO.isError && (
-            <p className="mt-2 text-xs text-status-critical">
-              {createPO.error?.message ?? 'Failed to create PO'}
-            </p>
-          )}
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => qc.invalidateQueries({ queryKey: ['purchase-orders'] })}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-surface-700 px-3 py-1.5 text-xs font-medium text-text-secondary hover:bg-surface-600 hover:text-text-primary"
+          >
+            <RefreshCw size={14} />
+            Refresh
+          </button>
+          <PageSizeSelect value={perPage} onChange={handlePageSizeChange} />
         </div>
-      )}
+      </div>
 
       {/* Search */}
       <div className="relative">
@@ -118,9 +66,9 @@ export default function PurchaseOrdersPage() {
         <input
           type="text"
           value={search}
-          onChange={(e) => setSearch(e.target.value)}
+          onChange={(e) => handleSearch(e.target.value)}
           placeholder="Search by PO#, customer, or vendor..."
-          className="h-9 w-full max-w-md rounded-lg border border-border bg-surface-800 pl-9 pr-3 text-sm text-text-primary placeholder:text-text-muted"
+          className="h-9 w-full rounded-lg border border-border bg-surface-800 pl-9 pr-3 text-sm text-text-primary placeholder:text-text-muted"
         />
       </div>
 
@@ -135,8 +83,9 @@ export default function PurchaseOrdersPage() {
           <p className="text-sm">No purchase orders found</p>
         </div>
       ) : (
-        <div className="overflow-hidden rounded-xl border border-border bg-surface-800">
-          <div className="overflow-x-auto">
+        <>
+          <div className="overflow-hidden rounded-xl border border-border bg-surface-800">
+            <div className="overflow-x-auto">
             <table className="w-full">
               <thead>
                 <tr className="border-b border-border bg-surface-900/50">
@@ -162,7 +111,7 @@ export default function PurchaseOrdersPage() {
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((po) => {
+                {pageItems.map((po) => {
                   const progress =
                     po.totalQuantity && po.shippedQuantity
                       ? Math.min((po.shippedQuantity / po.totalQuantity) * 100, 100)
@@ -228,7 +177,15 @@ export default function PurchaseOrdersPage() {
               </tbody>
             </table>
           </div>
-        </div>
+          </div>
+          <Pagination
+            currentPage={page}
+            totalPages={totalPages}
+            totalItems={totalItems}
+            pageSize={pageSize}
+            onPageChange={setPage}
+          />
+        </>
       )}
     </div>
   )

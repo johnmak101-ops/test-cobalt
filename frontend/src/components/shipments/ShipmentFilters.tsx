@@ -9,11 +9,11 @@ const statuses = ['ALL', 'BOOKED', 'CONFIRMED', 'AT_WAREHOUSE', 'SAILED', 'RELEA
 
 const statusLabels: Record<string, string> = {
   ALL: 'All',
-  BOOKED: 'Booked',
-  CONFIRMED: 'Confirmed',
-  AT_WAREHOUSE: 'At Warehouse',
-  SAILED: 'Sailed',
-  RELEASED: 'Released',
+  BOOKED: 'Booking Request',
+  CONFIRMED: 'SO Received',
+  AT_WAREHOUSE: 'Draft B/L',
+  SAILED: 'Final B/L',
+  RELEASED: 'Telex Release',
   DELIVERED: 'Delivered',
 }
 

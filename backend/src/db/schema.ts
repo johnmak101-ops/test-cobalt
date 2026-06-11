@@ -113,11 +113,13 @@ export const shippingEmails = sqliteTable('shipping_emails', {
     ],
   }).default('OTHER'),
   extractedData: text('extracted_data'), // JSON blob
+  originalExtractedData: text('original_extracted_data'), // snapshot before correction
   extractionConfidence: real('extraction_confidence'),
 
   // Linking
   shipmentId: text('shipment_id').references(() => shipments.id),
   isMatched: integer('is_matched', { mode: 'boolean' }).notNull().default(false),
+  isRead: integer('is_read', { mode: 'boolean' }).notNull().default(false),
 
   // Pipeline state
   processingStatus: text('processing_status', {
@@ -130,7 +132,6 @@ export const shippingEmails = sqliteTable('shipping_emails', {
   reviewStatus: text('review_status', {
     enum: [
       'AUTO_ACCEPTED',
-      'FLAGGED',
       'NEEDS_REVIEW',
       'REVIEWED_OK',
       'REVIEWED_CORRECTED',
@@ -170,6 +171,26 @@ export const shipmentMilestones = sqliteTable('shipment_milestones', {
   createdAt: integer('created_at', { mode: 'timestamp' })
     .notNull()
     .default(sql`(unixepoch())`),
+  updatedAt: integer('updated_at', { mode: 'timestamp' })
+    .notNull()
+    .default(sql`(unixepoch())`),
+})
+
+// ============================================
+// Email Attachments
+// ============================================
+export const emailAttachments = sqliteTable('email_attachments', {
+  id: text('id').primaryKey(),
+  emailId: text('email_id')
+    .notNull()
+    .references(() => shippingEmails.id),
+  filename: text('filename').notNull(),
+  mimeType: text('mime_type').notNull(),
+  sizeBytes: integer('size_bytes').notNull(),
+  content: text('content'), // base64-encoded file content
+  createdAt: integer('created_at', { mode: 'timestamp' })
+    .notNull()
+    .default(sql`(unixepoch())`),
 })
 
 // ============================================
@@ -197,6 +218,7 @@ export const alerts = sqliteTable('alerts', {
     .default(sql`(unixepoch())`),
   dismissedAt: integer('dismissed_at', { mode: 'timestamp' }),
   snoozedUntil: integer('snoozed_until', { mode: 'timestamp' }),
+  readAt: integer('read_at', { mode: 'timestamp' }),
 })
 
 // ============================================

@@ -81,6 +81,7 @@ sqlite.exec(`
     body_html TEXT,
     email_type TEXT DEFAULT 'OTHER',
     extracted_data TEXT,
+    original_extracted_data TEXT,
     extraction_confidence REAL,
     shipment_id TEXT REFERENCES shipments(id),
     is_matched INTEGER NOT NULL DEFAULT 0,
@@ -95,7 +96,8 @@ sqlite.exec(`
     occurred_at INTEGER NOT NULL,
     email_id TEXT REFERENCES shipping_emails(id),
     notes TEXT,
-    created_at INTEGER NOT NULL DEFAULT (unixepoch())
+    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    updated_at INTEGER NOT NULL DEFAULT (unixepoch())
   );
 
   CREATE TABLE IF NOT EXISTS alerts (
@@ -107,7 +109,8 @@ sqlite.exec(`
     status TEXT NOT NULL DEFAULT 'ACTIVE',
     triggered_at INTEGER NOT NULL DEFAULT (unixepoch()),
     dismissed_at INTEGER,
-    snoozed_until INTEGER
+    snoozed_until INTEGER,
+    read_at INTEGER
   );
 
   CREATE TABLE IF NOT EXISTS alert_rules (
@@ -185,6 +188,16 @@ sqlite.exec(`
     created_at INTEGER NOT NULL DEFAULT (unixepoch()),
     updated_at INTEGER NOT NULL DEFAULT (unixepoch())
   );
+
+  CREATE TABLE IF NOT EXISTS email_attachments (
+    id TEXT PRIMARY KEY,
+    email_id TEXT NOT NULL REFERENCES shipping_emails(id),
+    filename TEXT NOT NULL,
+    mime_type TEXT NOT NULL,
+    size_bytes INTEGER NOT NULL,
+    content TEXT,
+    created_at INTEGER NOT NULL DEFAULT (unixepoch())
+  );
 `)
 
 // Add columns to existing tables if they don't exist (safe for re-runs)
@@ -205,5 +218,9 @@ addColumnIfMissing('shipping_emails', 'review_status', 'TEXT')
 addColumnIfMissing('shipping_emails', 'reviewed_by', 'TEXT')
 addColumnIfMissing('shipping_emails', 'reviewed_at', 'INTEGER')
 addColumnIfMissing('shipping_emails', 'review_notes', 'TEXT')
+addColumnIfMissing('shipping_emails', 'original_extracted_data', 'TEXT')
+
+// Shipment milestones: updated_at (use constant default for ALTER TABLE compatibility)
+addColumnIfMissing('shipment_milestones', 'updated_at', 'INTEGER DEFAULT 0')
 
 console.log('Database initialized with all tables')

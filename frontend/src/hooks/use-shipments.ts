@@ -1,6 +1,17 @@
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../lib/api'
 
+export interface LinkedPO {
+  id: string
+  poNumber: string
+  quantity: number | null
+  totalQuantity: number | null
+  quantityUnit: string | null
+  notes?: string | null
+  vendor?: { id: string; name: string; code: string } | null
+  customer?: { id: string; name: string; code: string } | null
+}
+
 export interface Shipment {
   id: string
   poNumbers: string
@@ -37,6 +48,7 @@ export interface Shipment {
   customer?: { id: string; name: string; code: string } | null
   forwarder?: { id: string; name: string } | null
   vendor?: { id: string; name: string; code: string } | null
+  linkedPOs: LinkedPO[]
 }
 
 export interface ShipmentDetail extends Shipment {
@@ -61,6 +73,7 @@ export interface ShipmentDetail extends Shipment {
     status: string
     triggeredAt: string
   }>
+  linkedPOs: LinkedPO[]
 }
 
 interface ShipmentsResponse {

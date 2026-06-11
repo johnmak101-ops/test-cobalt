@@ -1,4 +1,4 @@
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import { usePurchaseOrder } from '../hooks/use-purchase-orders'
 import { Card } from '../components/ui/Card'
 import { Badge } from '../components/ui/Badge'
@@ -8,6 +8,8 @@ import { ArrowLeft, Package, Ship } from 'lucide-react'
 export default function PurchaseOrderDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
+  const location = useLocation()
+  const fromShipment = (location.state as { fromShipment?: string })?.fromShipment
   const { data: po, isLoading } = usePurchaseOrder(id!)
 
   if (isLoading) {
@@ -36,11 +38,11 @@ export default function PurchaseOrderDetailPage() {
       {/* Header */}
       <div>
         <button
-          onClick={() => navigate('/purchase-orders')}
+          onClick={() => navigate(fromShipment ? `/shipments/${fromShipment}` : '/purchase-orders')}
           className="mb-3 inline-flex items-center gap-1.5 text-sm text-text-muted hover:text-text-primary"
         >
           <ArrowLeft size={14} />
-          Back to Purchase Orders
+          {fromShipment ? 'Back to Shipment' : 'Back to Purchase Orders'}
         </button>
         <div className="flex items-start justify-between">
           <div>

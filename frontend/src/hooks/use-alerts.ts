@@ -11,6 +11,7 @@ export interface Alert {
   triggeredAt: string
   dismissedAt: string | null
   snoozedUntil: string | null
+  readAt: string | null
   shipment?: {
     id: string
     poNumbers: string
@@ -47,6 +48,28 @@ export function useSnoozeAlert() {
   return useMutation({
     mutationFn: ({ id, hours }: { id: string; hours: number }) =>
       api.patch(`/alerts/${id}/snooze`, { hours }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['alerts'] })
+      qc.invalidateQueries({ queryKey: ['dashboard'] })
+    },
+  })
+}
+
+export function useMarkAlertRead() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) => api.patch(`/alerts/${id}/read`, {}),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['alerts'] })
+      qc.invalidateQueries({ queryKey: ['dashboard'] })
+    },
+  })
+}
+
+export function useMarkAlertUnread() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) => api.patch(`/alerts/${id}/unread`, {}),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['alerts'] })
       qc.invalidateQueries({ queryKey: ['dashboard'] })

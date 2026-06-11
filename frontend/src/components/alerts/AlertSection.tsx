@@ -8,6 +8,7 @@ interface Alert {
   message: string
   status: string
   triggeredAt: string
+  readAt?: string | null
   shipment?: {
     id: string
     poNumbers: string
