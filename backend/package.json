@@ -7,7 +7,11 @@
     "start": "nest start",
     "dev": "nest start --watch",
     "start:prod": "node dist/main.js",
-    "seed": "ts-node -P tsconfig.json src/db/seed.ts"
+    "seed": "ts-node -P tsconfig.json src/db/seed.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:unit": "vitest run src",
+    "smoke": "node test/smoke.mjs"
   },
   "dependencies": {
     "@cobalt/contracts": "workspace:*",
@@ -37,6 +41,7 @@
     "@types/pg": "^8.11.10",
     "ts-node": "^10.9.2",
     "tsconfig-paths": "^4.2.0",
-    "typescript": "^5.8.3"
+    "typescript": "^5.8.3",
+    "vitest": "^2.1.8"
   }
 }
