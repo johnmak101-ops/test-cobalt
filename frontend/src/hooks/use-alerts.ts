@@ -1,78 +1,22 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../lib/api'
+import type { Alert } from '../lib/types'
 
-export interface Alert {
-  id: string
-  shipmentId: string
-  ruleId: string
-  severity: string
-  message: string
-  status: string
-  triggeredAt: string
-  dismissedAt: string | null
-  snoozedUntil: string | null
-  readAt: string | null
-  shipment?: {
-    id: string
-    poNumbers: string
-    route: string | null
-    customer?: { name: string } | null
-  }
-}
+export const useAlerts = (status?: string) =>
+  useQuery({ queryKey: ['alerts', status], queryFn: () => api.get<Alert[]>(`/alerts${status ? `?status=${status}` : ''}`) })
 
-interface AlertsResponse {
-  alerts: Alert[]
-}
-
-export function useAlerts() {
-  return useQuery<AlertsResponse>({
-    queryKey: ['alerts'],
-    queryFn: () => api.get('/alerts'),
-    refetchInterval: 60000,
+export const useEvaluateAlerts = () => {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: () => api.post('/alerts/evaluate', {}),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['alerts'] }),
   })
 }
 
-export function useDismissAlert() {
+export const useDismissAlert = () => {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (id: string) => api.patch(`/alerts/${id}/dismiss`, {}),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['alerts'] })
-      qc.invalidateQueries({ queryKey: ['dashboard'] })
-    },
-  })
-}
-
-export function useSnoozeAlert() {
-  const qc = useQueryClient()
-  return useMutation({
-    mutationFn: ({ id, hours }: { id: string; hours: number }) =>
-      api.patch(`/alerts/${id}/snooze`, { hours }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['alerts'] })
-      qc.invalidateQueries({ queryKey: ['dashboard'] })
-    },
-  })
-}
-
-export function useMarkAlertRead() {
-  const qc = useQueryClient()
-  return useMutation({
-    mutationFn: (id: string) => api.patch(`/alerts/${id}/read`, {}),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['alerts'] })
-      qc.invalidateQueries({ queryKey: ['dashboard'] })
-    },
-  })
-}
-
-export function useMarkAlertUnread() {
-  const qc = useQueryClient()
-  return useMutation({
-    mutationFn: (id: string) => api.patch(`/alerts/${id}/unread`, {}),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['alerts'] })
-      qc.invalidateQueries({ queryKey: ['dashboard'] })
-    },
+    mutationFn: (id: string) => api.post(`/alerts/${id}/dismiss`, {}),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['alerts'] }),
   })
 }

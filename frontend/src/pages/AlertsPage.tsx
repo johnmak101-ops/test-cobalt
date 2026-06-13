@@ -1,130 +1,69 @@
-import { useEffect, useRef, useState } from 'react'
-import { useAlerts } from '../hooks/use-alerts'
-import { AlertSection } from '../components/alerts/AlertSection'
-import { useNavigate, useSearchParams } from 'react-router-dom'
-import { Settings } from 'lucide-react'
-import { cn } from '../lib/utils'
+import { Link } from 'react-router-dom'
+import { useAlerts, useDismissAlert, useEvaluateAlerts } from '../hooks/use-alerts'
+import { Card } from '../components/ui/Card'
+import { Badge } from '../components/ui/Badge'
 
-const filterTabs = [
-  { key: 'all', label: 'All' },
-  { key: 'unread', label: 'Unread' },
-  { key: 'read', label: 'Read' },
-] as const
-
-type FilterKey = (typeof filterTabs)[number]['key']
+const GROUPS = ['CRITICAL', 'WARNING', 'INFO'] as const
 
 export default function AlertsPage() {
-  const { data, isLoading } = useAlerts()
-  const navigate = useNavigate()
-  const [searchParams] = useSearchParams()
-  const severityFilter = searchParams.get('severity')
-  const criticalRef = useRef<HTMLDivElement>(null)
-  const [filter, setFilter] = useState<FilterKey>('all')
-
-  const activeAlerts = (data?.alerts ?? []).filter((a) => a.status === 'ACTIVE')
-
-  // Apply read/unread filter
-  const filtered = activeAlerts.filter((a) => {
-    if (filter === 'unread') return !a.readAt
-    if (filter === 'read') return !!a.readAt
-    return true
-  })
-
-  const critical = filtered.filter((a) => a.severity === 'CRITICAL')
-  const warning = filtered.filter((a) => a.severity === 'WARNING')
-  const info = filtered.filter((a) => a.severity === 'INFO')
-
-  // Counts for tab badges
-  const unreadCount = activeAlerts.filter((a) => !a.readAt).length
-  const readCount = activeAlerts.filter((a) => !!a.readAt).length
-
-  // Auto-scroll to CRITICAL section when ?severity=CRITICAL
-  useEffect(() => {
-    if (severityFilter === 'CRITICAL' && criticalRef.current && !isLoading) {
-      criticalRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' })
-    }
-  }, [severityFilter, isLoading])
+  const { data: alerts = [] } = useAlerts('ACTIVE')
+  const dismiss = useDismissAlert()
+  const evaluate = useEvaluateAlerts()
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <h1 className="text-lg font-semibold text-text-primary">Alerts</h1>
-        </div>
+        <h1 className="text-xl font-bold">Alerts</h1>
         <button
-          onClick={() => navigate('/alerts/rules')}
-          className="inline-flex items-center gap-1.5 rounded-lg bg-surface-700 px-3 py-1.5 text-xs font-medium text-text-secondary hover:bg-surface-600 hover:text-text-primary"
+          onClick={() => evaluate.mutate()}
+          disabled={evaluate.isPending}
+          className="rounded-lg border border-cobalt-primary/40 bg-cobalt-primary/15 px-3 py-1.5 text-sm font-medium text-cobalt-primary hover:bg-cobalt-primary/25 disabled:opacity-50"
         >
-          <Settings size={14} />
-          Alert Rules
+          Evaluate now
         </button>
       </div>
 
-      {/* Filter tabs */}
-      <div className="flex gap-1 rounded-lg bg-surface-900 p-1">
-        {filterTabs.map((tab) => {
-          const count =
-            tab.key === 'all'
-              ? activeAlerts.length
-              : tab.key === 'unread'
-                ? unreadCount
-                : readCount
-          return (
-            <button
-              key={tab.key}
-              onClick={() => setFilter(tab.key)}
-              className={cn(
-                'rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
-                filter === tab.key
-                  ? 'bg-cobalt-primary text-white'
-                  : 'text-text-muted hover:text-text-primary'
-              )}
-            >
-              {tab.label}
-              <span
-                className={cn(
-                  'ml-1.5 rounded-full px-1.5 py-0.5 text-[10px] font-semibold',
-                  filter === tab.key
-                    ? 'bg-white/20 text-white'
-                    : 'bg-surface-700 text-text-muted'
-                )}
-              >
-                {count}
-              </span>
-            </button>
-          )
-        })}
-      </div>
-
-      {isLoading ? (
-        <div className="flex h-64 items-center justify-center">
-          <span className="text-sm text-text-muted">Loading alerts...</span>
-        </div>
-      ) : filtered.length === 0 ? (
-        <div className="flex h-64 flex-col items-center justify-center gap-2">
-          <span className="text-sm text-text-muted">
-            {filter === 'unread'
-              ? 'No unread alerts'
-              : filter === 'read'
-                ? 'No read alerts'
-                : 'No active alerts'}
-          </span>
-          <p className="text-xs text-text-muted">
-            {filter === 'all'
-              ? 'All shipments are on track.'
-              : filter === 'unread'
-                ? 'All alerts have been reviewed.'
-                : 'No alerts have been marked as read yet.'}
-          </p>
-        </div>
-      ) : (
-        <div className="space-y-8">
-          <div ref={criticalRef}>
-            <AlertSection severity="CRITICAL" alerts={critical} />
+      {GROUPS.map((sev) => {
+        const items = alerts.filter((a) => a.severity === sev)
+        if (!items.length) return null
+        return (
+          <div key={sev}>
+            <div className="mb-2 flex items-center gap-2">
+              <Badge variant="severity" value={sev} />
+              <span className="text-sm text-text-muted">{items.length}</span>
+            </div>
+            <Card padding={false}>
+              {items.map((a) => (
+                <div
+                  key={a.id}
+                  className="flex items-center justify-between border-b border-border/50 px-5 py-3 last:border-0"
+                >
+                  <div className="flex items-center gap-3">
+                    <span className="font-mono text-xs text-text-muted">{a.ruleId}</span>
+                    <span className="text-sm text-text-primary">{a.message}</span>
+                    {a.bookingId && (
+                      <Link to={`/bookings/${a.bookingId}`} className="text-xs text-cobalt-primary hover:underline">
+                        booking →
+                      </Link>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => dismiss.mutate(a.id)}
+                    className="text-xs text-text-muted hover:text-text-primary"
+                  >
+                    Dismiss
+                  </button>
+                </div>
+              ))}
+            </Card>
           </div>
-          <AlertSection severity="WARNING" alerts={warning} />
-          <AlertSection severity="INFO" alerts={info} />
-        </div>
+        )
+      })}
+
+      {!alerts.length && (
+        <Card>
+          <div className="text-sm text-text-muted">No active alerts. Click "Evaluate now" to run the Pillar-4 rules.</div>
+        </Card>
       )}
     </div>
   )
