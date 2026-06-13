@@ -137,6 +137,24 @@ async function main() {
     { shipmentId: leg2.id, milestoneType: 'BOOKING_SENT', occurredAt: new Date('2026-02-05T00:00:00Z'), senderType: 'forwarder' },
   ])
 
+  // ---- an at-risk sea booking to exercise the alert evaluator (cut-off long past, no Final B/L) ----
+  const [atRisk] = await db
+    .insert(schema.bookings)
+    .values({ jobNo: 'JOB-2026-0009', customerId: newlob.id, forwarderId: fwd[0].id, brand: 'SKIM' })
+    .returning()
+  const [atRiskLeg] = await db
+    .insert(schema.shipments)
+    .values({
+      bookingId: atRisk.id, legNo: 1, mode: 'SEA', state: 'CONFIRMED', legStatus: 'ACTIVE',
+      soNo: 'SO-RISK-1', bookingNo: 'BKG-RISK-1', cfsCutoff: new Date('2026-02-20T00:00:00Z'),
+      polId: port('CNYTN')?.id, podId: port('USLAX')?.id, etd: new Date('2026-02-25T00:00:00Z'),
+    })
+    .returning()
+  await db.insert(schema.shipmentMilestones).values([
+    { shipmentId: atRiskLeg.id, milestoneType: 'BOOKING_SENT', occurredAt: new Date('2026-02-10T00:00:00Z'), senderType: 'forwarder' },
+    { shipmentId: atRiskLeg.id, milestoneType: 'SO_RECEIVED', occurredAt: new Date('2026-02-12T00:00:00Z'), senderType: 'forwarder' },
+  ])
+
   // ---- Pillar-4 alert rules (thresholds in hours; A2/A3 compute in vessel TZ; A3 locked) ----
   await db.insert(schema.alertRules).values([
     { id: 'A1', name: 'No SO after Booking', description: 'No SO within 48h of Booking Request', state: 'BOOKED', triggerType: 'days_after', triggerReference: 'booking_request', watchFor: 'so', thresholdHours: 48, severity: 'WARNING', computeTz: 'server' },
