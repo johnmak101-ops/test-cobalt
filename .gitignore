@@ -23,3 +23,9 @@ build
 # OS
 .DS_Store
 Thumbs.db
+
+# Documents — client materials, real shipping emails, VM specs (confidential / bulky binaries)
+/docs/
+
+# Logs
+pave.log

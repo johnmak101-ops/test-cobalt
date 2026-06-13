@@ -1,270 +1,195 @@
-# Plan: Redesign Order Details UI — Full End-to-End Implementation
+# Plan: Microsoft Graph API Email Integration — Remaining Work
 
-## Overview
+## Status
 
-Add all 20 order detail fields to the database schema, API, seed data, and redesign the UI to display them in a well-organized layout. Keep the existing Key Dates card and add a comprehensive Order Details card below it.
+**Backend: COMPLETE.** All backend files have been created/modified:
+- `backend/src/db/schema.ts` — `emailIntegrations` table added
+- `backend/src/db/local.ts` — `CREATE TABLE IF NOT EXISTS email_integrations` added
+- `backend/src/services/graph-mail.ts` — OAuth2 client credentials + Graph API fetch/transform
+- `backend/src/services/email-sync.ts` — Sync orchestrator (fetch → dedup → pipeline)
+- `backend/src/routes/email-integrations.ts` — GET/PUT config, POST test, POST sync
+- `backend/src/app.ts` — Router registered
+- `backend/src/index.ts` — Background 5-min sync interval added
 
-**Target fields (20 total):**
-| # | Field | Current DB? | New? |
-|---|---|---|---|
-| 1 | Email Date | No (receivedAt on email) | Shown from email |
-| 2 | Customer Code | Yes (customer.code) | Wire to UI |
-| 3 | Vendor Code | Partial (vendorId on PO) | Add to shipment |
-| 4 | Item No./Style No. | No | New column |
-| 5 | Booking No. | No | New column |
-| 6 | Cargo Ready Date | Yes (crd) | Already shown |
-| 7 | Forwarder Name | Yes (forwarder.name) | Already shown |
-| 8 | Consignee Name | No | New column |
-| 9 | Consignee Address | No | New column |
-| 10 | Customer PO | Yes (poNumbers) | Already shown |
-| 11 | SO# | No | New column |
-| 12 | Warehouse Start Date | No | New column |
-| 13 | Warehouse End Date | No | New column |
-| 14 | HBL/AWB/FCR No. | Yes (hblNumber) | Rename label |
-| 15 | MBL | No | New column |
-| 16 | ETD | Yes | Already shown |
-| 17 | ATD | Yes (actualDeparture) | Already shown |
-| 18 | ETA | Yes | Already shown |
-| 19 | In DC Date | No | New column |
-| 20 | Container No. | No | New column |
+**Frontend: NOT STARTED.** Two files remain:
+1. `frontend/src/hooks/use-email-integrations.ts` — React Query hooks
+2. `frontend/src/pages/SettingsPage.tsx` — Email Integration tab + component
+
+**Migrations & Type Check: NOT STARTED.**
 
 ---
 
-## Phase 1 — Database Schema
+## Step 1: Create `frontend/src/hooks/use-email-integrations.ts`
 
-**File:** `backend/src/db/schema.ts`
+React Query hooks for the 4 API endpoints:
 
-Add these 10 new columns to the `shipments` table:
+```ts
+// GET /api/email-integrations
+useEmailIntegration() → { config: EmailIntegrationConfig | null }
 
-| Column | Type | Notes |
-|---|---|---|
-| `itemStyleNo` | `text` | Item No./Style No. |
-| `bookingNo` | `text` | Booking number |
-| `soNumber` | `text` | SO# (Shipping Order number) |
-| `consigneeName` | `text` | Consignee name |
-| `consigneeAddress` | `text` | Consignee address |
-| `mblNumber` | `text` | MBL (Master Bill of Lading) |
-| `containerNo` | `text` | Container number |
-| `warehouseStartDate` | `integer (timestamp)` | Warehouse start date |
-| `warehouseEndDate` | `integer (timestamp)` | Warehouse end date |
-| `inDcDate` | `integer (timestamp)` | In DC (distribution center) date |
+// PUT /api/email-integrations
+useSaveEmailIntegration() → mutation
 
-Also add `vendorId` to the `shipments` table as a foreign key to `vendors`.
+// POST /api/email-integrations/test
+useTestEmailConnection() → mutation
 
----
-
-## Phase 2 — Local DB Schema
-
-**File:** `backend/src/db/local.ts`
-
-Add the new columns to the `CREATE TABLE shipments` SQL statement:
-
-```sql
-vendor_id TEXT REFERENCES vendors(id),
-item_style_no TEXT,
-booking_no TEXT,
-so_number TEXT,
-consignee_name TEXT,
-consignee_address TEXT,
-mbl_number TEXT,
-container_no TEXT,
-warehouse_start_date INTEGER,
-warehouse_end_date INTEGER,
-in_dc_date INTEGER,
+// POST /api/email-integrations/sync
+useSyncEmails() → mutation
 ```
 
-Also add `quantity_shipped` and `quantity_unit` columns to the local.ts `CREATE TABLE shipments` if they're missing.
-
----
-
-## Phase 3 — Drizzle Migration
-
-Run `npx drizzle-kit generate` in the `backend/` directory after schema changes. This creates a new SQL migration file in `backend/drizzle/`.
-
----
-
-## Phase 4 — Seed Data
-
-**File:** `backend/src/db/seed.ts`
-
-Update each seeded shipment with sample values for the new fields. Examples:
-- ship-001: `bookingNo: 'BK-2026-001'`, `soNumber: 'SO-NLOB-001'`, `consigneeName: 'New Lobster Logistics'`, etc.
-- ship-002: `bookingNo: 'BK-2026-002'`, `soNumber: 'SO-SKIM-002'`, etc.
-- Each shipment gets realistic sample data for all new fields.
-
----
-
-## Phase 5 — API Routes
-
-**File:** `backend/src/routes/shipments.ts`
-
-1. **GET /shipments/:id** — Add vendor lookup and include `vendorCode` in the response. Already includes `customer.code`. Also join vendor info:
-   ```ts
-   const vendor = shipment.vendorId
-     ? await db.select().from(vendors).where(eq(vendors.id, shipment.vendorId)).get()
-     : null
-   ```
-   Add to response: `vendor: vendor ? { id: vendor.id, name: vendor.name, code: vendor.location } : null`
-   (Note: vendors table doesn't have a `code` column, so we'll use `location` or add a `code` column)
-
-2. **POST /shipments** — Add new fields to insert values
-3. **PATCH /shipments/:id** — Add new fields to updateable fields
-
-**Add `code` column to vendors table:**
-- `backend/src/db/schema.ts`: Add `code: text('code')` to vendors table
-- `backend/src/db/local.ts`: Add `code TEXT` to vendors CREATE TABLE
-- Update seed data with vendor codes
-
----
-
-## Phase 6 — AI Extractor
-
-**File:** `backend/src/services/extractor.ts`
-
-Add new fields to `ExtractedData` interface and extraction prompt:
-- `booking_no`
-- `so_number`
-- `item_style_no`
-- `consignee_name`
-- `consignee_address`
-- `mbl_number`
-- `container_no`
-- `warehouse_start_date`
-- `warehouse_end_date`
-- `in_dc_date`
-
-Update the SYSTEM_PROMPT to describe these fields and update EXTRACTION_PROMPT JSON format.
-
----
-
-## Phase 7 — Pipeline Mapper
-
-**File:** `backend/src/services/pipeline.ts`
-
-Update the shipment update block (around line 222) to map new extracted fields to shipment columns:
+Interface:
 ```ts
-if (extractedData.booking_no) updates.bookingNo = extractedData.booking_no
-if (extractedData.so_number) updates.soNumber = extractedData.so_number
-if (extractedData.item_style_no) updates.itemStyleNo = extractedData.item_style_no
-if (extractedData.consignee_name) updates.consigneeName = extractedData.consignee_name
-if (extractedData.consignee_address) updates.consigneeAddress = extractedData.consignee_address
-if (extractedData.mbl_number) updates.mblNumber = extractedData.mbl_number
-if (extractedData.container_no) updates.containerNo = extractedData.container_no
-if (extractedData.warehouse_start_date) updates.warehouseStartDate = new Date(extractedData.warehouse_start_date)
-if (extractedData.warehouse_end_date) updates.warehouseEndDate = new Date(extractedData.warehouse_end_date)
-if (extractedData.in_dc_date) updates.inDcDate = new Date(extractedData.in_dc_date)
-```
-
----
-
-## Phase 8 — Frontend: Shipment Type Update
-
-**File:** `frontend/src/hooks/use-shipments.ts`
-
-Add new fields to `Shipment` and `ShipmentDetail` interfaces:
-```ts
-interface Shipment {
-  // ... existing fields ...
-  vendorId: string | null
-  itemStyleNo: string | null
-  bookingNo: string | null
-  soNumber: string | null
-  consigneeName: string | null
-  consigneeAddress: string | null
-  mblNumber: string | null
-  containerNo: string | null
-  warehouseStartDate: string | null
-  warehouseEndDate: string | null
-  inDcDate: string | null
-  vendor?: { id: string; name: string; code: string } | null
+interface EmailIntegrationConfig {
+  id: string
+  tenantId: string
+  clientId: string
+  clientSecret: string    // masked on GET (••••••••xxxx)
+  _secretMasked: boolean
+  mailboxEmail: string | null
+  isActive: boolean
+  lastSyncAt: string | null
+  lastSyncStatus: 'SUCCESS' | 'PARTIAL' | 'FAILED' | null
+  lastSyncError: string | null
+  lastSyncCount: number
+  createdAt: string
+  updatedAt: string
 }
 ```
 
 ---
 
-## Phase 9 — Frontend UI: ShipmentDetailPage Redesign
+## Step 2: Add "Email Integration" tab to `SettingsPage.tsx`
 
-**File:** `frontend/src/pages/ShipmentDetailPage.tsx`
+### 2a. Update nav items
 
-### 9a. Create helper components
-
-```tsx
-function DetailSection({ title, icon, children }) {
-  return (
-    <div>
-      <div className="mb-3 flex items-center gap-1.5">
-        {icon}
-        <span className="text-[11px] font-semibold uppercase tracking-wider text-text-muted">
-          {title}
-        </span>
-      </div>
-      <div className="space-y-2.5">{children}</div>
-    </div>
-  )
-}
-
-function DetailRow({ label, value }: { label: string; value: string | null | undefined }) {
-  return (
-    <div className="flex items-center justify-between gap-4">
-      <span className="text-xs text-text-muted">{label}</span>
-      <span className="font-mono text-sm text-text-primary text-right">
-        {value ?? <span className="italic text-text-muted">(pending)</span>}
-      </span>
-    </div>
-  )
-}
-```
-
-### 9b. Replace "Extracted Data" card with "Order Details" card
-
-Replace the current flat Extracted Data card (lines ~91-115) with a 4-section layout:
-
-**Section 1 — Order Info:** Customer Code, Vendor Code, Customer PO, Email Date
-**Section 2 — Cargo & Logistics:** Booking No., SO#, Item/Style No., Qty, Container No.
-**Section 3 — Shipping:** Forwarder, Consignee Name, Consignee Address, HBL/AWB/FCR No., MBL
-**Section 4 — Key Dates:** Cargo Ready Date, WH Start Date, WH End Date, ETD, ATD, ETA, In DC Date
-
-The existing Key Dates card stays above as a quick-reference timeline.
-
----
-
-## Phase 10 — Frontend UI: ReviewQueuePage Extracted Data
-
-**File:** `frontend/src/pages/ReviewQueuePage.tsx`
-
-Replace the raw `Object.entries(extractedData)` with a structured display:
-
-1. Define a `FIELD_LABELS` map (e.g., `hbl_number → "HBL/AWB/FCR No."`)
-2. Define `FIELD_SECTIONS` grouping fields into logical sections
-3. Render each section with a header and labeled rows
-4. Dates get formatted using `formatDate()`
-
----
-
-## Phase 11 — History Tracking
-
-**File:** `backend/src/types/index.ts`
-
-Add new fields to `HistoryField` union type:
+Add a new nav item:
 ```ts
-'booking_no' | 'so_number' | 'consignee_name' | 'consignee_address' |
-'mbl_number' | 'container_no' | 'warehouse_start_date' | 'warehouse_end_date' | 'in_dc_date'
+{ to: '/settings/email', label: 'Email Integration', end: false }
 ```
 
-**File:** `backend/src/services/history.ts`
+### 2b. Add route detection
 
-Update `trackShipmentUpdate()` to handle the new fields.
+```ts
+const isEmailSettings = location.pathname.includes('/settings/email')
+```
+
+### 2c. Create `EmailIntegrationSettings` component
+
+Layout matches existing design patterns (Card components, similar input styling as AlertRulesSettings and VendorsSettings):
+
+```
+┌──────────────────────────────────────────────────────┐
+│  Microsoft 365 Email Connection                       │
+│  Connect to your shared mailbox to automatically     │
+│  import shipping emails into Cobalt Track.           │
+├──────────────────────────────────────────────────────┤
+│                                                      │
+│  ┌─ Connection Status ────────────────────────────┐  │
+│  │ ● Connected     Last sync: 2 minutes ago      │  │
+│  │   12 emails synced                              │  │
+│  │ OR                                              │  │
+│  │ ● Not connected  Click "Test Connection"       │  │
+│  └─────────────────────────────────────────────────┘  │
+│                                                      │
+│  Azure AD / Entra ID Credentials                    │
+│  ┌────────────────────────────────────────────────┐  │
+│  │ Tenant ID      [________________________]      │  │
+│  │ Client ID      [________________________]      │  │
+│  │ Client Secret  [••••••••xxxx] (masked)        │  │
+│  └────────────────────────────────────────────────┘  │
+│                                                      │
+│  Mailbox                                             │
+│  ┌────────────────────────────────────────────────┐  │
+│  │ Email Address  [________________________]      │  │
+│  │                Auto-filled on test connection  │  │
+│  └────────────────────────────────────────────────┘  │
+│                                                      │
+│  ┌────────────────────────────────────────────────┐  │
+│  │ Auto-sync     [////]  ON                       │  │
+│  │               Polls every 5 minutes when on    │  │
+│  └────────────────────────────────────────────────┘  │
+│                                                      │
+│  [ Test Connection ]  [ Sync Now ]  [ Save ]        │
+│                                                      │
+│  ┌─ ▶ Setup Guide ───────────────────────────────┐  │
+│  │ 1. Go to Azure Portal > App Registrations      │  │
+│  │ 2. Register a new application                  │  │
+│  │ 3. Grant Mail.Read (Application) permission    │  │
+│  │ 4. Create a client secret                       │  │
+│  │ 5. Copy Tenant ID, Client ID, and Secret      │  │
+│  │ 6. Enter above and click "Test Connection"     │  │
+│  └────────────────────────────────────────────────┘  │
+└──────────────────────────────────────────────────────┘
+```
+
+Features:
+- **Status card**: Green/red dot indicator, last sync time (relative), email count, error message if FAILED
+- **Credential fields**: Tenant ID, Client ID, Client Secret (masked on load, editable to change — if user types a new value it overwrites; if they leave the masked value, it keeps the existing)
+- **Mailbox email**: Input field, auto-populated after "Test Connection" fills it on the backend
+- **Auto-sync toggle**: `isActive` field, shows "Polls every 5 minutes when on"
+- **Test Connection**: Calls `POST /api/email-integrations/test`, shows success/error, then refetches config (which may have updated `mailboxEmail`)
+- **Sync Now**: Calls `POST /api/email-integrations/sync`, shows result count
+- **Save**: `PUT /api/email-integrations`, then invalidates query
+- **Setup Guide**: Collapsible accordion with step-by-step instructions
+
+### 2d. Add the route in App.tsx
+
+The Settings page uses nested routing via `location.pathname` checks instead of React Router routes, so we just need the nav + conditional rendering — no route change needed in `App.tsx`.
 
 ---
 
-## Verification
+## Step 3: Run Drizzle migration
 
-1. Delete `db.sqlite` and restart the backend to re-seed with new columns
-2. Run `npx drizzle-kit generate` in `backend/` directory to create migration
-3. Run `npx tsc --noEmit` to check for type errors
-4. Navigate to `/shipments/ship-001` and verify:
-   - Key Dates card still shows original dates
-   - New Order Details card appears with 4 sections and all 20 fields
-   - Fields with seed data display values; empty fields show "(pending)"
-5. Navigate to Review Queue and expand an email — verify structured extracted data sections
-6. Check responsive layout (sections stack on mobile, 2-column on desktop)
+```bash
+cd backend && npx drizzle-kit generate
+```
+
+This generates a migration SQL file for the `email_integrations` table.
+
+---
+
+## Step 4: TypeScript type check
+
+```bash
+cd backend && npx tsc --noEmit
+cd frontend && npx tsc --noEmit
+```
+
+Fix any type errors that arise.
+
+---
+
+## Step 5: Verify end-to-end
+
+1. Start backend: `cd backend && pnpm dev`
+2. Start frontend: `cd frontend && pnpm dev`
+3. Navigate to Settings → Email Integration tab
+4. Fill in credentials, click "Test Connection"
+5. Click "Save", then "Sync Now"
+6. Check that emails appear in the Inbox page
+
+---
+
+## Files to Create
+
+| File | Purpose |
+|------|---------|
+| `frontend/src/hooks/use-email-integrations.ts` | React Query hooks for email integration API |
+
+## Files to Modify
+
+| File | Change |
+|------|--------|
+| `frontend/src/pages/SettingsPage.tsx` | Add Email Integration tab nav item + `EmailIntegrationSettings` component |
+
+## Files Already Created/Modified (Done)
+
+| File | Change |
+|------|--------|
+| `backend/src/db/schema.ts` | Added `emailIntegrations` table |
+| `backend/src/db/local.ts` | Added `CREATE TABLE IF NOT EXISTS email_integrations` |
+| `backend/src/services/graph-mail.ts` | New: Graph API client (token + fetch + transform) |
+| `backend/src/services/email-sync.ts` | New: Sync orchestrator (fetch → dedup → pipeline) |
+| `backend/src/routes/email-integrations.ts` | New: API routes for config, test, sync |
+| `backend/src/app.ts` | Registered email-integrations router |
+| `backend/src/index.ts` | Added background sync interval |
