@@ -1,11 +1,13 @@
 import { Controller, Get, Inject } from '@nestjs/common'
 import { sql } from 'drizzle-orm'
 import { DRIZZLE, type DrizzleDB } from '../db/drizzle.provider'
+import { Public } from '../auth/decorators'
 
 @Controller('health')
 export class HealthController {
   constructor(@Inject(DRIZZLE) private readonly db: DrizzleDB) {}
 
+  @Public()
   @Get()
   async health() {
     let dbUp = false

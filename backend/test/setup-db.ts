@@ -11,6 +11,7 @@ import { FieldLockRepository } from '../src/db/repositories/field-lock.repositor
 import { AuditRepository } from '../src/db/repositories/audit.repository'
 import { AlertRepository } from '../src/db/repositories/alert.repository'
 import { EvidenceRepository } from '../src/db/repositories/evidence.repository'
+import { UsersRepository } from '../src/db/repositories/users.repository'
 
 const ADMIN_URL = process.env.TEST_ADMIN_URL ?? 'postgres://postgres:postgres@localhost:5432/postgres'
 const TEST_URL = process.env.TEST_DATABASE_URL ?? 'postgres://postgres:postgres@localhost:5432/cobalt_test'
@@ -46,7 +47,7 @@ export async function resetDb(db: TestDB) {
     tracking.field_locks, tracking.forwarder_aliases, tracking.consignees,
     tracking.forwarders, tracking.vendors, tracking.customers, tracking.ports,
     audit.change_log, evidence.parsed_record, queue.queue_message,
-    alerts.alerts, alerts.alert_rules
+    alerts.alerts, alerts.alert_rules, tracking.users, tracking.refresh_tokens
     restart identity cascade`)
 }
 
@@ -67,5 +68,6 @@ export function repos(db: TestDB) {
     audit: new AuditRepository(db),
     alert: new AlertRepository(db),
     evidence: new EvidenceRepository(db),
+    users: new UsersRepository(db),
   }
 }

@@ -8,6 +8,7 @@
 import { Pool } from 'pg'
 import { drizzle } from 'drizzle-orm/node-postgres'
 import { eq, sql } from 'drizzle-orm'
+import bcrypt from 'bcryptjs'
 import * as schema from '@cobalt/contracts'
 
 const DATABASE_URL = process.env.DATABASE_URL ?? 'postgres://postgres:postgres@localhost:5432/cobalt'
@@ -20,7 +21,8 @@ async function main() {
     tracking.shipment_pos, tracking.shipment_milestones, tracking.shipments,
     tracking.booking_pos, tracking.bookings, tracking.purchase_orders,
     tracking.field_locks, tracking.forwarder_aliases, tracking.consignees,
-    tracking.forwarders, tracking.vendors, tracking.customers, tracking.ports
+    tracking.forwarders, tracking.vendors, tracking.customers, tracking.ports,
+    tracking.users, tracking.refresh_tokens
     restart identity cascade`)
   await db.execute(sql`truncate table alerts.alerts, alerts.alert_rules restart identity cascade`)
 
@@ -163,6 +165,14 @@ async function main() {
     { id: 'A4', name: 'Telex after departure', description: 'Telex not received within 5d of departure', state: 'SAILED', triggerType: 'days_after', triggerReference: 'departure', watchFor: 'telex', thresholdHours: 120, severity: 'WARNING', computeTz: 'server' },
     { id: 'A5', name: 'Warehouse aging', description: 'AT_WAREHOUSE >14d with no SAILED', state: 'AT_WAREHOUSE', triggerType: 'days_after', triggerReference: 'warehouse_in', watchFor: 'sailed', thresholdHours: 336, severity: 'WARNING', computeTz: 'server' },
     { id: 'A6', name: 'Invoice missing', description: 'Final B/L issued but invoice missing >7d', state: 'RELEASED', triggerType: 'days_after', triggerReference: 'final_bl', watchFor: 'invoice', thresholdHours: 168, severity: 'WARNING', computeTz: 'server' },
+  ])
+
+  // ---- auth users (dev: every password is 'cobalt') ----
+  const pw = await bcrypt.hash('cobalt', 10)
+  await db.insert(schema.users).values([
+    { email: 'viewer@cobalt.hk', name: 'Vera Viewer', passwordHash: pw, role: 'VIEWER', avatarInitials: 'VV' },
+    { email: 'editor@cobalt.hk', name: 'Eddie Editor', passwordHash: pw, role: 'EDITOR', avatarInitials: 'EE' },
+    { email: 'admin@cobalt.hk', name: 'Amon Admin', passwordHash: pw, role: 'ADMIN', avatarInitials: 'AA' },
   ])
 
   // eslint-disable-next-line no-console

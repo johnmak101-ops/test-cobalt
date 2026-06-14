@@ -8,12 +8,14 @@ import { ShipmentsModule } from './shipments/shipments.module'
 import { ReconcileModule } from './reconcile/reconcile.module'
 import { AlertsModule } from './alerts/alerts.module'
 import { RepositoriesModule } from './db/repositories.module'
+import { AuthModule } from './auth/auth.module'
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
     DrizzleModule,
     RepositoriesModule,
+    AuthModule,
     HealthModule,
     MastersModule,
     BookingsModule,
