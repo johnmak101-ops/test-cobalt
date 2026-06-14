@@ -7,6 +7,7 @@ const quick = [
   { email: 'viewer@cobalt.hk', role: 'Viewer' },
   { email: 'editor@cobalt.hk', role: 'Editor' },
   { email: 'admin@cobalt.hk', role: 'Admin' },
+  { email: 'super@cobalt.hk', role: 'Super' },
 ]
 
 export default function LoginPage() {

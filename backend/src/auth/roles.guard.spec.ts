@@ -14,15 +14,24 @@ const guardWith = (required: string[] | undefined) => {
   return new RolesGuard(reflector)
 }
 
-describe('RolesGuard', () => {
+describe('RolesGuard (rank-based hierarchy)', () => {
   it('allows any authenticated user when no @Roles is set', () => {
     expect(guardWith(undefined).canActivate(ctx({ role: 'VIEWER' }))).toBe(true)
   })
-  it('allows when the user role is in the required set', () => {
-    expect(guardWith(['EDITOR', 'ADMIN']).canActivate(ctx({ role: 'EDITOR' }))).toBe(true)
+  it('allows the exact required role', () => {
+    expect(guardWith(['EDITOR']).canActivate(ctx({ role: 'EDITOR' }))).toBe(true)
   })
-  it('forbids when the user role is not in the required set', () => {
-    expect(() => guardWith(['EDITOR', 'ADMIN']).canActivate(ctx({ role: 'VIEWER' }))).toThrow()
+  it('allows a HIGHER role than required (admin on an editor route)', () => {
+    expect(guardWith(['EDITOR', 'ADMIN']).canActivate(ctx({ role: 'ADMIN' }))).toBe(true)
+  })
+  it('allows SUPERADMIN on an ADMIN route', () => {
+    expect(guardWith(['ADMIN']).canActivate(ctx({ role: 'SUPERADMIN' }))).toBe(true)
+  })
+  it('forbids a LOWER role (admin on a superadmin route)', () => {
+    expect(() => guardWith(['SUPERADMIN']).canActivate(ctx({ role: 'ADMIN' }))).toThrow()
+  })
+  it('forbids viewer on an editor route', () => {
+    expect(() => guardWith(['EDITOR']).canActivate(ctx({ role: 'VIEWER' }))).toThrow()
   })
   it('forbids when there is no user', () => {
     expect(() => guardWith(['ADMIN']).canActivate(ctx(undefined))).toThrow()

@@ -173,6 +173,7 @@ async function main() {
     { email: 'viewer@cobalt.hk', name: 'Vera Viewer', passwordHash: pw, role: 'VIEWER', avatarInitials: 'VV' },
     { email: 'editor@cobalt.hk', name: 'Eddie Editor', passwordHash: pw, role: 'EDITOR', avatarInitials: 'EE' },
     { email: 'admin@cobalt.hk', name: 'Amon Admin', passwordHash: pw, role: 'ADMIN', avatarInitials: 'AA' },
+    { email: 'super@cobalt.hk', name: 'Sue Super', passwordHash: pw, role: 'SUPERADMIN', avatarInitials: 'SS' },
   ])
 
   // eslint-disable-next-line no-console

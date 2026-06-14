@@ -19,7 +19,7 @@ export const QTY_UNIT = ['cartons', 'pieces', 'cbm'] as const
 export const VENDOR_TYPE = ['factory', 'subcontractor', 'agent'] as const
 export const FORWARDER_ALIAS_TYPE = ['name', 'domain', 'chinese_name'] as const
 export const PORT_MODE = ['sea', 'air', 'both'] as const
-export const USER_ROLE = ['VIEWER', 'EDITOR', 'ADMIN'] as const
+export const USER_ROLE = ['VIEWER', 'EDITOR', 'ADMIN', 'SUPERADMIN'] as const
 
 // ---- Milestones (event log) ----
 export const MILESTONE_TYPE = [

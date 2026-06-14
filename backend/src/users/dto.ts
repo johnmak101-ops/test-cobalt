@@ -1,6 +1,6 @@
 import { IsBoolean, IsEmail, IsIn, IsOptional, IsString, MinLength } from 'class-validator'
 
-const ROLES = ['VIEWER', 'EDITOR', 'ADMIN']
+const ROLES = ['VIEWER', 'EDITOR', 'ADMIN', 'SUPERADMIN']
 
 export class CreateUserDto {
   @IsEmail()

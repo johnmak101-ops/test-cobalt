@@ -1,9 +1,14 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post } from '@nestjs/common'
 import { UsersService } from './users.service'
 import { CreateUserDto, UpdateUserDto } from './dto'
-import { Roles } from '../auth/decorators'
+import { Roles, CurrentUser } from '../auth/decorators'
+import type { AuthUser } from '../auth/auth.service'
 
-/** ADMIN-only user administration. */
+/**
+ * User administration.
+ *   list / update — ADMIN or higher
+ *   create / delete — SUPERADMIN only
+ */
 @Roles('ADMIN')
 @Controller('users')
 export class UsersController {
@@ -12,13 +17,18 @@ export class UsersController {
   @Get() list() {
     return this.users.list()
   }
+
+  @Roles('SUPERADMIN')
   @Post() create(@Body() dto: CreateUserDto) {
     return this.users.create(dto)
   }
-  @Patch(':id') update(@Param('id') id: string, @Body() dto: UpdateUserDto) {
-    return this.users.update(id, dto)
+
+  @Patch(':id') update(@Param('id') id: string, @Body() dto: UpdateUserDto, @CurrentUser() actor: AuthUser) {
+    return this.users.update(id, dto, actor.role)
   }
-  @Delete(':id') remove(@Param('id') id: string) {
-    return this.users.remove(id)
+
+  @Roles('SUPERADMIN')
+  @Delete(':id') remove(@Param('id') id: string, @CurrentUser() actor: AuthUser) {
+    return this.users.remove(id, actor.id)
   }
 }
