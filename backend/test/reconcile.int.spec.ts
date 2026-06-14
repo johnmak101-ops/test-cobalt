@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest'
 import * as schema from '@cobalt/contracts'
-import { getTestDb, resetDb, closeTestDb, type TestDB } from './setup-db'
+import { getTestDb, resetDb, closeTestDb, repos, type TestDB } from './setup-db'
 import { CommitterService } from '../src/reconcile/committer.service'
 import { ReconcileService } from '../src/reconcile/reconcile.service'
 
@@ -10,7 +10,9 @@ let reconcile: ReconcileService
 beforeAll(async () => {
   const t = await getTestDb()
   db = t.db
-  reconcile = new ReconcileService(db, new CommitterService(db))
+  const r = repos(db)
+  const committer = new CommitterService(r.masters, r.booking, r.shipment, r.fieldLock, r.audit)
+  reconcile = new ReconcileService(r.evidence, committer)
 })
 afterAll(closeTestDb)
 beforeEach(() => resetDb(db))

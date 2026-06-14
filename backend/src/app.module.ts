@@ -7,11 +7,13 @@ import { BookingsModule } from './bookings/bookings.module'
 import { ShipmentsModule } from './shipments/shipments.module'
 import { ReconcileModule } from './reconcile/reconcile.module'
 import { AlertsModule } from './alerts/alerts.module'
+import { RepositoriesModule } from './db/repositories.module'
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
     DrizzleModule,
+    RepositoriesModule,
     HealthModule,
     MastersModule,
     BookingsModule,

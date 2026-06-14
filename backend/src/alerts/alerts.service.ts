@@ -1,21 +1,16 @@
-import { Inject, Injectable, NotFoundException } from '@nestjs/common'
-import { desc, eq } from 'drizzle-orm'
-import * as schema from '@cobalt/contracts'
-import { DRIZZLE, type DrizzleDB } from '../db/drizzle.provider'
+import { Injectable, NotFoundException } from '@nestjs/common'
+import { AlertRepository } from '../db/repositories/alert.repository'
 
 @Injectable()
 export class AlertsService {
-  constructor(@Inject(DRIZZLE) private readonly db: DrizzleDB) {}
+  constructor(private readonly repo: AlertRepository) {}
 
   list(status?: string) {
-    const where = status ? eq(schema.alertInstances.status, status as never) : undefined
-    return this.db.select().from(schema.alertInstances).where(where).orderBy(desc(schema.alertInstances.firedAt))
+    return this.repo.list(status)
   }
-
   rules() {
-    return this.db.select().from(schema.alertRules).orderBy(schema.alertRules.id)
+    return this.repo.allRules()
   }
-
   dismiss(id: string) {
     return this.setStatus(id, 'DISMISSED', { dismissedAt: new Date() })
   }
@@ -27,11 +22,7 @@ export class AlertsService {
   }
 
   private async setStatus(id: string, status: string, extra: Record<string, unknown>) {
-    const [row] = await this.db
-      .update(schema.alertInstances)
-      .set({ status: status as never, ...extra })
-      .where(eq(schema.alertInstances.id, id))
-      .returning()
+    const row = await this.repo.setStatus(id, status, extra)
     if (!row) throw new NotFoundException(`alert ${id} not found`)
     return row
   }

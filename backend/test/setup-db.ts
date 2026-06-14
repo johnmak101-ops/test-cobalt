@@ -4,6 +4,13 @@ import { sql } from 'drizzle-orm'
 import * as schema from '@cobalt/contracts'
 import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
+import { MastersRepository } from '../src/db/repositories/masters.repository'
+import { BookingRepository } from '../src/db/repositories/booking.repository'
+import { ShipmentRepository } from '../src/db/repositories/shipment.repository'
+import { FieldLockRepository } from '../src/db/repositories/field-lock.repository'
+import { AuditRepository } from '../src/db/repositories/audit.repository'
+import { AlertRepository } from '../src/db/repositories/alert.repository'
+import { EvidenceRepository } from '../src/db/repositories/evidence.repository'
 
 const ADMIN_URL = process.env.TEST_ADMIN_URL ?? 'postgres://postgres:postgres@localhost:5432/postgres'
 const TEST_URL = process.env.TEST_DATABASE_URL ?? 'postgres://postgres:postgres@localhost:5432/cobalt_test'
@@ -47,5 +54,18 @@ export async function closeTestDb() {
   if (pool) {
     await pool.end()
     pool = null
+  }
+}
+
+/** Construct all repositories over a test db (specs build services from these). */
+export function repos(db: TestDB) {
+  return {
+    masters: new MastersRepository(db),
+    booking: new BookingRepository(db),
+    shipment: new ShipmentRepository(db),
+    fieldLock: new FieldLockRepository(db),
+    audit: new AuditRepository(db),
+    alert: new AlertRepository(db),
+    evidence: new EvidenceRepository(db),
   }
 }

@@ -1,22 +1,16 @@
-import { Inject, Injectable, NotFoundException } from '@nestjs/common'
-import { eq } from 'drizzle-orm'
-import * as schema from '@cobalt/contracts'
-import { DRIZZLE, type DrizzleDB } from '../db/drizzle.provider'
+import { Injectable, NotFoundException } from '@nestjs/common'
+import { ShipmentRepository } from '../db/repositories/shipment.repository'
 
 @Injectable()
 export class ShipmentsService {
-  constructor(@Inject(DRIZZLE) private readonly db: DrizzleDB) {}
+  constructor(private readonly shipments: ShipmentRepository) {}
 
   /** A single leg with its milestones + PO split. */
   async getOne(id: string) {
-    const [ship] = await this.db.select().from(schema.shipments).where(eq(schema.shipments.id, id))
+    const ship = await this.shipments.findById(id)
     if (!ship) throw new NotFoundException(`shipment ${id} not found`)
-    const milestones = await this.db
-      .select()
-      .from(schema.shipmentMilestones)
-      .where(eq(schema.shipmentMilestones.shipmentId, id))
-      .orderBy(schema.shipmentMilestones.occurredAt)
-    const pos = await this.db.select().from(schema.shipmentPos).where(eq(schema.shipmentPos.shipmentId, id))
+    const milestones = await this.shipments.milestonesFor(id)
+    const pos = await this.shipments.posFor(id)
     return { ...ship, milestones, pos }
   }
 }

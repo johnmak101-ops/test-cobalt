@@ -1,9 +1,12 @@
-import { Inject, Injectable } from '@nestjs/common'
-import { eq, ilike, sql } from 'drizzle-orm'
-import * as schema from '@cobalt/contracts'
-import { DRIZZLE, type DrizzleDB } from '../db/drizzle.provider'
+import { Injectable } from '@nestjs/common'
+import type * as schema from '@cobalt/contracts'
 import { keysOverlap, strongKeys, normKey, str, num, date } from './match-keys'
 import { deriveState, MILESTONE_OF, normMode } from './state'
+import { MastersRepository } from '../db/repositories/masters.repository'
+import { BookingRepository } from '../db/repositories/booking.repository'
+import { ShipmentRepository } from '../db/repositories/shipment.repository'
+import { FieldLockRepository } from '../db/repositories/field-lock.repository'
+import { AuditRepository } from '../db/repositories/audit.repository'
 
 /** One reconciled shipment picture, ready to commit. */
 export interface ReconGroup {
@@ -31,23 +34,29 @@ export interface CommitResult {
 /**
  * Deterministic committer: applies a reconciled group to the tracking truth.
  * Safety invariants live HERE (tested code), not in the LLM: field-locks (human-wins),
- * audit on every change, idempotency (find-or-update a leg by its match_keys bag).
+ * audit on every change, idempotency (find-or-update a leg by its match_keys + PO consistency).
+ * All DB access is delegated to repositories.
  */
 @Injectable()
 export class CommitterService {
-  constructor(@Inject(DRIZZLE) private readonly db: DrizzleDB) {}
+  constructor(
+    private readonly masters: MastersRepository,
+    private readonly bookings: BookingRepository,
+    private readonly shipments: ShipmentRepository,
+    private readonly fieldLocks: FieldLockRepository,
+    private readonly audit: AuditRepository,
+  ) {}
 
   async apply(g: ReconGroup): Promise<CommitResult> {
     const f = g.fields
     const gk = strongKeys(g.matchKeys)
 
-    // resolve masters (best-effort; leave null when unknown)
     const [customerId, vendorId, forwarderId, polId, podId] = await Promise.all([
-      this.customerId(f.customer_code),
-      this.vendorId(f.vendor_code),
-      this.forwarderId(f.forwarder_name),
-      this.portId(f.poi),
-      this.portId(f.pod),
+      this.resolveCustomer(f.customer_code),
+      this.resolveVendor(f.vendor_code),
+      this.resolveForwarder(f.forwarder_name),
+      this.resolvePort(f.poi),
+      this.resolvePort(f.pod),
     ])
 
     const emailTypes = new Set(g.emailTypes)
@@ -77,16 +86,13 @@ export class CommitterService {
       matchKeys: g.matchKeys,
     }
 
-    // matching / idempotency: a leg matches only if it shares a strong key AND is PO-consistent
-    // (its booking shares a PO with this group) — guards against rotating-ID false positives.
+    // matching / idempotency: a leg matches only if it shares a strong key AND is PO-consistent.
     const groupPos = new Set(g.pos.map((p) => normKey(p)).filter(Boolean))
-    const legs = await this.db.select().from(schema.shipments)
+    const legs = await this.shipments.allLegs()
     let existing: (typeof legs)[number] | undefined
     for (const l of legs) {
       if (!keysOverlap(strongKeys(l.matchKeys as Record<string, unknown>), gk)) continue
-      const bkPos = await this.bookingPoNumbers(l.bookingId)
-      // if the candidate booking has POs, this group MUST share one (a weak PO-less group
-      // never attaches to an established booking on a rotating-ID collision alone)
+      const bkPos = new Set((await this.bookings.poNumbersFor(l.bookingId)).map((p) => normKey(p)).filter(Boolean))
       if (bkPos.size && !setsOverlap(groupPos, bkPos)) continue
       existing = l
       break
@@ -102,88 +108,65 @@ export class CommitterService {
       bookingId = existing.bookingId
       shipmentId = existing.id
       action = 'amend_fields'
-      const [bk] = await this.db.select().from(schema.bookings).where(eq(schema.bookings.id, bookingId))
+      const bk = await this.bookings.findById(bookingId)
       jobNo = bk?.jobNo ?? '(unknown)'
-      await this.applyFields('shipment', shipmentId, existing as Record<string, unknown>, legValues, skippedLockedFields)
-      // fill booking parent fields that were empty
+      await this.applyFields(shipmentId, existing as Record<string, unknown>, legValues, skippedLockedFields, g)
       await this.fillBooking(bookingId, { customerId, vendorId, forwarderId, crd: date(f.cargo_ready_date) })
     } else {
       jobNo = await this.nextJobNo()
-      const [booking] = await this.db
-        .insert(schema.bookings)
-        .values({ jobNo, customerId, vendorId, forwarderId, crd: date(f.cargo_ready_date) })
-        .returning()
+      const booking = await this.bookings.create({ jobNo, customerId, vendorId, forwarderId, crd: date(f.cargo_ready_date) })
       bookingId = booking.id
-      const [leg] = await this.db
-        .insert(schema.shipments)
-        .values({ bookingId, legNo: 1, legStatus: 'ACTIVE', ...(legValues as object) })
-        .returning()
+      const leg = await this.shipments.insertLeg({ bookingId, legNo: 1, legStatus: 'ACTIVE', ...(legValues as object) })
       shipmentId = leg.id
       action = 'create_booking'
-      await this.audit('booking', bookingId, 'create', null, jobNo, g)
-      await this.audit('shipment', shipmentId, 'create', null, state, g)
+      await this.writeAudit('booking', bookingId, 'create', null, jobNo, g)
+      await this.writeAudit('shipment', shipmentId, 'create', null, state, g)
     }
 
-    // link POs (union) at booking + leg level
     for (const poNo of g.pos) {
-      const poId = await this.upsertPo(poNo, customerId, vendorId)
-      await this.db.insert(schema.bookingPos).values({ bookingId, poId }).onConflictDoNothing()
-      await this.db
-        .insert(schema.shipmentPos)
-        .values({ shipmentId, poId, quantity: num(f.qty), quantityUnit: 'pieces' })
-        .onConflictDoNothing()
+      const poId = await this.bookings.upsertPo(poNo, customerId, vendorId)
+      await this.bookings.linkPo(bookingId, poId)
+      await this.shipments.linkPo(shipmentId, poId, num(f.qty), 'pieces')
     }
 
     await this.syncMilestones(shipmentId, g)
     return { action, jobNo, bookingId, shipmentId, state, conflicts: g.conflicts, skippedLockedFields }
   }
 
-  // ---- field-lock-aware update + audit ----
+  /** Update a leg field-by-field, skipping human-locked fields and auditing each change. */
   private async applyFields(
-    entityType: 'booking' | 'shipment',
-    entityId: string,
+    shipmentId: string,
     current: Record<string, unknown>,
     next: Record<string, unknown>,
     skipped: string[],
+    g: ReconGroup,
   ) {
-    const locks = await this.db
-      .select()
-      .from(schema.fieldLocks)
-      .where(eq(schema.fieldLocks.entityId, entityId))
-    const locked = new Set(locks.filter((l) => l.entityType === entityType).map((l) => l.field))
-
+    const locks = await this.fieldLocks.forEntity(shipmentId)
+    const locked = new Set(locks.filter((l) => l.entityType === 'shipment').map((l) => l.field))
     const patch: Record<string, unknown> = {}
     for (const [k, v] of Object.entries(next)) {
-      if (v == null) continue // never blank out an existing value
+      if (v == null) continue
       if (locked.has(k)) {
-        if (!same(current[k], v)) skipped.push(k) // human-wins: agent must not overwrite
+        if (!same(current[k], v)) skipped.push(k)
         continue
       }
       if (!same(current[k], v)) {
         patch[k] = v
-        await this.audit(entityType, entityId, 'update', toStr(current[k]), toStr(v), undefined, k)
+        await this.writeAudit('shipment', shipmentId, 'update', toStr(current[k]), toStr(v), g, k)
       }
     }
-    if (Object.keys(patch).length) {
-      patch.updatedAt = new Date()
-      await this.db.update(schema.shipments).set(patch).where(eq(schema.shipments.id, entityId))
-    }
+    if (Object.keys(patch).length) await this.shipments.updateLeg(shipmentId, patch)
   }
 
   private async fillBooking(bookingId: string, vals: Record<string, unknown>) {
-    const [bk] = await this.db.select().from(schema.bookings).where(eq(schema.bookings.id, bookingId))
+    const bk = await this.bookings.findById(bookingId)
     if (!bk) return
     const patch: Record<string, unknown> = {}
     for (const [k, v] of Object.entries(vals)) if (v != null && (bk as Record<string, unknown>)[k] == null) patch[k] = v
-    if (Object.keys(patch).length) {
-      patch.updatedAt = new Date()
-      await this.db.update(schema.bookings).set(patch).where(eq(schema.bookings.id, bookingId))
-    }
+    if (Object.keys(patch).length) await this.bookings.update(bookingId, patch)
   }
 
-  // ---- milestones (idempotent: replace the leg's set from the email events) ----
   private async syncMilestones(shipmentId: string, g: ReconGroup) {
-    await this.db.delete(schema.shipmentMilestones).where(eq(schema.shipmentMilestones.shipmentId, shipmentId))
     const seen = new Set<string>()
     const rows: (typeof schema.shipmentMilestones.$inferInsert)[] = []
     for (const ev of [...g.events].sort((a, b) => a.receivedAt.localeCompare(b.receivedAt))) {
@@ -197,20 +180,19 @@ export class CommitterService {
         senderType: 'forwarder',
       })
     }
-    if (rows.length) await this.db.insert(schema.shipmentMilestones).values(rows)
+    await this.shipments.replaceMilestones(shipmentId, rows)
   }
 
-  // ---- audit ----
-  private async audit(
+  private writeAudit(
     entityType: string,
     entityId: string,
     changeType: 'create' | 'update',
     oldValue: string | null,
     newValue: string | null,
-    g?: ReconGroup,
+    g: ReconGroup,
     field?: string,
   ) {
-    await this.db.insert(schema.changeLog).values({
+    return this.audit.write({
       entityType: entityType as never,
       entityId,
       field: field ?? null,
@@ -218,66 +200,28 @@ export class CommitterService {
       newValue,
       changeType: changeType as never,
       sourceType: 'agent',
-      sourceId: g?.evidenceIds[0] ?? null,
+      sourceId: g.evidenceIds[0] ?? null,
     })
   }
 
-  // ---- resolvers ----
-  private async customerId(code: unknown) {
+  private resolveCustomer(code: unknown) {
     const c = str(code)
-    if (!c) return null
-    const [r] = await this.db.select().from(schema.customers).where(eq(schema.customers.code, c.toUpperCase()))
-    return r?.id ?? null
+    return c ? this.masters.customerIdByCode(c) : Promise.resolve(null)
   }
-  private async vendorId(code: unknown) {
+  private resolveVendor(code: unknown) {
     const c = str(code)
-    if (!c) return null
-    const [r] = await this.db.select().from(schema.vendors).where(eq(schema.vendors.code, c.toUpperCase()))
-    return r?.id ?? null
+    return c ? this.masters.vendorIdByCode(c) : Promise.resolve(null)
   }
-  private async forwarderId(name: unknown) {
+  private resolveForwarder(name: unknown) {
     const n = str(name)
-    if (!n) return null
-    const [r] = await this.db.select().from(schema.forwarders).where(ilike(schema.forwarders.name, `%${n}%`))
-    if (r) return r.id
-    const [a] = await this.db
-      .select()
-      .from(schema.forwarderAliases)
-      .where(ilike(schema.forwarderAliases.value, `%${n}%`))
-    return a?.forwarderId ?? null
+    return n ? this.masters.forwarderIdByName(n) : Promise.resolve(null)
   }
-  private async portId(code: unknown) {
+  private resolvePort(code: unknown) {
     const c = str(code)
-    if (!c) return null
-    const [byCode] = await this.db.select().from(schema.ports).where(eq(schema.ports.unlocode, c.toUpperCase()))
-    if (byCode) return byCode.id
-    const [byName] = await this.db.select().from(schema.ports).where(ilike(schema.ports.name, `%${c}%`))
-    return byName?.id ?? null
-  }
-  private async upsertPo(poNo: string, customerId: string | null, vendorId: string | null) {
-    const [existing] = await this.db
-      .select()
-      .from(schema.purchaseOrders)
-      .where(eq(schema.purchaseOrders.poNumber, poNo))
-    if (existing) return existing.id
-    const [created] = await this.db
-      .insert(schema.purchaseOrders)
-      .values({ poNumber: poNo, customerId, vendorId })
-      .returning()
-    return created.id
+    return c ? this.masters.portIdByCodeOrName(c) : Promise.resolve(null)
   }
   private async nextJobNo(): Promise<string> {
-    const [{ n }] = await this.db.select({ n: sql<number>`count(*)::int` }).from(schema.bookings)
-    return `JOB-2026-${String(n + 1).padStart(4, '0')}`
-  }
-
-  private async bookingPoNumbers(bookingId: string): Promise<Set<string>> {
-    const rows = await this.db
-      .select({ poNumber: schema.purchaseOrders.poNumber })
-      .from(schema.bookingPos)
-      .innerJoin(schema.purchaseOrders, eq(schema.bookingPos.poId, schema.purchaseOrders.id))
-      .where(eq(schema.bookingPos.bookingId, bookingId))
-    return new Set(rows.map((r) => normKey(r.poNumber)).filter(Boolean))
+    return `JOB-2026-${String((await this.bookings.count()) + 1).padStart(4, '0')}`
   }
 }
 

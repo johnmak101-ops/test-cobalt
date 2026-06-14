@@ -1,24 +1,23 @@
-import { Inject, Injectable } from '@nestjs/common'
-import * as schema from '@cobalt/contracts'
-import { DRIZZLE, type DrizzleDB } from '../db/drizzle.provider'
+import { Injectable } from '@nestjs/common'
+import { MastersRepository } from '../db/repositories/masters.repository'
 
 @Injectable()
 export class MastersService {
-  constructor(@Inject(DRIZZLE) private readonly db: DrizzleDB) {}
+  constructor(private readonly repo: MastersRepository) {}
 
   customers() {
-    return this.db.select().from(schema.customers).orderBy(schema.customers.name)
+    return this.repo.listCustomers()
   }
   vendors() {
-    return this.db.select().from(schema.vendors).orderBy(schema.vendors.name)
+    return this.repo.listVendors()
   }
   forwarders() {
-    return this.db.select().from(schema.forwarders).orderBy(schema.forwarders.name)
+    return this.repo.listForwarders()
   }
   ports() {
-    return this.db.select().from(schema.ports).orderBy(schema.ports.unlocode)
+    return this.repo.listPorts()
   }
   consignees() {
-    return this.db.select().from(schema.consignees).orderBy(schema.consignees.name)
+    return this.repo.listConsignees()
   }
 }

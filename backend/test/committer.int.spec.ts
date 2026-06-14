@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest'
 import { eq } from 'drizzle-orm'
 import * as schema from '@cobalt/contracts'
-import { getTestDb, resetDb, closeTestDb, type TestDB } from './setup-db'
+import { getTestDb, resetDb, closeTestDb, repos, type TestDB } from './setup-db'
 import { CommitterService, type ReconGroup } from '../src/reconcile/committer.service'
 
 let db: TestDB
@@ -23,7 +23,8 @@ const group = (over: Partial<ReconGroup> = {}): ReconGroup => ({
 beforeAll(async () => {
   const t = await getTestDb()
   db = t.db
-  committer = new CommitterService(db)
+  const r = repos(db)
+  committer = new CommitterService(r.masters, r.booking, r.shipment, r.fieldLock, r.audit)
 })
 afterAll(closeTestDb)
 beforeEach(() => resetDb(db))

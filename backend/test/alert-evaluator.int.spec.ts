@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest'
 import * as schema from '@cobalt/contracts'
-import { getTestDb, resetDb, closeTestDb, type TestDB } from './setup-db'
+import { getTestDb, resetDb, closeTestDb, repos, type TestDB } from './setup-db'
 import { AlertEvaluatorService } from '../src/alerts/alert-evaluator.service'
 
 let db: TestDB
@@ -9,7 +9,8 @@ let evaluator: AlertEvaluatorService
 beforeAll(async () => {
   const t = await getTestDb()
   db = t.db
-  evaluator = new AlertEvaluatorService(db)
+  const r = repos(db)
+  evaluator = new AlertEvaluatorService(r.alert, r.shipment)
 })
 afterAll(closeTestDb)
 beforeEach(() => resetDb(db))

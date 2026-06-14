@@ -1,42 +1,32 @@
-import { Inject, Injectable, NotFoundException } from '@nestjs/common'
-import { desc, eq } from 'drizzle-orm'
-import * as schema from '@cobalt/contracts'
-import { DRIZZLE, type DrizzleDB } from '../db/drizzle.provider'
+import { Injectable, NotFoundException } from '@nestjs/common'
+import { BookingRepository } from '../db/repositories/booking.repository'
+import { ShipmentRepository } from '../db/repositories/shipment.repository'
 
 @Injectable()
 export class BookingsService {
-  constructor(@Inject(DRIZZLE) private readonly db: DrizzleDB) {}
+  constructor(
+    private readonly bookings: BookingRepository,
+    private readonly shipments: ShipmentRepository,
+  ) {}
 
-  /** List bookings with their leg count + active mode, newest first. */
+  /** List bookings with their leg count + active mode/state, newest first. */
   async list() {
-    const rows = await this.db.select().from(schema.bookings).orderBy(desc(schema.bookings.createdAt))
+    const rows = await this.bookings.listOrdered()
     return Promise.all(
       rows.map(async (b) => {
-        const legs = await this.db.select().from(schema.shipments).where(eq(schema.shipments.bookingId, b.id))
+        const legs = await this.shipments.legsForBooking(b.id)
         const active = legs.find((l) => l.legStatus === 'ACTIVE') ?? legs[legs.length - 1]
         return { ...b, legCount: legs.length, activeMode: active?.mode ?? null, activeState: active?.state ?? null }
       }),
     )
   }
 
-  /** A booking with its POs and all legs (superseded + active) under it. */
+  /** A booking with its POs and all legs under it. */
   async getOne(id: string) {
-    const [booking] = await this.db.select().from(schema.bookings).where(eq(schema.bookings.id, id))
+    const booking = await this.bookings.findById(id)
     if (!booking) throw new NotFoundException(`booking ${id} not found`)
-    const legs = await this.db
-      .select()
-      .from(schema.shipments)
-      .where(eq(schema.shipments.bookingId, id))
-      .orderBy(schema.shipments.legNo)
-    const poLinks = await this.db.select().from(schema.bookingPos).where(eq(schema.bookingPos.bookingId, id))
-    const pos = (
-      await Promise.all(
-        poLinks.map(async (link) => {
-          const [po] = await this.db.select().from(schema.purchaseOrders).where(eq(schema.purchaseOrders.id, link.poId))
-          return po
-        }),
-      )
-    ).filter(Boolean)
+    const legs = await this.shipments.legsForBooking(id)
+    const pos = await this.bookings.posFor(id)
     return { ...booking, pos, legs }
   }
 }
