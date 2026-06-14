@@ -150,6 +150,9 @@ export const shipments = tracking.table('shipments', {
   // score vs the threshold; provisional legs are excluded from alerts until a human confirms.
   reviewStatus: text('review_status', { enum: REVIEW_STATUS }).notNull().default('confirmed'),
   confidence: integer('confidence'), // 0-100, the Critic's per-shipment score (null until scored)
+  reviewReasons: jsonb('review_reasons').$type<string[]>(), // why the Critic flagged it (conflicts/notes)
+  reviewedBy: uuid('reviewed_by').references(() => users.id), // human who confirmed/corrected it
+  reviewedAt: timestamp('reviewed_at', { withTimezone: true }),
   confirmedByEmail: boolean('confirmed_by_email').notNull().default(false), // operator-first, email confirms later
   forwarderId: uuid('forwarder_id').references(() => forwarders.id),
   consigneeId: uuid('consignee_id').references(() => consignees.id),

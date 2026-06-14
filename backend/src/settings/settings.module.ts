@@ -1,9 +1,10 @@
 import { Module } from '@nestjs/common'
 import { SettingsService } from './settings.service'
+import { SettingsController } from './settings.controller'
 
-/** SettingsRepository comes from the global RepositoriesModule; the admin config controller (Phase E)
- *  will be added here later. */
+/** SettingsRepository comes from the global RepositoriesModule. */
 @Module({
+  controllers: [SettingsController],
   providers: [SettingsService],
   exports: [SettingsService],
 })

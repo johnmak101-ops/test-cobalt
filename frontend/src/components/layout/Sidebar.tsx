@@ -3,7 +3,7 @@ import { useUIStore } from '../../store'
 import { useAuth } from '../../hooks/use-auth'
 import { cn } from '../../lib/utils'
 import { CobaltLogo } from '../ui/CobaltLogo'
-import { LayoutDashboard, Package, AlertTriangle, Users, PanelLeftClose, PanelLeftOpen } from 'lucide-react'
+import { LayoutDashboard, Package, AlertTriangle, ClipboardCheck, Settings, Users, PanelLeftClose, PanelLeftOpen } from 'lucide-react'
 
 const baseNav = [
   { to: '/', icon: LayoutDashboard, label: 'Dashboard', end: true },
@@ -11,11 +11,18 @@ const baseNav = [
   { to: '/alerts', icon: AlertTriangle, label: 'Alerts', end: false },
 ]
 
+const RANK: Record<string, number> = { VIEWER: 0, EDITOR: 1, ADMIN: 2, SUPERADMIN: 3 }
+
 export function Sidebar() {
   const { sidebarCollapsed, toggleSidebar } = useUIStore()
   const { user } = useAuth()
-  const navItems =
-    user?.role === 'SUPERADMIN' ? [...baseNav, { to: '/users', icon: Users, label: 'Users', end: false }] : baseNav
+  const rank = RANK[user?.role ?? ''] ?? -1
+  const navItems = [
+    ...baseNav,
+    ...(rank >= 1 ? [{ to: '/review', icon: ClipboardCheck, label: 'Review', end: false }] : []),
+    ...(rank >= 2 ? [{ to: '/settings', icon: Settings, label: 'Settings', end: false }] : []),
+    ...(rank >= 3 ? [{ to: '/users', icon: Users, label: 'Users', end: false }] : []),
+  ]
 
   return (
     <aside

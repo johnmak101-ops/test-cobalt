@@ -21,6 +21,14 @@ export class ShipmentRepository {
       .from(schema.shipments)
       .where(and(eq(schema.shipments.legStatus, 'ACTIVE'), eq(schema.shipments.reviewStatus, 'confirmed')))
   }
+  /** Provisional legs awaiting human review (lowest confidence first). */
+  provisionalLegs() {
+    return this.db
+      .select()
+      .from(schema.shipments)
+      .where(eq(schema.shipments.reviewStatus, 'provisional'))
+      .orderBy(schema.shipments.confidence)
+  }
   legsForBooking(bookingId: string) {
     return this.db.select().from(schema.shipments).where(eq(schema.shipments.bookingId, bookingId)).orderBy(schema.shipments.legNo)
   }

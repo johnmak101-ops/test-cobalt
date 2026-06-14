@@ -8,6 +8,7 @@ import { ShipmentsModule } from './shipments/shipments.module'
 import { PosModule } from './pos/pos.module'
 import { ReconcileModule } from './reconcile/reconcile.module'
 import { DecisionsModule } from './decisions/decisions.module'
+import { ReviewModule } from './review/review.module'
 import { SettingsModule } from './settings/settings.module'
 import { AlertsModule } from './alerts/alerts.module'
 import { RepositoriesModule } from './db/repositories.module'
@@ -28,6 +29,7 @@ import { UsersModule } from './users/users.module'
     PosModule,
     ReconcileModule,
     DecisionsModule,
+    ReviewModule,
     SettingsModule,
     AlertsModule,
   ],

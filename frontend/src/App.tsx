@@ -8,6 +8,8 @@ import DashboardPage from './pages/DashboardPage'
 import BookingsPage from './pages/BookingsPage'
 import BookingDetailPage from './pages/BookingDetailPage'
 import AlertsPage from './pages/AlertsPage'
+import ReviewPage from './pages/ReviewPage'
+import SettingsPage from './pages/SettingsPage'
 import UsersPage from './pages/UsersPage'
 
 const queryClient = new QueryClient({
@@ -45,6 +47,8 @@ function App() {
               <Route path="/bookings" element={<BookingsPage />} />
               <Route path="/bookings/:id" element={<BookingDetailPage />} />
               <Route path="/alerts" element={<AlertsPage />} />
+              <Route path="/review" element={<ReviewPage />} />
+              <Route path="/settings" element={<SettingsPage />} />
               <Route path="/users" element={<UsersPage />} />
             </Route>
           </Routes>

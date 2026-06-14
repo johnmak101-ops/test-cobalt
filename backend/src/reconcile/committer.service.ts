@@ -117,12 +117,25 @@ export class CommitterService {
       await this.applyFields(shipmentId, existing as Record<string, unknown>, legValues, skippedLockedFields, g)
       await this.fillBooking(bookingId, { customerId, vendorId, forwarderId, crd: date(f.cargo_ready_date) })
       // review gate is metadata, not a lockable field — always reflect the latest agent score
-      if (g.reviewStatus !== undefined) await this.shipments.updateLeg(shipmentId, { reviewStatus: g.reviewStatus, confidence: g.confidence ?? null })
+      if (g.reviewStatus !== undefined)
+        await this.shipments.updateLeg(shipmentId, {
+          reviewStatus: g.reviewStatus,
+          confidence: g.confidence ?? null,
+          reviewReasons: g.conflicts.length ? g.conflicts : null,
+        })
     } else {
       jobNo = await this.nextJobNo()
       const booking = await this.bookings.create({ jobNo, customerId, vendorId, forwarderId, crd: date(f.cargo_ready_date) })
       bookingId = booking.id
-      const leg = await this.shipments.insertLeg({ bookingId, legNo: 1, legStatus: 'ACTIVE', ...(legValues as object), reviewStatus: g.reviewStatus ?? 'confirmed', confidence: g.confidence ?? null })
+      const leg = await this.shipments.insertLeg({
+        bookingId,
+        legNo: 1,
+        legStatus: 'ACTIVE',
+        ...(legValues as object),
+        reviewStatus: g.reviewStatus ?? 'confirmed',
+        confidence: g.confidence ?? null,
+        reviewReasons: g.reviewStatus !== undefined && g.conflicts.length ? g.conflicts : null,
+      })
       shipmentId = leg.id
       action = 'create_booking'
       await this.writeAudit('booking', bookingId, 'create', null, jobNo, g)
