@@ -1,11 +1,13 @@
 import { useState } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
-import { ArrowLeft } from 'lucide-react'
+import { ArrowLeft, Mail } from 'lucide-react'
 import { useReviewQueue, useConfirmReview, useCorrectReview, type ReviewItem } from '../hooks/use-review'
+import { useShipment } from '../hooks/use-shipments'
 import { useAuth } from '../hooks/use-auth'
 import { Card } from '../components/ui/Card'
 import { ConflictReason } from '../components/ConflictReason'
-import { modeLabel, stateLabel } from '../lib/utils'
+import { ViewOriginalModal } from '../components/ViewOriginalModal'
+import { modeLabel, stateLabel, formatDate } from '../lib/utils'
 
 const EDITABLE: { key: keyof ReviewItem; label: string; type?: 'date' | 'number' }[] = [
   { key: 'soNo', label: 'SO #' },
@@ -23,6 +25,18 @@ const EDITABLE: { key: keyof ReviewItem; label: string; type?: 'date' | 'number'
   { key: 'qty', label: 'Qty', type: 'number' },
 ]
 
+const MS_LABELS: Record<string, string> = {
+  BOOKING_SENT: 'Booking', SO_RECEIVED: 'SO', AT_WAREHOUSE: 'At warehouse', DRAFT_BL_RECEIVED: 'Draft B/L',
+  FINAL_BL_RECEIVED: 'Final B/L', TELEX_RELEASED: 'Telex', INVOICE_RECEIVED: 'Invoice', DELIVERED: 'Delivered',
+}
+
+interface Milestone {
+  emailMessageId?: string | null
+  milestoneType: string
+  occurredAt: string
+  senderType?: string | null
+}
+
 const toInput = (v: unknown, type?: string) => (v == null ? '' : type === 'date' ? String(v).slice(0, 10) : String(v))
 const confColor = (c: number | null) =>
   c == null ? 'text-text-muted' : c < 40 ? 'text-status-critical' : c < 70 ? 'text-status-warning' : 'text-status-success'
@@ -32,12 +46,14 @@ export default function ReviewDetailPage() {
   const navigate = useNavigate()
   const { user } = useAuth()
   const { data: items = [], isLoading } = useReviewQueue()
+  const { data: ship } = useShipment(id)
   const confirm = useConfirmReview()
   const correct = useCorrectReview()
   const it = items.find((x) => x.id === id)
 
   const [vals, setVals] = useState<Record<string, string> | null>(null)
   const [reason, setReason] = useState('')
+  const [openEmail, setOpenEmail] = useState<string | null>(null)
 
   const back = (
     <Link to="/review-queue" className="inline-flex items-center gap-1 text-sm text-text-muted hover:text-text-primary">
@@ -74,6 +90,16 @@ export default function ReviewDetailPage() {
 
   const conflicts = [...new Set(it.reviewReasons ?? [])]
 
+  // distinct source emails, from the leg's milestones (each carries the source emailMessageId)
+  const milestones = ((ship as { milestones?: Milestone[] } | undefined)?.milestones ?? []) as Milestone[]
+  const seen = new Set<string>()
+  const sourceEmails = milestones.flatMap((m) => {
+    if (!m.emailMessageId || seen.has(m.emailMessageId)) return []
+    seen.add(m.emailMessageId)
+    const label = m.emailMessageId.startsWith('mock:') ? m.emailMessageId.slice(5) : m.emailMessageId
+    return [{ id: m.emailMessageId, label, type: m.milestoneType, at: m.occurredAt, sender: m.senderType ?? null }]
+  })
+
   return (
     <div className="space-y-6">
       {back}
@@ -97,6 +123,28 @@ export default function ReviewDetailPage() {
           <ul className="list-inside list-disc space-y-0.5 text-sm text-status-warning">
             {conflicts.map((r, i) => (
               <li key={i}><ConflictReason reason={r} /></li>
+            ))}
+          </ul>
+        </Card>
+      ) : null}
+
+      {sourceEmails.length ? (
+        <Card>
+          <h2 className="mb-1 font-semibold">Source emails</h2>
+          <p className="mb-3 text-xs text-text-muted">The emails this shipment was built from — open one to confirm a value against the original.</p>
+          <ul className="divide-y divide-border/50">
+            {sourceEmails.map((e) => (
+              <li key={e.id} className="flex items-center justify-between gap-3 py-2">
+                <div className="min-w-0">
+                  <div className="truncate text-sm text-text-primary" title={e.label}>{e.label}</div>
+                  <div className="text-xs text-text-muted">
+                    {MS_LABELS[e.type] ?? e.type} · {formatDate(e.at)}{e.sender ? ` · ${e.sender}` : ''}
+                  </div>
+                </div>
+                <button onClick={() => setOpenEmail(e.id)} className="btn btn-ghost shrink-0 inline-flex items-center gap-1">
+                  <Mail size={13} /> View
+                </button>
+              </li>
             ))}
           </ul>
         </Card>
@@ -138,6 +186,8 @@ export default function ReviewDetailPage() {
           </div>
         </div>
       </Card>
+
+      {openEmail && <ViewOriginalModal messageId={openEmail} onClose={() => setOpenEmail(null)} />}
     </div>
   )
 }

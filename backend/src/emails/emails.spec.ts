@@ -1,8 +1,10 @@
 import { describe, it, expect } from 'vitest'
 import { EmailsService } from './emails.service'
 import { mapGraphMessage, type GraphService } from './graph.service'
+import type { EmailRepository } from '../db/repositories/email.repository'
 
-const svc = (graph: Partial<GraphService>) => new EmailsService(graph as GraphService)
+const svc = (graph: Partial<GraphService>, email: Partial<EmailRepository> = { findIngested: async () => null }) =>
+  new EmailsService(graph as GraphService, email as EmailRepository)
 
 describe('mapGraphMessage', () => {
   it('maps a Graph message resource to the DTO', () => {
@@ -62,5 +64,29 @@ describe('EmailsService.getOriginal', () => {
   it('treats an empty id as unconfigured', async () => {
     const r = await svc({ configured: () => true }).getOriginal('')
     expect(r.available).toBe(false)
+  })
+
+  it('returns the actual email when it is ingested in the shared queue', async () => {
+    const r = await svc(
+      { configured: () => false },
+      {
+        findIngested: async () => ({
+          subject: 'SO# FEL-GZ-OSA-2842 booking',
+          sender: 'elaine.fung@fairate.com',
+          receivedAt: new Date('2026-01-22T16:46:00Z'),
+          bodyText: 'Please find the booking…',
+          sourceFile: 'booking.msg',
+          attachmentCount: 1,
+        }),
+      },
+    ).getOriginal('mock:booking.msg')
+    expect(r).toMatchObject({
+      available: true,
+      source: 'corpus',
+      subject: 'SO# FEL-GZ-OSA-2842 booking',
+      from: 'elaine.fung@fairate.com',
+      hasAttachments: true,
+    })
+    expect(r.bodyPreview).toContain('Please find')
   })
 })
