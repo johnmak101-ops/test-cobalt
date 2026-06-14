@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { useReviewQueue, useConfirmReview, useCorrectReview, type ReviewItem } from '../hooks/use-review'
 import { useAuth } from '../hooks/use-auth'
 import { Card } from '../components/ui/Card'
+import { ConflictReason } from '../components/ConflictReason'
 import { modeLabel, stateLabel } from '../lib/utils'
 
 const EDITABLE: { key: keyof ReviewItem; label: string; date?: boolean }[] = [
@@ -73,8 +74,8 @@ export default function ReviewPage() {
               </div>
               {it.reviewReasons?.length ? (
                 <ul className="mt-1 list-inside list-disc text-xs text-status-warning">
-                  {it.reviewReasons.map((r, i) => (
-                    <li key={i}>{r}</li>
+                  {[...new Set(it.reviewReasons)].map((r, i) => (
+                    <li key={i}><ConflictReason reason={r} /></li>
                   ))}
                 </ul>
               ) : null}

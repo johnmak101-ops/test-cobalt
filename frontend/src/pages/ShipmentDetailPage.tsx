@@ -4,6 +4,7 @@ import { useShipment } from '../hooks/use-shipments'
 import { Card } from '../components/ui/Card'
 import { Badge } from '../components/ui/Badge'
 import { MilestoneTimeline } from '../components/MilestoneTimeline'
+import { ConflictReason } from '../components/ConflictReason'
 import { formatDate, modeLabel } from '../lib/utils'
 
 interface LinkedPO {
@@ -78,8 +79,8 @@ export default function ShipmentDetailPage() {
         <Card>
           <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-text-muted">Flagged for review</div>
           <ul className="list-inside list-disc text-sm text-status-warning">
-            {s.reviewReasons.map((r, i) => (
-              <li key={i}>{r}</li>
+            {[...new Set(s.reviewReasons)].map((r, i) => (
+              <li key={i}><ConflictReason reason={r} /></li>
             ))}
           </ul>
         </Card>
