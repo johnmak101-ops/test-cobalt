@@ -12,6 +12,7 @@ import {
   ClipboardCheck,
   AlertTriangle,
   Settings,
+  Database,
   Users,
   PanelLeftClose,
   PanelLeftOpen,
@@ -35,6 +36,7 @@ const navItems: NavItem[] = [
   { to: '/review-queue', icon: ClipboardCheck, label: 'Review Queue', minRank: 1, badge: 'review' },
   { to: '/alerts', icon: AlertTriangle, label: 'Alerts', minRank: 0, badge: 'alerts' },
   { to: '/settings', icon: Settings, label: 'Settings', minRank: 2 },
+  { to: '/masters', icon: Database, label: 'Master Data', minRank: 2 },
   { to: '/users', icon: Users, label: 'Users', minRank: 3 },
 ]
 

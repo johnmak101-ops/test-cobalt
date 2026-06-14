@@ -44,4 +44,44 @@ export class MastersRepository {
     const [byName] = await this.db.select().from(schema.ports).where(ilike(schema.ports.name, `%${code}%`))
     return byName?.id ?? null
   }
+
+  // --- writes (Ops-maintained masters: forwarders / ports / consignees) ---
+  async createForwarder(v: { code: string | null; name: string }) {
+    const [r] = await this.db.insert(schema.forwarders).values(v).returning()
+    return r
+  }
+  async updateForwarder(id: string, patch: Record<string, unknown>) {
+    const [r] = await this.db
+      .update(schema.forwarders)
+      .set({ ...patch, updatedAt: new Date() })
+      .where(eq(schema.forwarders.id, id))
+      .returning()
+    return r ?? null
+  }
+
+  async createPort(v: { unlocode: string; name: string; country: string | null; mode: string }) {
+    const [r] = await this.db
+      .insert(schema.ports)
+      .values({ unlocode: v.unlocode, name: v.name, country: v.country, mode: v.mode as 'sea' | 'air' })
+      .returning()
+    return r
+  }
+  async updatePort(id: string, patch: Record<string, unknown>) {
+    // ports has no updatedAt column
+    const [r] = await this.db.update(schema.ports).set(patch).where(eq(schema.ports.id, id)).returning()
+    return r ?? null
+  }
+
+  async createConsignee(v: { name: string; address: string | null; mapsToCustomerId: string | null }) {
+    const [r] = await this.db.insert(schema.consignees).values(v).returning()
+    return r
+  }
+  async updateConsignee(id: string, patch: Record<string, unknown>) {
+    const [r] = await this.db
+      .update(schema.consignees)
+      .set({ ...patch, updatedAt: new Date() })
+      .where(eq(schema.consignees.id, id))
+      .returning()
+    return r ?? null
+  }
 }

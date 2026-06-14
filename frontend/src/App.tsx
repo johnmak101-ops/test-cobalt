@@ -13,6 +13,7 @@ import BookingDetailPage from './pages/BookingDetailPage'
 import AlertsPage from './pages/AlertsPage'
 import ReviewPage from './pages/ReviewPage'
 import SettingsPage from './pages/SettingsPage'
+import MastersPage from './pages/MastersPage'
 import UsersPage from './pages/UsersPage'
 
 const queryClient = new QueryClient({
@@ -54,6 +55,7 @@ function App() {
               <Route path="/review-queue" element={<ReviewPage />} />
               <Route path="/alerts" element={<AlertsPage />} />
               <Route path="/settings" element={<SettingsPage />} />
+              <Route path="/masters" element={<MastersPage />} />
               <Route path="/users" element={<UsersPage />} />
               {/* alert deep-links + back-compat */}
               <Route path="/bookings/:id" element={<BookingDetailPage />} />
