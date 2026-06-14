@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { formatShortDate, formatRelativeTime, parsePONumbers, cn } from './utils'
+import { formatShortDate, formatRelativeTime, parsePONumbers, cn, modeLabel, stateLabel, titleCase } from './utils'
 
 describe('utils', () => {
   it('formatShortDate renders day + month, TBD for empty', () => {
@@ -21,5 +21,29 @@ describe('utils', () => {
 
   it('cn joins truthy class names', () => {
     expect(cn('a', false && 'b', 'c')).toBe('a c')
+  })
+})
+
+describe('labels', () => {
+  it('modeLabel humanizes shipment modes', () => {
+    expect(modeLabel('SEA_LCL')).toBe('Sea (LCL)')
+    expect(modeLabel('AIR')).toBe('Air')
+    expect(modeLabel(null)).toBe('—')
+  })
+
+  it('stateLabel uses the staircase names', () => {
+    expect(stateLabel('AT_WAREHOUSE')).toBe('At Warehouse')
+    expect(stateLabel('CONFIRMED')).toBe('Confirmed')
+  })
+
+  it('stateLabel says "Sailed" for sea but "Departed" for air', () => {
+    expect(stateLabel('SAILED')).toBe('Sailed')
+    expect(stateLabel('SAILED', 'SEA_LCL')).toBe('Sailed')
+    expect(stateLabel('SAILED', 'AIR')).toBe('Departed')
+  })
+
+  it('titleCase normalizes single-word enums', () => {
+    expect(titleCase('ACTIVE')).toBe('Active')
+    expect(titleCase('SUPERSEDED')).toBe('Superseded')
   })
 })

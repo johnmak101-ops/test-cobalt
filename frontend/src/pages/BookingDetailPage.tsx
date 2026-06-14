@@ -28,7 +28,7 @@ function LegCard({ leg }: { leg: Leg }) {
         <span className="font-semibold text-text-primary">
           Leg {leg.legNo} · {modeLabel(leg.mode)}
         </span>
-        <StateBadge state={leg.state} />
+        <StateBadge state={leg.state} mode={leg.mode} />
         {superseded ? (
           <span className="rounded bg-surface-700 px-2 py-0.5 text-[11px] font-semibold text-text-muted">Superseded</span>
         ) : (
@@ -94,7 +94,7 @@ export default function BookingDetailPage() {
             <Field label="Cargo ready (CRD)" value={formatDate(b.crd)} />
             <Field label="Legs" value={String(b.legs.length)} />
             <Field label="Active mode" value={modeLabel(b.activeMode)} />
-            <Field label="Active state" value={stateLabel(b.activeState)} />
+            <Field label="Active state" value={stateLabel(b.activeState, b.activeMode)} />
           </div>
         </Card>
       </div>

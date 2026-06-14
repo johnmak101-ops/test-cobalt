@@ -9,7 +9,7 @@ const styles: Record<string, string> = {
   DELIVERED: 'bg-state-delivered/15 text-state-delivered',
 }
 
-export function StateBadge({ state }: { state: string }) {
+export function StateBadge({ state, mode }: { state: string; mode?: string | null }) {
   return (
     <span
       className={cn(
@@ -17,7 +17,7 @@ export function StateBadge({ state }: { state: string }) {
         styles[state] ?? 'bg-surface-700 text-text-muted',
       )}
     >
-      {stateLabel(state)}
+      {stateLabel(state, mode)}
     </span>
   )
 }

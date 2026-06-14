@@ -53,7 +53,13 @@ const STATE_LABELS: Record<string, string> = {
   RELEASED: 'Released',
   DELIVERED: 'Delivered',
 }
-export const stateLabel = (state?: string | null): string => (state ? STATE_LABELS[state] ?? state : '—')
+/** State → label. The shared 6-state staircase covers sea AND air; the 4th state ("departed origin")
+ *  is "Sailed" for sea but "Departed" for air — pass the leg's mode to get the right word. */
+export const stateLabel = (state?: string | null, mode?: string | null): string => {
+  if (!state) return '—'
+  if (state === 'SAILED' && mode === 'AIR') return 'Departed'
+  return STATE_LABELS[state] ?? state
+}
 
 /** Title-case a single-word enum chip (ACTIVE → Active). For compound enums, use an explicit map. */
 export const titleCase = (s?: string | null): string => (s ? s.charAt(0).toUpperCase() + s.slice(1).toLowerCase() : '—')

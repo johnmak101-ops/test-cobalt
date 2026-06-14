@@ -62,7 +62,7 @@ export default function ShipmentDetailPage() {
       <div className="space-y-1">
         <div className="flex flex-wrap items-center gap-3">
           <h1 className="font-mono text-xl font-bold">{s.bookingNo ?? s.hblAwbFcrNo ?? s.soNo ?? s.id.slice(0, 8)}</h1>
-          <Badge variant="status" value={s.state} />
+          <Badge variant="status" value={s.state} mode={s.mode} />
           {s.reviewStatus === 'provisional' && (
             <span className="rounded bg-status-warning/15 px-2 py-0.5 text-[11px] font-semibold text-status-warning">
               Provisional · conf {s.confidence ?? '—'}

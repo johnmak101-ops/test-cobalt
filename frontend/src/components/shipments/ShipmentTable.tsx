@@ -102,7 +102,7 @@ export function ShipmentTable({ shipments }: ShipmentTableProps) {
                     <td className="px-4 py-3 text-sm text-text-secondary">{s.forwarder?.name ?? '—'}</td>
                     <td className="px-4 py-3 text-sm text-text-secondary">{s.route ?? '—'}</td>
                     <td className="px-4 py-3">
-                      <Badge variant="status" value={s.status} />
+                      <Badge variant="status" value={s.status} mode={s.mode} />
                     </td>
                     <td className="px-4 py-3 text-sm text-text-secondary">{formatShortDate(s.etd)}</td>
                     <td className="px-4 py-3 text-sm text-text-secondary">{formatShortDate(s.eta)}</td>

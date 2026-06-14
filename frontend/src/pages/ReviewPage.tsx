@@ -62,7 +62,7 @@ export default function ReviewPage() {
                 <span className={`text-sm font-semibold ${confColor(it.confidence)}`}>conf {it.confidence ?? '—'}</span>
                 <span className="text-xs text-text-muted">
                   {it.mode ? `${modeLabel(it.mode)} · ` : ''}
-                  {stateLabel(it.state)}
+                  {stateLabel(it.state, it.mode)}
                 </span>
               </div>
               <div className="truncate text-xs text-text-secondary">
