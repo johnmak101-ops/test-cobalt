@@ -4,12 +4,8 @@ import { CreateUserDto, UpdateUserDto } from './dto'
 import { Roles, CurrentUser } from '../auth/decorators'
 import type { AuthUser } from '../auth/auth.service'
 
-/**
- * User administration.
- *   list / update — ADMIN or higher
- *   create / delete — SUPERADMIN only
- */
-@Roles('ADMIN')
+/** User administration — SUPERADMIN only (all routes). */
+@Roles('SUPERADMIN')
 @Controller('users')
 export class UsersController {
   constructor(private readonly users: UsersService) {}
@@ -18,7 +14,6 @@ export class UsersController {
     return this.users.list()
   }
 
-  @Roles('SUPERADMIN')
   @Post() create(@Body() dto: CreateUserDto) {
     return this.users.create(dto)
   }
@@ -27,7 +22,6 @@ export class UsersController {
     return this.users.update(id, dto, actor.role)
   }
 
-  @Roles('SUPERADMIN')
   @Delete(':id') remove(@Param('id') id: string, @CurrentUser() actor: AuthUser) {
     return this.users.remove(id, actor.id)
   }

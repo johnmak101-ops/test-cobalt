@@ -14,8 +14,8 @@ const baseNav = [
 export function Sidebar() {
   const { sidebarCollapsed, toggleSidebar } = useUIStore()
   const { user } = useAuth()
-  const canManageUsers = user?.role === 'ADMIN' || user?.role === 'SUPERADMIN'
-  const navItems = canManageUsers ? [...baseNav, { to: '/users', icon: Users, label: 'Users', end: false }] : baseNav
+  const navItems =
+    user?.role === 'SUPERADMIN' ? [...baseNav, { to: '/users', icon: Users, label: 'Users', end: false }] : baseNav
 
   return (
     <aside
