@@ -5,7 +5,9 @@ import { AuthProvider, useAuth } from './hooks/use-auth'
 import { AppShell } from './components/layout/AppShell'
 import LoginPage from './pages/LoginPage'
 import DashboardPage from './pages/DashboardPage'
-import BookingsPage from './pages/BookingsPage'
+import ShipmentTrackerPage from './pages/ShipmentTrackerPage'
+import ShipmentDetailPage from './pages/ShipmentDetailPage'
+import PurchaseOrdersPage from './pages/PurchaseOrdersPage'
 import BookingDetailPage from './pages/BookingDetailPage'
 import AlertsPage from './pages/AlertsPage'
 import ReviewPage from './pages/ReviewPage'
@@ -44,12 +46,16 @@ function App() {
               }
             >
               <Route path="/" element={<DashboardPage />} />
-              <Route path="/bookings" element={<BookingsPage />} />
-              <Route path="/bookings/:id" element={<BookingDetailPage />} />
+              <Route path="/shipments" element={<ShipmentTrackerPage />} />
+              <Route path="/shipments/:id" element={<ShipmentDetailPage />} />
+              <Route path="/purchase-orders" element={<PurchaseOrdersPage />} />
+              <Route path="/purchase-orders/:id" element={<PurchaseOrdersPage />} />
+              <Route path="/review-queue" element={<ReviewPage />} />
               <Route path="/alerts" element={<AlertsPage />} />
-              <Route path="/review" element={<ReviewPage />} />
               <Route path="/settings" element={<SettingsPage />} />
               <Route path="/users" element={<UsersPage />} />
+              {/* alert deep-links + back-compat */}
+              <Route path="/bookings/:id" element={<BookingDetailPage />} />
             </Route>
           </Routes>
         </AuthProvider>
