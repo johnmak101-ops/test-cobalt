@@ -1,5 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common'
 import { desc, eq, inArray, sql } from 'drizzle-orm'
+import { alias } from 'drizzle-orm/pg-core'
 import * as schema from '@cobalt/contracts'
 import { DRIZZLE, type DrizzleDB } from '../drizzle.provider'
 
@@ -72,14 +73,75 @@ export class BookingRepository {
       .leftJoin(schema.customers, eq(schema.purchaseOrders.customerId, schema.customers.id))
       .leftJoin(schema.vendors, eq(schema.purchaseOrders.vendorId, schema.vendors.id))
       .orderBy(schema.purchaseOrders.poNumber)
-    if (!openOnly) return rows
+
+    // shipped qty + how many shipments each PO rides on (the leg-level split)
+    const agg = await this.db
+      .select({
+        poId: schema.shipmentPos.poId,
+        shipped: sql<number>`coalesce(sum(${schema.shipmentPos.quantity}), 0)::float`,
+        shipments: sql<number>`count(distinct ${schema.shipmentPos.shipmentId})::int`,
+      })
+      .from(schema.shipmentPos)
+      .groupBy(schema.shipmentPos.poId)
+    const aggMap = new Map(agg.map((a) => [a.poId, a]))
+    const enriched = rows.map((r) => ({
+      ...r,
+      shippedQuantity: aggMap.get(r.id)?.shipped ?? 0,
+      shipmentCount: aggMap.get(r.id)?.shipments ?? 0,
+    }))
+
+    if (!openOnly) return enriched
     const closedLinks = await this.db
       .select({ poId: schema.bookingPos.poId })
       .from(schema.bookingPos)
       .innerJoin(schema.bookings, eq(schema.bookingPos.bookingId, schema.bookings.id))
       .where(inArray(schema.bookings.status, ['CLOSED', 'CANCELLED']))
     const closed = new Set(closedLinks.map((r) => r.poId))
-    return rows.filter((r) => !closed.has(r.id))
+    return enriched.filter((r) => !closed.has(r.id))
+  }
+
+  /** A single PO with the shipments (legs) it rides on — for the PO detail page. */
+  async poDetail(poId: string) {
+    const [po] = await this.db
+      .select({
+        id: schema.purchaseOrders.id,
+        poNumber: schema.purchaseOrders.poNumber,
+        brand: schema.purchaseOrders.brand,
+        itemStyleNo: schema.purchaseOrders.itemStyleNo,
+        totalQuantity: schema.purchaseOrders.totalQuantity,
+        quantityUnit: schema.purchaseOrders.quantityUnit,
+        crd: schema.purchaseOrders.crd,
+        customerName: schema.customers.name,
+        vendorName: schema.vendors.name,
+      })
+      .from(schema.purchaseOrders)
+      .leftJoin(schema.customers, eq(schema.purchaseOrders.customerId, schema.customers.id))
+      .leftJoin(schema.vendors, eq(schema.purchaseOrders.vendorId, schema.vendors.id))
+      .where(eq(schema.purchaseOrders.id, poId))
+    if (!po) return null
+
+    const pol = alias(schema.ports, 'po_pol')
+    const pod = alias(schema.ports, 'po_pod')
+    const links = await this.db
+      .select({
+        linkId: schema.shipmentPos.id,
+        shipmentId: schema.shipmentPos.shipmentId,
+        linkedQuantity: schema.shipmentPos.quantity,
+        status: schema.shipments.state,
+        bookingNo: schema.shipments.bookingNo,
+        hbl: schema.shipments.hblAwbFcrNo,
+        so: schema.shipments.soNo,
+        etd: schema.shipments.etd,
+        eta: schema.shipments.eta,
+        polCode: pol.unlocode,
+        podCode: pod.unlocode,
+      })
+      .from(schema.shipmentPos)
+      .innerJoin(schema.shipments, eq(schema.shipmentPos.shipmentId, schema.shipments.id))
+      .leftJoin(pol, eq(schema.shipments.polId, pol.id))
+      .leftJoin(pod, eq(schema.shipments.podId, pod.id))
+      .where(eq(schema.shipmentPos.poId, poId))
+    return { po, links }
   }
 
   async upsertPo(poNumber: string, customerId: string | null, vendorId: string | null) {

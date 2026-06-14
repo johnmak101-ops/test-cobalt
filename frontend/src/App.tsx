@@ -8,6 +8,7 @@ import DashboardPage from './pages/DashboardPage'
 import ShipmentTrackerPage from './pages/ShipmentTrackerPage'
 import ShipmentDetailPage from './pages/ShipmentDetailPage'
 import PurchaseOrdersPage from './pages/PurchaseOrdersPage'
+import PurchaseOrderDetailPage from './pages/PurchaseOrderDetailPage'
 import BookingDetailPage from './pages/BookingDetailPage'
 import AlertsPage from './pages/AlertsPage'
 import ReviewPage from './pages/ReviewPage'
@@ -49,7 +50,7 @@ function App() {
               <Route path="/shipments" element={<ShipmentTrackerPage />} />
               <Route path="/shipments/:id" element={<ShipmentDetailPage />} />
               <Route path="/purchase-orders" element={<PurchaseOrdersPage />} />
-              <Route path="/purchase-orders/:id" element={<PurchaseOrdersPage />} />
+              <Route path="/purchase-orders/:id" element={<PurchaseOrderDetailPage />} />
               <Route path="/review-queue" element={<ReviewPage />} />
               <Route path="/alerts" element={<AlertsPage />} />
               <Route path="/settings" element={<SettingsPage />} />

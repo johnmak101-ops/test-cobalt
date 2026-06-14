@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import { Search, RefreshCw } from 'lucide-react'
 import { useShipments } from '../hooks/use-shipments'
@@ -7,9 +8,15 @@ import { ShipmentFilters } from '../components/shipments/ShipmentFilters'
 import { Pagination, usePagination, PageSizeSelect } from '../components/ui/Pagination'
 
 export default function ShipmentTrackerPage() {
+  const [params] = useSearchParams()
   const [statusFilter, setStatusFilter] = useState('ALL')
-  const [search, setSearch] = useState('')
+  const [search, setSearch] = useState(params.get('q') ?? '')
   const [page, setPage] = useState(1)
+  // sync the box when the global top-bar search navigates here with ?q=
+  useEffect(() => {
+    const q = params.get('q')
+    if (q != null) setSearch(q)
+  }, [params])
   const [perPage, setPerPage] = useState(25)
   const { data, isLoading } = useShipments({ status: statusFilter })
   const qc = useQueryClient()

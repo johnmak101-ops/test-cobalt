@@ -12,6 +12,25 @@ export interface PurchaseOrder {
   shipmentCount?: number
 }
 
+export interface LinkedShipment {
+  id: string
+  linkId: string
+  poNumbers: string | null
+  status: string
+  route: string | null
+  etd: string | null
+  eta: string | null
+  linkedQuantity: number | null
+}
+
+export interface PurchaseOrderDetail extends PurchaseOrder {
+  brand: string | null
+  itemStyleNo: string | null
+  crd: string | null
+  shippedQuantity: number
+  linkedShipments: LinkedShipment[]
+}
+
 interface PosRow {
   id: string
   poNumber: string
@@ -19,9 +38,10 @@ interface PosRow {
   vendorName: string | null
   totalQuantity: number | null
   quantityUnit: string | null
+  shippedQuantity?: number
+  shipmentCount?: number
 }
 
-/** Maps the PO master (/api/pos) into the Purchase Orders page shape. */
 export function usePurchaseOrders() {
   return useQuery({
     queryKey: ['purchase-orders'],
@@ -34,8 +54,18 @@ export function usePurchaseOrders() {
         vendor: p.vendorName ? { name: p.vendorName } : null,
         totalQuantity: p.totalQuantity,
         quantityUnit: p.quantityUnit,
+        shippedQuantity: p.shippedQuantity,
+        shipmentCount: p.shipmentCount,
       }))
       return { purchaseOrders }
     },
+  })
+}
+
+export function usePurchaseOrder(id: string | undefined) {
+  return useQuery<PurchaseOrderDetail>({
+    queryKey: ['purchase-order', id],
+    queryFn: () => api.get(`/pos/${id}`),
+    enabled: !!id,
   })
 }

@@ -80,7 +80,7 @@ export function ShipmentTable({ shipments }: ShipmentTableProps) {
                                   key={po.id}
                                   onClick={(e) => {
                                     e.stopPropagation()
-                                    navigate('/purchase-orders')
+                                    navigate(`/purchase-orders/${po.id}`, { state: { fromShipment: s.id } })
                                   }}
                                   className="cursor-pointer rounded-md px-2 py-2 transition-colors hover:bg-surface-700"
                                 >

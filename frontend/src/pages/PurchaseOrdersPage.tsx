@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import { Package, Search, RefreshCw } from 'lucide-react'
 import { usePurchaseOrders } from '../hooks/use-purchase-orders'
@@ -6,6 +7,7 @@ import { cn } from '../lib/utils'
 import { Pagination, usePagination, PageSizeSelect } from '../components/ui/Pagination'
 
 export default function PurchaseOrdersPage() {
+  const navigate = useNavigate()
   const { data, isLoading } = usePurchaseOrders()
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
@@ -85,7 +87,11 @@ export default function PurchaseOrdersPage() {
                     const progress =
                       po.totalQuantity && po.shippedQuantity ? Math.min((po.shippedQuantity / po.totalQuantity) * 100, 100) : 0
                     return (
-                      <tr key={po.id} className="border-b border-border transition-colors last:border-0 hover:bg-surface-700">
+                      <tr
+                        key={po.id}
+                        onClick={() => navigate(`/purchase-orders/${po.id}`)}
+                        className="cursor-pointer border-b border-border transition-colors last:border-0 hover:bg-surface-700"
+                      >
                         <td className="px-4 py-3 font-mono text-sm font-medium text-cobalt-primary-light">{po.poNumber}</td>
                         <td className="px-4 py-3 text-sm text-text-secondary">{po.customer?.name ?? '—'}</td>
                         <td className="px-4 py-3 text-sm text-text-secondary">{po.vendor?.name ?? '—'}</td>

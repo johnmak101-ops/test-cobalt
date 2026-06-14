@@ -33,6 +33,7 @@ export function TopBar() {
   const [menuOpen, setMenuOpen] = useState(false)
   const [notiOpen, setNotiOpen] = useState(false)
   const [notiTab, setNotiTab] = useState<NotiTab>('alerts')
+  const [search, setSearch] = useState('')
   const menuRef = useRef<HTMLDivElement>(null)
   const notiRef = useRef<HTMLDivElement>(null)
 
@@ -56,6 +57,11 @@ export function TopBar() {
         <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
         <input
           type="text"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') navigate(`/shipments?q=${encodeURIComponent(search.trim())}`)
+          }}
           placeholder="Search PO#, customer, HBL..."
           className="h-9 w-full rounded-lg border border-border bg-surface-700 pl-9 pr-4 text-sm text-text-primary placeholder:text-text-muted focus:border-cobalt-primary focus:outline-none"
         />
