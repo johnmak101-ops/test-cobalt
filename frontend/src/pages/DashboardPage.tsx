@@ -60,7 +60,9 @@ export default function DashboardPage() {
                 {b.activeState && <StateBadge state={b.activeState} />}
               </Link>
             ))}
-            {!bookings.length && <div className="px-3 py-2 text-sm text-text-muted">No bookings yet — hit Reconcile.</div>}
+            {!bookings.length && (
+              <div className="px-3 py-2 text-sm text-text-muted">No bookings yet — run Reconcile to import shipments.</div>
+            )}
           </div>
         </Card>
 
@@ -79,7 +81,9 @@ export default function DashboardPage() {
                 <span className="font-mono text-xs text-text-muted">{a.ruleId}</span>
               </div>
             ))}
-            {!alerts.length && <div className="px-3 py-2 text-sm text-text-muted">No active alerts — hit Evaluate alerts.</div>}
+            {!alerts.length && (
+              <div className="px-3 py-2 text-sm text-text-muted">No active alerts — run Evaluate alerts to check.</div>
+            )}
           </div>
         </Card>
       </div>

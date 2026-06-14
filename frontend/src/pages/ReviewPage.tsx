@@ -39,14 +39,14 @@ export default function ReviewPage() {
       <div>
         <h1 className="text-xl font-bold">Review queue</h1>
         <p className="text-sm text-text-muted">
-          Low-confidence shipments held for human review. Confirm as-is, or correct fields — your edits lock so the
-          agent can't overwrite them.
+          Low-confidence shipments held for review. Confirm them as-is, or correct fields — your edits are locked so the
+          agent cannot overwrite them.
         </p>
       </div>
 
       {!items.length && (
         <Card>
-          <div className="text-sm text-text-muted">Nothing to review — every shipment is confirmed.</div>
+          <div className="text-sm text-text-muted">No shipments are awaiting review — all are confirmed.</div>
         </Card>
       )}
 

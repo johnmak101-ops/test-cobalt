@@ -48,7 +48,7 @@ export default function BookingsPage() {
         </table>
         {isLoading && <div className="px-5 py-6 text-sm text-text-muted">Loading…</div>}
         {!isLoading && !bookings.length && (
-          <div className="px-5 py-6 text-sm text-text-muted">No bookings — click Reconcile in the top bar.</div>
+          <div className="px-5 py-6 text-sm text-text-muted">No bookings yet — run Reconcile from the top bar to import shipments.</div>
         )}
       </Card>
     </div>

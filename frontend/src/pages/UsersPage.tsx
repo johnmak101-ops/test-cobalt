@@ -54,7 +54,9 @@ export default function UsersPage() {
           >
             Create user
           </button>
-          {create.isError && <span className="text-sm text-status-critical">Failed — duplicate email?</span>}
+          {create.isError && (
+            <span className="text-sm text-status-critical">Could not create the user — that email may already be in use.</span>
+          )}
         </div>
       </Card>
 

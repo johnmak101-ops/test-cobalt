@@ -66,7 +66,7 @@ export default function AlertsPage() {
 
       {!alerts.length && (
         <Card>
-          <div className="text-sm text-text-muted">No active alerts. Click "Evaluate now" to run the Pillar-4 rules.</div>
+          <div className="text-sm text-text-muted">No active alerts. Click "Evaluate now" to run the alert rules.</div>
         </Card>
       )}
     </div>

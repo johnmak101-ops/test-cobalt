@@ -28,8 +28,8 @@ export default function SettingsPage() {
       <Card>
         <h2 className="font-semibold">Review-gate confidence threshold</h2>
         <p className="mt-1 text-sm text-text-muted">
-          A decision scoring at or above this auto-confirms; below it, the shipment is held in the review queue.
-          {isAdmin ? '' : ' Only admins can change it.'}
+          A decision scoring at or above this is auto-confirmed; below it, the shipment is held for review.
+          {isAdmin ? '' : ' Only administrators can change it.'}
         </p>
         <div className="mt-5 flex items-center gap-4">
           <input
