@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, Fragment } from 'react'
 import { Badge } from '../ui/Badge'
 import { formatShortDate, formatRelativeTime } from '../../lib/utils'
 import { useNavigate } from 'react-router-dom'
@@ -49,9 +49,8 @@ export function ShipmentTable({ shipments }: ShipmentTableProps) {
               const shortId = s.bookingNo ?? s.id.slice(0, 12)
 
               return (
-                <>
+                <Fragment key={s.id}>
                   <tr
-                    key={s.id}
                     onClick={() => navigate(`/shipments/${s.id}`)}
                     className="cursor-pointer border-b border-border last:border-0 transition-colors hover:bg-surface-700"
                   >
@@ -133,7 +132,7 @@ export function ShipmentTable({ shipments }: ShipmentTableProps) {
                         <td className="px-4 py-2" colSpan={5}></td>
                       </tr>
                     ))}
-                </>
+                </Fragment>
               )
             })}
             {shipments.length === 0 && (
