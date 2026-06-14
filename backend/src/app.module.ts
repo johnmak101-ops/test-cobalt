@@ -9,6 +9,7 @@ import { ReconcileModule } from './reconcile/reconcile.module'
 import { AlertsModule } from './alerts/alerts.module'
 import { RepositoriesModule } from './db/repositories.module'
 import { AuthModule } from './auth/auth.module'
+import { UsersModule } from './users/users.module'
 
 @Module({
   imports: [
@@ -16,6 +17,7 @@ import { AuthModule } from './auth/auth.module'
     DrizzleModule,
     RepositoriesModule,
     AuthModule,
+    UsersModule,
     HealthModule,
     MastersModule,
     BookingsModule,

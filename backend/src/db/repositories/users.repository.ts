@@ -20,4 +20,19 @@ export class UsersRepository {
     const [u] = await this.db.insert(schema.users).values(values).returning()
     return u
   }
+  list() {
+    return this.db.select().from(schema.users).orderBy(schema.users.createdAt)
+  }
+  async update(id: string, patch: Partial<typeof schema.users.$inferInsert>) {
+    const [u] = await this.db
+      .update(schema.users)
+      .set({ ...patch, updatedAt: new Date() })
+      .where(eq(schema.users.id, id))
+      .returning()
+    return u ?? null
+  }
+  async remove(id: string) {
+    const r = await this.db.delete(schema.users).where(eq(schema.users.id, id)).returning()
+    return r.length > 0
+  }
 }

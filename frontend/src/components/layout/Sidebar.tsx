@@ -1,10 +1,11 @@
 import { NavLink } from 'react-router-dom'
 import { useUIStore } from '../../store'
+import { useAuth } from '../../hooks/use-auth'
 import { cn } from '../../lib/utils'
 import { CobaltLogo } from '../ui/CobaltLogo'
-import { LayoutDashboard, Package, AlertTriangle, PanelLeftClose, PanelLeftOpen } from 'lucide-react'
+import { LayoutDashboard, Package, AlertTriangle, Users, PanelLeftClose, PanelLeftOpen } from 'lucide-react'
 
-const navItems = [
+const baseNav = [
   { to: '/', icon: LayoutDashboard, label: 'Dashboard', end: true },
   { to: '/bookings', icon: Package, label: 'Bookings', end: false },
   { to: '/alerts', icon: AlertTriangle, label: 'Alerts', end: false },
@@ -12,6 +13,9 @@ const navItems = [
 
 export function Sidebar() {
   const { sidebarCollapsed, toggleSidebar } = useUIStore()
+  const { user } = useAuth()
+  const navItems =
+    user?.role === 'ADMIN' ? [...baseNav, { to: '/users', icon: Users, label: 'Users', end: false }] : baseNav
 
   return (
     <aside

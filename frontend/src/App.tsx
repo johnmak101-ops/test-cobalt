@@ -8,6 +8,7 @@ import DashboardPage from './pages/DashboardPage'
 import BookingsPage from './pages/BookingsPage'
 import BookingDetailPage from './pages/BookingDetailPage'
 import AlertsPage from './pages/AlertsPage'
+import UsersPage from './pages/UsersPage'
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { staleTime: 30000, retry: 1 } },
@@ -44,6 +45,7 @@ function App() {
               <Route path="/bookings" element={<BookingsPage />} />
               <Route path="/bookings/:id" element={<BookingDetailPage />} />
               <Route path="/alerts" element={<AlertsPage />} />
+              <Route path="/users" element={<UsersPage />} />
             </Route>
           </Routes>
         </AuthProvider>

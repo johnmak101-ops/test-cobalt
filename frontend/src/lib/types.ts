@@ -71,3 +71,13 @@ export interface Alert {
   shipmentId: string | null
   firedAt: string
 }
+
+export interface User {
+  id: string
+  email: string
+  name: string
+  role: string
+  active: boolean
+  avatarInitials: string | null
+  createdAt: string
+}
