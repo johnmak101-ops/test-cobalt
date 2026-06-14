@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common'
-import { desc, eq, sql } from 'drizzle-orm'
+import { desc, eq, inArray, sql } from 'drizzle-orm'
 import * as schema from '@cobalt/contracts'
 import { DRIZZLE, type DrizzleDB } from '../drizzle.provider'
 
@@ -51,6 +51,37 @@ export class BookingRepository {
   }
 
   // --- purchase_orders ---
+  /** PO master with customer/vendor codes resolved (for the Matcher). When `openOnly`, drops POs
+   *  whose linked bookings are all terminal (CLOSED/CANCELLED). */
+  async listPos(openOnly = false) {
+    const rows = await this.db
+      .select({
+        id: schema.purchaseOrders.id,
+        poNumber: schema.purchaseOrders.poNumber,
+        customerCode: schema.customers.code,
+        customerName: schema.customers.name,
+        vendorCode: schema.vendors.code,
+        vendorName: schema.vendors.name,
+        brand: schema.purchaseOrders.brand,
+        itemStyleNo: schema.purchaseOrders.itemStyleNo,
+        totalQuantity: schema.purchaseOrders.totalQuantity,
+        quantityUnit: schema.purchaseOrders.quantityUnit,
+        crd: schema.purchaseOrders.crd,
+      })
+      .from(schema.purchaseOrders)
+      .leftJoin(schema.customers, eq(schema.purchaseOrders.customerId, schema.customers.id))
+      .leftJoin(schema.vendors, eq(schema.purchaseOrders.vendorId, schema.vendors.id))
+      .orderBy(schema.purchaseOrders.poNumber)
+    if (!openOnly) return rows
+    const closedLinks = await this.db
+      .select({ poId: schema.bookingPos.poId })
+      .from(schema.bookingPos)
+      .innerJoin(schema.bookings, eq(schema.bookingPos.bookingId, schema.bookings.id))
+      .where(inArray(schema.bookings.status, ['CLOSED', 'CANCELLED']))
+    const closed = new Set(closedLinks.map((r) => r.poId))
+    return rows.filter((r) => !closed.has(r.id))
+  }
+
   async upsertPo(poNumber: string, customerId: string | null, vendorId: string | null) {
     const [existing] = await this.db.select().from(schema.purchaseOrders).where(eq(schema.purchaseOrders.poNumber, poNumber))
     if (existing) return existing.id

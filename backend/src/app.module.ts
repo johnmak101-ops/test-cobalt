@@ -5,6 +5,7 @@ import { HealthModule } from './health/health.module'
 import { MastersModule } from './masters/masters.module'
 import { BookingsModule } from './bookings/bookings.module'
 import { ShipmentsModule } from './shipments/shipments.module'
+import { PosModule } from './pos/pos.module'
 import { ReconcileModule } from './reconcile/reconcile.module'
 import { DecisionsModule } from './decisions/decisions.module'
 import { SettingsModule } from './settings/settings.module'
@@ -24,6 +25,7 @@ import { UsersModule } from './users/users.module'
     MastersModule,
     BookingsModule,
     ShipmentsModule,
+    PosModule,
     ReconcileModule,
     DecisionsModule,
     SettingsModule,
