@@ -163,7 +163,7 @@ async function main() {
     { id: 'A2', name: 'Draft B/L before cut-off', description: 'Draft B/L not received 72h before cut-off', state: 'CONFIRMED', triggerType: 'days_before', triggerReference: 'cutoff', watchFor: 'draft_bl', thresholdHours: 72, severity: 'WARNING', computeTz: 'vessel' },
     { id: 'A3', name: 'Cut-off passed, no Final B/L', description: 'Cut-off passed without Final B/L', state: 'CONFIRMED', triggerType: 'days_after', triggerReference: 'cutoff', watchFor: 'final_bl', thresholdHours: 0, severity: 'CRITICAL', computeTz: 'vessel', locked: true },
     { id: 'A4', name: 'Telex after departure', description: 'Telex not received within 5d of departure', state: 'SAILED', triggerType: 'days_after', triggerReference: 'departure', watchFor: 'telex', thresholdHours: 120, severity: 'WARNING', computeTz: 'server' },
-    { id: 'A5', name: 'Warehouse aging', description: 'AT_WAREHOUSE >14d with no SAILED', state: 'AT_WAREHOUSE', triggerType: 'days_after', triggerReference: 'warehouse_in', watchFor: 'sailed', thresholdHours: 336, severity: 'WARNING', computeTz: 'server' },
+    { id: 'A5', name: 'Warehouse aging', description: 'In warehouse >14d with no departure', state: 'AT_WAREHOUSE', triggerType: 'days_after', triggerReference: 'warehouse_in', watchFor: 'sailed', thresholdHours: 336, severity: 'WARNING', computeTz: 'server' },
     { id: 'A6', name: 'Invoice missing', description: 'Final B/L issued but invoice missing >7d', state: 'RELEASED', triggerType: 'days_after', triggerReference: 'final_bl', watchFor: 'invoice', thresholdHours: 168, severity: 'WARNING', computeTz: 'server' },
   ])
 

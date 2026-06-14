@@ -1,4 +1,4 @@
-import { cn } from '../../lib/utils'
+import { cn, stateLabel } from '../../lib/utils'
 
 const severityStyles: Record<string, string> = {
   CRITICAL: 'bg-status-critical/15 text-status-critical border-status-critical/30',
@@ -35,15 +35,6 @@ const emailTypeLabels: Record<string, string> = {
   OTHER: 'UNCLASSIFIED',
 }
 
-const statusLabels: Record<string, string> = {
-  BOOKED: 'Booking Request',
-  CONFIRMED: 'SO Received',
-  AT_WAREHOUSE: 'Draft B/L',
-  SAILED: 'Final B/L',
-  RELEASED: 'Telex Release',
-  DELIVERED: 'Delivered',
-}
-
 interface BadgeProps {
   variant?: 'severity' | 'status' | 'emailType'
   value: string
@@ -59,7 +50,7 @@ export function Badge({ variant = 'severity', value, className }: BadgeProps) {
         : severityStyles
 
   const label = variant === 'emailType' ? emailTypeLabels[value] ?? value : value
-  const displayLabel = variant === 'status' ? statusLabels[value] ?? value.replace('_', ' ') : label
+  const displayLabel = variant === 'status' ? stateLabel(value) : label
 
   return (
     <span

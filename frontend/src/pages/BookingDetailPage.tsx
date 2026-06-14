@@ -5,7 +5,7 @@ import { Card } from '../components/ui/Card'
 import { StateBadge } from '../components/StateBadge'
 import { ModeIcon } from '../components/ui/ModeIcon'
 import { MilestoneTimeline } from '../components/MilestoneTimeline'
-import { formatDate } from '../lib/utils'
+import { formatDate, modeLabel, stateLabel, titleCase } from '../lib/utils'
 import type { Leg } from '../lib/types'
 
 function Field({ label, value }: { label: string; value: React.ReactNode }) {
@@ -26,13 +26,13 @@ function LegCard({ leg }: { leg: Leg }) {
       <div className="flex flex-wrap items-center gap-2">
         <ModeIcon mode={leg.mode} size={18} className="text-text-secondary" />
         <span className="font-semibold text-text-primary">
-          Leg {leg.legNo} · {leg.mode ?? '—'}
+          Leg {leg.legNo} · {modeLabel(leg.mode)}
         </span>
         <StateBadge state={leg.state} />
         {superseded ? (
-          <span className="rounded bg-surface-700 px-2 py-0.5 text-[11px] font-semibold text-text-muted">SUPERSEDED</span>
+          <span className="rounded bg-surface-700 px-2 py-0.5 text-[11px] font-semibold text-text-muted">Superseded</span>
         ) : (
-          <span className="rounded bg-status-success/15 px-2 py-0.5 text-[11px] font-semibold text-status-success">ACTIVE</span>
+          <span className="rounded bg-status-success/15 px-2 py-0.5 text-[11px] font-semibold text-status-success">Active</span>
         )}
       </div>
 
@@ -68,7 +68,7 @@ export default function BookingDetailPage() {
 
       <div className="flex flex-wrap items-center gap-3">
         <h1 className="page-title font-mono">{b.jobNo}</h1>
-        <span className="rounded bg-surface-700 px-2 py-0.5 text-xs text-text-secondary">{b.status}</span>
+        <span className="rounded bg-surface-700 px-2 py-0.5 text-xs text-text-secondary">{titleCase(b.status)}</span>
         {b.brand && <span className="text-text-muted">{b.brand}</span>}
       </div>
 
@@ -93,8 +93,8 @@ export default function BookingDetailPage() {
           <div className="grid grid-cols-2 gap-3 text-sm">
             <Field label="Cargo ready (CRD)" value={formatDate(b.crd)} />
             <Field label="Legs" value={String(b.legs.length)} />
-            <Field label="Active mode" value={b.activeMode ?? '—'} />
-            <Field label="Active state" value={b.activeState ?? '—'} />
+            <Field label="Active mode" value={modeLabel(b.activeMode)} />
+            <Field label="Active state" value={stateLabel(b.activeState)} />
           </div>
         </Card>
       </div>

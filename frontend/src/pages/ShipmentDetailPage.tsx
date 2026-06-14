@@ -4,7 +4,7 @@ import { useShipment } from '../hooks/use-shipments'
 import { Card } from '../components/ui/Card'
 import { Badge } from '../components/ui/Badge'
 import { MilestoneTimeline } from '../components/MilestoneTimeline'
-import { formatDate } from '../lib/utils'
+import { formatDate, modeLabel } from '../lib/utils'
 
 interface LinkedPO {
   id: string
@@ -89,7 +89,7 @@ export default function ShipmentDetailPage() {
         <Card>
           <h2 className="mb-3 font-semibold">Shipment</h2>
           <div className="grid grid-cols-2 gap-3 text-sm">
-            <Field label="Mode" value={s.mode} />
+            <Field label="Mode" value={modeLabel(s.mode)} />
             <Field label="Route" value={s.route} />
             <Field label="Customer" value={s.customer?.name} />
             <Field label="Forwarder" value={s.forwarder?.name} />

@@ -36,7 +36,7 @@ describe('ShipmentTable', () => {
     expect(screen.getByText('BK-1')).toBeInTheDocument()
     expect(screen.getByText('New Lobster')).toBeInTheDocument()
     expect(screen.getByText('Torque')).toBeInTheDocument()
-    expect(screen.getByText('SO Received')).toBeInTheDocument() // CONFIRMED → label
+    expect(screen.getByText('Confirmed')).toBeInTheDocument() // CONFIRMED → label
     expect(screen.getByText('1 PO')).toBeInTheDocument()
   })
 

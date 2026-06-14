@@ -1,4 +1,4 @@
-import { cn } from '../../lib/utils'
+import { cn, stateLabel } from '../../lib/utils'
 
 interface StatusFilterProps {
   value: string
@@ -6,16 +6,6 @@ interface StatusFilterProps {
 }
 
 const statuses = ['ALL', 'BOOKED', 'CONFIRMED', 'AT_WAREHOUSE', 'SAILED', 'RELEASED', 'DELIVERED']
-
-const statusLabels: Record<string, string> = {
-  ALL: 'All',
-  BOOKED: 'Booking Request',
-  CONFIRMED: 'SO Received',
-  AT_WAREHOUSE: 'Draft B/L',
-  SAILED: 'Final B/L',
-  RELEASED: 'Telex Release',
-  DELIVERED: 'Delivered',
-}
 
 export function ShipmentFilters({ value, onChange }: StatusFilterProps) {
   return (
@@ -31,7 +21,7 @@ export function ShipmentFilters({ value, onChange }: StatusFilterProps) {
               : 'bg-surface-700 text-text-secondary hover:bg-surface-600 hover:text-text-primary',
           )}
         >
-          {statusLabels[s]}
+          {s === 'ALL' ? 'All' : stateLabel(s)}
         </button>
       ))}
     </div>

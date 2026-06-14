@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { useReviewQueue, useConfirmReview, useCorrectReview, type ReviewItem } from '../hooks/use-review'
 import { useAuth } from '../hooks/use-auth'
 import { Card } from '../components/ui/Card'
+import { modeLabel, stateLabel } from '../lib/utils'
 
 const EDITABLE: { key: keyof ReviewItem; label: string; date?: boolean }[] = [
   { key: 'soNo', label: 'SO #' },
@@ -60,8 +61,8 @@ export default function ReviewPage() {
                 </Link>
                 <span className={`text-sm font-semibold ${confColor(it.confidence)}`}>conf {it.confidence ?? '—'}</span>
                 <span className="text-xs text-text-muted">
-                  {it.mode ?? ''} {it.mode ? '· ' : ''}
-                  {it.state}
+                  {it.mode ? `${modeLabel(it.mode)} · ` : ''}
+                  {stateLabel(it.state)}
                 </span>
               </div>
               <div className="truncate text-xs text-text-secondary">

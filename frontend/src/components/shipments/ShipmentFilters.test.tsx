@@ -8,8 +8,8 @@ describe('ShipmentFilters', () => {
     const onChange = vi.fn()
     render(<ShipmentFilters value="ALL" onChange={onChange} />)
     expect(screen.getByRole('button', { name: 'All' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Draft B/L' })).toBeInTheDocument()
-    await userEvent.click(screen.getByRole('button', { name: 'Final B/L' }))
+    expect(screen.getByRole('button', { name: 'At Warehouse' })).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Sailed' }))
     expect(onChange).toHaveBeenCalledWith('SAILED')
   })
 

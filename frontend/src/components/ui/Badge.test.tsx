@@ -5,12 +5,12 @@ import { Badge } from './Badge'
 describe('Badge', () => {
   it('maps shipment states to human labels', () => {
     render(<Badge variant="status" value="CONFIRMED" />)
-    expect(screen.getByText('SO Received')).toBeInTheDocument()
+    expect(screen.getByText('Confirmed')).toBeInTheDocument()
   })
 
-  it('maps BOOKED to Booking Request', () => {
+  it('maps BOOKED to Booked', () => {
     render(<Badge variant="status" value="BOOKED" />)
-    expect(screen.getByText('Booking Request')).toBeInTheDocument()
+    expect(screen.getByText('Booked')).toBeInTheDocument()
   })
 
   it('shows severity values as-is', () => {

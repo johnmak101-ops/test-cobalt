@@ -1,4 +1,4 @@
-import { cn } from '../lib/utils'
+import { cn, stateLabel } from '../lib/utils'
 
 const styles: Record<string, string> = {
   BOOKED: 'bg-state-booked/15 text-state-booked',
@@ -7,14 +7,6 @@ const styles: Record<string, string> = {
   SAILED: 'bg-state-sailed/15 text-state-sailed',
   RELEASED: 'bg-state-released/15 text-state-released',
   DELIVERED: 'bg-state-delivered/15 text-state-delivered',
-}
-const labels: Record<string, string> = {
-  BOOKED: 'Booked',
-  CONFIRMED: 'Confirmed',
-  AT_WAREHOUSE: 'At Warehouse',
-  SAILED: 'Sailed',
-  RELEASED: 'Released',
-  DELIVERED: 'Delivered',
 }
 
 export function StateBadge({ state }: { state: string }) {
@@ -25,7 +17,7 @@ export function StateBadge({ state }: { state: string }) {
         styles[state] ?? 'bg-surface-700 text-text-muted',
       )}
     >
-      {labels[state] ?? state}
+      {stateLabel(state)}
     </span>
   )
 }
