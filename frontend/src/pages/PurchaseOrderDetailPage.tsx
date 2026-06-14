@@ -114,7 +114,7 @@ export default function PurchaseOrderDetailPage() {
                   >
                     <td className="px-4 py-3 font-mono text-sm font-medium text-cobalt-primary-light">{s.poNumbers ?? s.id.slice(0, 8)}</td>
                     <td className="px-4 py-3">
-                      <Badge variant="status" value={s.status} mode={s.mode} />
+                      <Badge variant="status" value={s.status} />
                     </td>
                     <td className="px-4 py-3 text-sm text-text-secondary">{s.route ?? '—'}</td>
                     <td className="px-4 py-3 text-sm text-text-secondary">{formatShortDate(s.etd)}</td>

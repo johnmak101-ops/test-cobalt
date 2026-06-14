@@ -38,12 +38,10 @@ const emailTypeLabels: Record<string, string> = {
 interface BadgeProps {
   variant?: 'severity' | 'status' | 'emailType'
   value: string
-  /** leg mode — lets the SAILED state read "Departed" for air (variant="status" only) */
-  mode?: string | null
   className?: string
 }
 
-export function Badge({ variant = 'severity', value, mode, className }: BadgeProps) {
+export function Badge({ variant = 'severity', value, className }: BadgeProps) {
   const styles =
     variant === 'status'
       ? statusStyles
@@ -52,7 +50,7 @@ export function Badge({ variant = 'severity', value, mode, className }: BadgePro
         : severityStyles
 
   const label = variant === 'emailType' ? emailTypeLabels[value] ?? value : value
-  const displayLabel = variant === 'status' ? stateLabel(value, mode) : label
+  const displayLabel = variant === 'status' ? stateLabel(value) : label
 
   return (
     <span

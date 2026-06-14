@@ -9,7 +9,7 @@ describe('ShipmentFilters', () => {
     render(<ShipmentFilters value="ALL" onChange={onChange} />)
     expect(screen.getByRole('button', { name: 'All' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'At Warehouse' })).toBeInTheDocument()
-    await userEvent.click(screen.getByRole('button', { name: 'Sailed' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Departed' }))
     expect(onChange).toHaveBeenCalledWith('SAILED')
   })
 

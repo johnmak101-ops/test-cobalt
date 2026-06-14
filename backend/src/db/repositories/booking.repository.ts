@@ -128,7 +128,6 @@ export class BookingRepository {
         shipmentId: schema.shipmentPos.shipmentId,
         linkedQuantity: schema.shipmentPos.quantity,
         status: schema.shipments.state,
-        mode: schema.shipments.mode,
         bookingNo: schema.shipments.bookingNo,
         hbl: schema.shipments.hblAwbFcrNo,
         so: schema.shipments.soNo,

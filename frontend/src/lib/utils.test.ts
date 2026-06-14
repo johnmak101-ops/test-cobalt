@@ -31,15 +31,10 @@ describe('labels', () => {
     expect(modeLabel(null)).toBe('—')
   })
 
-  it('stateLabel uses the staircase names', () => {
+  it('stateLabel uses the staircase names; the 4th state is the uniform "Departed"', () => {
     expect(stateLabel('AT_WAREHOUSE')).toBe('At Warehouse')
     expect(stateLabel('CONFIRMED')).toBe('Confirmed')
-  })
-
-  it('stateLabel says "Sailed" for sea but "Departed" for air', () => {
-    expect(stateLabel('SAILED')).toBe('Sailed')
-    expect(stateLabel('SAILED', 'SEA_LCL')).toBe('Sailed')
-    expect(stateLabel('SAILED', 'AIR')).toBe('Departed')
+    expect(stateLabel('SAILED')).toBe('Departed')
   })
 
   it('titleCase normalizes single-word enums', () => {

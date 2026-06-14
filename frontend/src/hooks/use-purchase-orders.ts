@@ -17,7 +17,6 @@ export interface LinkedShipment {
   linkId: string
   poNumbers: string | null
   status: string
-  mode: string | null
   route: string | null
   etd: string | null
   eta: string | null

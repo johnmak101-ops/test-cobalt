@@ -33,7 +33,7 @@ export function RecentActivityTable({ shipments }: { shipments: Shipment[] }) {
                 <td className="px-5 py-3 text-sm text-text-secondary">{s.customer?.name ?? '—'}</td>
                 <td className="px-5 py-3 text-sm text-text-secondary">{s.route ?? '—'}</td>
                 <td className="px-5 py-3">
-                  <Badge variant="status" value={s.status} mode={s.mode} />
+                  <Badge variant="status" value={s.status} />
                 </td>
                 <td className="px-5 py-3 text-sm text-text-muted">{formatRelativeTime(s.updatedAt)}</td>
               </tr>

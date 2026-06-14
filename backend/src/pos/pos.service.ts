@@ -32,7 +32,6 @@ export class PosService {
         linkId: l.linkId,
         poNumbers: l.bookingNo ?? l.hbl ?? l.so ?? l.shipmentId.slice(0, 8),
         status: l.status,
-        mode: l.mode,
         route: l.polCode && l.podCode ? `${l.polCode}→${l.podCode}` : (l.polCode ?? l.podCode ?? null),
         etd: l.etd,
         eta: l.eta,
