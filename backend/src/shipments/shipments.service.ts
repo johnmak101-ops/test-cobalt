@@ -12,13 +12,45 @@ export class ShipmentsService {
     private readonly fieldLocks: FieldLockRepository,
   ) {}
 
-  /** A single leg with its milestones + PO split. */
+  /** A single leg, enriched like the tracker list (customer / forwarder / route / linked POs) + timeline. */
   async getOne(id: string) {
-    const ship = await this.shipments.findById(id)
-    if (!ship) throw new NotFoundException(`shipment ${id} not found`)
-    const milestones = await this.shipments.milestonesFor(id)
-    const pos = await this.shipments.posFor(id)
-    return { ...ship, milestones, pos }
+    const leg = await this.shipments.legDetailById(id)
+    if (!leg) throw new NotFoundException(`shipment ${id} not found`)
+    const [milestones, pos] = await Promise.all([
+      this.shipments.milestonesFor(id),
+      this.shipments.linkedPosForBooking(leg.bookingId),
+    ])
+    return {
+      id: leg.id,
+      bookingId: leg.bookingId,
+      bookingNo: leg.bookingNo ?? leg.containerNo ?? leg.hblAwbFcrNo ?? leg.soNo ?? leg.jobNo,
+      soNo: leg.soNo,
+      hblAwbFcrNo: leg.hblAwbFcrNo,
+      mbl: leg.mbl,
+      containerNo: leg.containerNo,
+      mode: leg.mode,
+      state: leg.state,
+      legStatus: leg.legStatus,
+      riskLevel: leg.riskLevel,
+      reviewStatus: leg.reviewStatus,
+      confidence: leg.confidence,
+      reviewReasons: leg.reviewReasons,
+      etd: leg.etd,
+      atd: leg.atd,
+      eta: leg.eta,
+      updatedAt: leg.updatedAt,
+      route: leg.polCode && leg.podCode ? `${leg.polCode}→${leg.podCode}` : (leg.polCode ?? leg.podCode ?? null),
+      customer: leg.customerId ? { id: leg.customerId, name: leg.customerName, code: leg.customerCode } : null,
+      forwarder: leg.forwarderId ? { id: leg.forwarderId, name: leg.forwarderName } : null,
+      pos: pos.map((p) => ({
+        id: p.id,
+        poNumber: p.poNumber,
+        totalQuantity: p.totalQuantity,
+        quantityUnit: p.quantityUnit,
+        vendor: p.vendorName ? { name: p.vendorName } : null,
+      })),
+      milestones,
+    }
   }
 
   /** Shipment Tracker list — active legs enriched with customer / forwarder / route / POs / risk. */

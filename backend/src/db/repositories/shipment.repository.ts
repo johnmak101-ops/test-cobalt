@@ -87,6 +87,49 @@ export class ShipmentRepository {
       .orderBy(desc(schema.shipments.updatedAt))
   }
 
+  /** One leg enriched like the tracker list (customer / forwarder / route) — any legStatus, for the detail page. */
+  async legDetailById(id: string) {
+    const pol = alias(schema.ports, 'pol')
+    const pod = alias(schema.ports, 'pod')
+    const [row] = await this.db
+      .select({
+        id: schema.shipments.id,
+        bookingId: schema.shipments.bookingId,
+        jobNo: schema.bookings.jobNo,
+        bookingNo: schema.shipments.bookingNo,
+        soNo: schema.shipments.soNo,
+        hblAwbFcrNo: schema.shipments.hblAwbFcrNo,
+        mbl: schema.shipments.mbl,
+        containerNo: schema.shipments.containerNo,
+        mode: schema.shipments.mode,
+        state: schema.shipments.state,
+        legStatus: schema.shipments.legStatus,
+        riskLevel: schema.shipments.riskLevel,
+        reviewStatus: schema.shipments.reviewStatus,
+        confidence: schema.shipments.confidence,
+        reviewReasons: schema.shipments.reviewReasons,
+        etd: schema.shipments.etd,
+        atd: schema.shipments.atd,
+        eta: schema.shipments.eta,
+        updatedAt: schema.shipments.updatedAt,
+        customerId: schema.customers.id,
+        customerName: schema.customers.name,
+        customerCode: schema.customers.code,
+        forwarderId: schema.forwarders.id,
+        forwarderName: schema.forwarders.name,
+        polCode: pol.unlocode,
+        podCode: pod.unlocode,
+      })
+      .from(schema.shipments)
+      .innerJoin(schema.bookings, eq(schema.shipments.bookingId, schema.bookings.id))
+      .leftJoin(schema.customers, eq(schema.bookings.customerId, schema.customers.id))
+      .leftJoin(schema.forwarders, eq(schema.shipments.forwarderId, schema.forwarders.id))
+      .leftJoin(pol, eq(schema.shipments.polId, pol.id))
+      .leftJoin(pod, eq(schema.shipments.podId, pod.id))
+      .where(eq(schema.shipments.id, id))
+    return row ?? null
+  }
+
   /** A booking's POs (number + vendor + qty) — the expandable child rows on a shipment. */
   linkedPosForBooking(bookingId: string) {
     return this.db

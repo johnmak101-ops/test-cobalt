@@ -54,6 +54,7 @@ export interface Milestone {
   milestoneType: string
   occurredAt: string
   senderType: string | null
+  emailMessageId?: string | null
 }
 
 export interface ShipmentDetail extends Leg {

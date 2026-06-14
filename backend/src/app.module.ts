@@ -11,6 +11,7 @@ import { DecisionsModule } from './decisions/decisions.module'
 import { ReviewModule } from './review/review.module'
 import { SettingsModule } from './settings/settings.module'
 import { AlertsModule } from './alerts/alerts.module'
+import { EmailsModule } from './emails/emails.module'
 import { RepositoriesModule } from './db/repositories.module'
 import { AuthModule } from './auth/auth.module'
 import { UsersModule } from './users/users.module'
@@ -32,6 +33,7 @@ import { UsersModule } from './users/users.module'
     ReviewModule,
     SettingsModule,
     AlertsModule,
+    EmailsModule,
   ],
 })
 export class AppModule {}

@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom'
 import { ChevronRight } from 'lucide-react'
-import { useAlerts, useDismissAlert, useEvaluateAlerts } from '../hooks/use-alerts'
+import { useAlerts, useDismissAlert, useEvaluateAlerts, useResolveAlert, useSnoozeAlert } from '../hooks/use-alerts'
 import { Card } from '../components/ui/Card'
 import { Badge } from '../components/ui/Badge'
 
@@ -9,6 +9,8 @@ const GROUPS = ['CRITICAL', 'WARNING', 'INFO'] as const
 export default function AlertsPage() {
   const { data: alerts = [] } = useAlerts('ACTIVE')
   const dismiss = useDismissAlert()
+  const resolve = useResolveAlert()
+  const snooze = useSnoozeAlert()
   const evaluate = useEvaluateAlerts()
 
   return (
@@ -47,12 +49,29 @@ export default function AlertsPage() {
                       </Link>
                     )}
                   </div>
-                  <button
-                    onClick={() => dismiss.mutate(a.id)}
-                    className="text-xs text-text-muted hover:text-text-primary"
-                  >
-                    Dismiss
-                  </button>
+                  <div className="flex shrink-0 items-center gap-3 text-xs">
+                    <button
+                      onClick={() => resolve.mutate(a.id)}
+                      disabled={resolve.isPending}
+                      className="text-text-muted hover:text-status-success disabled:opacity-50"
+                    >
+                      Resolve
+                    </button>
+                    <button
+                      onClick={() => snooze.mutate(a.id)}
+                      disabled={snooze.isPending}
+                      className="text-text-muted hover:text-text-primary disabled:opacity-50"
+                    >
+                      Snooze 24h
+                    </button>
+                    <button
+                      onClick={() => dismiss.mutate(a.id)}
+                      disabled={dismiss.isPending}
+                      className="text-text-muted hover:text-status-critical disabled:opacity-50"
+                    >
+                      Dismiss
+                    </button>
+                  </div>
                 </div>
               ))}
             </Card>
