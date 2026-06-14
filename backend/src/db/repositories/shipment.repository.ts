@@ -1,5 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common'
-import { and, eq } from 'drizzle-orm'
+import { and, desc, eq } from 'drizzle-orm'
+import { alias } from 'drizzle-orm/pg-core'
 import * as schema from '@cobalt/contracts'
 import { DRIZZLE, type DrizzleDB } from '../drizzle.provider'
 
@@ -42,6 +43,64 @@ export class ShipmentRepository {
   }
   updateLeg(id: string, patch: Record<string, unknown>) {
     return this.db.update(schema.shipments).set({ ...patch, updatedAt: new Date() }).where(eq(schema.shipments.id, id))
+  }
+
+  /** Active legs enriched with booking + customer + forwarder + route, for the Shipment Tracker list. */
+  legsForTracker(status?: string) {
+    const pol = alias(schema.ports, 'pol')
+    const pod = alias(schema.ports, 'pod')
+    const conds = [eq(schema.shipments.legStatus, 'ACTIVE')]
+    if (status) conds.push(eq(schema.shipments.state, status as (typeof schema.shipments.$inferSelect)['state']))
+    return this.db
+      .select({
+        id: schema.shipments.id,
+        bookingId: schema.shipments.bookingId,
+        jobNo: schema.bookings.jobNo,
+        bookingNo: schema.shipments.bookingNo,
+        soNo: schema.shipments.soNo,
+        hblAwbFcrNo: schema.shipments.hblAwbFcrNo,
+        mbl: schema.shipments.mbl,
+        containerNo: schema.shipments.containerNo,
+        mode: schema.shipments.mode,
+        status: schema.shipments.state,
+        riskLevel: schema.shipments.riskLevel,
+        reviewStatus: schema.shipments.reviewStatus,
+        confidence: schema.shipments.confidence,
+        etd: schema.shipments.etd,
+        eta: schema.shipments.eta,
+        updatedAt: schema.shipments.updatedAt,
+        customerId: schema.customers.id,
+        customerName: schema.customers.name,
+        customerCode: schema.customers.code,
+        forwarderId: schema.forwarders.id,
+        forwarderName: schema.forwarders.name,
+        polCode: pol.unlocode,
+        podCode: pod.unlocode,
+      })
+      .from(schema.shipments)
+      .innerJoin(schema.bookings, eq(schema.shipments.bookingId, schema.bookings.id))
+      .leftJoin(schema.customers, eq(schema.bookings.customerId, schema.customers.id))
+      .leftJoin(schema.forwarders, eq(schema.shipments.forwarderId, schema.forwarders.id))
+      .leftJoin(pol, eq(schema.shipments.polId, pol.id))
+      .leftJoin(pod, eq(schema.shipments.podId, pod.id))
+      .where(and(...conds))
+      .orderBy(desc(schema.shipments.updatedAt))
+  }
+
+  /** A booking's POs (number + vendor + qty) — the expandable child rows on a shipment. */
+  linkedPosForBooking(bookingId: string) {
+    return this.db
+      .select({
+        id: schema.purchaseOrders.id,
+        poNumber: schema.purchaseOrders.poNumber,
+        totalQuantity: schema.purchaseOrders.totalQuantity,
+        quantityUnit: schema.purchaseOrders.quantityUnit,
+        vendorName: schema.vendors.name,
+      })
+      .from(schema.bookingPos)
+      .innerJoin(schema.purchaseOrders, eq(schema.bookingPos.poId, schema.purchaseOrders.id))
+      .leftJoin(schema.vendors, eq(schema.purchaseOrders.vendorId, schema.vendors.id))
+      .where(eq(schema.bookingPos.bookingId, bookingId))
   }
 
   // --- shipment_pos ---

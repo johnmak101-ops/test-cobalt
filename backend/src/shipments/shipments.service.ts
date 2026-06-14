@@ -21,6 +21,46 @@ export class ShipmentsService {
     return { ...ship, milestones, pos }
   }
 
+  /** Shipment Tracker list — active legs enriched with customer / forwarder / route / POs / risk. */
+  async listForTracker(status?: string) {
+    const rows = await this.shipments.legsForTracker(status && status !== 'ALL' ? status : undefined)
+    const shipments = await Promise.all(
+      rows.map(async (r) => {
+        const pos = await this.shipments.linkedPosForBooking(r.bookingId)
+        return {
+          id: r.id,
+          bookingId: r.bookingId,
+          // "Shipment ID" display — the most specific identifier carried by this leg
+          bookingNo: r.bookingNo ?? r.containerNo ?? r.hblAwbFcrNo ?? r.soNo ?? r.jobNo,
+          soNumber: r.soNo,
+          hblNumber: r.hblAwbFcrNo,
+          containerNo: r.containerNo,
+          mblNumber: r.mbl,
+          mode: r.mode,
+          status: r.status,
+          riskLevel: r.riskLevel,
+          reviewStatus: r.reviewStatus,
+          confidence: r.confidence,
+          etd: r.etd,
+          eta: r.eta,
+          updatedAt: r.updatedAt,
+          route: r.polCode && r.podCode ? `${r.polCode}→${r.podCode}` : (r.polCode ?? r.podCode ?? null),
+          customer: r.customerId ? { id: r.customerId, name: r.customerName, code: r.customerCode } : null,
+          forwarder: r.forwarderId ? { id: r.forwarderId, name: r.forwarderName } : null,
+          linkedPOs: pos.map((p) => ({
+            id: p.id,
+            poNumber: p.poNumber,
+            quantity: null as number | null,
+            totalQuantity: p.totalQuantity,
+            quantityUnit: p.quantityUnit,
+            vendor: p.vendorName ? { name: p.vendorName } : null,
+          })),
+        }
+      }),
+    )
+    return { shipments }
+  }
+
   /**
    * Matcher read-API: given a strong-key bag (so_no / booking_no / hbl_awb_fcr_no / mbl /
    * container_no + optional customer_po), return candidate legs so the Agent VM can decide

@@ -67,6 +67,15 @@ describe('Matcher read-APIs (integration)', () => {
     expect((res.candidates[0] as any).lockedFields).toContain('eta')
   })
 
+  it('lists active legs as tracker rows with their linked POs', async () => {
+    await seedLeg({ so_no: 'SO-T1' }, { jobNo: 'JOB-T-9', po: 'PO-T9' })
+    const res = await shipments.listForTracker()
+    const row = res.shipments.find((s) => s.linkedPOs.some((p) => p.poNumber === 'PO-T9'))
+    expect(row).toBeTruthy()
+    expect(row!.status).toBe('BOOKED')
+    expect(row!.linkedPOs[0]!.poNumber).toBe('PO-T9')
+  })
+
   it('lists the PO master with customer/vendor codes resolved', async () => {
     const [cust] = await db.insert(schema.customers).values({ code: 'WYSE', name: 'Wyse London' }).returning()
     await db.insert(schema.purchaseOrders).values({ poNumber: 'PO-OPEN', customerId: cust.id })
