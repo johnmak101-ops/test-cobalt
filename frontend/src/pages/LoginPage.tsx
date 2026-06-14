@@ -54,19 +54,19 @@ export default function LoginPage() {
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             placeholder="Email"
-            className="w-full rounded-lg border border-border bg-surface-800 px-3 py-2 text-sm text-text-primary outline-none focus:border-cobalt-primary"
+            className="input"
           />
           <input
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             type="password"
             placeholder="Password"
-            className="w-full rounded-lg border border-border bg-surface-800 px-3 py-2 text-sm text-text-primary outline-none focus:border-cobalt-primary"
+            className="input"
           />
           {error && <div className="text-sm text-status-critical">{error}</div>}
           <button
             disabled={busy}
-            className="w-full rounded-lg bg-cobalt-primary px-3 py-2 text-sm font-semibold text-white disabled:opacity-50"
+            className="btn btn-primary w-full py-2"
           >
             {busy ? 'Signing in…' : 'Sign in'}
           </button>
@@ -79,7 +79,7 @@ export default function LoginPage() {
               <button
                 key={q.email}
                 onClick={() => submit(q.email, 'cobalt')}
-                className="flex-1 rounded-lg border border-border bg-surface-800 py-1.5 text-xs text-text-secondary hover:text-text-primary"
+                className="btn btn-surface flex-1 py-1.5 text-xs"
               >
                 {q.role}
               </button>

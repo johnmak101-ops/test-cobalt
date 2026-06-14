@@ -29,7 +29,7 @@ export default function ReviewPage() {
   if (user?.role === 'VIEWER') {
     return (
       <Card>
-        <div className="text-sm text-text-muted">Editors only.</div>
+        <div className="muted">Editors only.</div>
       </Card>
     )
   }
@@ -37,8 +37,8 @@ export default function ReviewPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-xl font-bold">Review queue</h1>
-        <p className="text-sm text-text-muted">
+        <h1 className="page-title">Review queue</h1>
+        <p className="muted">
           Low-confidence shipments held for review. Confirm them as-is, or correct fields — your edits are locked so the
           agent cannot overwrite them.
         </p>
@@ -46,7 +46,7 @@ export default function ReviewPage() {
 
       {!items.length && (
         <Card>
-          <div className="text-sm text-text-muted">No shipments are awaiting review — all are confirmed.</div>
+          <div className="muted">No shipments are awaiting review — all are confirmed.</div>
         </Card>
       )}
 
@@ -55,7 +55,7 @@ export default function ReviewPage() {
           <div className="flex items-start justify-between gap-4 px-5 py-4">
             <div className="min-w-0 space-y-1">
               <div className="flex items-center gap-3">
-                <Link to={`/bookings/${it.bookingId}`} className="font-mono text-sm text-cobalt-primary hover:underline">
+                <Link to={`/bookings/${it.bookingId}`} className="link font-mono text-sm">
                   {it.jobNo ?? it.id.slice(0, 8)}
                 </Link>
                 <span className={`text-sm font-semibold ${confColor(it.confidence)}`}>conf {it.confidence ?? '—'}</span>
@@ -79,17 +79,10 @@ export default function ReviewPage() {
               ) : null}
             </div>
             <div className="flex shrink-0 gap-2">
-              <button
-                onClick={() => setEditing(editing === it.id ? null : it.id)}
-                className="rounded-lg border border-border px-3 py-1.5 text-sm text-text-secondary hover:text-text-primary"
-              >
+              <button onClick={() => setEditing(editing === it.id ? null : it.id)} className="btn btn-ghost">
                 {editing === it.id ? 'Cancel' : 'Correct'}
               </button>
-              <button
-                onClick={() => confirm.mutate(it.id)}
-                disabled={confirm.isPending}
-                className="rounded-lg bg-cobalt-primary px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-50"
-              >
+              <button onClick={() => confirm.mutate(it.id)} disabled={confirm.isPending} className="btn btn-primary">
                 Confirm
               </button>
             </div>
@@ -113,8 +106,6 @@ function CorrectForm({
   const initial = Object.fromEntries(EDITABLE.map((f) => [f.key, fmt(item[f.key], f.date)])) as Record<string, string>
   const [vals, setVals] = useState<Record<string, string>>(initial)
   const [reason, setReason] = useState('')
-  const input =
-    'rounded-lg border border-border bg-surface-800 px-2.5 py-1.5 text-sm text-text-primary outline-none focus:border-cobalt-primary'
 
   const submit = () => {
     const fields: Record<string, unknown> = {}
@@ -136,7 +127,7 @@ function CorrectForm({
               type={f.date ? 'date' : 'text'}
               value={vals[f.key] ?? ''}
               onChange={(e) => setVals({ ...vals, [f.key]: e.target.value })}
-              className={`${input} w-full`}
+              className="input input-sm"
             />
           </label>
         ))}
@@ -146,13 +137,9 @@ function CorrectForm({
           placeholder="Reason (recorded in the audit log)"
           value={reason}
           onChange={(e) => setReason(e.target.value)}
-          className={`${input} flex-1`}
+          className="input input-sm flex-1"
         />
-        <button
-          onClick={submit}
-          disabled={correct.isPending}
-          className="shrink-0 rounded-lg bg-status-success px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-50"
-        >
+        <button onClick={submit} disabled={correct.isPending} className="btn btn-success shrink-0">
           Save &amp; confirm
         </button>
       </div>

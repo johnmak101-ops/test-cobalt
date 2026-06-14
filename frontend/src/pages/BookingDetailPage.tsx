@@ -67,14 +67,14 @@ export default function BookingDetailPage() {
       </Link>
 
       <div className="flex flex-wrap items-center gap-3">
-        <h1 className="font-mono text-xl font-bold">{b.jobNo}</h1>
+        <h1 className="page-title font-mono">{b.jobNo}</h1>
         <span className="rounded bg-surface-700 px-2 py-0.5 text-xs text-text-secondary">{b.status}</span>
         {b.brand && <span className="text-text-muted">{b.brand}</span>}
       </div>
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
         <Card>
-          <h2 className="mb-3 font-semibold">Purchase Orders</h2>
+          <h2 className="mb-3 section-title">Purchase Orders</h2>
           {b.pos.length ? (
             b.pos.map((p) => (
               <div key={p.id} className="flex justify-between border-b border-border/50 py-2 text-sm last:border-0">
@@ -89,7 +89,7 @@ export default function BookingDetailPage() {
           )}
         </Card>
         <Card>
-          <h2 className="mb-3 font-semibold">Booking</h2>
+          <h2 className="mb-3 section-title">Booking</h2>
           <div className="grid grid-cols-2 gap-3 text-sm">
             <Field label="Cargo ready (CRD)" value={formatDate(b.crd)} />
             <Field label="Legs" value={String(b.legs.length)} />

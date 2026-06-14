@@ -17,17 +17,17 @@ export default function SettingsPage() {
   if (user?.role === 'VIEWER') {
     return (
       <Card>
-        <div className="text-sm text-text-muted">Editors only.</div>
+        <div className="muted">Editors only.</div>
       </Card>
     )
   }
 
   return (
     <div className="space-y-6">
-      <h1 className="text-xl font-bold">Settings</h1>
+      <h1 className="page-title">Settings</h1>
       <Card>
-        <h2 className="font-semibold">Review-gate confidence threshold</h2>
-        <p className="mt-1 text-sm text-text-muted">
+        <h2 className="section-title">Review-gate confidence threshold</h2>
+        <p className="mt-1 muted">
           A decision scoring at or above this is auto-confirmed; below it, the shipment is held for review.
           {isAdmin ? '' : ' Only administrators can change it.'}
         </p>
@@ -48,7 +48,7 @@ export default function SettingsPage() {
             <button
               onClick={() => set.mutate(value)}
               disabled={set.isPending || value === data?.threshold}
-              className="rounded-lg bg-cobalt-primary px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-50"
+              className="btn btn-primary"
             >
               Save
             </button>

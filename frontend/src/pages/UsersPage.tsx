@@ -19,38 +19,37 @@ export default function UsersPage() {
   if (user?.role !== 'SUPERADMIN') {
     return (
       <Card>
-        <div className="text-sm text-text-muted">Superadmins only.</div>
+        <div className="muted">Superadmins only.</div>
       </Card>
     )
   }
 
-  const input = 'rounded-lg border border-border bg-surface-800 px-3 py-2 text-sm text-text-primary outline-none focus:border-cobalt-primary'
   const submit = () =>
     create.mutate(form, { onSuccess: () => setForm({ email: '', name: '', role: 'VIEWER', password: '' }) })
 
   return (
     <div className="space-y-6">
-      <h1 className="text-xl font-bold">Users</h1>
+      <h1 className="page-title">Users</h1>
 
       <Card>
-        <h2 className="mb-3 flex items-center gap-2 font-semibold">
+        <h2 className="mb-3 flex items-center gap-2 section-title">
           <UserPlus size={16} /> Add user
         </h2>
         <div className="grid grid-cols-1 gap-2 md:grid-cols-6">
-          <input placeholder="Email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} className={`${input} md:col-span-2`} />
-          <input placeholder="Name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className={input} />
-          <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })} className={input}>
+          <input placeholder="Email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} className="input md:col-span-2" />
+          <input placeholder="Name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="input" />
+          <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })} className="input">
             {ALL_ROLES.map((r) => (
               <option key={r} value={r}>{r}</option>
             ))}
           </select>
-          <input placeholder="Password" type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} className={`${input} md:col-span-2`} />
+          <input placeholder="Password" type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} className="input md:col-span-2" />
         </div>
         <div className="mt-3 flex items-center gap-3">
           <button
             onClick={submit}
             disabled={create.isPending || !form.email || !form.name || form.password.length < 4}
-            className="rounded-lg bg-cobalt-primary px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-50"
+            className="btn btn-primary"
           >
             Create user
           </button>
@@ -61,22 +60,22 @@ export default function UsersPage() {
       </Card>
 
       <Card padding={false}>
-        <table className="w-full text-sm">
+        <table className="data-table">
           <thead>
-            <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-text-muted">
-              <th className="px-5 py-3 font-medium">Name</th>
-              <th className="px-5 py-3 font-medium">Email</th>
-              <th className="px-5 py-3 font-medium">Role</th>
-              <th className="px-5 py-3 font-medium">Status</th>
-              <th className="px-5 py-3" />
+            <tr>
+              <th>Name</th>
+              <th>Email</th>
+              <th>Role</th>
+              <th>Status</th>
+              <th />
             </tr>
           </thead>
           <tbody>
             {users.map((u) => (
-              <tr key={u.id} className="border-b border-border/50 last:border-0">
-                <td className="px-5 py-3 text-text-primary">{u.name}</td>
-                <td className="px-5 py-3 font-mono text-text-secondary">{u.email}</td>
-                <td className="px-5 py-3">
+              <tr key={u.id}>
+                <td className="text-text-primary">{u.name}</td>
+                <td className="font-mono text-text-secondary">{u.email}</td>
+                <td>
                   <select
                     value={u.role}
                     onChange={(e) => update.mutate({ id: u.id, role: e.target.value })}
@@ -87,7 +86,7 @@ export default function UsersPage() {
                     ))}
                   </select>
                 </td>
-                <td className="px-5 py-3">
+                <td>
                   <button
                     onClick={() => update.mutate({ id: u.id, active: !u.active })}
                     className={u.active ? 'text-status-success' : 'text-text-muted'}
@@ -95,7 +94,7 @@ export default function UsersPage() {
                     {u.active ? 'Active' : 'Disabled'}
                   </button>
                 </td>
-                <td className="px-5 py-3 text-right">
+                <td className="text-right">
                   {pendingDelete === u.id ? (
                     <span className="inline-flex items-center gap-2 text-xs">
                       <span className="text-text-muted">Delete?</span>

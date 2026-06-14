@@ -23,7 +23,7 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-xl font-bold">Dashboard</h1>
+      <h1 className="page-title">Dashboard</h1>
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         {kpis.map((k) => (
@@ -42,8 +42,8 @@ export default function DashboardPage() {
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <Card>
           <div className="mb-3 flex items-center justify-between">
-            <h2 className="font-semibold">Recent bookings</h2>
-            <Link to="/bookings" className="inline-flex items-center gap-0.5 text-xs text-cobalt-primary hover:underline">View all<ChevronRight size={12} /></Link>
+            <h2 className="section-title">Recent bookings</h2>
+            <Link to="/bookings" className="link inline-flex items-center gap-0.5 text-xs">View all<ChevronRight size={12} /></Link>
           </div>
           <div className="space-y-1">
             {bookings.slice(0, 7).map((b) => (
@@ -61,15 +61,15 @@ export default function DashboardPage() {
               </Link>
             ))}
             {!bookings.length && (
-              <div className="px-3 py-2 text-sm text-text-muted">No bookings yet — run Reconcile to import shipments.</div>
+              <div className="px-3 py-2 muted">No bookings yet — run Reconcile to import shipments.</div>
             )}
           </div>
         </Card>
 
         <Card>
           <div className="mb-3 flex items-center justify-between">
-            <h2 className="font-semibold">Active alerts</h2>
-            <Link to="/alerts" className="inline-flex items-center gap-0.5 text-xs text-cobalt-primary hover:underline">View all<ChevronRight size={12} /></Link>
+            <h2 className="section-title">Active alerts</h2>
+            <Link to="/alerts" className="link inline-flex items-center gap-0.5 text-xs">View all<ChevronRight size={12} /></Link>
           </div>
           <div className="space-y-1">
             {alerts.slice(0, 7).map((a) => (
@@ -82,7 +82,7 @@ export default function DashboardPage() {
               </div>
             ))}
             {!alerts.length && (
-              <div className="px-3 py-2 text-sm text-text-muted">No active alerts — run Evaluate alerts to check.</div>
+              <div className="px-3 py-2 muted">No active alerts — run Evaluate alerts to check.</div>
             )}
           </div>
         </Card>

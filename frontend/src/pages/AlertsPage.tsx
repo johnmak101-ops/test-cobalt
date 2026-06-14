@@ -14,12 +14,8 @@ export default function AlertsPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-bold">Alerts</h1>
-        <button
-          onClick={() => evaluate.mutate()}
-          disabled={evaluate.isPending}
-          className="rounded-lg border border-cobalt-primary/40 bg-cobalt-primary/15 px-3 py-1.5 text-sm font-medium text-cobalt-primary hover:bg-cobalt-primary/25 disabled:opacity-50"
-        >
+        <h1 className="page-title">Alerts</h1>
+        <button onClick={() => evaluate.mutate()} disabled={evaluate.isPending} className="btn btn-accent">
           Evaluate now
         </button>
       </div>
@@ -45,7 +41,7 @@ export default function AlertsPage() {
                     {a.bookingId && (
                       <Link
                         to={`/bookings/${a.bookingId}`}
-                        className="inline-flex items-center gap-0.5 text-xs text-cobalt-primary hover:underline"
+                        className="link inline-flex items-center gap-0.5 text-xs"
                       >
                         Booking<ChevronRight size={12} />
                       </Link>
@@ -66,7 +62,7 @@ export default function AlertsPage() {
 
       {!alerts.length && (
         <Card>
-          <div className="text-sm text-text-muted">No active alerts. Click "Evaluate now" to run the alert rules.</div>
+          <div className="muted">No active alerts. Click "Evaluate now" to run the alert rules.</div>
         </Card>
       )}
     </div>

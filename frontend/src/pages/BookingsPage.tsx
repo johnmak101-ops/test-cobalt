@@ -9,28 +9,28 @@ export default function BookingsPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-xl font-bold">Bookings</h1>
+      <h1 className="page-title">Bookings</h1>
       <Card padding={false}>
-        <table className="w-full text-sm">
+        <table className="data-table">
           <thead>
-            <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-text-muted">
-              <th className="px-5 py-3 font-medium">Job No</th>
-              <th className="px-5 py-3 font-medium">Brand</th>
-              <th className="px-5 py-3 font-medium">Mode</th>
-              <th className="px-5 py-3 font-medium">Legs</th>
-              <th className="px-5 py-3 font-medium">State</th>
+            <tr>
+              <th>Job No</th>
+              <th>Brand</th>
+              <th>Mode</th>
+              <th>Legs</th>
+              <th>State</th>
             </tr>
           </thead>
           <tbody>
             {bookings.map((b) => (
-              <tr key={b.id} className="border-b border-border/50 last:border-0 hover:bg-surface-700">
-                <td className="px-5 py-3">
-                  <Link to={`/bookings/${b.id}`} className="font-mono text-cobalt-primary hover:underline">
+              <tr key={b.id} className="hover:bg-surface-700">
+                <td>
+                  <Link to={`/bookings/${b.id}`} className="font-mono link">
                     {b.jobNo}
                   </Link>
                 </td>
-                <td className="px-5 py-3 text-text-secondary">{b.brand ?? '—'}</td>
-                <td className="px-5 py-3">
+                <td className="text-text-secondary">{b.brand ?? '—'}</td>
+                <td>
                   {b.activeMode ? (
                     <span className="inline-flex items-center gap-1.5 text-text-secondary">
                       <ModeIcon mode={b.activeMode} />
@@ -40,15 +40,15 @@ export default function BookingsPage() {
                     '—'
                   )}
                 </td>
-                <td className="px-5 py-3 text-text-secondary">{b.legCount}</td>
-                <td className="px-5 py-3">{b.activeState ? <StateBadge state={b.activeState} /> : '—'}</td>
+                <td className="text-text-secondary">{b.legCount}</td>
+                <td>{b.activeState ? <StateBadge state={b.activeState} /> : '—'}</td>
               </tr>
             ))}
           </tbody>
         </table>
-        {isLoading && <div className="px-5 py-6 text-sm text-text-muted">Loading…</div>}
+        {isLoading && <div className="px-5 py-6 muted">Loading…</div>}
         {!isLoading && !bookings.length && (
-          <div className="px-5 py-6 text-sm text-text-muted">No bookings yet — run Reconcile from the top bar to import shipments.</div>
+          <div className="px-5 py-6 muted">No bookings yet — run Reconcile from the top bar to import shipments.</div>
         )}
       </Card>
     </div>

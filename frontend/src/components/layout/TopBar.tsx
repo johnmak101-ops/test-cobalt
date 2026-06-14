@@ -18,14 +18,14 @@ export function TopBar() {
             <button
               onClick={() => reconcile.mutate()}
               disabled={reconcile.isPending}
-              className="flex items-center gap-2 rounded-lg border border-border bg-surface-800 px-3 py-1.5 text-sm font-medium text-text-secondary hover:text-text-primary disabled:opacity-50"
+              className="btn btn-surface"
             >
               <RefreshCw size={15} className={reconcile.isPending ? 'animate-spin' : ''} /> Reconcile
             </button>
             <button
               onClick={() => evaluate.mutate()}
               disabled={evaluate.isPending}
-              className="flex items-center gap-2 rounded-lg border border-cobalt-primary/40 bg-cobalt-primary/15 px-3 py-1.5 text-sm font-medium text-cobalt-primary hover:bg-cobalt-primary/25 disabled:opacity-50"
+              className="btn btn-accent"
             >
               <BellRing size={15} /> Evaluate alerts
             </button>
