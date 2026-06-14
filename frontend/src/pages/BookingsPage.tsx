@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom'
 import { useBookings } from '../hooks/use-tracking'
 import { Card } from '../components/ui/Card'
 import { StateBadge } from '../components/StateBadge'
+import { ModeIcon } from '../components/ui/ModeIcon'
 
 export default function BookingsPage() {
   const { data: bookings = [], isLoading } = useBookings()
@@ -31,8 +32,8 @@ export default function BookingsPage() {
                 <td className="px-5 py-3 text-text-secondary">{b.brand ?? '—'}</td>
                 <td className="px-5 py-3">
                   {b.activeMode ? (
-                    <span>
-                      {b.activeMode === 'AIR' ? '✈️ ' : '🚢 '}
+                    <span className="inline-flex items-center gap-1.5 text-text-secondary">
+                      <ModeIcon mode={b.activeMode} />
                       {b.activeMode}
                     </span>
                   ) : (

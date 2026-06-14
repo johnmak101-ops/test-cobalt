@@ -46,7 +46,7 @@ export default function ReviewPage() {
 
       {!items.length && (
         <Card>
-          <div className="text-sm text-text-muted">Nothing to review — every shipment is confirmed. 🎉</div>
+          <div className="text-sm text-text-muted">Nothing to review — every shipment is confirmed.</div>
         </Card>
       )}
 

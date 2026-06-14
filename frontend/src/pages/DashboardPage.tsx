@@ -1,10 +1,11 @@
 import { Link } from 'react-router-dom'
-import { Package, Ship, AlertOctagon, TriangleAlert } from 'lucide-react'
+import { Package, Ship, AlertOctagon, TriangleAlert, ChevronRight } from 'lucide-react'
 import { useBookings } from '../hooks/use-tracking'
 import { useAlerts } from '../hooks/use-alerts'
 import { Card } from '../components/ui/Card'
 import { Badge } from '../components/ui/Badge'
 import { StateBadge } from '../components/StateBadge'
+import { ModeIcon } from '../components/ui/ModeIcon'
 
 export default function DashboardPage() {
   const { data: bookings = [] } = useBookings()
@@ -42,7 +43,7 @@ export default function DashboardPage() {
         <Card>
           <div className="mb-3 flex items-center justify-between">
             <h2 className="font-semibold">Recent bookings</h2>
-            <Link to="/bookings" className="text-xs text-cobalt-primary hover:underline">View all →</Link>
+            <Link to="/bookings" className="inline-flex items-center gap-0.5 text-xs text-cobalt-primary hover:underline">View all<ChevronRight size={12} /></Link>
           </div>
           <div className="space-y-1">
             {bookings.slice(0, 7).map((b) => (
@@ -53,7 +54,7 @@ export default function DashboardPage() {
               >
                 <span className="flex items-center gap-2">
                   <span className="font-mono text-sm text-text-primary">{b.jobNo}</span>
-                  {b.activeMode && <span>{b.activeMode === 'AIR' ? '✈️' : '🚢'}</span>}
+                  {b.activeMode && <ModeIcon mode={b.activeMode} />}
                   <span className="text-xs text-text-muted">{b.brand ?? ''}</span>
                 </span>
                 {b.activeState && <StateBadge state={b.activeState} />}
@@ -66,7 +67,7 @@ export default function DashboardPage() {
         <Card>
           <div className="mb-3 flex items-center justify-between">
             <h2 className="font-semibold">Active alerts</h2>
-            <Link to="/alerts" className="text-xs text-cobalt-primary hover:underline">View all →</Link>
+            <Link to="/alerts" className="inline-flex items-center gap-0.5 text-xs text-cobalt-primary hover:underline">View all<ChevronRight size={12} /></Link>
           </div>
           <div className="space-y-1">
             {alerts.slice(0, 7).map((a) => (

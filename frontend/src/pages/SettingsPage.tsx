@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Check } from 'lucide-react'
 import { useThreshold, useSetThreshold } from '../hooks/use-settings'
 import { useAuth } from '../hooks/use-auth'
 import { Card } from '../components/ui/Card'
@@ -51,7 +52,11 @@ export default function SettingsPage() {
             >
               Save
             </button>
-            {set.isSuccess && value === data?.threshold && <span className="text-sm text-status-success">Saved ✓</span>}
+            {set.isSuccess && value === data?.threshold && (
+              <span className="inline-flex items-center gap-1 text-sm text-status-success">
+                <Check size={14} /> Saved
+              </span>
+            )}
           </div>
         )}
       </Card>

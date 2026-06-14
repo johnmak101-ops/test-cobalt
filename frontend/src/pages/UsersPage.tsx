@@ -13,6 +13,7 @@ export default function UsersPage() {
   const update = useUpdateUser()
   const del = useDeleteUser()
   const [form, setForm] = useState({ email: '', name: '', role: 'VIEWER', password: '' })
+  const [pendingDelete, setPendingDelete] = useState<string | null>(null)
 
   // user management is SUPERADMIN-only
   if (user?.role !== 'SUPERADMIN') {
@@ -93,16 +94,32 @@ export default function UsersPage() {
                   </button>
                 </td>
                 <td className="px-5 py-3 text-right">
-                  <button
-                    onClick={() => {
-                      if (confirm(`Delete ${u.email}?`)) del.mutate(u.id)
-                    }}
-                    disabled={u.id === user?.id}
-                    title={u.id === user?.id ? 'You cannot delete yourself' : 'Delete user'}
-                    className="text-text-muted hover:text-status-critical disabled:opacity-30"
-                  >
-                    <Trash2 size={15} />
-                  </button>
+                  {pendingDelete === u.id ? (
+                    <span className="inline-flex items-center gap-2 text-xs">
+                      <span className="text-text-muted">Delete?</span>
+                      <button
+                        onClick={() => {
+                          del.mutate(u.id)
+                          setPendingDelete(null)
+                        }}
+                        className="font-semibold text-status-critical hover:underline"
+                      >
+                        Yes
+                      </button>
+                      <button onClick={() => setPendingDelete(null)} className="text-text-muted hover:text-text-primary">
+                        Cancel
+                      </button>
+                    </span>
+                  ) : (
+                    <button
+                      onClick={() => setPendingDelete(u.id)}
+                      disabled={u.id === user?.id}
+                      title={u.id === user?.id ? 'You cannot delete yourself' : 'Delete user'}
+                      className="text-text-muted hover:text-status-critical disabled:opacity-30"
+                    >
+                      <Trash2 size={15} />
+                    </button>
+                  )}
                 </td>
               </tr>
             ))}

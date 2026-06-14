@@ -3,6 +3,7 @@ import { ArrowLeft } from 'lucide-react'
 import { useBooking, useShipment } from '../hooks/use-tracking'
 import { Card } from '../components/ui/Card'
 import { StateBadge } from '../components/StateBadge'
+import { ModeIcon } from '../components/ui/ModeIcon'
 import { MilestoneTimeline } from '../components/MilestoneTimeline'
 import { formatDate } from '../lib/utils'
 import type { Leg } from '../lib/types'
@@ -23,7 +24,7 @@ function LegCard({ leg }: { leg: Leg }) {
   return (
     <Card className={superseded ? 'opacity-60' : ''}>
       <div className="flex flex-wrap items-center gap-2">
-        <span className="text-lg">{leg.mode === 'AIR' ? '✈️' : '🚢'}</span>
+        <ModeIcon mode={leg.mode} size={18} className="text-text-secondary" />
         <span className="font-semibold text-text-primary">
           Leg {leg.legNo} · {leg.mode ?? '—'}
         </span>

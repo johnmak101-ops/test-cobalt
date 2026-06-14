@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom'
+import { ChevronRight } from 'lucide-react'
 import { useAlerts, useDismissAlert, useEvaluateAlerts } from '../hooks/use-alerts'
 import { Card } from '../components/ui/Card'
 import { Badge } from '../components/ui/Badge'
@@ -42,8 +43,11 @@ export default function AlertsPage() {
                     <span className="font-mono text-xs text-text-muted">{a.ruleId}</span>
                     <span className="text-sm text-text-primary">{a.message}</span>
                     {a.bookingId && (
-                      <Link to={`/bookings/${a.bookingId}`} className="text-xs text-cobalt-primary hover:underline">
-                        booking →
+                      <Link
+                        to={`/bookings/${a.bookingId}`}
+                        className="inline-flex items-center gap-0.5 text-xs text-cobalt-primary hover:underline"
+                      >
+                        Booking<ChevronRight size={12} />
                       </Link>
                     )}
                   </div>
