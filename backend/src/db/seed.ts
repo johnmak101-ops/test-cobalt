@@ -20,7 +20,7 @@ async function main() {
   await db.execute(sql`truncate table
     tracking.shipment_pos, tracking.shipment_milestones, tracking.shipments,
     tracking.booking_pos, tracking.bookings, tracking.purchase_orders,
-    tracking.field_locks, tracking.forwarder_aliases, tracking.consignees,
+    tracking.field_locks, tracking.app_settings, tracking.forwarder_aliases, tracking.consignees,
     tracking.forwarders, tracking.vendors, tracking.customers, tracking.ports,
     tracking.users, tracking.refresh_tokens
     restart identity cascade`)
@@ -174,7 +174,12 @@ async function main() {
     { email: 'editor@cobalt.hk', name: 'Eddie Editor', passwordHash: pw, role: 'EDITOR', avatarInitials: 'EE' },
     { email: 'admin@cobalt.hk', name: 'Amon Admin', passwordHash: pw, role: 'ADMIN', avatarInitials: 'AA' },
     { email: 'super@cobalt.hk', name: 'Sue Super', passwordHash: pw, role: 'SUPERADMIN', avatarInitials: 'SS' },
+    // service account the Agent VM (cobalt-queue Matcher) logs in as to POST decisions
+    { email: 'agent@cobalt.hk', name: 'Cobalt Agent', passwordHash: pw, role: 'EDITOR', avatarInitials: 'AG' },
   ])
+
+  // ---- app settings: the review-gate confidence threshold (admin-tunable) ----
+  await db.insert(schema.appSettings).values({ key: 'confidence_threshold', value: 85 })
 
   // eslint-disable-next-line no-console
   console.log(`seed done: booking ${booking.jobNo} (${booking.id}) with legs ${leg1.legNo}(${leg1.legStatus}) / ${leg2.legNo}(${leg2.legStatus})`)
