@@ -1,32 +1,15 @@
-import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { useReviewQueue, useConfirmReview, useCorrectReview, type ReviewItem } from '../hooks/use-review'
+import { useReviewQueue } from '../hooks/use-review'
 import { useAuth } from '../hooks/use-auth'
 import { Card } from '../components/ui/Card'
-import { ConflictReason } from '../components/ConflictReason'
 import { modeLabel, stateLabel } from '../lib/utils'
 
-const EDITABLE: { key: keyof ReviewItem; label: string; date?: boolean }[] = [
-  { key: 'soNo', label: 'SO #' },
-  { key: 'bookingNo', label: 'Booking #' },
-  { key: 'hblAwbFcrNo', label: 'HBL/AWB' },
-  { key: 'mbl', label: 'MBL' },
-  { key: 'containerNo', label: 'Container' },
-  { key: 'etd', label: 'ETD', date: true },
-  { key: 'eta', label: 'ETA', date: true },
-  { key: 'qty', label: 'Qty' },
-]
-
-const fmt = (v: unknown, date?: boolean) => (v == null ? '' : date ? String(v).slice(0, 10) : String(v))
 const confColor = (c: number | null) =>
   c == null ? 'text-text-muted' : c < 40 ? 'text-status-critical' : c < 70 ? 'text-status-warning' : 'text-status-success'
 
 export default function ReviewPage() {
   const { user } = useAuth()
   const { data: items = [] } = useReviewQueue()
-  const confirm = useConfirmReview()
-  const correct = useCorrectReview()
-  const [editing, setEditing] = useState<string | null>(null)
 
   if (user?.role === 'VIEWER') {
     return (
@@ -40,111 +23,52 @@ export default function ReviewPage() {
     <div className="space-y-6">
       <div>
         <h1 className="page-title">Review queue</h1>
-        <p className="muted">
-          Low-confidence shipments held for review. Confirm them as-is, or correct fields — your edits are locked so the
-          agent cannot overwrite them.
-        </p>
+        <p className="muted">Low-confidence shipments held for review. Click one to confirm it or correct the flagged fields.</p>
       </div>
 
-      {!items.length && (
+      {!items.length ? (
         <Card>
           <div className="muted">No shipments are awaiting review — all are confirmed.</div>
         </Card>
-      )}
-
-      {items.map((it) => (
-        <Card key={it.id} padding={false}>
-          <div className="flex items-start justify-between gap-4 px-5 py-4">
-            <div className="min-w-0 space-y-1">
-              <div className="flex items-center gap-3">
-                <Link to={`/bookings/${it.bookingId}`} className="link font-mono text-sm">
-                  {it.jobNo ?? it.id.slice(0, 8)}
-                </Link>
-                <span className={`text-sm font-semibold ${confColor(it.confidence)}`}>conf {it.confidence ?? '—'}</span>
-                <span className="text-xs text-text-muted">
-                  {it.mode ? `${modeLabel(it.mode)} · ` : ''}
-                  {stateLabel(it.state)}
-                </span>
-              </div>
-              <div className="truncate text-xs text-text-secondary">
-                {it.soNo && <>SO {it.soNo} · </>}
-                {it.bookingNo && <>BK {it.bookingNo} · </>}
-                {it.hblAwbFcrNo && <>HBL {it.hblAwbFcrNo} · </>}
-                PO {it.pos.join(', ') || '—'}
-              </div>
-              {it.reviewReasons?.length ? (
-                <ul className="mt-1 list-inside list-disc text-xs text-status-warning">
-                  {[...new Set(it.reviewReasons)].map((r, i) => (
-                    <li key={i}><ConflictReason reason={r} /></li>
-                  ))}
-                </ul>
-              ) : null}
-            </div>
-            <div className="flex shrink-0 gap-2">
-              <button onClick={() => setEditing(editing === it.id ? null : it.id)} className="btn btn-ghost">
-                {editing === it.id ? 'Cancel' : 'Correct'}
-              </button>
-              <button onClick={() => confirm.mutate(it.id)} disabled={confirm.isPending} className="btn btn-primary">
-                Confirm
-              </button>
-            </div>
-          </div>
-          {editing === it.id && <CorrectForm item={it} correct={correct} onDone={() => setEditing(null)} />}
+      ) : (
+        <Card padding={false}>
+          <ul className="divide-y divide-border">
+            {items.map((it) => {
+              const n = new Set(it.reviewReasons ?? []).size
+              return (
+                <li key={it.id}>
+                  <Link
+                    to={`/review-queue/${it.id}`}
+                    className="flex items-center justify-between gap-4 px-5 py-3 transition-colors hover:bg-surface-700"
+                  >
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-3">
+                        <span className="font-mono text-sm text-cobalt-primary-light">{it.jobNo ?? it.id.slice(0, 8)}</span>
+                        <span className={`text-xs font-semibold ${confColor(it.confidence)}`}>conf {it.confidence ?? '—'}</span>
+                        <span className="text-xs text-text-muted">
+                          {it.mode ? `${modeLabel(it.mode)} · ` : ''}
+                          {stateLabel(it.state)}
+                        </span>
+                      </div>
+                      <div className="truncate text-xs text-text-secondary">
+                        {it.soNo && <>SO {it.soNo} · </>}
+                        {it.bookingNo && <>BK {it.bookingNo} · </>}
+                        {it.hblAwbFcrNo && <>HBL {it.hblAwbFcrNo} · </>}
+                        PO {it.pos.join(', ') || '—'}
+                      </div>
+                    </div>
+                    {n > 0 && (
+                      <span className="shrink-0 rounded-full bg-status-warning/15 px-2.5 py-0.5 text-xs font-semibold text-status-warning">
+                        {n} {n === 1 ? 'issue' : 'issues'}
+                      </span>
+                    )}
+                  </Link>
+                </li>
+              )
+            })}
+          </ul>
         </Card>
-      ))}
-    </div>
-  )
-}
-
-function CorrectForm({
-  item,
-  correct,
-  onDone,
-}: {
-  item: ReviewItem
-  correct: ReturnType<typeof useCorrectReview>
-  onDone: () => void
-}) {
-  const initial = Object.fromEntries(EDITABLE.map((f) => [f.key, fmt(item[f.key], f.date)])) as Record<string, string>
-  const [vals, setVals] = useState<Record<string, string>>(initial)
-  const [reason, setReason] = useState('')
-
-  const submit = () => {
-    const fields: Record<string, unknown> = {}
-    for (const f of EDITABLE) {
-      const cur = vals[f.key] ?? ''
-      if (cur !== (initial[f.key] ?? '')) fields[f.key] = cur === '' ? null : cur
-    }
-    if (!Object.keys(fields).length) return onDone()
-    correct.mutate({ id: item.id, fields, reason }, { onSuccess: onDone })
-  }
-
-  return (
-    <div className="border-t border-border bg-surface-900/60 px-5 py-4">
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        {EDITABLE.map((f) => (
-          <label key={f.key} className="space-y-1">
-            <span className="text-xs text-text-muted">{f.label}</span>
-            <input
-              type={f.date ? 'date' : 'text'}
-              value={vals[f.key] ?? ''}
-              onChange={(e) => setVals({ ...vals, [f.key]: e.target.value })}
-              className="input input-sm"
-            />
-          </label>
-        ))}
-      </div>
-      <div className="mt-3 flex items-center gap-3">
-        <input
-          placeholder="Reason (recorded in the audit log)"
-          value={reason}
-          onChange={(e) => setReason(e.target.value)}
-          className="input input-sm flex-1"
-        />
-        <button onClick={submit} disabled={correct.isPending} className="btn btn-success shrink-0">
-          Save &amp; confirm
-        </button>
-      </div>
+      )}
     </div>
   )
 }

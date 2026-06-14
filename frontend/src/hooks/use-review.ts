@@ -16,7 +16,12 @@ export interface ReviewItem {
   hblAwbFcrNo: string | null
   mbl: string | null
   containerNo: string | null
+  consigneeName: string | null
+  cargoReadyDate: string | null
+  warehouseStartDate: string | null
+  warehouseEndDate: string | null
   etd: string | null
+  atd: string | null
   eta: string | null
   qty: number | null
   pos: string[]

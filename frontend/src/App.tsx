@@ -12,6 +12,7 @@ import PurchaseOrderDetailPage from './pages/PurchaseOrderDetailPage'
 import BookingDetailPage from './pages/BookingDetailPage'
 import AlertsPage from './pages/AlertsPage'
 import ReviewPage from './pages/ReviewPage'
+import ReviewDetailPage from './pages/ReviewDetailPage'
 import SettingsPage from './pages/SettingsPage'
 import MastersPage from './pages/MastersPage'
 import UsersPage from './pages/UsersPage'
@@ -53,6 +54,7 @@ function App() {
               <Route path="/purchase-orders" element={<PurchaseOrdersPage />} />
               <Route path="/purchase-orders/:id" element={<PurchaseOrderDetailPage />} />
               <Route path="/review-queue" element={<ReviewPage />} />
+              <Route path="/review-queue/:id" element={<ReviewDetailPage />} />
               <Route path="/alerts" element={<AlertsPage />} />
               <Route path="/settings" element={<SettingsPage />} />
               <Route path="/masters" element={<MastersPage />} />
