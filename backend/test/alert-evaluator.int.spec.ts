@@ -56,6 +56,14 @@ describe('AlertEvaluatorService (integration)', () => {
     expect(await db.select().from(schema.alertInstances)).toHaveLength(1)
   })
 
+  it('skips provisional (low-confidence) legs — commit-first never alerts on unreviewed data', async () => {
+    await seedA3()
+    await seedLeg({ cfsCutoff: new Date('2026-02-01'), reviewStatus: 'provisional' })
+    const r = await evaluator.evaluate(new Date('2026-02-05'))
+    expect(r.fired).toBe(0)
+    expect(await db.select().from(schema.alertInstances)).toHaveLength(0)
+  })
+
   it('does NOT fire A3 once a Final B/L milestone exists', async () => {
     await seedA3()
     const { leg } = await seedLeg({ cfsCutoff: new Date('2026-02-01') })

@@ -8,6 +8,13 @@
       "when": 1781364089995,
       "tag": "0000_tiresome_karnak",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1781404438827,
+      "tag": "0001_steep_wallop",
+      "breakpoints": true
     }
   ]
 }

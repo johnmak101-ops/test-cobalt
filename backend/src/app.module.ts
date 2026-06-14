@@ -6,6 +6,8 @@ import { MastersModule } from './masters/masters.module'
 import { BookingsModule } from './bookings/bookings.module'
 import { ShipmentsModule } from './shipments/shipments.module'
 import { ReconcileModule } from './reconcile/reconcile.module'
+import { DecisionsModule } from './decisions/decisions.module'
+import { SettingsModule } from './settings/settings.module'
 import { AlertsModule } from './alerts/alerts.module'
 import { RepositoriesModule } from './db/repositories.module'
 import { AuthModule } from './auth/auth.module'
@@ -23,6 +25,8 @@ import { UsersModule } from './users/users.module'
     BookingsModule,
     ShipmentsModule,
     ReconcileModule,
+    DecisionsModule,
+    SettingsModule,
     AlertsModule,
   ],
 })

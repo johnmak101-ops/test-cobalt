@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common'
-import { eq } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
 import * as schema from '@cobalt/contracts'
 import { DRIZZLE, type DrizzleDB } from '../drizzle.provider'
 
@@ -13,6 +13,13 @@ export class ShipmentRepository {
   }
   activeLegs() {
     return this.db.select().from(schema.shipments).where(eq(schema.shipments.legStatus, 'ACTIVE'))
+  }
+  /** Active AND confirmed — provisional (low-confidence) legs are excluded from alerts/automation. */
+  activeConfirmedLegs() {
+    return this.db
+      .select()
+      .from(schema.shipments)
+      .where(and(eq(schema.shipments.legStatus, 'ACTIVE'), eq(schema.shipments.reviewStatus, 'confirmed')))
   }
   legsForBooking(bookingId: string) {
     return this.db.select().from(schema.shipments).where(eq(schema.shipments.bookingId, bookingId)).orderBy(schema.shipments.legNo)

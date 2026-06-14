@@ -14,11 +14,15 @@ export interface ReconGroup {
   pos: string[]
   matchKeys: Record<string, unknown>
   emailTypes: string[]
-  events: { emailType: string; receivedAt: string }[]
+  events: { emailType: string; receivedAt: string; graphId?: string | null }[]
   mode: string | null
   conversationId: string | null
   conflicts: string[]
   evidenceIds: string[]
+  /** Critic's per-shipment confidence (0-100) and the resulting review gate. Undefined on the
+   *  legacy reconcile path (those legs stay `confirmed`); set on the agent decision path. */
+  confidence?: number | null
+  reviewStatus?: 'provisional' | 'confirmed'
 }
 
 export interface CommitResult {
@@ -112,11 +116,13 @@ export class CommitterService {
       jobNo = bk?.jobNo ?? '(unknown)'
       await this.applyFields(shipmentId, existing as Record<string, unknown>, legValues, skippedLockedFields, g)
       await this.fillBooking(bookingId, { customerId, vendorId, forwarderId, crd: date(f.cargo_ready_date) })
+      // review gate is metadata, not a lockable field — always reflect the latest agent score
+      if (g.reviewStatus !== undefined) await this.shipments.updateLeg(shipmentId, { reviewStatus: g.reviewStatus, confidence: g.confidence ?? null })
     } else {
       jobNo = await this.nextJobNo()
       const booking = await this.bookings.create({ jobNo, customerId, vendorId, forwarderId, crd: date(f.cargo_ready_date) })
       bookingId = booking.id
-      const leg = await this.shipments.insertLeg({ bookingId, legNo: 1, legStatus: 'ACTIVE', ...(legValues as object) })
+      const leg = await this.shipments.insertLeg({ bookingId, legNo: 1, legStatus: 'ACTIVE', ...(legValues as object), reviewStatus: g.reviewStatus ?? 'confirmed', confidence: g.confidence ?? null })
       shipmentId = leg.id
       action = 'create_booking'
       await this.writeAudit('booking', bookingId, 'create', null, jobNo, g)
@@ -178,6 +184,7 @@ export class CommitterService {
         milestoneType: mt as (typeof schema.shipmentMilestones.$inferInsert)['milestoneType'],
         occurredAt: new Date(ev.receivedAt),
         senderType: 'forwarder',
+        emailMessageId: ev.graphId ?? null, // graph id → "view original" re-fetch
       })
     }
     await this.shipments.replaceMilestones(shipmentId, rows)

@@ -12,6 +12,7 @@ import { AuditRepository } from '../src/db/repositories/audit.repository'
 import { AlertRepository } from '../src/db/repositories/alert.repository'
 import { EvidenceRepository } from '../src/db/repositories/evidence.repository'
 import { UsersRepository } from '../src/db/repositories/users.repository'
+import { SettingsRepository } from '../src/db/repositories/settings.repository'
 
 const ADMIN_URL = process.env.TEST_ADMIN_URL ?? 'postgres://postgres:postgres@localhost:5432/postgres'
 const TEST_URL = process.env.TEST_DATABASE_URL ?? 'postgres://postgres:postgres@localhost:5432/cobalt_test'
@@ -32,10 +33,10 @@ export async function getTestDb(): Promise<{ db: TestDB; pool: Pool }> {
   const present = await pool.query("select 1 from information_schema.schemata where schema_name = 'tracking'")
   if (present.rowCount === 0) {
     const dir = join(process.cwd(), '..', 'packages', 'contracts', 'drizzle')
-    const file = readdirSync(dir)
+    const files = readdirSync(dir)
       .filter((f) => f.endsWith('.sql'))
-      .sort()[0]
-    await pool.query(readFileSync(join(dir, file), 'utf8'))
+      .sort()
+    for (const file of files) await pool.query(readFileSync(join(dir, file), 'utf8'))
   }
   return { db: drizzle(pool, { schema }), pool }
 }
@@ -44,7 +45,7 @@ export async function resetDb(db: TestDB) {
   await db.execute(sql`truncate table
     tracking.shipment_pos, tracking.shipment_milestones, tracking.shipments,
     tracking.booking_pos, tracking.bookings, tracking.purchase_orders,
-    tracking.field_locks, tracking.forwarder_aliases, tracking.consignees,
+    tracking.field_locks, tracking.app_settings, tracking.forwarder_aliases, tracking.consignees,
     tracking.forwarders, tracking.vendors, tracking.customers, tracking.ports,
     audit.change_log, evidence.parsed_record, queue.queue_message,
     alerts.alerts, alerts.alert_rules, tracking.users, tracking.refresh_tokens
@@ -69,5 +70,6 @@ export function repos(db: TestDB) {
     alert: new AlertRepository(db),
     evidence: new EvidenceRepository(db),
     users: new UsersRepository(db),
+    settings: new SettingsRepository(db),
   }
 }

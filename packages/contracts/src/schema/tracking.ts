@@ -1,6 +1,6 @@
 import { pgSchema, uuid, text, timestamp, boolean, integer, doublePrecision, jsonb, unique } from 'drizzle-orm/pg-core'
 import {
-  SHIPMENT_STATE, LEG_STATUS, SHIPMENT_MODE, RISK_LEVEL, BOOKING_STATUS, QTY_UNIT,
+  SHIPMENT_STATE, LEG_STATUS, SHIPMENT_MODE, RISK_LEVEL, REVIEW_STATUS, BOOKING_STATUS, QTY_UNIT,
   VENDOR_TYPE, FORWARDER_ALIAS_TYPE, PORT_MODE, USER_ROLE, MILESTONE_TYPE, WAREHOUSE_SIGNAL, FIELD_LOCK_ENTITY,
 } from './enums'
 
@@ -146,6 +146,10 @@ export const shipments = tracking.table('shipments', {
   legStatus: text('leg_status', { enum: LEG_STATUS }).notNull().default('ACTIVE'),
   supersededById: uuid('superseded_by_id'), // logical self-FK → shipments.id (replacing leg)
   riskLevel: text('risk_level', { enum: RISK_LEVEL }).notNull().default('ON_TRACK'),
+  // review gate (Pillar: commit-first). Agent decisions land confirmed/provisional by the Critic's
+  // score vs the threshold; provisional legs are excluded from alerts until a human confirms.
+  reviewStatus: text('review_status', { enum: REVIEW_STATUS }).notNull().default('confirmed'),
+  confidence: integer('confidence'), // 0-100, the Critic's per-shipment score (null until scored)
   confirmedByEmail: boolean('confirmed_by_email').notNull().default(false), // operator-first, email confirms later
   forwarderId: uuid('forwarder_id').references(() => forwarders.id),
   consigneeId: uuid('consignee_id').references(() => consignees.id),
@@ -207,6 +211,15 @@ export const shipmentMilestones = tracking.table('shipment_milestones', {
   emailMessageId: text('email_message_id'), // graph id, for "view original"
   notes: text('notes'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+})
+
+/** App settings — tracking-side tunables (e.g. the confidence threshold for the review gate).
+ *  Key/value so the admin config page (and the decision router) read one row. */
+export const appSettings = tracking.table('app_settings', {
+  key: text('key').primaryKey(),
+  value: jsonb('value').$type<unknown>().notNull(),
+  updatedBy: uuid('updated_by').references(() => users.id),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 })
 
 /** Field-locks — a human edit WINS and LOCKS; the agent may never overwrite a locked field. */

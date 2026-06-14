@@ -7,6 +7,7 @@ import { AuditRepository } from './repositories/audit.repository'
 import { AlertRepository } from './repositories/alert.repository'
 import { EvidenceRepository } from './repositories/evidence.repository'
 import { UsersRepository } from './repositories/users.repository'
+import { SettingsRepository } from './repositories/settings.repository'
 
 const repositories = [
   MastersRepository,
@@ -17,6 +18,7 @@ const repositories = [
   AlertRepository,
   EvidenceRepository,
   UsersRepository,
+  SettingsRepository,
 ]
 
 /** Global so any service can inject a repository without re-importing. */

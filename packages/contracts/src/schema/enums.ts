@@ -10,6 +10,9 @@ export const SHIPMENT_STATE = ['BOOKED', 'CONFIRMED', 'AT_WAREHOUSE', 'SAILED', 
 export const LEG_STATUS = ['ACTIVE', 'SUPERSEDED', 'CANCELLED'] as const
 export const SHIPMENT_MODE = ['SEA', 'SEA_FCL', 'SEA_LCL', 'AIR'] as const
 export const RISK_LEVEL = ['ON_TRACK', 'AT_RISK', 'DELAYED'] as const
+/** Per-shipment review gate. The Critic's confidence routes a decision to `provisional`
+ *  (held for human review, excluded from alerts/automation) or `confirmed` (auto-applied). */
+export const REVIEW_STATUS = ['provisional', 'confirmed'] as const
 
 // ---- Booking (the stable parent) ----
 export const BOOKING_STATUS = ['ACTIVE', 'CLOSED', 'CANCELLED'] as const

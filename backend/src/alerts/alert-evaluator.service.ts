@@ -16,7 +16,7 @@ export class AlertEvaluatorService {
 
   async evaluate(now: Date = new Date()): Promise<{ evaluated: number; fired: number }> {
     const rules = await this.alerts.enabledRules()
-    const legs = await this.shipments.activeLegs()
+    const legs = await this.shipments.activeConfirmedLegs() // commit-first: never alert on provisional legs
 
     let fired = 0
     for (const leg of legs) {
