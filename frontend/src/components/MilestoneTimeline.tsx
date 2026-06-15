@@ -1,7 +1,6 @@
-import { useState } from 'react'
 import { Mail } from 'lucide-react'
 import { formatDate } from '../lib/utils'
-import { ViewOriginalModal } from './ViewOriginalModal'
+import { openEmailWindow } from '../lib/email'
 import type { Milestone } from '../lib/types'
 
 const labels: Record<string, string> = {
@@ -16,7 +15,6 @@ const labels: Record<string, string> = {
 }
 
 export function MilestoneTimeline({ milestones }: { milestones: Milestone[] }) {
-  const [openId, setOpenId] = useState<string | null>(null)
   if (!milestones?.length) return <div className="text-sm text-text-muted">No milestones yet.</div>
   return (
     <div className="space-y-0">
@@ -32,7 +30,7 @@ export function MilestoneTimeline({ milestones }: { milestones: Milestone[] }) {
               <span>{formatDate(m.occurredAt)}</span>
               {m.emailMessageId && (
                 <button
-                  onClick={() => setOpenId(m.emailMessageId!)}
+                  onClick={() => openEmailWindow(m.emailMessageId!)}
                   className="inline-flex items-center gap-1 text-cobalt-primary hover:underline"
                 >
                   <Mail size={11} /> View original
@@ -42,7 +40,6 @@ export function MilestoneTimeline({ milestones }: { milestones: Milestone[] }) {
           </div>
         </div>
       ))}
-      {openId && <ViewOriginalModal messageId={openId} onClose={() => setOpenId(null)} />}
     </div>
   )
 }

@@ -23,6 +23,7 @@ export class ShipmentsService {
     return {
       id: leg.id,
       bookingId: leg.bookingId,
+      jobNo: leg.jobNo,
       bookingNo: leg.bookingNo ?? leg.containerNo ?? leg.hblAwbFcrNo ?? leg.soNo ?? leg.jobNo,
       soNo: leg.soNo,
       hblAwbFcrNo: leg.hblAwbFcrNo,
@@ -62,6 +63,8 @@ export class ShipmentsService {
         return {
           id: r.id,
           bookingId: r.bookingId,
+          // the durable, human-quoted job/process number (stable across rotating forwarder IDs)
+          jobNo: r.jobNo,
           // "Shipment ID" display — the most specific identifier carried by this leg
           bookingNo: r.bookingNo ?? r.containerNo ?? r.hblAwbFcrNo ?? r.soNo ?? r.jobNo,
           soNumber: r.soNo,

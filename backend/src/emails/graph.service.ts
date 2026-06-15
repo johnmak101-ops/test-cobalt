@@ -10,6 +10,9 @@ export interface OriginalEmail {
   from?: string | null
   receivedDateTime?: string | null
   bodyPreview?: string | null
+  /** full body — populated for locally-ingested (corpus/same-host) email; the email window renders this */
+  bodyText?: string | null
+  bodyHtml?: string | null
   webLink?: string | null
   hasAttachments?: boolean
 }

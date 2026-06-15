@@ -1,6 +1,7 @@
 import { useState, Fragment } from 'react'
 import { Badge } from '../ui/Badge'
-import { formatShortDate, formatRelativeTime } from '../../lib/utils'
+import { ModeIcon } from '../ui/ModeIcon'
+import { formatShortDate, formatRelativeTime, modeLabel } from '../../lib/utils'
 import { useNavigate } from 'react-router-dom'
 import { AlertTriangle, ChevronRight, ChevronDown, Package } from 'lucide-react'
 import type { Shipment } from '../../hooks/use-shipments'
@@ -30,7 +31,7 @@ export function ShipmentTable({ shipments }: ShipmentTableProps) {
           <thead>
             <tr className="border-b border-border bg-surface-900/50">
               <th className="w-8 px-2 py-3"></th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-text-muted">Shipment ID</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-text-muted">Job / Shipment</th>
               <th className="px-4 py-3 text-left text-xs font-medium text-text-muted">POs</th>
               <th className="px-4 py-3 text-left text-xs font-medium text-text-muted">Customer</th>
               <th className="px-4 py-3 text-left text-xs font-medium text-text-muted">Forwarder</th>
@@ -64,7 +65,18 @@ export function ShipmentTable({ shipments }: ShipmentTableProps) {
                         </button>
                       ) : null}
                     </td>
-                    <td className="px-4 py-3 font-mono text-sm font-medium text-cobalt-primary-light">{shortId}</td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2.5">
+                        <ModeIcon mode={s.mode} size={16} className="shrink-0 text-cobalt-teal" />
+                        <div className="min-w-0">
+                          <div className="font-mono text-sm font-medium text-cobalt-primary-light">{s.jobNo ?? shortId}</div>
+                          <div className="flex items-center gap-1.5 text-[11px] text-text-muted">
+                            {s.mode && <span>{modeLabel(s.mode)}</span>}
+                            {s.jobNo && shortId && shortId !== s.jobNo && <span className="font-mono">· {shortId}</span>}
+                          </div>
+                        </div>
+                      </div>
+                    </td>
                     <td className="px-4 py-3">
                       <div className="group relative inline-block">
                         <span className="inline-flex cursor-default items-center gap-1.5 rounded-md bg-surface-600 px-2 py-0.5 text-xs font-medium text-text-secondary">

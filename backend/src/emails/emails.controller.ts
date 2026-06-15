@@ -13,4 +13,12 @@ export class EmailsController {
   @Get('original') original(@Query('messageId') messageId?: string) {
     return this.emails.getOriginal(messageId ?? '')
   }
+
+  /**
+   * GET /api/emails/attachments?messageId=… — the email's attachments with inline content
+   * (images/PDF as base64, text/csv/html as text) for the standalone email window.
+   */
+  @Get('attachments') attachments(@Query('messageId') messageId?: string) {
+    return this.emails.getAttachments(messageId ?? '')
+  }
 }

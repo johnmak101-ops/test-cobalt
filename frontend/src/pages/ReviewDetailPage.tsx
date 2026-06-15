@@ -5,8 +5,8 @@ import { useReviewQueue, useConfirmReview, useCorrectReview, type ReviewItem } f
 import { useShipment } from '../hooks/use-shipments'
 import { useAuth } from '../hooks/use-auth'
 import { Card } from '../components/ui/Card'
-import { ConflictReason } from '../components/ConflictReason'
-import { ViewOriginalModal } from '../components/ViewOriginalModal'
+import { ConflictList } from '../components/ConflictList'
+import { openEmailWindow } from '../lib/email'
 import { modeLabel, stateLabel, formatDate } from '../lib/utils'
 
 const EDITABLE: { key: keyof ReviewItem; label: string; type?: 'date' | 'number' }[] = [
@@ -53,7 +53,6 @@ export default function ReviewDetailPage() {
 
   const [vals, setVals] = useState<Record<string, string> | null>(null)
   const [reason, setReason] = useState('')
-  const [openEmail, setOpenEmail] = useState<string | null>(null)
 
   const back = (
     <Link to="/review-queue" className="inline-flex items-center gap-1 text-sm text-text-muted hover:text-text-primary">
@@ -120,11 +119,7 @@ export default function ReviewDetailPage() {
           <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-text-muted">
             Flagged conflicts ({conflicts.length})
           </div>
-          <ul className="list-inside list-disc space-y-0.5 text-sm text-status-warning">
-            {conflicts.map((r, i) => (
-              <li key={i}><ConflictReason reason={r} /></li>
-            ))}
-          </ul>
+          <ConflictList reasons={conflicts} />
         </Card>
       ) : null}
 
@@ -141,7 +136,7 @@ export default function ReviewDetailPage() {
                     {MS_LABELS[e.type] ?? e.type} · {formatDate(e.at)}{e.sender ? ` · ${e.sender}` : ''}
                   </div>
                 </div>
-                <button onClick={() => setOpenEmail(e.id)} className="btn btn-ghost shrink-0 inline-flex items-center gap-1">
+                <button onClick={() => openEmailWindow(e.id)} className="btn btn-ghost shrink-0 inline-flex items-center gap-1">
                   <Mail size={13} /> View
                 </button>
               </li>
@@ -187,7 +182,6 @@ export default function ReviewDetailPage() {
         </div>
       </Card>
 
-      {openEmail && <ViewOriginalModal messageId={openEmail} onClose={() => setOpenEmail(null)} />}
     </div>
   )
 }

@@ -13,6 +13,7 @@ export interface LinkedPO {
 export interface Shipment {
   id: string
   bookingId: string
+  jobNo: string | null
   bookingNo: string | null
   soNumber: string | null
   hblNumber: string | null

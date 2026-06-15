@@ -16,6 +16,7 @@ import ReviewDetailPage from './pages/ReviewDetailPage'
 import SettingsPage from './pages/SettingsPage'
 import MastersPage from './pages/MastersPage'
 import UsersPage from './pages/UsersPage'
+import EmailViewPage from './pages/EmailViewPage'
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { staleTime: 30000, retry: 1 } },
@@ -41,6 +42,15 @@ function App() {
         <AuthProvider>
           <Routes>
             <Route path="/login" element={<LoginPage />} />
+            {/* standalone email window (new tab) — authed, but no app chrome */}
+            <Route
+              path="/emails/view"
+              element={
+                <Protected>
+                  <EmailViewPage />
+                </Protected>
+              }
+            />
             <Route
               element={
                 <Protected>
