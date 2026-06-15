@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { useSearchParams } from 'react-router-dom'
-import { Mail, Paperclip, FileText, Image as ImageIcon } from 'lucide-react'
+import { Mail, Paperclip, FileText, Image as ImageIcon, Download } from 'lucide-react'
 import { api } from '../lib/api'
 
 interface OriginalEmail {
@@ -30,38 +30,55 @@ interface Attachment {
 const fmtSize = (n: number) =>
   n < 1024 ? `${n} B` : n < 1_048_576 ? `${(n / 1024).toFixed(0)} KB` : `${(n / 1_048_576).toFixed(1)} MB`
 
+/** Download the attachment as a real file so a human can open it locally (Excel / Word / a viewer),
+ *  instead of eyeballing extracted text/HTML in the browser. Images/PDF download as their actual
+ *  bytes; docx/xlsx are retained only as their NORMALIZED copy (HTML / CSV), so we hand those back
+ *  with the matching extension (.html / .csv) rather than a broken original-binary filename. */
+function downloadAttachment(a: Attachment) {
+  let blob: Blob
+  let name = a.filename || 'attachment'
+  if (a.base64) {
+    const bin = atob(a.base64)
+    const bytes = new Uint8Array(bin.length)
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
+    blob = new Blob([bytes], { type: a.mime || 'application/octet-stream' })
+  } else if (a.text != null) {
+    const ext = a.kind === 'csv' ? 'csv' : a.kind === 'html' ? 'html' : 'txt'
+    const type = a.kind === 'csv' ? 'text/csv' : a.kind === 'html' ? 'text/html' : 'text/plain'
+    if (!new RegExp(`\\.${ext}$`, 'i').test(name)) name = `${name.replace(/\.[^.]+$/, '')}.${ext}`
+    blob = new Blob([a.text], { type: `${type};charset=utf-8` })
+  } else {
+    return
+  }
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = name
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  setTimeout(() => URL.revokeObjectURL(url), 2000)
+}
+
+/** Download-only row — no inline preview; the reviewer downloads the file and opens it locally. */
 function AttachmentView({ a }: { a: Attachment }) {
-  const mime = a.mime ?? ''
-  const dataUri = a.base64 ? `data:${mime || 'application/octet-stream'};base64,${a.base64}` : null
-  const isImg = mime.startsWith('image/') && !!dataUri
-  const isPdf = mime.includes('pdf') && !!dataUri
+  const isImg = (a.mime ?? '').startsWith('image/')
+  const hasContent = !!a.base64 || a.text != null
   return (
-    <div className="rounded-lg border border-border bg-surface-800">
-      <div className="flex items-center justify-between gap-3 border-b border-border px-3 py-2">
-        <div className="flex min-w-0 items-center gap-2">
-          {isImg ? <ImageIcon size={14} className="shrink-0 text-text-muted" /> : <FileText size={14} className="shrink-0 text-text-muted" />}
-          <span className="truncate text-sm" title={a.filename}>{a.filename}</span>
-          {a.label && <span className="shrink-0 text-xs text-text-muted">· {a.label}</span>}
-        </div>
-        <div className="flex shrink-0 items-center gap-3">
-          <span className="text-xs text-text-muted">{fmtSize(a.sizeBytes)}</span>
-          {dataUri && (
-            <a href={dataUri} download={a.filename} className="text-xs text-cobalt-primary hover:underline">
-              Download
-            </a>
-          )}
-        </div>
+    <div className="flex items-center justify-between gap-3 rounded-lg border border-border bg-surface-800 px-3 py-2">
+      <div className="flex min-w-0 items-center gap-2">
+        {isImg ? <ImageIcon size={14} className="shrink-0 text-text-muted" /> : <FileText size={14} className="shrink-0 text-text-muted" />}
+        <span className="truncate text-sm" title={a.filename}>{a.filename}</span>
+        {a.label && <span className="shrink-0 text-xs text-text-muted">· {a.label}</span>}
       </div>
-      <div className="p-3">
-        {isImg && <img src={dataUri!} alt={a.filename} className="max-h-[600px] rounded border border-border" />}
-        {isPdf && <iframe src={dataUri!} title={a.filename} className="h-[600px] w-full rounded border border-border" />}
-        {!isImg && !isPdf && a.text != null && (
-          <pre className="max-h-[400px] overflow-auto whitespace-pre-wrap text-xs text-text-secondary">{a.text}</pre>
-        )}
-        {!isImg && !isPdf && a.text == null && (
-          <div className="text-xs text-text-muted">
-            {a.tooLarge ? `Attachment too large to preview (${fmtSize(a.sizeBytes)}).` : 'No preview available.'}
-          </div>
+      <div className="flex shrink-0 items-center gap-3">
+        <span className="text-xs text-text-muted">{fmtSize(a.sizeBytes)}</span>
+        {hasContent ? (
+          <button onClick={() => downloadAttachment(a)} className="inline-flex items-center gap-1 text-xs font-medium text-cobalt-primary hover:underline">
+            <Download size={12} /> Download
+          </button>
+        ) : (
+          <span className="text-xs text-text-muted">{a.tooLarge ? 'too large' : 'no copy'}</span>
         )}
       </div>
     </div>
