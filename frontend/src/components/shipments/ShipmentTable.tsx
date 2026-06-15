@@ -3,7 +3,8 @@ import { Badge } from '../ui/Badge'
 import { ModeIcon } from '../ui/ModeIcon'
 import { formatShortDate, formatRelativeTime, modeLabel } from '../../lib/utils'
 import { useNavigate } from 'react-router-dom'
-import { AlertTriangle, ChevronRight, ChevronDown, Package } from 'lucide-react'
+import { AlertTriangle, ChevronRight, ChevronDown } from 'lucide-react'
+import { PoBadge } from './PoBadge'
 import type { Shipment } from '../../hooks/use-shipments'
 
 interface ShipmentTableProps {
@@ -78,37 +79,7 @@ export function ShipmentTable({ shipments }: ShipmentTableProps) {
                       </div>
                     </td>
                     <td className="px-4 py-3">
-                      <div className="group relative inline-block">
-                        <span className="inline-flex cursor-default items-center gap-1.5 rounded-md bg-surface-600 px-2 py-0.5 text-xs font-medium text-text-secondary">
-                          <Package size={12} className="text-text-muted" />
-                          {poCount} PO{poCount !== 1 ? 's' : ''}
-                        </span>
-                        {poCount > 0 && (
-                          <div className="pointer-events-none absolute left-0 top-full z-50 mt-1 hidden w-72 rounded-lg border border-border bg-surface-800 p-3 shadow-xl group-hover:pointer-events-auto group-hover:block">
-                            <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-text-muted">Purchase Orders</p>
-                            <div className="divide-y divide-border">
-                              {s.linkedPOs?.map((po) => (
-                                <div
-                                  key={po.id}
-                                  onClick={(e) => {
-                                    e.stopPropagation()
-                                    navigate(`/purchase-orders/${po.id}`, { state: { fromShipment: s.id } })
-                                  }}
-                                  className="cursor-pointer rounded-md px-2 py-2 transition-colors hover:bg-surface-700"
-                                >
-                                  <span className="font-mono text-xs font-medium text-cobalt-primary-light">{po.poNumber}</span>
-                                  <div className="mt-0.5 flex items-center justify-between text-[11px] text-text-muted">
-                                    <span className="truncate">{po.vendor?.name ?? '—'}</span>
-                                    <span className="ml-3 shrink-0">
-                                      {po.totalQuantity != null ? `${po.totalQuantity} ${po.quantityUnit ?? ''}` : '—'}
-                                    </span>
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-                      </div>
+                      <PoBadge shipmentId={s.id} pos={s.linkedPOs ?? []} />
                     </td>
                     <td className="px-4 py-3 text-sm text-text-secondary">{s.customer?.name ?? '—'}</td>
                     <td className="px-4 py-3 text-sm text-text-secondary">{s.forwarder?.name ?? '—'}</td>
