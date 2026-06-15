@@ -1,6 +1,7 @@
 import { Body, Controller, Get, Param, Patch, Post } from '@nestjs/common'
 import { MastersService } from './masters.service'
-import { Roles } from '../auth/decorators'
+import { Roles, CurrentUser } from '../auth/decorators'
+import type { AuthUser } from '../auth/auth.service'
 import {
   CreateForwarderDto,
   UpdateForwarderDto,
@@ -20,6 +21,17 @@ export class MastersController {
   @Get('forwarders') forwarders() { return this.masters.forwarders() }
   @Get('ports') ports() { return this.masters.ports() }
   @Get('consignees') consignees() { return this.masters.consignees() }
+
+  // Master resolution (curated facts) + the curator loop.
+  @Get('resolution') resolution() { return this.masters.resolution() }
+  @Get('proposals') proposals() { return this.masters.proposals() }
+  @Roles('ADMIN') @Post('curate') curate() { return this.masters.curate() }
+  @Roles('ADMIN') @Post('proposals/:id/approve') approveProposal(@Param('id') id: string, @CurrentUser() u: AuthUser) {
+    return this.masters.approveProposal(id, u.id)
+  }
+  @Roles('ADMIN') @Post('proposals/:id/reject') rejectProposal(@Param('id') id: string, @CurrentUser() u: AuthUser) {
+    return this.masters.rejectProposal(id, u.id)
+  }
 
   // Writes — ADMIN+ , Ops-maintained masters only (customers/vendors are an ERP mirror).
   @Roles('ADMIN') @Post('forwarders') createForwarder(@Body() dto: CreateForwarderDto) {

@@ -2,6 +2,7 @@ import { pgSchema, uuid, text, timestamp, boolean, integer, doublePrecision, jso
 import {
   SHIPMENT_STATE, LEG_STATUS, SHIPMENT_MODE, RISK_LEVEL, REVIEW_STATUS, BOOKING_STATUS, QTY_UNIT,
   VENDOR_TYPE, FORWARDER_ALIAS_TYPE, PORT_MODE, USER_ROLE, MILESTONE_TYPE, WAREHOUSE_SIGNAL, FIELD_LOCK_ENTITY,
+  MASTER_RESOLUTION_KIND, MASTER_RESOLUTION_STATUS, MASTER_RESOLUTION_SOURCE,
 } from './enums'
 
 /** TRUTH (mutable) + masters + auth. Owned and WRITTEN by track-system (VM1 NestJS). */
@@ -67,6 +68,30 @@ export const ports = tracking.table('ports', {
   mode: text('mode', { enum: PORT_MODE }).notNull().default('sea'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 })
+
+/**
+ * Master RESOLUTION facts — the deterministic rules the parser's validator enforces, expressed as
+ * DATA instead of hardcode: vendor-name aliases (ELEGANT SMART→ELSMCO), vendor name markers,
+ * customer↔vendor links (ELGC→ELSMCO), forwarder ref patterns (^GZL\d{8}$→LOGIMARK). The SAME table
+ * is the proposals store: `status` = approved/seed (live, served to the validator) vs proposed
+ * (curated from corrections, awaiting human approval in the Masters UI) vs rejected. Agent proposes,
+ * human disposes — `lhs` is the observed text/pattern/customer, `rhs` the code it resolves to.
+ */
+export const masterResolution = tracking.table('master_resolution', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  kind: text('kind', { enum: MASTER_RESOLUTION_KIND }).notNull(),
+  lhs: text('lhs').notNull(),
+  rhs: text('rhs'),
+  status: text('status', { enum: MASTER_RESOLUTION_STATUS }).notNull().default('proposed'),
+  source: text('source', { enum: MASTER_RESOLUTION_SOURCE }).notNull().default('curator'),
+  reason: text('reason'),
+  evidence: jsonb('evidence').$type<unknown>(),
+  createdBy: uuid('created_by').references(() => users.id),
+  reviewedBy: uuid('reviewed_by').references(() => users.id),
+  reviewedAt: timestamp('reviewed_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [unique('master_resolution_uq').on(t.kind, t.lhs, t.rhs)])
 
 // ============================================================
 // AUTH  (JWT + local accounts + RBAC)

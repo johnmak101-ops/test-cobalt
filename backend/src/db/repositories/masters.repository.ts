@@ -1,7 +1,9 @@
 import { Inject, Injectable } from '@nestjs/common'
-import { eq, ilike } from 'drizzle-orm'
+import { eq, ilike, desc, sql } from 'drizzle-orm'
 import * as schema from '@cobalt/contracts'
 import { DRIZZLE, type DrizzleDB } from '../drizzle.provider'
+
+type ResolutionKind = (typeof schema.MASTER_RESOLUTION_KIND)[number]
 
 /** Data access for master data (read + tiered resolution). */
 @Injectable()
@@ -83,5 +85,61 @@ export class MastersRepository {
       .where(eq(schema.consignees.id, id))
       .returning()
     return r ?? null
+  }
+
+  // --- master resolution (curated facts + proposals) ---
+  listResolution(status: (typeof schema.MASTER_RESOLUTION_STATUS)[number]) {
+    return this.db
+      .select()
+      .from(schema.masterResolution)
+      .where(eq(schema.masterResolution.status, status))
+      .orderBy(desc(schema.masterResolution.createdAt))
+  }
+
+  /** Insert a proposal; the (kind,lhs,rhs) unique constraint dedups, so a repeat returns null. */
+  async createProposal(v: {
+    kind: ResolutionKind
+    lhs: string
+    rhs: string | null
+    reason: string | null
+    evidence: unknown
+  }) {
+    const [r] = await this.db
+      .insert(schema.masterResolution)
+      .values({ kind: v.kind, lhs: v.lhs, rhs: v.rhs, reason: v.reason, evidence: v.evidence, source: 'curator', status: 'proposed' })
+      .onConflictDoNothing()
+      .returning()
+    return r ?? null
+  }
+
+  async setProposalStatus(id: string, status: 'approved' | 'rejected', reviewerId: string) {
+    const [r] = await this.db
+      .update(schema.masterResolution)
+      .set({ status, reviewedBy: reviewerId, reviewedAt: new Date(), updatedAt: new Date() })
+      .where(eq(schema.masterResolution.id, id))
+      .returning()
+    return r ?? null
+  }
+
+  /** Already-approved (kind:lhs) keys — so the curator doesn't re-propose a settled fact. */
+  async approvedKeys(): Promise<Set<string>> {
+    const rows = await this.db
+      .select({ kind: schema.masterResolution.kind, lhs: schema.masterResolution.lhs })
+      .from(schema.masterResolution)
+      .where(eq(schema.masterResolution.status, 'approved'))
+    return new Set(rows.map((r) => `${r.kind}:${r.lhs.toUpperCase()}`))
+  }
+
+  /** Curator signal: per customer_code, how often each consignee / vendor co-occurs in the evidence. */
+  async evidenceMajorities() {
+    const res = await this.db.execute(sql`
+      SELECT fields->>'customer_code' AS cust,
+             fields->>'consignee_name' AS consignee,
+             fields->>'vendor_code'    AS vendor,
+             count(*)::int             AS n
+      FROM evidence.parsed_record
+      WHERE fields->>'customer_code' IS NOT NULL
+      GROUP BY 1, 2, 3`)
+    return (res as unknown as { rows: { cust: string; consignee: string | null; vendor: string | null; n: number }[] }).rows
   }
 }

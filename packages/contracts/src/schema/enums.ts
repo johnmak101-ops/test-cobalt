@@ -21,6 +21,10 @@ export const BOOKING_STATUS = ['ACTIVE', 'CLOSED', 'CANCELLED'] as const
 export const QTY_UNIT = ['cartons', 'pieces', 'cbm'] as const
 export const VENDOR_TYPE = ['factory', 'subcontractor', 'agent'] as const
 export const FORWARDER_ALIAS_TYPE = ['name', 'domain', 'chinese_name'] as const
+/** master_resolution — the resolution facts the validator enforces, curated from human corrections. */
+export const MASTER_RESOLUTION_KIND = ['vendor_alias', 'vendor_name_marker', 'customer_vendor', 'consignee_for_customer', 'forwarder_ref'] as const
+export const MASTER_RESOLUTION_STATUS = ['approved', 'proposed', 'rejected'] as const
+export const MASTER_RESOLUTION_SOURCE = ['seed', 'curator', 'ops'] as const
 export const PORT_MODE = ['sea', 'air', 'both'] as const
 export const USER_ROLE = ['VIEWER', 'EDITOR', 'ADMIN', 'SUPERADMIN'] as const
 

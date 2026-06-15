@@ -10,6 +10,10 @@ import {
   useConsignees,
   useCreateMaster,
   useUpdateMaster,
+  useProposals,
+  useResolution,
+  useCurate,
+  useResolveProposal,
   type EditableKind,
 } from '../hooks/use-masters'
 
@@ -24,7 +28,7 @@ interface Col {
   placeholder?: string
 }
 
-const TABS = ['customers', 'vendors', 'forwarders', 'ports', 'consignees'] as const
+const TABS = ['customers', 'vendors', 'forwarders', 'ports', 'consignees', 'resolution'] as const
 type Tab = (typeof TABS)[number]
 const RANK: Record<string, number> = { VIEWER: 0, EDITOR: 1, ADMIN: 2, SUPERADMIN: 3 }
 
@@ -166,6 +170,69 @@ function EditableTable<T extends { id: string }>({ kind, cols, rows }: { kind: E
   )
 }
 
+/** The curator loop: the agent proposes resolution facts from the evidence; an admin approves them
+ *  into the live master set (which the validator reads) — agent proposes, human disposes. */
+function ResolutionPanel() {
+  const proposals = useProposals()
+  const resolution = useResolution()
+  const curate = useCurate()
+  const approve = useResolveProposal('approve')
+  const reject = useResolveProposal('reject')
+  const pending = proposals.data ?? []
+
+  return (
+    <div className="space-y-4">
+      <Card>
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <h2 className="section-title">Curator</h2>
+            <p className="muted mt-1 text-xs">
+              The agent reviews the parsed evidence and <strong>proposes</strong> master facts (vendor aliases, customer↔vendor,
+              consignee). Approve one and the validator picks it up on its next load — no code change.
+            </p>
+          </div>
+          <button onClick={() => curate.mutate()} disabled={curate.isPending} className="btn btn-primary shrink-0">
+            {curate.isPending ? 'Reviewing…' : 'Run curator'}
+          </button>
+        </div>
+      </Card>
+
+      <Card padding={false}>
+        <div className="px-5 py-3 text-xs font-medium uppercase tracking-wide text-text-muted">
+          Pending proposals ({pending.length})
+        </div>
+        <table className="data-table">
+          <thead>
+            <tr><th>Kind</th><th>Mapping</th><th>Why</th><th /></tr>
+          </thead>
+          <tbody>
+            {pending.map((p) => (
+              <tr key={p.id}>
+                <td className="font-mono text-text-secondary">{p.kind}</td>
+                <td className="text-text-primary">{p.lhs} → {p.rhs ?? '—'}</td>
+                <td className="muted text-xs">{p.reason}</td>
+                <td className="whitespace-nowrap text-right">
+                  <button onClick={() => approve.mutate(p.id)} disabled={approve.isPending} className="text-xs font-medium text-status-success disabled:opacity-30">Approve</button>
+                  <button onClick={() => reject.mutate(p.id)} disabled={reject.isPending} className="ml-3 text-xs font-medium text-status-critical disabled:opacity-30">Reject</button>
+                </td>
+              </tr>
+            ))}
+            {!pending.length && (
+              <tr><td colSpan={4} className="muted">No pending proposals — run the curator.</td></tr>
+            )}
+          </tbody>
+        </table>
+      </Card>
+
+      <ReadOnlyTable
+        note="Approved resolution facts · read by the validator (loadMasters)"
+        cols={[{ key: 'kind', label: 'Kind' }, { key: 'lhs', label: 'From' }, { key: 'rhs', label: 'To' }, { key: 'source', label: 'Source' }]}
+        rows={resolution.data ?? []}
+      />
+    </div>
+  )
+}
+
 export default function MastersPage() {
   const { user } = useAuth()
   const [tab, setTab] = useState<Tab>('forwarders')
@@ -240,6 +307,7 @@ export default function MastersPage() {
       {tab === 'forwarders' && <EditableTable kind="forwarders" cols={editableCols.forwarders} rows={forwarders.data ?? []} />}
       {tab === 'ports' && <EditableTable kind="ports" cols={editableCols.ports} rows={ports.data ?? []} />}
       {tab === 'consignees' && <EditableTable kind="consignees" cols={editableCols.consignees} rows={consignees.data ?? []} />}
+      {tab === 'resolution' && <ResolutionPanel />}
     </div>
   )
 }

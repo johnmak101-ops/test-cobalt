@@ -59,3 +59,37 @@ export const useUpdateMaster = (kind: EditableKind) => {
     onSuccess: () => qc.invalidateQueries({ queryKey: key(kind) }),
   })
 }
+
+// --- resolution facts (curated masters) + the curator loop ---
+export interface MasterFact {
+  id: string
+  kind: string
+  lhs: string
+  rhs: string | null
+  status: string
+  source: string
+  reason: string | null
+  createdAt: string
+}
+
+export const useProposals = () => useQuery({ queryKey: key('proposals'), queryFn: () => api.get<MasterFact[]>('/masters/proposals') })
+export const useResolution = () => useQuery({ queryKey: key('resolution'), queryFn: () => api.get<MasterFact[]>('/masters/resolution') })
+
+export const useCurate = () => {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: () => api.post('/masters/curate', {}),
+    onSuccess: () => qc.invalidateQueries({ queryKey: key('proposals') }),
+  })
+}
+
+export const useResolveProposal = (action: 'approve' | 'reject') => {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) => api.post(`/masters/proposals/${id}/${action}`, {}),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: key('proposals') })
+      qc.invalidateQueries({ queryKey: key('resolution') })
+    },
+  })
+}
