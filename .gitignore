@@ -30,6 +30,7 @@ Thumbs.db
 
 # Logs
 pave.log
+.run-*.log
 
 # Local Claude tooling (preview launch config, etc.)
 /.claude/
