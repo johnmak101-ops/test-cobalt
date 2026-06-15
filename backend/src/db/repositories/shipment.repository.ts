@@ -169,4 +169,17 @@ export class ShipmentRepository {
     await this.db.delete(schema.shipmentMilestones).where(eq(schema.shipmentMilestones.shipmentId, shipmentId))
     if (rows.length) await this.db.insert(schema.shipmentMilestones).values(rows)
   }
+
+  // --- shipment_identifiers (every value each identity field ever held — current first) ---
+  identifiersFor(shipmentId: string) {
+    return this.db
+      .select()
+      .from(schema.shipmentIdentifiers)
+      .where(eq(schema.shipmentIdentifiers.shipmentId, shipmentId))
+      .orderBy(desc(schema.shipmentIdentifiers.isCurrent), desc(schema.shipmentIdentifiers.rank))
+  }
+  async replaceIdentifiers(shipmentId: string, rows: (typeof schema.shipmentIdentifiers.$inferInsert)[]) {
+    await this.db.delete(schema.shipmentIdentifiers).where(eq(schema.shipmentIdentifiers.shipmentId, shipmentId))
+    if (rows.length) await this.db.insert(schema.shipmentIdentifiers).values(rows)
+  }
 }

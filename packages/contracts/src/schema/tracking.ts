@@ -2,7 +2,7 @@ import { pgSchema, uuid, text, timestamp, boolean, integer, doublePrecision, jso
 import {
   SHIPMENT_STATE, LEG_STATUS, SHIPMENT_MODE, RISK_LEVEL, REVIEW_STATUS, BOOKING_STATUS, QTY_UNIT,
   VENDOR_TYPE, FORWARDER_ALIAS_TYPE, PORT_MODE, USER_ROLE, MILESTONE_TYPE, WAREHOUSE_SIGNAL, FIELD_LOCK_ENTITY,
-  MASTER_RESOLUTION_KIND, MASTER_RESOLUTION_STATUS, MASTER_RESOLUTION_SOURCE,
+  MASTER_RESOLUTION_KIND, MASTER_RESOLUTION_STATUS, MASTER_RESOLUTION_SOURCE, SHIPMENT_IDENTIFIER_TYPE,
 } from './enums'
 
 /** TRUTH (mutable) + masters + auth. Owned and WRITTEN by track-system (VM1 NestJS). */
@@ -227,6 +227,26 @@ export const shipmentPos = tracking.table('shipment_pos', {
   quantityUnit: text('quantity_unit', { enum: QTY_UNIT }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [unique('shipment_pos_uq').on(t.shipmentId, t.poId)])
+
+/**
+ * Identifier HISTORY — every value a shipment ever carried for each rotating identity field. The leg
+ * column holds the CURRENT value; this keeps the alternates (a Draft B/L number superseded by the
+ * Final, an SO# the booking later replaced, a value that lost an equal-rank conflict) so nothing
+ * extracted is lost — searchable, with provenance, for the review UI. `is_current` mirrors the leg
+ * column; one row per (shipment, type, value).
+ */
+export const shipmentIdentifiers = tracking.table('shipment_identifiers', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  shipmentId: uuid('shipment_id').notNull().references(() => shipments.id, { onDelete: 'cascade' }),
+  type: text('type', { enum: SHIPMENT_IDENTIFIER_TYPE }).notNull(),
+  value: text('value').notNull(),
+  docType: text('doc_type'), // the email type that stated it (Final B/L, Booking Request, …)
+  rank: integer('rank'), // document authority (Final B/L = 5 … Other = 1)
+  isCurrent: boolean('is_current').notNull().default(false), // equals the leg's current column value
+  sourceEmailId: text('source_email_id'), // graph id → "view original"
+  observedAt: timestamp('observed_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [unique('shipment_identifiers_uq').on(t.shipmentId, t.type, t.value)])
 
 export const shipmentMilestones = tracking.table('shipment_milestones', {
   id: uuid('id').primaryKey().defaultRandom(),

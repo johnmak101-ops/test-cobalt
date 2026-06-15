@@ -42,6 +42,7 @@ export class DecisionsService {
       mode: dto.mode ?? null,
       conversationId: dto.conversationId ?? null,
       conflicts: dto.conflicts ?? [],
+      identifiers: dto.identifiers ?? [],
       evidenceIds,
       confidence: dto.confidence,
       reviewStatus,

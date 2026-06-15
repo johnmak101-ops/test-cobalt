@@ -15,6 +15,14 @@ interface LinkedPO {
   vendor?: { name: string } | null
 }
 
+interface Identifier {
+  type: string
+  value: string
+  docType: string | null
+  isCurrent: boolean
+  sourceEmailId: string | null
+}
+
 interface LegDetail {
   id: string
   state: string
@@ -35,6 +43,59 @@ interface LegDetail {
   forwarder?: { id: string; name: string } | null
   pos: LinkedPO[]
   milestones: unknown[]
+  identifiers?: Identifier[]
+}
+
+const ID_LABEL: Record<string, string> = {
+  booking_no: 'Booking #', so_no: 'SO #', hbl_awb_fcr_no: 'HBL / AWB', mbl: 'MBL', container_no: 'Container',
+}
+const openEmail = (messageId: string) => window.open(`/emails/view?messageId=${encodeURIComponent(messageId)}`, '_blank', 'noopener')
+
+/** Every value each rotating identifier ever held — current (bold) + the superseded / conflict
+ *  alternates that the single column can't show, so nothing extracted is buried. */
+function IdentifierHistory({ identifiers }: { identifiers: Identifier[] }) {
+  const byType = new Map<string, Identifier[]>()
+  for (const i of identifiers) {
+    const a = byType.get(i.type) ?? []
+    a.push(i)
+    byType.set(i.type, a)
+  }
+  const withHistory = [...byType.entries()].filter(([, vs]) => vs.length > 1)
+  if (!withHistory.length) return null
+  return (
+    <Card>
+      <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-text-muted">Identifier history</div>
+      <p className="muted mb-3 text-xs">
+        Every value this shipment carried for each rotating ID — the current one plus alternates that were superseded
+        or lost a conflict. Click an alternate to view its source email.
+      </p>
+      <div className="space-y-3">
+        {withHistory.map(([type, vs]) => {
+          const current = vs.find((v) => v.isCurrent) ?? vs[0]
+          const alts = vs.filter((v) => v !== current)
+          return (
+            <div key={type} className="text-sm">
+              <div className="text-xs text-text-muted">{ID_LABEL[type] ?? type}</div>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="font-mono font-semibold text-text-primary">{current?.value ?? '—'}</span>
+                {alts.map((a, k) => (
+                  <button
+                    key={k}
+                    onClick={() => a.sourceEmailId && openEmail(a.sourceEmailId)}
+                    disabled={!a.sourceEmailId}
+                    title={a.sourceEmailId ? 'View original email' : undefined}
+                    className={`rounded bg-surface-700 px-1.5 py-0.5 font-mono text-xs text-text-muted line-through decoration-text-muted/50 ${a.sourceEmailId ? 'hover:text-cobalt-primary hover:no-underline' : 'cursor-default'}`}
+                  >
+                    {a.value}{a.docType ? ` · ${a.docType}` : ''}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </Card>
+  )
 }
 
 function Field({ label, value }: { label: string; value: React.ReactNode }) {
@@ -81,6 +142,8 @@ export default function ShipmentDetailPage() {
           <ConflictList reasons={s.reviewReasons ?? []} />
         </Card>
       ) : null}
+
+      <IdentifierHistory identifiers={s.identifiers ?? []} />
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
         <Card>

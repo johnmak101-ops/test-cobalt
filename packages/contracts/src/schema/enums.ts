@@ -13,6 +13,9 @@ export const RISK_LEVEL = ['ON_TRACK', 'AT_RISK', 'DELAYED'] as const
 /** Per-shipment review gate. The Critic's confidence routes a decision to `provisional`
  *  (held for human review, excluded from alerts/automation) or `confirmed` (auto-applied). */
 export const REVIEW_STATUS = ['provisional', 'confirmed'] as const
+/** The rotating identifier kinds a shipment carries across its lifecycle (booking# → SO# → HBL/AWB).
+ *  Every value ever stated is retained in shipment_identifiers; the leg column holds the current one. */
+export const SHIPMENT_IDENTIFIER_TYPE = ['booking_no', 'so_no', 'hbl_awb_fcr_no', 'mbl', 'container_no'] as const
 
 // ---- Booking (the stable parent) ----
 export const BOOKING_STATUS = ['ACTIVE', 'CLOSED', 'CANCELLED'] as const

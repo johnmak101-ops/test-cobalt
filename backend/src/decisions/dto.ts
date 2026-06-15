@@ -18,9 +18,19 @@ export class CreateDecisionDto {
   /** Human-readable disagreement notes the Matcher surfaced (GENUINE conflicts only). */
   @IsOptional() @IsArray() @IsString({ each: true }) conflicts?: string[]
 
-  /** Lifecycle identity supersedes (Draft → Final B/L etc.) — recorded for history, not penalized.
-   *  Accepted now for forward-compat; consumed when identifier history lands (later phase). */
+  /** Lifecycle identity supersedes (Draft → Final B/L etc.) — recorded for history, not penalized. */
   @IsOptional() @IsArray() @IsString({ each: true }) supersedes?: string[]
+
+  /** Every value each identity field ever held (current + alternates) — persisted as searchable history. */
+  @IsOptional() @IsArray() identifiers?: {
+    type: string
+    value: string
+    docType?: string
+    rank?: number
+    isCurrent?: boolean
+    sourceEmailId?: string | null
+    observedAt?: string | null
+  }[]
 
   /** The Critic's per-shipment confidence, 0-100. Routes to confirmed/provisional vs the threshold. */
   @IsInt() @Min(0) @Max(100) confidence!: number

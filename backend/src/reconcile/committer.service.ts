@@ -23,6 +23,16 @@ export interface ReconGroup {
    *  legacy reconcile path (those legs stay `confirmed`); set on the agent decision path. */
   confidence?: number | null
   reviewStatus?: 'provisional' | 'confirmed'
+  /** every value each identity field ever held (current + alternates) — persisted as searchable history */
+  identifiers?: {
+    type: string
+    value: string
+    docType?: string | null
+    rank?: number | null
+    isCurrent?: boolean
+    sourceEmailId?: string | null
+    observedAt?: string | null
+  }[]
 }
 
 export interface CommitResult {
@@ -148,6 +158,7 @@ export class CommitterService {
       await this.shipments.linkPo(shipmentId, poId, num(f.qty), 'pieces')
     }
 
+    await this.writeIdentifiers(shipmentId, g)
     await this.syncMilestones(shipmentId, g)
     return { action, jobNo, bookingId, shipmentId, state, conflicts: g.conflicts, skippedLockedFields }
   }
@@ -183,6 +194,44 @@ export class CommitterService {
     const patch: Record<string, unknown> = {}
     for (const [k, v] of Object.entries(vals)) if (v != null && (bk as Record<string, unknown>)[k] == null) patch[k] = v
     if (Object.keys(patch).length) await this.bookings.update(bookingId, patch)
+  }
+
+  /**
+   * Persist the identifier history (every value each identity field ever held). `is_current` is
+   * re-derived from the ACTUAL committed column value — so a human-locked value stays current — not
+   * the agent's flag. Idempotent (delete+insert per shipment), so re-applying a decision never piles
+   * up duplicate rows.
+   */
+  private async writeIdentifiers(shipmentId: string, g: ReconGroup) {
+    if (!g.identifiers?.length) return
+    const leg = await this.shipments.findById(shipmentId)
+    if (!leg) return
+    const COL = { so_no: 'soNo', booking_no: 'bookingNo', hbl_awb_fcr_no: 'hblAwbFcrNo', mbl: 'mbl', container_no: 'containerNo' } as const
+    const current: Record<string, string> = {}
+    for (const [type, col] of Object.entries(COL)) {
+      const v = (leg as Record<string, unknown>)[col]
+      if (v != null && v !== '') current[type] = alnum(v)
+    }
+    const seen = new Set<string>()
+    const rows = g.identifiers
+      .filter((id) => id.value && id.type in COL)
+      .filter((id) => {
+        const k = `${id.type}:${id.value}`
+        if (seen.has(k)) return false
+        seen.add(k)
+        return true
+      })
+      .map((id) => ({
+        shipmentId,
+        type: id.type as (typeof schema.shipmentIdentifiers.$inferInsert)['type'],
+        value: id.value,
+        docType: id.docType ?? null,
+        rank: id.rank ?? null,
+        isCurrent: current[id.type] === alnum(id.value),
+        sourceEmailId: id.sourceEmailId ?? null,
+        observedAt: id.observedAt ? new Date(id.observedAt) : null,
+      }))
+    await this.shipments.replaceIdentifiers(shipmentId, rows)
   }
 
   private async syncMilestones(shipmentId: string, g: ReconGroup) {
@@ -247,6 +296,7 @@ export class CommitterService {
 
 const toStr = (v: unknown): string | null => (v == null ? null : v instanceof Date ? v.toISOString() : String(v))
 const same = (a: unknown, b: unknown) => toStr(a) === toStr(b)
+const alnum = (v: unknown): string => String(v ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '')
 const setsOverlap = (a: Set<string>, b: Set<string>) => {
   for (const x of a) if (b.has(x)) return true
   return false

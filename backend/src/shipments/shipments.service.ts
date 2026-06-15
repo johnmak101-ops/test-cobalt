@@ -16,9 +16,10 @@ export class ShipmentsService {
   async getOne(id: string) {
     const leg = await this.shipments.legDetailById(id)
     if (!leg) throw new NotFoundException(`shipment ${id} not found`)
-    const [milestones, pos] = await Promise.all([
+    const [milestones, pos, identifiers] = await Promise.all([
       this.shipments.milestonesFor(id),
       this.shipments.linkedPosForBooking(leg.bookingId),
+      this.shipments.identifiersFor(id),
     ])
     return {
       id: leg.id,
@@ -51,6 +52,14 @@ export class ShipmentsService {
         vendor: p.vendorName ? { name: p.vendorName } : null,
       })),
       milestones,
+      // every value each identity field ever held (current + superseded/conflict alternates)
+      identifiers: identifiers.map((x) => ({
+        type: x.type,
+        value: x.value,
+        docType: x.docType,
+        isCurrent: x.isCurrent,
+        sourceEmailId: x.sourceEmailId,
+      })),
     }
   }
 

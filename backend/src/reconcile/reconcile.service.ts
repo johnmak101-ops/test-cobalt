@@ -1,20 +1,25 @@
 import { Injectable } from '@nestjs/common'
 import { mergeShipment } from './merge'
+import { scoreReconGroup } from './score'
 import { strongKeys, mergeKeys, normKey } from './match-keys'
 import { CommitterService, type ReconGroup, type CommitResult } from './committer.service'
 import { EvidenceRepository, type EvidenceRow } from '../db/repositories/evidence.repository'
+import { SettingsService } from '../settings/settings.service'
 
 @Injectable()
 export class ReconcileService {
   constructor(
     private readonly evidence: EvidenceRepository,
     private readonly committer: CommitterService,
+    private readonly settings: SettingsService,
   ) {}
 
-  /** Read all evidence, group into shipments, merge, and commit to tracking. Idempotent. */
+  /** Read all evidence, group into shipments, merge, score, and commit to tracking. Idempotent.
+   *  Scores via the same gate as the agent path, so a manual rebuild no longer emits blanket-confirmed legs. */
   async run(): Promise<{ evidence: number; groups: number; results: CommitResult[] }> {
     const rows = await this.evidence.allWithMessage()
     const groups = this.group(rows)
+    const threshold = await this.settings.confidenceThreshold()
     const results: CommitResult[] = []
     for (const grp of groups) {
       const emails = grp.map((r) => ({
@@ -24,16 +29,20 @@ export class ReconcileService {
         pos: posOf(r),
       }))
       const merged = mergeShipment(emails)
+      const matchKeys = mergeKeys(grp)
+      const { confidence } = scoreReconGroup({ conflicts: merged.conflicts, pos: merged.pos, fields: merged.fields, matchKeys })
       const g: ReconGroup = {
         fields: merged.fields,
         pos: merged.pos,
         conflicts: merged.conflicts,
-        matchKeys: mergeKeys(grp),
+        matchKeys,
         emailTypes: [...new Set(grp.map((r) => r.emailType).filter((t): t is string => !!t))],
         events: grp.map((r) => ({ emailType: r.emailType ?? 'Other', receivedAt: iso(r.receivedAt) })),
         mode: grp.map((r) => r.mode).find((m): m is string => !!m) ?? null,
         conversationId: grp[0].conversationId,
         evidenceIds: grp.map((r) => r.id),
+        confidence,
+        reviewStatus: confidence >= threshold ? 'confirmed' : 'provisional',
       }
       results.push(await this.committer.apply(g))
     }
