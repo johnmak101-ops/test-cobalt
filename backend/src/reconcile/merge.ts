@@ -6,8 +6,9 @@
  *   identity (so_no/hbl/mbl/booking_no/container_no) — most authoritative doc wins; a different-RANK
  *            restatement (Draft → Final B/L) is a lifecycle SUPERSEDE (no conflict), an EQUAL-rank
  *            clash is a real CONFLICT. sameId folds office-prefix variants (SZA26050003 ≡ A26050003).
- *   entity   (customer/vendor/forwarder/consignee) — names match by containment; any different party
- *            is a CONFLICT at any rank (parties don't mature).
+ *   entity   CODES (customer/vendor) match exactly, any clash = conflict. NAMES (forwarder/consignee)
+ *            match by containment ignoring resolver annotations; the most authoritative doc's name
+ *            wins (Final B/L consignee beats a lower-rank mis-extraction), only an EQUAL-rank clash.
  *   schedule (cargo_ready/warehouse/etd/atd/eta/in_dc) — LATEST email wins (schedules re-quoted).
  *   quantity (qty) + text (address/item_style/poi/pod) — most authoritative doc wins, ties→newest.
  *   po       (customer_po) — union across the thread.
@@ -56,9 +57,11 @@ const sameId = (a: unknown, b: unknown): boolean => {
   }
   return false
 }
-/** same party modulo a suffix/format variant — WYSE LONDON ≡ WYSE LONDON LTD */
+/** same party modulo a suffix/format variant or resolver annotation — WYSE LONDON ≡ WYSE LONDON LTD,
+ *  STRAUSS (maps to ELGC) ≡ STRAUSS OPERATIONS */
 const sameName = (a: unknown, b: unknown): boolean => {
-  const x = alnum(a), y = alnum(b)
+  const clean = (s: unknown) => alnum(String(s ?? '').replace(/\([^)]*\)/g, ' '))
+  const x = clean(a), y = clean(b)
   if (!x || !y) return x === y
   if (x === y) return true
   const [short, long] = x.length <= y.length ? [x, y] : [y, x]
@@ -96,7 +99,10 @@ export function mergeShipment(emails: CriticEmail[]): MergeResult {
         }
         const dr = rank(kept.emailType)
         const higher = c.rank > dr
-        const isConflict = cls === 'entity' || c.rank === dr
+        // entity CODES must not differ (any clash = conflict); identity + entity NAMES are rank-based
+        // (higher-rank wins cleanly; only an equal-rank clash is a conflict)
+        const isCode = cls === 'entity' && field !== 'forwarder_name' && field !== 'consignee_name'
+        const isConflict = isCode || c.rank === dr
         let oldVal: unknown, oldType: string, newVal: unknown, newType: string
         if (higher) {
           oldVal = kept.value; oldType = kept.emailType; newVal = c.value; newType = c.emailType

@@ -32,12 +32,21 @@ describe('mergeShipment — Critic merge policy', () => {
     expect(r.conflicts.length).toBeGreaterThan(0)
   })
 
-  it('entity: a different party clashes at any rank, but a suffix variant does not', () => {
+  it('entity names: the authoritative doc wins a lower-rank mis-extraction; equal-rank party clash flags', () => {
+    // lower-rank shipper-as-consignee loses to the Final B/L — no conflict
+    const authoritative = mergeShipment([
+      e('2026-01-01', 'SO', { consignee_name: 'MACAU FUNG TAI LIMITED' }),
+      e('2026-01-02', 'Final B/L', { consignee_name: 'WYSE LONDON LTD' }),
+    ])
+    expect(authoritative.fields.consignee_name).toBe('WYSE LONDON LTD')
+    expect(authoritative.conflicts).toHaveLength(0)
+    // two equal-authority docs naming different parties → conflict
     const clash = mergeShipment([
-      e('2026-01-01', 'Draft B/L', { consignee_name: 'ELEGANT SMART CORP' }),
+      e('2026-01-01', 'Final B/L', { consignee_name: 'ELEGANT SMART CORP' }),
       e('2026-01-02', 'Final B/L', { consignee_name: 'STRAUSS OPERATIONS' }),
     ])
     expect(clash.conflicts.some((c) => c.startsWith('consignee_name'))).toBe(true)
+    // suffix variant is the same party
     const variant = mergeShipment([
       e('2026-01-01', 'Booking Request', { consignee_name: 'WYSE LONDON' }),
       e('2026-01-02', 'SO', { consignee_name: 'WYSE LONDON LTD' }),
