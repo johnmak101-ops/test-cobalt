@@ -15,8 +15,12 @@ export class CreateDecisionDto {
   /** Per-email events that built this shipment (for milestones + view-original). */
   @IsOptional() @IsArray() events?: { emailType: string; receivedAt: string; graphId?: string }[]
 
-  /** Human-readable disagreement notes the Matcher surfaced. */
+  /** Human-readable disagreement notes the Matcher surfaced (GENUINE conflicts only). */
   @IsOptional() @IsArray() @IsString({ each: true }) conflicts?: string[]
+
+  /** Lifecycle identity supersedes (Draft → Final B/L etc.) — recorded for history, not penalized.
+   *  Accepted now for forward-compat; consumed when identifier history lands (later phase). */
+  @IsOptional() @IsArray() @IsString({ each: true }) supersedes?: string[]
 
   /** The Critic's per-shipment confidence, 0-100. Routes to confirmed/provisional vs the threshold. */
   @IsInt() @Min(0) @Max(100) confidence!: number
