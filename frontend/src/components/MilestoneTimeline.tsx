@@ -33,7 +33,7 @@ export function MilestoneTimeline({ milestones }: { milestones: Milestone[] }) {
                   onClick={() => openEmailWindow(m.emailMessageId!)}
                   className="inline-flex items-center gap-1 text-cobalt-primary hover:underline"
                 >
-                  <Mail size={11} /> View original
+                  <Mail size={11} /> View Mail
                 </button>
               )}
             </div>

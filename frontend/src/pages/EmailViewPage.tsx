@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { useSearchParams } from 'react-router-dom'
-import { Mail, Paperclip, FileText, Image as ImageIcon, Download } from 'lucide-react'
+import { Mail, Paperclip, FileText, FileSpreadsheet, FileArchive, File as FileIcon, Image as ImageIcon, Download } from 'lucide-react'
 import { api } from '../lib/api'
 
 interface OriginalEmail {
@@ -33,9 +33,9 @@ const fmtSize = (n: number) =>
   n < 1024 ? `${n} B` : n < 1_048_576 ? `${(n / 1024).toFixed(0)} KB` : `${(n / 1_048_576).toFixed(1)} MB`
 
 /** Download the attachment as a real file so a human can open it locally (Excel / Word / a viewer),
- *  instead of eyeballing extracted text/HTML in the browser. Images/PDF download as their actual
- *  bytes; docx/xlsx are retained only as their NORMALIZED copy (HTML / CSV), so we hand those back
- *  with the matching extension (.html / .csv) rather than a broken original-binary filename. */
+ *  instead of eyeballing extracted text/HTML in the browser. `base64` is the ORIGINAL document
+ *  (office binary, image, or pdf). The `text` branch is only the rare purged/text-native fallback,
+ *  handed back with the matching extension (.html / .csv / .txt). */
 function downloadAttachment(a: Attachment) {
   let blob: Blob
   let name = a.filename || 'attachment'
@@ -62,29 +62,45 @@ function downloadAttachment(a: Attachment) {
   setTimeout(() => URL.revokeObjectURL(url), 2000)
 }
 
-/** Download-only row — no inline preview; the reviewer downloads the original and opens it locally. */
-function AttachmentView({ a }: { a: Attachment }) {
-  const isImg = (a.mime ?? '').startsWith('image/')
+/** File-type icon + colour + short label, à la Outlook's attachment chips. */
+function kindMeta(a: Attachment): { Icon: typeof FileText; color: string; type: string } {
+  const mime = a.mime ?? ''
+  const k = a.kind ?? ''
+  if (mime.startsWith('image/')) return { Icon: ImageIcon, color: 'text-cobalt-teal', type: 'Image' }
+  if (k === 'xlsx' || k === 'xls' || k === 'csv') return { Icon: FileSpreadsheet, color: 'text-status-success', type: k === 'csv' ? 'CSV' : 'Excel' }
+  if (k === 'docx' || k === 'doc' || k === 'rtf') return { Icon: FileText, color: 'text-cobalt-primary', type: 'Word' }
+  if (k === 'text_pdf' || k === 'scanned_pdf' || mime.includes('pdf')) return { Icon: FileIcon, color: 'text-status-critical', type: 'PDF' }
+  if (k === 'zip') return { Icon: FileArchive, color: 'text-status-warning', type: 'Zip' }
+  if (k === 'html' || k === 'text') return { Icon: FileText, color: 'text-text-muted', type: k === 'html' ? 'HTML' : 'Text' }
+  return { Icon: FileIcon, color: 'text-text-muted', type: '' }
+}
+
+/** An Outlook-style attachment chip — click to download the original and open it locally. */
+function AttachmentChip({ a }: { a: Attachment }) {
+  const { Icon, color, type } = kindMeta(a)
   const hasContent = !!a.base64 || a.text != null
-  return (
-    <div className="flex items-center justify-between gap-3 rounded-lg border border-border bg-surface-800 px-3 py-2">
-      <div className="flex min-w-0 items-center gap-2">
-        {isImg ? <ImageIcon size={14} className="shrink-0 text-text-muted" /> : <FileText size={14} className="shrink-0 text-text-muted" />}
-        <span className="truncate text-sm" title={a.filename}>{a.filename}</span>
-        {a.label && <span className="shrink-0 text-xs text-text-muted">· {a.label}</span>}
-        {a.parsedOnly && <span className="shrink-0 text-xs text-status-warning">· original not retained</span>}
+  const meta = a.parsedOnly ? 'original not retained' : [type, fmtSize(a.sizeBytes)].filter(Boolean).join(' · ')
+  const body = (
+    <>
+      <Icon size={26} className={`shrink-0 ${color}`} />
+      <div className="min-w-0 flex-1 text-left">
+        <div className="truncate text-sm font-medium text-text-primary" title={a.filename}>{a.filename}</div>
+        <div className={`truncate text-xs ${a.parsedOnly ? 'text-status-warning' : 'text-text-muted'}`}>{meta}</div>
       </div>
-      <div className="flex shrink-0 items-center gap-3">
-        <span className="text-xs text-text-muted">{fmtSize(a.sizeBytes)}</span>
-        {hasContent ? (
-          <button onClick={() => downloadAttachment(a)} className="inline-flex items-center gap-1 text-xs font-medium text-cobalt-primary hover:underline">
-            <Download size={12} /> {a.parsedOnly ? 'Download parsed copy' : 'Download'}
-          </button>
-        ) : (
-          <span className="text-xs text-text-muted">{a.tooLarge ? 'too large' : 'no copy'}</span>
-        )}
-      </div>
-    </div>
+      {hasContent ? (
+        <Download size={15} className="shrink-0 text-text-muted transition-colors group-hover:text-cobalt-primary" />
+      ) : (
+        <span className="shrink-0 text-xs text-text-muted">{a.tooLarge ? 'too large' : 'no copy'}</span>
+      )}
+    </>
+  )
+  const cls = 'flex w-[280px] items-center gap-3 rounded-lg border border-border bg-surface-800 px-3 py-2'
+  return hasContent ? (
+    <button onClick={() => downloadAttachment(a)} title={`Download ${a.filename}`} className={`group ${cls} text-left transition-colors hover:border-cobalt-primary/50 hover:bg-surface-700`}>
+      {body}
+    </button>
+  ) : (
+    <div className={`${cls} opacity-70`}>{body}</div>
   )
 }
 
@@ -129,18 +145,37 @@ export default function EmailViewPage() {
           </div>
         ) : (
           <>
-            <div className="space-y-1 rounded-lg border border-border bg-surface-800 p-4">
-              <h1 className="text-lg font-semibold">{email.subject || '(no subject)'}</h1>
-              <div className="text-sm text-text-secondary">
-                <span className="text-text-muted">From:</span> {email.from || '—'}
+            {/* Outlook-style reading-pane header: subject, sender/date, then the attachments row */}
+            <div className="rounded-lg border border-border bg-surface-800">
+              <div className="space-y-1 p-4">
+                <h1 className="text-xl font-semibold">{email.subject || '(no subject)'}</h1>
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-sm text-text-secondary">
+                  <span><span className="text-text-muted">From:</span> {email.from || '—'}</span>
+                  <span className="text-text-muted">·</span>
+                  <span>{email.receivedDateTime ? new Date(email.receivedDateTime).toLocaleString() : '—'}</span>
+                </div>
+                {email.sourceFile && <div className="break-all font-mono text-xs text-text-muted">{email.sourceFile}</div>}
               </div>
-              <div className="text-sm text-text-secondary">
-                <span className="text-text-muted">Received:</span>{' '}
-                {email.receivedDateTime ? new Date(email.receivedDateTime).toLocaleString() : '—'}
-              </div>
-              {email.sourceFile && <div className="break-all font-mono text-xs text-text-muted">{email.sourceFile}</div>}
+
+              {att?.attachments?.length ? (
+                <div className="border-t border-border px-4 py-3">
+                  <div className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-text-muted">
+                    <Paperclip size={12} /> {att.attachments.length} attachment{att.attachments.length > 1 ? 's' : ''}
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {att.attachments.map((a, i) => (
+                      <AttachmentChip key={i} a={a} />
+                    ))}
+                  </div>
+                </div>
+              ) : email.hasAttachments ? (
+                <div className="border-t border-border px-4 py-3 text-sm text-text-muted">
+                  Attachments aren't available in this environment.
+                </div>
+              ) : null}
             </div>
 
+            {/* email body */}
             <div className="rounded-lg border border-border bg-surface-800 p-4">
               {email.bodyHtml ? (
                 <iframe title="email-body" sandbox="" srcDoc={email.bodyHtml} className="h-[420px] w-full rounded border border-border bg-white" />
@@ -148,19 +183,6 @@ export default function EmailViewPage() {
                 <pre className="whitespace-pre-wrap break-words text-sm text-text-secondary">{email.bodyText || '—'}</pre>
               )}
             </div>
-
-            {att?.attachments?.length ? (
-              <div className="space-y-3">
-                <div className="flex items-center gap-2 text-sm font-semibold">
-                  <Paperclip size={14} /> Attachments ({att.attachments.length})
-                </div>
-                {att.attachments.map((a, i) => (
-                  <AttachmentView key={i} a={a} />
-                ))}
-              </div>
-            ) : email.hasAttachments ? (
-              <div className="text-sm text-text-muted">Attachments aren't available in this environment.</div>
-            ) : null}
           </>
         )}
       </div>
