@@ -62,8 +62,8 @@ export default function BookingDetailPage() {
 
   return (
     <div className="space-y-6">
-      <Link to="/bookings" className="inline-flex items-center gap-1 text-sm text-text-muted hover:text-text-primary">
-        <ArrowLeft size={14} /> Bookings
+      <Link to="/shipments" className="inline-flex items-center gap-1 text-sm text-text-muted hover:text-text-primary">
+        <ArrowLeft size={14} /> Shipments
       </Link>
 
       <div className="flex flex-wrap items-center gap-3">

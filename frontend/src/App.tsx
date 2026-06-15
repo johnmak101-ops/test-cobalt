@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate, Link } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { ReactNode } from 'react'
 import { AuthProvider, useAuth } from './hooks/use-auth'
@@ -33,6 +33,18 @@ function Protected({ children }: { children: ReactNode }) {
   }
   if (!user) return <Navigate to="/login" replace />
   return <>{children}</>
+}
+
+function NotFound() {
+  return (
+    <div className="space-y-3">
+      <h1 className="page-title">Page not found</h1>
+      <p className="muted">
+        That page doesn’t exist. Head back to the{' '}
+        <Link to="/shipments" className="link">Shipments</Link> tracker.
+      </p>
+    </div>
+  )
 }
 
 function App() {
@@ -71,6 +83,10 @@ function App() {
               <Route path="/users" element={<UsersPage />} />
               {/* alert deep-links + back-compat */}
               <Route path="/bookings/:id" element={<BookingDetailPage />} />
+              {/* no bookings LIST page (shipment-centric) — a bare /bookings lands on the tracker */}
+              <Route path="/bookings" element={<Navigate to="/shipments" replace />} />
+              {/* anything else renders inside the app chrome instead of a blank page */}
+              <Route path="*" element={<NotFound />} />
             </Route>
           </Routes>
         </AuthProvider>
