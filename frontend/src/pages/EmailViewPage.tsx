@@ -25,6 +25,8 @@ interface Attachment {
   text?: string | null
   base64?: string | null
   tooLarge?: boolean
+  /** office doc whose original wasn't retained — only the parsed text is available */
+  parsedOnly?: boolean
 }
 
 const fmtSize = (n: number) =>
@@ -60,7 +62,7 @@ function downloadAttachment(a: Attachment) {
   setTimeout(() => URL.revokeObjectURL(url), 2000)
 }
 
-/** Download-only row — no inline preview; the reviewer downloads the file and opens it locally. */
+/** Download-only row — no inline preview; the reviewer downloads the original and opens it locally. */
 function AttachmentView({ a }: { a: Attachment }) {
   const isImg = (a.mime ?? '').startsWith('image/')
   const hasContent = !!a.base64 || a.text != null
@@ -70,12 +72,13 @@ function AttachmentView({ a }: { a: Attachment }) {
         {isImg ? <ImageIcon size={14} className="shrink-0 text-text-muted" /> : <FileText size={14} className="shrink-0 text-text-muted" />}
         <span className="truncate text-sm" title={a.filename}>{a.filename}</span>
         {a.label && <span className="shrink-0 text-xs text-text-muted">· {a.label}</span>}
+        {a.parsedOnly && <span className="shrink-0 text-xs text-status-warning">· original not retained</span>}
       </div>
       <div className="flex shrink-0 items-center gap-3">
         <span className="text-xs text-text-muted">{fmtSize(a.sizeBytes)}</span>
         {hasContent ? (
           <button onClick={() => downloadAttachment(a)} className="inline-flex items-center gap-1 text-xs font-medium text-cobalt-primary hover:underline">
-            <Download size={12} /> Download
+            <Download size={12} /> {a.parsedOnly ? 'Download parsed copy' : 'Download'}
           </button>
         ) : (
           <span className="text-xs text-text-muted">{a.tooLarge ? 'too large' : 'no copy'}</span>

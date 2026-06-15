@@ -71,10 +71,13 @@ describe('EmailsService.getOriginal', () => {
       { configured: () => false },
       {
         findIngested: async () => ({
+          id: 'msg-1',
+          graphId: null,
           subject: 'SO# FEL-GZ-OSA-2842 booking',
           sender: 'elaine.fung@fairate.com',
           receivedAt: new Date('2026-01-22T16:46:00Z'),
           bodyText: 'Please find the booking…',
+          bodyHtml: null,
           sourceFile: 'booking.msg',
           attachmentCount: 1,
         }),

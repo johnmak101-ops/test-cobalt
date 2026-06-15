@@ -4,18 +4,21 @@ import { EmailRepository } from '../db/repositories/email.repository'
 
 const MOCK_PREFIX = 'mock:'
 
-/** One renderable attachment in the email window. */
+/** One downloadable attachment in the email window (one entry per FILE, not per parsed part). */
 export interface EmailAttachment {
   filename: string
   label: string | null
   kind: string | null
   mime: string | null
   sizeBytes: number
-  /** text/csv/html content, inline */
-  text?: string | null
-  /** image / pdf bytes, base64 (capped) */
+  /** ORIGINAL bytes, base64 (capped) — office binary, image, or pdf the human downloads & opens */
   base64?: string | null
+  /** text-native original (txt/csv/html) served as a file when there are no binary bytes */
+  text?: string | null
+  /** original exists but exceeds the inline cap */
   tooLarge?: boolean
+  /** an office binary whose original was NOT retained — only the parsed text survives (purged) */
+  parsedOnly?: boolean
 }
 
 @Injectable()
@@ -72,35 +75,65 @@ export class EmailsService {
   }
 
   /**
-   * Attachments for the email window, each with inline content from the normalized store
-   * (images/PDF bytes as base64, docx/xlsx/text as text). Documents float to the top so the
-   * meaningful files (B/L, invoice) sit above inline signature logos. Resilient: a queue that
+   * Attachments for the email window — ONE entry per file, carrying the ORIGINAL so a human can
+   * download and open it locally:
+   *   - office binaries (docx/xlsx/doc/rtf) → the retained `rawBytes` (the real .docx/.xlsx)
+   *   - image / pdf → the passthrough bytes (already the original)
+   *   - txt/csv/html → the text content itself (that IS the original)
+   * The repository join yields one row per normalized PART (a multi-sheet xlsx → N rows), so we
+   * collapse by attachment id to avoid listing the same file N times. Documents float to the top so
+   * the meaningful files (B/L, invoice) sit above inline signature logos. Resilient: a queue that
    * isn't co-located (2-VM split) degrades to `available:false`.
    */
   async getAttachments(messageId: string): Promise<{ available: boolean; attachments: EmailAttachment[] }> {
     if (!messageId) return { available: false, attachments: [] }
-    const MAX_INLINE = 5 * 1024 * 1024 // 5 MB/part base64 cap
+    const MAX_INLINE = 12 * 1024 * 1024 // bytes; base64'd into the JSON response
+    const OFFICE = new Set(['docx', 'xlsx', 'doc', 'rtf'])
     try {
       const rows = await this.emails.attachmentsFor(messageId)
-      const attachments: EmailAttachment[] = rows.map((r) => {
+
+      // collapse the per-part rows into one group per attachment (the file)
+      const groups = new Map<string, typeof rows>()
+      for (const r of rows) {
+        const g = groups.get(r.attachmentId)
+        if (g) g.push(r)
+        else groups.set(r.attachmentId, [r])
+      }
+
+      const attachments: EmailAttachment[] = []
+      for (const group of groups.values()) {
+        const first = group[0]!
         const a: EmailAttachment = {
-          filename: r.filename,
-          label: r.label,
-          kind: r.kind ?? r.sourceKind,
-          mime: r.mime ?? r.declaredMime ?? null,
-          sizeBytes: r.sizeBytes,
+          filename: leafName(first.filename),
+          label: group.length > 1 ? null : first.label, // a per-sheet label is noise at file level
+          kind: first.sourceKind,
+          mime: first.declaredMime ?? first.mime ?? null,
+          sizeBytes: first.sizeBytes,
         }
-        if (r.imageBytes) {
-          if (r.imageBytes.length <= MAX_INLINE) a.base64 = r.imageBytes.toString('base64')
+
+        const passthrough = group.find((g) => g.imageBytes) // image / pdf — bytes ARE the original
+        if (first.rawBytes) {
+          if (first.rawBytes.length <= MAX_INLINE) a.base64 = first.rawBytes.toString('base64')
           else a.tooLarge = true
-        } else if (r.textContent) {
-          a.text = r.textContent.slice(0, 200_000)
+        } else if (passthrough?.imageBytes) {
+          if (passthrough.imageBytes.length <= MAX_INLINE) a.base64 = passthrough.imageBytes.toString('base64')
+          else a.tooLarge = true
+          a.mime = passthrough.mime ?? a.mime
+        } else {
+          // no binary original — serve the text-native original, or flag a purged office doc
+          const textPart = group.find((g) => g.textContent)
+          if (textPart?.textContent) {
+            a.text = group.map((g) => g.textContent).filter(Boolean).join('\n\n').slice(0, 500_000)
+            a.kind = textPart.kind ?? first.sourceKind
+          }
+          if (OFFICE.has(first.sourceKind)) a.parsedOnly = true
         }
-        return a
-      })
-      // documents (pdf/text) first, then images largest→smallest (signature logos sink)
+        attachments.push(a)
+      }
+
+      // documents (office/pdf/text) first, then images largest→smallest (signature logos sink)
       const rank = (a: EmailAttachment) =>
-        (a.mime?.includes('pdf') || a.text != null ? 100_000_000 : 0) + a.sizeBytes
+        (a.mime?.includes('pdf') || a.text != null || (a.kind != null && OFFICE.has(a.kind)) ? 100_000_000 : 0) + a.sizeBytes
       attachments.sort((x, y) => rank(y) - rank(x))
       return { available: attachments.length > 0, attachments }
     } catch (err) {
@@ -108,4 +141,11 @@ export class EmailsService {
       return { available: false, attachments: [] }
     }
   }
+}
+
+/** The real filename to save as — strip the `parent!/` container prefix and any path segments. */
+function leafName(filename: string): string {
+  const afterContainer = filename.split('!/').pop() ?? filename
+  const leaf = afterContainer.split(/[\\/]/).pop() ?? afterContainer
+  return leaf || filename
 }

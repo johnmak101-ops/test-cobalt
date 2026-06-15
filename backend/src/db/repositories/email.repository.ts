@@ -33,10 +33,11 @@ export class EmailRepository {
   }
 
   /**
-   * The attachments of an ingested email, each with its normalized content. The original raw
-   * bytes are usually purged (Option-A retention), but the queue keeps the normalized output:
-   * `imageBytes` for images AND the pdf passthrough (the real document bytes, with `mime`),
-   * `textContent` for docx/xlsx/text/csv/html. That is what the email window renders.
+   * The attachments of an ingested email. For human verification we serve the ORIGINAL document:
+   * `rawBytes` holds the real binary for office formats (docx/xlsx/doc/rtf) so a reviewer downloads
+   * and opens the true file; for images and PDF the `imageBytes` passthrough already IS the original.
+   * `textContent` (the parsed html/csv) is only a fallback for text-native attachments — never the
+   * thing we hand a human to verify an office doc. Raw bytes may be purged later (Option-A retention).
    */
   async attachmentsFor(graphMessageId: string) {
     const msg = await this.db
@@ -54,6 +55,7 @@ export class EmailRepository {
         sourceKind: schema.queueAttachment.sourceKind,
         sizeBytes: schema.queueAttachment.sizeBytes,
         declaredMime: schema.queueAttachment.declaredMime,
+        rawBytes: schema.queueAttachment.rawBytes,
         kind: schema.queueNormalized.kind,
         mime: schema.queueNormalized.mime,
         label: schema.queueNormalized.label,
