@@ -15,13 +15,34 @@ describe('mergeShipment — Critic merge policy', () => {
     expect(r.conflicts).toHaveLength(0)
   })
 
-  it('identity: a more authoritative doc overrides + records a conflict (Final B/L > Booking)', () => {
+  it('identity: a more authoritative doc SUPERSEDES the old value — lifecycle, not a conflict', () => {
     const r = mergeShipment([
       e('2026-01-01', 'Booking Request', { hbl_awb_fcr_no: 'AAA' }),
       e('2026-01-02', 'Final B/L', { hbl_awb_fcr_no: 'BBB' }),
     ])
-    expect(r.fields.hbl_awb_fcr_no).toBe('BBB')
+    expect(r.fields.hbl_awb_fcr_no).toBe('BBB') // authoritative value wins
+    expect(r.conflicts).toHaveLength(0) // maturation isn't penalized
+  })
+
+  it('identity: two EQUAL-authority different values are a real conflict', () => {
+    const r = mergeShipment([
+      e('2026-01-01', 'Final B/L', { hbl_awb_fcr_no: 'AAA' }),
+      e('2026-01-02', 'Final B/L', { hbl_awb_fcr_no: 'BBB' }),
+    ])
     expect(r.conflicts.length).toBeGreaterThan(0)
+  })
+
+  it('entity: a different party clashes at any rank, but a suffix variant does not', () => {
+    const clash = mergeShipment([
+      e('2026-01-01', 'Draft B/L', { consignee_name: 'ELEGANT SMART CORP' }),
+      e('2026-01-02', 'Final B/L', { consignee_name: 'STRAUSS OPERATIONS' }),
+    ])
+    expect(clash.conflicts.some((c) => c.startsWith('consignee_name'))).toBe(true)
+    const variant = mergeShipment([
+      e('2026-01-01', 'Booking Request', { consignee_name: 'WYSE LONDON' }),
+      e('2026-01-02', 'SO', { consignee_name: 'WYSE LONDON LTD' }),
+    ])
+    expect(variant.conflicts).toHaveLength(0)
   })
 
   it('identity: a LOWER-authority later doc does NOT override the kept value', () => {

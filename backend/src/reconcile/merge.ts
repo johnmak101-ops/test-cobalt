@@ -1,10 +1,13 @@
 /**
  * The Critic merge policy — how per-email parser records stack into ONE shipment picture.
- * Ported from cobalt-queue/src/critic/merge.ts (the executable spec). Pure functions.
+ * KEEP THE CONFLICT SEMANTICS IN SYNC WITH cobalt-queue/src/critic/merge.ts (the executable spec);
+ * this is the same policy applied on the manual reconcile-from-evidence path. Pure functions.
  *
- *   identity (so_no/hbl/mbl/booking_no/container_no) — first wins unless a more authoritative
- *            doc (Final B/L > Draft B/L > SO > Booking) contradicts; disagreements = conflicts.
- *   entity   (customer/vendor/forwarder/consignee) — same as identity.
+ *   identity (so_no/hbl/mbl/booking_no/container_no) — most authoritative doc wins; a different-RANK
+ *            restatement (Draft → Final B/L) is a lifecycle SUPERSEDE (no conflict), an EQUAL-rank
+ *            clash is a real CONFLICT. sameId folds office-prefix variants (SZA26050003 ≡ A26050003).
+ *   entity   (customer/vendor/forwarder/consignee) — names match by containment; any different party
+ *            is a CONFLICT at any rank (parties don't mature).
  *   schedule (cargo_ready/warehouse/etd/atd/eta/in_dc) — LATEST email wins (schedules re-quoted).
  *   quantity (qty) + text (address/item_style/poi/pod) — most authoritative doc wins, ties→newest.
  *   po       (customer_po) — union across the thread.
@@ -41,6 +44,26 @@ export interface MergeResult {
 
 const alnum = (s: unknown) => String(s ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '')
 const sameVal = (a: unknown, b: unknown) => alnum(a) === alnum(b)
+/** same identifier modulo a short (≤3) all-letter office/carrier prefix — SZA26050003 ≡ A26050003 */
+const sameId = (a: unknown, b: unknown): boolean => {
+  const x = alnum(a), y = alnum(b)
+  if (!x || !y) return x === y
+  if (x === y) return true
+  const [short, long] = x.length <= y.length ? [x, y] : [y, x]
+  if (short.length >= 6 && long.endsWith(short)) {
+    const prefix = long.slice(0, long.length - short.length)
+    return prefix.length <= 3 && /^[A-Z]+$/.test(prefix)
+  }
+  return false
+}
+/** same party modulo a suffix/format variant — WYSE LONDON ≡ WYSE LONDON LTD */
+const sameName = (a: unknown, b: unknown): boolean => {
+  const x = alnum(a), y = alnum(b)
+  if (!x || !y) return x === y
+  if (x === y) return true
+  const [short, long] = x.length <= y.length ? [x, y] : [y, x]
+  return short.length >= 4 && long.includes(short)
+}
 const present = (v: unknown) => v != null && v !== ''
 
 export function mergeShipment(emails: CriticEmail[]): MergeResult {
@@ -63,15 +86,26 @@ export function mergeShipment(emails: CriticEmail[]): MergeResult {
     } else if (cls === 'quantity' || cls === 'text') {
       for (const c of stated) if (c.rank >= kept.rank) kept = c // best rank, ties → newest
     } else {
-      // identity / entity: first wins unless a more authoritative doc disagrees
+      // identity / entity — a different-RANK identity matures cleanly (SUPERSEDE, not a problem);
+      // a genuine CONFLICT is an EQUAL-rank clash, or ANY entity/party clash (parties don't mature).
+      const same = cls === 'identity' ? sameId : field === 'forwarder_name' || field === 'consignee_name' ? sameName : sameVal
       for (const c of stated.slice(1)) {
-        if (sameVal(c.value, kept.value)) continue
-        if (c.rank > rank(kept.emailType)) {
-          conflicts.push(`${field}: '${kept.value}' (${kept.emailType}) → '${c.value}' (${c.emailType})`)
+        if (same(c.value, kept.value)) {
+          if (alnum(c.value).length > alnum(kept.value).length) kept = c // keep the fuller form
+          continue
+        }
+        const dr = rank(kept.emailType)
+        const higher = c.rank > dr
+        const isConflict = cls === 'entity' || c.rank === dr
+        let oldVal: unknown, oldType: string, newVal: unknown, newType: string
+        if (higher) {
+          oldVal = kept.value; oldType = kept.emailType; newVal = c.value; newType = c.emailType
           kept = c
         } else {
-          conflicts.push(`${field}: kept '${kept.value}' (${kept.emailType}) vs '${c.value}' (${c.emailType})`)
+          oldVal = c.value; oldType = c.emailType; newVal = kept.value; newType = kept.emailType
         }
+        if (isConflict) conflicts.push(`${field}: kept '${newVal}' (${newType}) vs '${oldVal}' (${oldType})`)
+        // else: lifecycle supersede / stale restatement — the authoritative value wins, no conflict
       }
     }
     out[field] = kept.value
