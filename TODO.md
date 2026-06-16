@@ -5,11 +5,15 @@ Context: see `C:\Users\John\.claude\plans\typed-wondering-moler.md` (merge refac
 `merge-refactor-progress` memory. Checkpoints 1–2 + Phase 6 + Iterator→OpenCode are shipped.
 
 ## Agents & OpenPAVE
-- [ ] `[queue]` **LLM refiner for the Iterator.** Today `heuristicRefiner` only memorises correction
-  *pairs* into the soul (a brittle lookup table — does NOT improve detection; a gate PROMOTE only
-  means "no regression"). Wire an LLM refiner that **generalises corrections into reusable RULES**
-  (e.g. "consignee = the Consignee box, never the Shipper"), behind the same `Refiner` contract
-  (`src/iterator/refine.ts`). This is the real path to "teaching" that lifts detection.
+- [x] `[queue]` **LLM refiner for the Iterator — BUILT 2026-06-16 (not yet live-proven).** Was:
+  `heuristicRefiner` only memorises correction *pairs* (a brittle lookup; a PROMOTE just means "no
+  regression"). Now: `opencodeRefiner` (`src/iterator/refine-opencode.ts`) runs the `cobalt-refiner`
+  OpenCode agent (`.opencode/cobalt-refiner.md`) to **generalise corrections into reusable RULES** in
+  the soul (e.g. "consignee = the Consignee box, never the Shipper"), behind the same `Refiner`
+  contract; `ITERATOR_REFINER=opencode`. Strips the heuristic block first, keeps entity value-mappings
+  OUT (→ masters), only *proposes* (gate still promotes), falls back to heuristic on failure. 98 tests
+  green. ⚠ Live AI pass needs a warm `opencode serve` (`OPENCODE_ATTACH=…`) — same cold-start caveat as
+  the opencode critic.
 - [ ] `[queue]` **OpenPAVE swap-in.** parser / matcher / critic / refiner all sit behind contracts
   (`ParserAgent`, `MatcherAgent`, `CriticAgent`, `Refiner`) with OpenCode adapters. Drop OpenPAVE in
   at each seam when ready — no rewiring.

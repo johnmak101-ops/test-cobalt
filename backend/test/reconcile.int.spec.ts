@@ -3,6 +3,7 @@ import * as schema from '@cobalt/contracts'
 import { getTestDb, resetDb, closeTestDb, repos, type TestDB } from './setup-db'
 import { CommitterService } from '../src/reconcile/committer.service'
 import { ReconcileService } from '../src/reconcile/reconcile.service'
+import { SettingsService } from '../src/settings/settings.service'
 
 let db: TestDB
 let reconcile: ReconcileService
@@ -12,7 +13,8 @@ beforeAll(async () => {
   db = t.db
   const r = repos(db)
   const committer = new CommitterService(r.masters, r.booking, r.shipment, r.fieldLock, r.audit)
-  reconcile = new ReconcileService(r.evidence, committer)
+  const settings = new SettingsService(r.settings)
+  reconcile = new ReconcileService(r.evidence, committer, settings)
 })
 afterAll(closeTestDb)
 beforeEach(() => resetDb(db))
