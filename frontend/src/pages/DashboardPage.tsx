@@ -30,6 +30,13 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <KPICard icon={Package} label="Active Shipments" value={shipments.length} color="bg-cobalt-primary/15 text-cobalt-primary-light" onClick={() => navigate('/shipments')} />
+        <KPICard icon={AlertTriangle} label="At Risk" value={atRisk} color="bg-status-warning/15 text-status-warning" onClick={() => navigate('/shipments')} />
+        <KPICard icon={AlertCircle} label="Critical Alerts" value={critical} color="bg-status-critical/15 text-status-critical" onClick={() => navigate('/alerts')} />
+        <KPICard icon={ClipboardCheck} label="Pending Review" value={review.length} color="bg-cobalt-teal/15 text-cobalt-teal" onClick={() => navigate('/review-queue')} />
+      </div>
+
       {review.length > 0 && (
         <button
           onClick={() => navigate('/review-queue')}
@@ -52,13 +59,6 @@ export default function DashboardPage() {
           </span>
         </button>
       )}
-
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <KPICard icon={Package} label="Active Shipments" value={shipments.length} color="bg-cobalt-primary/15 text-cobalt-primary-light" onClick={() => navigate('/shipments')} />
-        <KPICard icon={AlertTriangle} label="At Risk" value={atRisk} color="bg-status-warning/15 text-status-warning" onClick={() => navigate('/shipments')} />
-        <KPICard icon={AlertCircle} label="Critical Alerts" value={critical} color="bg-status-critical/15 text-status-critical" onClick={() => navigate('/alerts')} />
-        <KPICard icon={ClipboardCheck} label="Pending Review" value={review.length} color="bg-cobalt-teal/15 text-cobalt-teal" onClick={() => navigate('/review-queue')} />
-      </div>
 
       {alerts.length > 0 && (
         <div className="space-y-3">

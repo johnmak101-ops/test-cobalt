@@ -1,6 +1,6 @@
 import { useState, Fragment } from 'react'
 import { Badge } from '../ui/Badge'
-import { ModeIcon } from '../ui/ModeIcon'
+import { ModeMark } from '../ui/ModeIcon'
 import { formatShortDate, formatRelativeTime, modeLabel } from '../../lib/utils'
 import { useNavigate } from 'react-router-dom'
 import { AlertTriangle, ChevronRight, ChevronDown } from 'lucide-react'
@@ -68,7 +68,7 @@ export function ShipmentTable({ shipments }: ShipmentTableProps) {
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2.5">
-                        <ModeIcon mode={s.mode} size={16} className="shrink-0 text-cobalt-teal" />
+                        <ModeMark mode={s.mode} reviewStatus={s.reviewStatus} size={16} />
                         <div className="min-w-0">
                           <div className="font-mono text-sm font-medium text-cobalt-primary-light">{s.jobNo ?? shortId}</div>
                           <div className="flex items-center gap-1.5 text-[11px] text-text-muted">

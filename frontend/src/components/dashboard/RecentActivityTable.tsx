@@ -1,7 +1,7 @@
 import { useNavigate } from 'react-router-dom'
 import { AlertTriangle } from 'lucide-react'
 import { Badge } from '../ui/Badge'
-import { ModeIcon } from '../ui/ModeIcon'
+import { ModeMark } from '../ui/ModeIcon'
 import { PoBadge } from '../shipments/PoBadge'
 import { formatRelativeTime, modeLabel } from '../../lib/utils'
 import type { Shipment } from '../../hooks/use-shipments'
@@ -38,7 +38,7 @@ export function RecentActivityTable({ shipments }: { shipments: Shipment[] }) {
                 >
                   <td className="px-5 py-3">
                     <div className="flex items-center gap-2.5">
-                      <ModeIcon mode={s.mode} size={16} className="shrink-0 text-cobalt-teal" />
+                      <ModeMark mode={s.mode} reviewStatus={s.reviewStatus} size={16} />
                       <div className="min-w-0">
                         <div className="font-mono text-sm font-medium text-cobalt-primary-light">{s.jobNo ?? shortId}</div>
                         <div className="flex items-center gap-1.5 text-[11px] text-text-muted">
