@@ -1,5 +1,5 @@
 import { Link, useNavigate } from 'react-router-dom'
-import { Package, AlertTriangle, AlertCircle, ClipboardCheck } from 'lucide-react'
+import { Package, AlertTriangle, AlertCircle, ClipboardCheck, ChevronRight } from 'lucide-react'
 import { useShipments } from '../hooks/use-shipments'
 import { useAlerts } from '../hooks/use-alerts'
 import { useReviewQueue } from '../hooks/use-review'
@@ -30,6 +30,29 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6">
+      {review.length > 0 && (
+        <button
+          onClick={() => navigate('/review-queue')}
+          className="flex w-full items-center justify-between gap-4 rounded-xl border border-border border-l-4 border-l-cobalt-teal bg-surface-800 p-4 text-left transition-colors hover:bg-surface-700"
+        >
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-cobalt-teal/15 text-cobalt-teal">
+              <ClipboardCheck size={20} />
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-text-primary">
+                {review.length} shipment{review.length !== 1 ? 's' : ''} pending your review
+              </p>
+              <p className="text-xs text-text-muted">Provisional values need confirmation before they drive alerts.</p>
+            </div>
+          </div>
+          <span className="flex shrink-0 items-center gap-1 text-xs font-medium text-cobalt-teal">
+            Review queue
+            <ChevronRight size={14} />
+          </span>
+        </button>
+      )}
+
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <KPICard icon={Package} label="Active Shipments" value={shipments.length} color="bg-cobalt-primary/15 text-cobalt-primary-light" onClick={() => navigate('/shipments')} />
         <KPICard icon={AlertTriangle} label="At Risk" value={atRisk} color="bg-status-warning/15 text-status-warning" onClick={() => navigate('/shipments')} />
