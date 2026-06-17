@@ -464,7 +464,7 @@ function SuggestionComparisonView({
       )}
 
       <div className="overflow-hidden rounded-lg border border-border">
-        <div className="grid grid-cols-[160px_1fr_1fr] border-b border-border bg-surface-900 px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-text-muted">
+        <div className="grid grid-cols-[150px_1fr_1fr] border-b border-border bg-surface-900/60 px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-text-muted">
           <span>Field</span>
           <span className="flex items-center gap-1"><Mail size={10} /> Extracted from Email</span>
           <span className="flex items-center gap-1"><Sparkles size={10} /> Suggested Change</span>
@@ -473,14 +473,19 @@ function SuggestionComparisonView({
           {Object.entries(FIELD_SECTIONS).map(([sectionTitle, fields]) => {
             const sectionRows = rows.filter((r) => fields.includes(r.field))
             if (sectionRows.length === 0) return null
-            const sectionHasDiff = sectionRows.some((r) => r.isDiff)
+            const sectionDiffs = sectionRows.filter((r) => r.isDiff).length
             return (
               <div key={sectionTitle}>
-                <div className={cn('px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider', sectionHasDiff ? 'bg-status-warning/5 text-status-warning' : 'bg-surface-900/50 text-text-muted')}>
-                  {sectionTitle}
+                <div className="flex items-center justify-between bg-surface-900/40 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-text-muted">
+                  <span>{sectionTitle}</span>
+                  {sectionDiffs > 0 && (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-status-warning/15 px-1.5 py-0.5 text-[9px] font-semibold normal-case tracking-normal text-status-warning">
+                      {sectionDiffs} change{sectionDiffs !== 1 ? 's' : ''}
+                    </span>
+                  )}
                 </div>
                 {sectionRows.map((row) => (
-                  <div key={row.field} className={cn('grid grid-cols-[160px_1fr_1fr] items-center px-3 py-2 text-xs', row.isDiff ? 'bg-status-warning/[0.03]' : '')}>
+                  <div key={row.field} className={cn('grid grid-cols-[150px_1fr_1fr] items-center px-3 py-2 text-xs', row.isDiff ? 'bg-status-warning/[0.03]' : '')}>
                     <span className={cn('font-medium', row.isDiff ? 'text-text-primary' : 'text-text-muted')}>{FIELD_LABELS[row.field] ?? row.field}</span>
                     <span className={cn('font-mono', row.isDiff ? 'text-text-muted line-through decoration-status-critical/40' : 'text-text-secondary')}>{row.extracted}</span>
                     {row.isDiff ? (
@@ -507,16 +512,16 @@ function SuggestionComparisonView({
 function ExtractedDataDisplay({ data }: { data: Record<string, unknown> }) {
   if (Object.keys(data).length === 0) return <p className="text-xs italic text-text-muted">No data extracted</p>
   return (
-    <div className="space-y-4 rounded-lg border border-border p-3">
+    <div className="divide-y divide-border overflow-hidden rounded-lg border border-border">
       {Object.entries(FIELD_SECTIONS).map(([sectionTitle, fields]) => {
         const sectionData = fields.filter((f) => hasValue(data[f]))
         if (sectionData.length === 0) return null
         return (
           <div key={sectionTitle}>
-            <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-text-muted">{sectionTitle}</div>
-            <div className="grid grid-cols-1 gap-x-8 gap-y-1.5 sm:grid-cols-2 xl:grid-cols-3">
+            <div className="bg-surface-900/40 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-text-muted">{sectionTitle}</div>
+            <div className="grid grid-cols-1 gap-x-8 gap-y-2 px-3 py-2.5 sm:grid-cols-2 xl:grid-cols-3">
               {sectionData.map((field) => (
-                <div key={field} className="grid grid-cols-[130px_1fr] items-baseline gap-3 border-b border-border/40 pb-1 text-xs">
+                <div key={field} className="grid grid-cols-[120px_1fr] items-baseline gap-3 text-xs">
                   <span className="text-text-muted">{FIELD_LABELS[field] ?? field}</span>
                   <span className="truncate font-mono text-text-primary" title={formatExtractedValue(data[field])}>
                     {formatExtractedValue(data[field])}

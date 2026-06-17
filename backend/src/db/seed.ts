@@ -186,7 +186,7 @@ async function main() {
   // commit-first: high-confidence rows are AUTO_ACCEPTED (already applied, never surface in a tab); the
   // low-confidence rows land NEEDS_REVIEW for a human. Two are already actioned to populate the other tabs.
   const [editorUser] = await db.select().from(schema.users).where(eq(schema.users.email, 'editor@cobalt.hk'))
-  await db.insert(schema.reviewEmail).values([
+  const reviewRows = await db.insert(schema.reviewEmail).values([
     // — pending, LOW confidence, sparse, no agent suggestion (plain extracted-data view) —
     {
       graphMessageId: 'mock:delay-notice-evergreen.msg',
@@ -305,7 +305,48 @@ async function main() {
       shipmentId: leg2.id,
       extractedData: { customer_po: '100-100209', booking_no: '118997', forwarder_name: 'Torque / Shipair' },
     },
-  ])
+  ]).returning()
+
+  // Mirror each review email into the shared queue schema so "View original" opens the REAL email
+  // (Outlook/O365 reading pane) in a new window, with downloadable attachments — exactly the
+  // production path (review_email.message_id → queue.queue_message, keyed by graph_message_id).
+  // Pending emails get a sample attachment so the download link is exercised. Idempotent: clears the
+  // prior demo (mock:) rows first (cascades to attachments). Real cobalt-queue rows are untouched.
+  await db.execute(sql`delete from queue.queue_message where graph_message_id like 'mock:%'`)
+  for (const r of reviewRows) {
+    if (!r.graphMessageId) continue
+    const isPending = r.reviewStatus === 'NEEDS_REVIEW'
+    const [qm] = await db
+      .insert(schema.queueMessage)
+      .values({
+        graphMessageId: r.graphMessageId,
+        subject: r.subject,
+        sender: r.sender,
+        receivedAt: r.receivedAt,
+        bodyText: r.bodyText,
+        status: 'DONE',
+        attachmentCount: isPending ? 1 : 0,
+      })
+      .returning()
+    await db.update(schema.reviewEmail).set({ messageId: qm.id }).where(eq(schema.reviewEmail.id, r.id))
+    if (!isPending) continue
+    // a small, real, downloadable CSV (served as text) so the O365-style chip's download link works
+    const csv = 'PO,Item / Style,Qty,Unit\n100-100209,KT-771,5000,pieces'
+    const [att] = await db
+      .insert(schema.queueAttachment)
+      .values({
+        messageId: qm.id,
+        filename: 'packing-list.csv',
+        sourceKind: 'csv',
+        contentHash: `seed-${r.id}`,
+        sizeBytes: csv.length,
+        declaredMime: 'text/csv',
+      })
+      .returning()
+    await db.insert(schema.queueNormalized).values({
+      attachmentId: att.id, idx: 0, kind: 'csv', textContent: csv, mime: 'text/csv', label: 'packing-list',
+    })
+  }
 
   // eslint-disable-next-line no-console
   console.log(`seed done: booking ${booking.jobNo} (${booking.id}) with legs ${leg1.legNo}(${leg1.legStatus}) / ${leg2.legNo}(${leg2.legStatus})`)
