@@ -1,7 +1,9 @@
+import { useEffect, type ReactNode } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useSearchParams } from 'react-router-dom'
 import { Mail, Paperclip, FileText, FileSpreadsheet, FileArchive, File as FileIcon, Image as ImageIcon, Download } from 'lucide-react'
 import { api } from '../lib/api'
+import { cn } from '../lib/utils'
 
 interface OriginalEmail {
   available: boolean
@@ -104,10 +106,83 @@ function AttachmentChip({ a }: { a: Attachment }) {
   )
 }
 
+const HEADER_RE = /^\s*(发件人|发送时间|收件人|抄送|主题|From|Sent|To|Cc|Subject)\s*[:：]/
+const REPLY_RE = /^\s*(发件人|From)\s*[:：]/
+
+/** Wrap case-insensitive matches of `term` in <mark data-hl> so a traced value pops on the page. */
+function highlightParts(text: string, term: string): ReactNode {
+  if (!term) return text
+  const lower = text.toLowerCase()
+  const t = term.toLowerCase()
+  if (!lower.includes(t)) return text
+  const out: ReactNode[] = []
+  let i = 0
+  let idx = lower.indexOf(t)
+  while (idx !== -1) {
+    if (idx > i) out.push(text.slice(i, idx))
+    out.push(
+      <mark key={idx} data-hl className="rounded bg-yellow-200 px-0.5 text-gray-900">
+        {text.slice(idx, idx + term.length)}
+      </mark>,
+    )
+    i = idx + term.length
+    idx = lower.indexOf(t, i)
+  }
+  if (i < text.length) out.push(text.slice(i))
+  return out
+}
+
+/**
+ * Outlook-style reading pane for plain-text email (the .msg corpus has no HTML body). Renders on a
+ * themed (dark) pane in a sans-serif face, preserves the source line breaks, bolds the reply headers
+ * (发件人/收件人/主题 · From/Sent/To/Cc/Subject) and rules off each quoted reply — so a flattened
+ * thread reads like Outlook instead of a monospace wall.
+ */
+function EmailThread({ text, highlight }: { text: string; highlight?: string }) {
+  const cleaned = text
+    .replace(/\r\n/g, '\n')
+    .replace(/^.*ZjQcmQRYFpfptBanner(?:Start|End).*$/gm, '') // strip the phishing-banner sentinels
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+  const lines = cleaned.split('\n')
+
+  // scroll to the first highlighted value once the pane has rendered
+  useEffect(() => {
+    if (!highlight) return
+    document.querySelector('mark[data-hl]')?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+  }, [highlight, cleaned])
+
+  const term = (highlight ?? '').trim()
+
+  return (
+    <div className="max-h-[640px] overflow-auto rounded-lg border border-border bg-surface-900 px-6 py-5">
+      <div className="mx-auto max-w-[680px] font-sans text-[13px] leading-relaxed text-text-secondary">
+        {lines.map((ln, i) =>
+          ln.trim() === '' ? (
+            <div key={i} className="h-2.5" aria-hidden />
+          ) : (
+            <p
+              key={i}
+              className={cn(
+                'whitespace-pre-wrap break-words',
+                REPLY_RE.test(ln) && i > 0 && 'mt-5 border-t border-border pt-4',
+                HEADER_RE.test(ln) && 'font-semibold text-text-primary',
+              )}
+            >
+              {highlightParts(ln, term)}
+            </p>
+          ),
+        )}
+      </div>
+    </div>
+  )
+}
+
 /** Standalone "view original" window — opened in a new tab; renders the email + its attachments. */
 export default function EmailViewPage() {
   const [params] = useSearchParams()
   const messageId = params.get('messageId') ?? ''
+  const highlight = params.get('highlight') ?? ''
 
   const { data: email, isLoading } = useQuery({
     queryKey: ['email-original', messageId],
@@ -148,7 +223,7 @@ export default function EmailViewPage() {
             {/* Outlook-style reading-pane header: subject, sender/date, then the attachments row */}
             <div className="rounded-lg border border-border bg-surface-800">
               <div className="space-y-1 p-4">
-                <h1 className="text-xl font-semibold">{email.subject || '(no subject)'}</h1>
+                <h1 className="text-xl font-semibold">{highlightParts(email.subject || '(no subject)', highlight.trim())}</h1>
                 <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-sm text-text-secondary">
                   <span><span className="text-text-muted">From:</span> {email.from || '—'}</span>
                   <span className="text-text-muted">·</span>
@@ -175,12 +250,14 @@ export default function EmailViewPage() {
               ) : null}
             </div>
 
-            {/* email body */}
+            {/* email body — HTML in a sandboxed iframe; plain-text in an Outlook-style reading pane */}
             <div className="rounded-lg border border-border bg-surface-800 p-4">
               {email.bodyHtml ? (
-                <iframe title="email-body" sandbox="" srcDoc={email.bodyHtml} className="h-[420px] w-full rounded border border-border bg-white" />
+                <iframe title="email-body" sandbox="" srcDoc={email.bodyHtml} className="h-[640px] w-full rounded border border-border bg-white" />
+              ) : email.bodyText ? (
+                <EmailThread text={email.bodyText} highlight={highlight} />
               ) : (
-                <pre className="whitespace-pre-wrap break-words text-sm text-text-secondary">{email.bodyText || '—'}</pre>
+                <div className="text-sm text-text-muted">—</div>
               )}
             </div>
           </>
