@@ -43,6 +43,13 @@ export const EMAIL_TYPE = [
   'Booking Request', 'SO', 'Draft B/L', 'Final B/L', 'Telex Release', 'Invoice/Billing', 'Customs', 'Other',
 ] as const
 
+// ---- Email-extraction review queue (track-system owned) ----
+// Commit-first: high-confidence extractions land AUTO_ACCEPTED (already applied); only low-confidence
+// land NEEDS_REVIEW for a human to approve / correct / reject after the fact.
+export const REVIEW_EMAIL_STATUS = [
+  'NEEDS_REVIEW', 'AUTO_ACCEPTED', 'REVIEWED_OK', 'REVIEWED_CORRECTED', 'REJECTED',
+] as const
+
 // ---- Field-locks (human-wins) ----
 export const FIELD_LOCK_ENTITY = ['booking', 'shipment'] as const
 

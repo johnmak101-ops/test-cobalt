@@ -3,6 +3,7 @@ import {
   SHIPMENT_STATE, LEG_STATUS, SHIPMENT_MODE, RISK_LEVEL, REVIEW_STATUS, BOOKING_STATUS, QTY_UNIT,
   VENDOR_TYPE, FORWARDER_ALIAS_TYPE, PORT_MODE, USER_ROLE, MILESTONE_TYPE, WAREHOUSE_SIGNAL, FIELD_LOCK_ENTITY,
   MASTER_RESOLUTION_KIND, MASTER_RESOLUTION_STATUS, MASTER_RESOLUTION_SOURCE, SHIPMENT_IDENTIFIER_TYPE,
+  EMAIL_TYPE, REVIEW_EMAIL_STATUS,
 } from './enums'
 
 /** TRUTH (mutable) + masters + auth. Owned and WRITTEN by track-system (VM1 NestJS). */
@@ -280,3 +281,37 @@ export const fieldLocks = tracking.table('field_locks', {
   lockedBy: uuid('locked_by').references(() => users.id),
   lockedAt: timestamp('locked_at', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [unique('field_locks_uq').on(t.entityType, t.entityId, t.field)])
+
+/**
+ * EMAIL-EXTRACTION REVIEW QUEUE (track-system owned).
+ * A denormalized snapshot of one email's parser output (mirrors evidence.parsed_record.fields) plus
+ * the human review-state. Commit-first: the data is applied to shipments regardless; high-confidence
+ * extractions are seeded AUTO_ACCEPTED, only low-confidence land NEEDS_REVIEW for a human to
+ * approve / correct / reject AFTER the fact. We snapshot here (not just read the queue/evidence seam)
+ * so the queue works standalone and the reviewer judges what was extracted at the time.
+ * `message_id` / `graph_message_id` are logical FKs to queue.queue_message (no hard FK across the seam).
+ */
+export const reviewEmail = tracking.table('review_email', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  messageId: uuid('message_id'), // logical FK → queue.queue_message.id
+  graphMessageId: text('graph_message_id'), // for "view original"
+  subject: text('subject'),
+  sender: text('sender'),
+  receivedAt: timestamp('received_at', { withTimezone: true }),
+  bodyText: text('body_text'),
+  emailType: text('email_type', { enum: EMAIL_TYPE }),
+  // extracted_data is the current/effective extraction; original_extracted_data snapshots it before a
+  // human correction; suggested_data is the matching agent's proposed changes (with reviewer_notes).
+  extractedData: jsonb('extracted_data').$type<Record<string, unknown>>(),
+  originalExtractedData: jsonb('original_extracted_data').$type<Record<string, unknown>>(),
+  suggestedData: jsonb('suggested_data').$type<Record<string, unknown>>(),
+  reviewerNotes: text('reviewer_notes'), // the matching agent's reasoning behind suggested_data
+  extractionConfidence: doublePrecision('extraction_confidence'), // 0..1
+  shipmentId: uuid('shipment_id').references(() => shipments.id, { onDelete: 'set null' }),
+  reviewStatus: text('review_status', { enum: REVIEW_EMAIL_STATUS }).notNull().default('NEEDS_REVIEW'),
+  reviewedBy: uuid('reviewed_by').references(() => users.id),
+  reviewedAt: timestamp('reviewed_at', { withTimezone: true }),
+  reviewNotes: text('review_notes'), // the human's note on their decision
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+})

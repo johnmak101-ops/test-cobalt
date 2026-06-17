@@ -1,7 +1,7 @@
 import { NavLink } from 'react-router-dom'
 import { useUIStore } from '../../store'
 import { useAuth } from '../../hooks/use-auth'
-import { useReviewQueue } from '../../hooks/use-review'
+import { useReviewCounts } from '../../hooks/use-review-queue'
 import { useAlerts } from '../../hooks/use-alerts'
 import { cn } from '../../lib/utils'
 import { CobaltLogo } from '../ui/CobaltLogo'
@@ -44,9 +44,9 @@ export function Sidebar() {
   const { sidebarCollapsed, toggleSidebar } = useUIStore()
   const { user } = useAuth()
   const rank = RANK[user?.role ?? ''] ?? -1
-  const { data: reviewItems } = useReviewQueue()
+  const { data: reviewCounts } = useReviewCounts()
   const { data: alerts } = useAlerts('ACTIVE')
-  const badges: Record<BadgeKey, number> = { review: reviewItems?.length ?? 0, alerts: alerts?.length ?? 0 }
+  const badges: Record<BadgeKey, number> = { review: reviewCounts?.pending ?? 0, alerts: alerts?.length ?? 0 }
 
   const renderBadge = (count: number, collapsed: boolean) => {
     if (count <= 0) return null

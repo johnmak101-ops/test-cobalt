@@ -7,6 +7,7 @@ import { AuditRepository } from './repositories/audit.repository'
 import { AlertRepository } from './repositories/alert.repository'
 import { EvidenceRepository } from './repositories/evidence.repository'
 import { EmailRepository } from './repositories/email.repository'
+import { ReviewEmailRepository } from './repositories/review-email.repository'
 import { UsersRepository } from './repositories/users.repository'
 import { SettingsRepository } from './repositories/settings.repository'
 
@@ -19,6 +20,7 @@ const repositories = [
   AlertRepository,
   EvidenceRepository,
   EmailRepository,
+  ReviewEmailRepository,
   UsersRepository,
   SettingsRepository,
 ]

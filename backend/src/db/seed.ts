@@ -18,6 +18,7 @@ async function main() {
   const db = drizzle(pool, { schema })
 
   await db.execute(sql`truncate table
+    tracking.review_email,
     tracking.shipment_pos, tracking.shipment_milestones, tracking.shipments,
     tracking.booking_pos, tracking.bookings, tracking.purchase_orders,
     tracking.field_locks, tracking.app_settings, tracking.forwarder_aliases, tracking.consignees,
@@ -180,6 +181,131 @@ async function main() {
 
   // ---- app settings: the review-gate confidence threshold (admin-tunable) ----
   await db.insert(schema.appSettings).values({ key: 'confidence_threshold', value: 85 })
+
+  // ---- email-extraction review queue (demo) ----
+  // commit-first: high-confidence rows are AUTO_ACCEPTED (already applied, never surface in a tab); the
+  // low-confidence rows land NEEDS_REVIEW for a human. Two are already actioned to populate the other tabs.
+  const [editorUser] = await db.select().from(schema.users).where(eq(schema.users.email, 'editor@cobalt.hk'))
+  await db.insert(schema.reviewEmail).values([
+    // — pending, LOW confidence, sparse, no agent suggestion (plain extracted-data view) —
+    {
+      graphMessageId: 'mock:delay-notice-evergreen.msg',
+      subject: 'Vessel delay — EVER GLOBE 0114-068E',
+      sender: 'ops@torque-shipair.example',
+      receivedAt: new Date('2026-02-08T03:12:00Z'),
+      bodyText: 'Please note EVER GLOBE voyage 0114-068E is delayed. New ETD 12 Feb, ETA 07 Mar. Booking 118997.',
+      emailType: 'Other',
+      extractionConfidence: 0.42,
+      reviewStatus: 'NEEDS_REVIEW',
+      shipmentId: leg2.id,
+      extractedData: {
+        customer_po: '100-100209', booking_no: '118997', so_no: 'SESZX_0286_26_RZ',
+        etd: '2026-02-12', eta: '2026-03-07',
+      },
+    },
+    // — pending, MEDIUM confidence, WITH agent suggestion + reasoning (drives the comparison/diff view) —
+    {
+      graphMessageId: 'mock:final-bl-118997.msg',
+      subject: 'Final B/L — HBL TQHK1180994 / Booking 118997',
+      sender: 'docs@torque-shipair.example',
+      receivedAt: new Date('2026-02-11T09:40:00Z'),
+      bodyText: 'Final B/L attached. HBL TQHK118099 4. Vessel EVER LUCKY. Container TQHU1234567.',
+      emailType: 'Final B/L',
+      extractionConfidence: 0.65,
+      reviewStatus: 'NEEDS_REVIEW',
+      shipmentId: leg2.id,
+      reviewerNotes:
+        'Booking number looks truncated — the trailing "4" likely belongs to the HBL "TQHK1180994", not the booking. Vessel "EVER LUCKY" conflicts with this leg’s vessel "EVER GLOBE".',
+      extractedData: {
+        customer_po: '100-100209', booking_no: '1189974', hbl_awb_fcr_no: 'TQHK118099',
+        container_no: 'TQHU1234567', forwarder_name: 'Torque / Shipair',
+      },
+      suggestedData: {
+        customer_po: '100-100209', booking_no: '118997', hbl_awb_fcr_no: 'TQHK1180994',
+        container_no: 'TQHU1234567', forwarder_name: 'Torque / Shipair',
+      },
+    },
+    // — pending, MEDIUM confidence, suggestion fixing a consignee typo —
+    {
+      graphMessageId: 'mock:so-confirm-newlob.msg',
+      subject: 'SO confirmation — 100-100209',
+      sender: 'cs@newlobster.example',
+      receivedAt: new Date('2026-01-30T11:05:00Z'),
+      bodyText: 'SO SESZX_0286_26_RZ confirmed for PO 100-100209. Consignee CINQ-HUITIEMES SA, Paris.',
+      emailType: 'SO',
+      extractionConfidence: 0.71,
+      reviewStatus: 'NEEDS_REVIEW',
+      shipmentId: leg2.id,
+      reviewerNotes: 'Consignee name missing the suffix — the master record is "CINQ-HUITIEMES S.A.".',
+      extractedData: {
+        customer_po: '100-100209', so_no: 'SESZX_0286_26_RZ', consignee_name: 'CINQ-HUITIEMES SA',
+        consignee_address: 'Paris, France', cargo_ready_date: '2026-02-03',
+      },
+      suggestedData: {
+        customer_po: '100-100209', so_no: 'SESZX_0286_26_RZ', consignee_name: 'CINQ-HUITIEMES S.A.',
+        consignee_address: 'Paris, France', cargo_ready_date: '2026-02-03',
+      },
+    },
+    // — already CORRECTED by a human (Corrected tab + before/after diff) —
+    {
+      graphMessageId: 'mock:booking-req-risk.msg',
+      subject: 'Booking request — SKIM / SO-RISK-1',
+      sender: 'ops@torque-shipair.example',
+      receivedAt: new Date('2026-02-10T08:00:00Z'),
+      bodyText: 'Booking BKG-RISK-1 raised for SKIM. CFS cut-off 20 Feb. POL Yantian, POD Los Angeles.',
+      emailType: 'Booking Request',
+      extractionConfidence: 0.6,
+      reviewStatus: 'REVIEWED_CORRECTED',
+      shipmentId: atRiskLeg.id,
+      reviewedBy: editorUser?.id ?? null,
+      reviewedAt: new Date('2026-02-10T10:30:00Z'),
+      reviewNotes: 'Fixed booking number (OCR dropped a digit) and set the correct CFS cut-off date.',
+      originalExtractedData: {
+        booking_no: 'BKG-RISK-l', so_no: 'SO-RISK-1', warehouse_end_date: '2026-02-02', poi: 'Yantian', pod: 'Los Angeles',
+      },
+      extractedData: {
+        booking_no: 'BKG-RISK-1', so_no: 'SO-RISK-1', warehouse_end_date: '2026-02-20', poi: 'Yantian', pod: 'Los Angeles',
+      },
+    },
+    // — rejected (not a shipment email) —
+    {
+      graphMessageId: 'mock:marketing-blast.msg',
+      subject: 'Q1 freight rates promotion',
+      sender: 'marketing@randomfreight.example',
+      receivedAt: new Date('2026-02-09T14:00:00Z'),
+      bodyText: 'Special rates this quarter! Contact us for a quote.',
+      emailType: 'Other',
+      extractionConfidence: 0.18,
+      reviewStatus: 'REJECTED',
+      reviewedBy: editorUser?.id ?? null,
+      reviewedAt: new Date('2026-02-09T14:20:00Z'),
+      reviewNotes: 'Marketing email — not a shipment document.',
+      extractedData: {},
+    },
+    // — auto-accepted (high confidence; applied automatically — counts only, never shown in a tab) —
+    {
+      graphMessageId: 'mock:so-auto-1.msg',
+      subject: 'SO SESZX_0286_26_RZ',
+      sender: 'cs@newlobster.example',
+      receivedAt: new Date('2026-01-29T09:00:00Z'),
+      emailType: 'SO',
+      extractionConfidence: 0.96,
+      reviewStatus: 'AUTO_ACCEPTED',
+      shipmentId: leg2.id,
+      extractedData: { customer_po: '100-100209', so_no: 'SESZX_0286_26_RZ', booking_no: '118997' },
+    },
+    {
+      graphMessageId: 'mock:bkg-auto-2.msg',
+      subject: 'Booking confirmation 118997',
+      sender: 'ops@torque-shipair.example',
+      receivedAt: new Date('2026-01-28T08:00:00Z'),
+      emailType: 'Booking Request',
+      extractionConfidence: 0.94,
+      reviewStatus: 'AUTO_ACCEPTED',
+      shipmentId: leg2.id,
+      extractedData: { customer_po: '100-100209', booking_no: '118997', forwarder_name: 'Torque / Shipair' },
+    },
+  ])
 
   // eslint-disable-next-line no-console
   console.log(`seed done: booking ${booking.jobNo} (${booking.id}) with legs ${leg1.legNo}(${leg1.legStatus}) / ${leg2.legNo}(${leg2.legStatus})`)
