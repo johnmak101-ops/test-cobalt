@@ -22,7 +22,11 @@ export class DecisionsService {
 
   async ingest(dto: CreateDecisionDto): Promise<DecisionResult> {
     const threshold = await this.settings.confidenceThreshold()
-    const reviewStatus: 'provisional' | 'confirmed' = dto.confidence >= threshold ? 'confirmed' : 'provisional'
+    // TWO independent gates must BOTH pass to auto-confirm: the Critic's score AND the agent's deterministic
+    // review gate. autoApply===false VETOES an auto-confirm the score alone would allow; it never forces one.
+    // Omitted (legacy callers / the reconcile path) → score-only routing, unchanged.
+    const reviewStatus: 'provisional' | 'confirmed' =
+      dto.autoApply !== false && dto.confidence >= threshold ? 'confirmed' : 'provisional'
 
     const events = (dto.events ?? []).map((e) => ({
       emailType: e.emailType,
@@ -46,6 +50,7 @@ export class DecisionsService {
       evidenceIds,
       confidence: dto.confidence,
       reviewStatus,
+      reviewReasons: dto.reviewReasons ?? null,
     }
 
     const result = await this.committer.apply(group)

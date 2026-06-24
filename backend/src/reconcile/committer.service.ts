@@ -23,6 +23,8 @@ export interface ReconGroup {
    *  legacy reconcile path (those legs stay `confirmed`); set on the agent decision path. */
   confidence?: number | null
   reviewStatus?: 'provisional' | 'confirmed'
+  /** the agent gate's reasons for routing to review — preferred over raw conflicts in the review queue */
+  reviewReasons?: string[] | null
   /** every value each identity field ever held (current + alternates) — persisted as searchable history */
   identifiers?: {
     type: string
@@ -131,7 +133,7 @@ export class CommitterService {
         await this.shipments.updateLeg(shipmentId, {
           reviewStatus: g.reviewStatus,
           confidence: g.confidence ?? null,
-          reviewReasons: g.conflicts.length ? g.conflicts : null,
+          reviewReasons: reviewReasonsFor(g),
         })
     } else {
       jobNo = await this.nextJobNo()
@@ -144,7 +146,7 @@ export class CommitterService {
         ...(legValues as object),
         reviewStatus: g.reviewStatus ?? 'confirmed',
         confidence: g.confidence ?? null,
-        reviewReasons: g.reviewStatus !== undefined && g.conflicts.length ? g.conflicts : null,
+        reviewReasons: g.reviewStatus !== undefined ? reviewReasonsFor(g) : null,
       })
       shipmentId = leg.id
       action = 'create_booking'
@@ -293,6 +295,10 @@ export class CommitterService {
     return `JOB-2026-${String((await this.bookings.count()) + 1).padStart(4, '0')}`
   }
 }
+
+/** What to surface in the review queue: the agent gate's reasons when present, else the raw conflicts. */
+const reviewReasonsFor = (g: ReconGroup): string[] | null =>
+  g.reviewReasons?.length ? g.reviewReasons : g.conflicts.length ? g.conflicts : null
 
 const toStr = (v: unknown): string | null => (v == null ? null : v instanceof Date ? v.toISOString() : String(v))
 const same = (a: unknown, b: unknown) => toStr(a) === toStr(b)

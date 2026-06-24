@@ -64,6 +64,26 @@ describe('DecisionsService (integration)', () => {
     expect(res.reviewStatus).toBe('confirmed') // 50 >= 40
   })
 
+  it('the agent review gate VETOES an auto-confirm the score alone would allow (autoApply:false → provisional)', async () => {
+    const res = await decisions.ingest(decision({ confidence: 92, autoApply: false, reviewReasons: ['backend leg matched on PO only'] }))
+    expect(res.reviewStatus).toBe('provisional') // high score, but the deterministic gate withheld it
+    const [leg] = await db.select().from(schema.shipments)
+    expect(leg.reviewStatus).toBe('provisional')
+    expect(leg.reviewReasons).toEqual(['backend leg matched on PO only']) // gate reasons surface ahead of conflicts
+  })
+
+  it('autoApply:true still routes on the score (gate never FORCES a confirm)', async () => {
+    expect((await decisions.ingest(decision({ confidence: 92, autoApply: true }))).reviewStatus).toBe('confirmed')
+  })
+
+  it('autoApply:true with a low score stays provisional (both gates must pass)', async () => {
+    expect((await decisions.ingest(decision({ confidence: 50, autoApply: true }))).reviewStatus).toBe('provisional')
+  })
+
+  it('autoApply omitted (legacy caller) routes on confidence alone — unchanged', async () => {
+    expect((await decisions.ingest(decision({ confidence: 92 }))).reviewStatus).toBe('confirmed')
+  })
+
   it('upserts the same shipment by match-key (idempotent across emails)', async () => {
     await decisions.ingest(decision({ confidence: 90 }))
     await decisions.ingest(

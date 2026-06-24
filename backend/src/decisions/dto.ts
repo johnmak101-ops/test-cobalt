@@ -1,4 +1,4 @@
-import { IsArray, IsInt, IsObject, IsOptional, IsString, Max, Min } from 'class-validator'
+import { IsArray, IsBoolean, IsInt, IsObject, IsOptional, IsString, Max, Min } from 'class-validator'
 
 /** One scored shipment decision, POSTed by the Agent VM (Matcher merged it, Critic scored it). */
 export class CreateDecisionDto {
@@ -34,6 +34,14 @@ export class CreateDecisionDto {
 
   /** The Critic's per-shipment confidence, 0-100. Routes to confirmed/provisional vs the threshold. */
   @IsInt() @Min(0) @Max(100) confidence!: number
+
+  /** The agent's DETERMINISTIC review-gate verdict: true = safe to auto-apply, false = route to a human.
+   *  Composed with the confidence threshold — a `false` here VETOES an auto-confirm the score alone would
+   *  allow; it never forces one. Omitted by legacy callers → score-only routing (unchanged). */
+  @IsOptional() @IsBoolean() autoApply?: boolean
+
+  /** Why the gate withheld auto-apply (empty when autoApply) — surfaced in the review queue ahead of raw conflicts. */
+  @IsOptional() @IsArray() @IsString({ each: true }) reviewReasons?: string[]
 
   /** Pointers back to the source emails (Graph is the permanent source of truth for "view original"). */
   @IsOptional() @IsArray() evidenceRefs?: { graphId?: string; graphMessageId?: string; sourceFile?: string; receivedAt?: string; emailType?: string }[]
