@@ -1,4 +1,4 @@
-import { IsArray, IsBoolean, IsInt, IsObject, IsOptional, IsString, Max, Min } from 'class-validator'
+import { IsArray, IsBoolean, IsIn, IsInt, IsObject, IsOptional, IsString, Max, Min } from 'class-validator'
 
 /** One scored shipment decision, POSTed by the Agent VM (Matcher merged it, Critic scored it). */
 export class CreateDecisionDto {
@@ -39,6 +39,12 @@ export class CreateDecisionDto {
    *  Composed with the confidence threshold — a `false` here VETOES an auto-confirm the score alone would
    *  allow; it never forces one. Omitted by legacy callers → score-only routing (unchanged). */
   @IsOptional() @IsBoolean() autoApply?: boolean
+
+  /** The gate's 3-way disposition. `skip` = 不需處理: a notification/invoice with no actionable shipment
+   *  data — committed for audit but flagged so it is excluded from BOTH the human review queue and alerts.
+   *  `auto`/`review` are informational here (autoApply already encodes them); only `skip` changes routing.
+   *  Omitted by legacy callers → unchanged behaviour. */
+  @IsOptional() @IsIn(['auto', 'review', 'skip']) disposition?: 'auto' | 'review' | 'skip'
 
   /** Why the gate withheld auto-apply (empty when autoApply) — surfaced in the review queue ahead of raw conflicts. */
   @IsOptional() @IsArray() @IsString({ each: true }) reviewReasons?: string[]

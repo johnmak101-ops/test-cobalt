@@ -84,6 +84,22 @@ describe('DecisionsService (integration)', () => {
     expect((await decisions.ingest(decision({ confidence: 92 }))).reviewStatus).toBe('confirmed')
   })
 
+  it('a skip disposition (不需處理) is acknowledged but commits NOTHING — no phantom tracker leg, idempotent on re-POST', async () => {
+    const res = await decisions.ingest(
+      decision({ confidence: 92, autoApply: false, disposition: 'skip', reviewReasons: ['no PO / strong id / shipment data — not actionable (不需處理)'] }),
+    )
+    expect(res.reviewStatus).toBe('skip')
+    expect(res.action).toBe('skip')
+    // a skip is not a shipment: NO leg (so it never appears in legsForTracker/activeLegs) and NO booking
+    // (so it never burns a JOB-XXXX number) — even at a high confidence that would otherwise auto-confirm.
+    expect(await db.select().from(schema.shipments)).toHaveLength(0)
+    expect(await db.select().from(schema.bookings)).toHaveLength(0)
+    // re-POSTing the same notification stays a no-op (no duplicate contentless legs)
+    await decisions.ingest(decision({ confidence: 92, disposition: 'skip' }))
+    expect(await db.select().from(schema.shipments)).toHaveLength(0)
+    expect(await db.select().from(schema.bookings)).toHaveLength(0)
+  })
+
   it('upserts the same shipment by match-key (idempotent across emails)', async () => {
     await decisions.ingest(decision({ confidence: 90 }))
     await decisions.ingest(

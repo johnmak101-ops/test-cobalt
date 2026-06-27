@@ -3,9 +3,22 @@ import { CommitterService, type ReconGroup, type CommitResult } from '../reconci
 import { SettingsService } from '../settings/settings.service'
 import type { CreateDecisionDto } from './dto'
 
-export interface DecisionResult extends CommitResult {
+export interface DecisionResult extends Omit<CommitResult, 'action'> {
+  /** `skip` = the decision was 不需處理 and acknowledged WITHOUT committing a shipment (see ingest). */
+  action: CommitResult['action'] | 'skip'
   confidence: number
-  reviewStatus: 'provisional' | 'confirmed'
+  reviewStatus: 'provisional' | 'confirmed' | 'skip'
+}
+
+/** What ingest returns for a 不需處理 (skip) decision — acknowledged, nothing committed. */
+const SKIP_RESULT = {
+  action: 'skip' as const,
+  jobNo: '',
+  bookingId: '',
+  shipmentId: '',
+  state: '',
+  conflicts: [] as string[],
+  skippedLockedFields: [] as string[],
 }
 
 /**
@@ -21,6 +34,13 @@ export class DecisionsService {
   ) {}
 
   async ingest(dto: CreateDecisionDto): Promise<DecisionResult> {
+    // 不需處理 (skip): a notification/invoice with no actionable shipment data — the agent gate emits `skip`
+    // only when there is no PO, no strong id, AND no status field. It must NOT be committed as a shipment:
+    // with an empty match-key the committer can never upsert, so it would mint a brand-new phantom JOB-XXXX
+    // ACTIVE leg on EVERY ingest (surfacing in the tracker + burning a job number + duplicating on re-POST).
+    // Acknowledge it without committing — the source email + parsed record are retained on the agent side.
+    if (dto.disposition === 'skip') return { ...SKIP_RESULT, confidence: dto.confidence, reviewStatus: 'skip' }
+
     const threshold = await this.settings.confidenceThreshold()
     // TWO independent gates must BOTH pass to auto-confirm: the Critic's score AND the agent's deterministic
     // review gate. autoApply===false VETOES an auto-confirm the score alone would allow; it never forces one.

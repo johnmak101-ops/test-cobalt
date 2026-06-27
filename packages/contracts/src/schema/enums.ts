@@ -11,7 +11,9 @@ export const LEG_STATUS = ['ACTIVE', 'SUPERSEDED', 'CANCELLED'] as const
 export const SHIPMENT_MODE = ['SEA', 'SEA_FCL', 'SEA_LCL', 'AIR'] as const
 export const RISK_LEVEL = ['ON_TRACK', 'AT_RISK', 'DELAYED'] as const
 /** Per-shipment review gate. The Critic's confidence routes a decision to `provisional`
- *  (held for human review, excluded from alerts/automation) or `confirmed` (auto-applied). */
+ *  (held for human review, excluded from alerts/automation) or `confirmed` (auto-applied).
+ *  (A `skip`/不需處理 decision never becomes a leg — DecisionsService short-circuits it, so no third
+ *  column value is needed here.) */
 export const REVIEW_STATUS = ['provisional', 'confirmed'] as const
 /** The rotating identifier kinds a shipment carries across its lifecycle (booking# → SO# → HBL/AWB).
  *  Every value ever stated is retained in shipment_identifiers; the leg column holds the current one. */
