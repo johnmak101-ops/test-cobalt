@@ -230,11 +230,12 @@ export const shipmentPos = tracking.table('shipment_pos', {
 }, (t) => [unique('shipment_pos_uq').on(t.shipmentId, t.poId)])
 
 /**
- * Identifier HISTORY — every value a shipment ever carried for each rotating identity field. The leg
- * column holds the CURRENT value; this keeps the alternates (a Draft B/L number superseded by the
- * Final, an SO# the booking later replaced, a value that lost an equal-rank conflict) so nothing
- * extracted is lost — searchable, with provenance, for the review UI. `is_current` mirrors the leg
- * column; one row per (shipment, type, value).
+ * Identifier history + CO-CURRENT set — every value a shipment ever carried for each rotating identity
+ * field. Identity is MULTI-VALUED: a consolidation / multi-container shipment legitimately carries many
+ * current booking/SO/HBL numbers, so MULTIPLE rows per (shipment, type) may be `is_current`. The leg
+ * column holds the primary/display value; this table keeps the full set, including superseded alternates
+ * (a Draft B/L number replaced by the Final) which are `is_current = false`. Nothing extracted is lost —
+ * searchable, with provenance, for the review UI. One row per (shipment, type, value).
  */
 export const shipmentIdentifiers = tracking.table('shipment_identifiers', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -243,7 +244,7 @@ export const shipmentIdentifiers = tracking.table('shipment_identifiers', {
   value: text('value').notNull(),
   docType: text('doc_type'), // the email type that stated it (Final B/L, Booking Request, …)
   rank: integer('rank'), // document authority (Final B/L = 5 … Other = 1)
-  isCurrent: boolean('is_current').notNull().default(false), // equals the leg's current column value
+  isCurrent: boolean('is_current').notNull().default(false), // a current value (≥1 per type: co-current consolidation members + the leg's primary)
   sourceEmailId: text('source_email_id'), // graph id → "view original"
   observedAt: timestamp('observed_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),

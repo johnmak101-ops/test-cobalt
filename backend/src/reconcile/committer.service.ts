@@ -211,10 +211,11 @@ export class CommitterService {
   }
 
   /**
-   * Persist the identifier history (every value each identity field ever held). `is_current` is
-   * re-derived from the ACTUAL committed column value — so a human-locked value stays current — not
-   * the agent's flag. Idempotent (delete+insert per shipment), so re-applying a decision never piles
-   * up duplicate rows.
+   * Persist the identifier history (every value each identity field ever held). CO-CURRENT semantics: a
+   * consolidation / multi-container shipment legitimately has MANY current booking/SO/HBL numbers, so a
+   * value is `is_current` when it is the agent-marked co-current member (every top-rank value) OR equals
+   * the ACTUAL committed column — the latter keeps a human-locked primary current regardless of the agent.
+   * Idempotent (delete+insert per shipment), so re-applying a decision never piles up duplicate rows.
    */
   private async writeIdentifiers(shipmentId: string, g: ReconGroup) {
     if (!g.identifiers?.length) return
@@ -241,7 +242,7 @@ export class CommitterService {
         value: id.value,
         docType: id.docType ?? null,
         rank: id.rank ?? null,
-        isCurrent: current[id.type] === alnum(id.value),
+        isCurrent: current[id.type] === alnum(id.value) || id.isCurrent === true,
         sourceEmailId: id.sourceEmailId ?? null,
         observedAt: id.observedAt ? new Date(id.observedAt) : null,
       }))
