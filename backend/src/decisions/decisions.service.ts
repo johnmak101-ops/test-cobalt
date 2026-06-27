@@ -42,11 +42,15 @@ export class DecisionsService {
     if (dto.disposition === 'skip') return { ...SKIP_RESULT, confidence: dto.confidence, reviewStatus: 'skip' }
 
     const threshold = await this.settings.confidenceThreshold()
-    // TWO independent gates must BOTH pass to auto-confirm: the Critic's score AND the agent's deterministic
-    // review gate. autoApply===false VETOES an auto-confirm the score alone would allow; it never forces one.
-    // Omitted (legacy callers / the reconcile path) → score-only routing, unchanged.
+    // The agent's deterministic review gate is AUTHORITATIVE: a gate-auto decision confirms, a gate-review
+    // goes to a human — independent of the (now informational) confidence score. A shipment is legitimately
+    // sparse early in its lifecycle (PO first, identity ids fill in later), so a completeness-based score must
+    // NOT veto a decision the policy gate already cleared. Legacy callers that OMIT autoApply fall back to the
+    // score-vs-threshold routing (unchanged).
     const reviewStatus: 'provisional' | 'confirmed' =
-      dto.autoApply !== false && dto.confidence >= threshold ? 'confirmed' : 'provisional'
+      dto.autoApply === undefined
+        ? dto.confidence >= threshold ? 'confirmed' : 'provisional'
+        : dto.autoApply ? 'confirmed' : 'provisional'
 
     const events = (dto.events ?? []).map((e) => ({
       emailType: e.emailType,

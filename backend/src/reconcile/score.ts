@@ -1,11 +1,14 @@
 /**
- * Confidence for the LEGACY reconcile path (manual POST /reconcile/run). It mirrors the agent's
- * heuristic Critic (cobalt-queue/src/critic-agent/heuristic.ts) so a manual rebuild routes through
- * the SAME review gate as the agent decisions — no more blanket-`confirmed` legs that skip review.
+ * Confidence for the LEGACY reconcile path (manual POST /reconcile/run), which routes on confidence vs the
+ * threshold — it has NO deterministic review gate of its own.
  *
- * NOTE: until the merge policy is de-duplicated (it currently lives in two places), this path's
- * `conflicts` still include lifecycle supersedes, so it scores conservatively (more provisional).
- * That is the safe direction; agent decisions already score on genuine-only conflicts.
+ * DIVERGENCE (intentional, by design): the AGENT path no longer works this way. There the deterministic
+ * review gate is authoritative (autoApply → confirmed/provisional) and the Critic is an informational
+ * anomaly score that does NOT penalise incompleteness (PO-only / no strong id / sparse are normal lifecycle).
+ * This legacy path still applies those completeness penalties, so a manual rebuild is deliberately MORE
+ * CONSERVATIVE (more provisional) than the agent — the safe direction. It can re-provisionalize a leg the
+ * agent auto-confirmed; that is acceptable for a manual admin rebuild. Unifying the two onto one gate is a
+ * follow-up (it would require porting the gate's customer/identity checks here, which this path lacks).
  */
 const STRONG = ['so_no', 'booking_no', 'hbl_awb_fcr_no', 'mbl', 'container_no']
 const clamp = (n: number) => Math.max(0, Math.min(100, Math.round(n)))

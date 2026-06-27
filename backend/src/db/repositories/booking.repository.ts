@@ -27,6 +27,17 @@ export class BookingRepository {
     const [{ n }] = await this.db.select({ n: sql<number>`count(*)::int` }).from(schema.bookings)
     return n
   }
+  /** Next job-number sequence = MAX(existing trailing number) + 1, scoped to the JOB-2026-NNNN family so a
+   *  foreign-format/legacy booking can't perturb the sequence. Gap-safe, unlike count()+1 which collides the
+   *  moment a number is missing (a failed/removed booking leaves a hole). The agent posts sequentially so a
+   *  max-based seed is race-free in practice (job_no is UNIQUE, so a concurrent double would fail-fast). */
+  async nextJobSeq() {
+    const [{ n }] = await this.db
+      .select({ n: sql<number>`coalesce(max(substring(job_no from '[0-9]+$')::int), 0)::int` })
+      .from(schema.bookings)
+      .where(sql`job_no like 'JOB-2026-%'`)
+    return n + 1
+  }
 
   // --- booking_pos ---
   linkPo(bookingId: string, poId: string) {

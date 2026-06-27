@@ -9,11 +9,14 @@ export class ShipmentsController {
 
   /**
    * GET /api/shipments
-   *  - with strong-key params (so_no, booking_no, …) → Matcher candidate lookup (Agent VM)
+   *  - with a match key (a strong key OR customer_po) → Matcher candidate lookup (Agent VM). customer_po
+   *    MUST route here too: a PO-only email needs to learn whether the PO already lives on a leg, else the
+   *    Matcher sees zero candidates and (wrongly) treats every known PO as a brand-new shipment.
    *  - otherwise → the Shipment Tracker list for the UI (optional ?status filter)
    */
   @Get() index(@Query() q: Record<string, string>) {
-    const hasKeys = STRONG_KEYS.some((k) => q[k] != null && q[k] !== '')
+    const present = (k: string) => q[k] != null && q[k] !== ''
+    const hasKeys = STRONG_KEYS.some(present) || present('customer_po')
     return hasKeys ? this.shipments.lookupByMatchKey(q) : this.shipments.listForTracker(q.status)
   }
 

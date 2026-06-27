@@ -102,16 +102,28 @@ export class CommitterService {
       matchKeys: g.matchKeys,
     }
 
-    // matching / idempotency: a leg matches only if it shares a strong key AND is PO-consistent.
+    // matching / idempotency. A leg matches when:
+    //  - it shares a STRONG key with the group AND is PO-consistent (the normal case); OR
+    //  - they share a PO and at least ONE side has NO strong id — i.e. a nascent PO-only leg gaining its
+    //    first id, or a PO-only follow-up/re-POST. This stops Option A's strong-id-less legs from spawning a
+    //    duplicate on the next email. It deliberately does NOT match by PO when BOTH carry DIFFERENT strong
+    //    ids — that is a PO reassignment the gate reviews, never a silent merge here.
     const groupPos = new Set(g.pos.map((p) => normKey(p)).filter(Boolean))
     const legs = await this.shipments.allLegs()
     let existing: (typeof legs)[number] | undefined
     for (const l of legs) {
-      if (!keysOverlap(strongKeys(l.matchKeys as Record<string, unknown>), gk)) continue
+      const legStrong = strongKeys(l.matchKeys as Record<string, unknown>)
       const bkPos = new Set((await this.bookings.poNumbersFor(l.bookingId)).map((p) => normKey(p)).filter(Boolean))
-      if (bkPos.size && !setsOverlap(groupPos, bkPos)) continue
-      existing = l
-      break
+      const sharePo = groupPos.size > 0 && setsOverlap(groupPos, bkPos)
+      if (gk.size > 0 && keysOverlap(legStrong, gk)) {
+        if (bkPos.size && !sharePo) continue // strong match but clashing POs → not the same shipment
+        existing = l
+        break
+      }
+      if (sharePo && (legStrong.size === 0 || gk.size === 0)) {
+        existing = l
+        break
+      }
     }
 
     let bookingId: string
@@ -292,7 +304,7 @@ export class CommitterService {
     return c ? this.masters.portIdByCodeOrName(c) : Promise.resolve(null)
   }
   private async nextJobNo(): Promise<string> {
-    return `JOB-2026-${String((await this.bookings.count()) + 1).padStart(4, '0')}`
+    return `JOB-2026-${String(await this.bookings.nextJobSeq()).padStart(4, '0')}`
   }
 }
 

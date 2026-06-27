@@ -72,12 +72,12 @@ describe('DecisionsService (integration)', () => {
     expect(leg.reviewReasons).toEqual(['backend leg matched on PO only']) // gate reasons surface ahead of conflicts
   })
 
-  it('autoApply:true still routes on the score (gate never FORCES a confirm)', async () => {
+  it('autoApply:true CONFIRMS (the deterministic gate is authoritative)', async () => {
     expect((await decisions.ingest(decision({ confidence: 92, autoApply: true }))).reviewStatus).toBe('confirmed')
   })
 
-  it('autoApply:true with a low score stays provisional (both gates must pass)', async () => {
-    expect((await decisions.ingest(decision({ confidence: 50, autoApply: true }))).reviewStatus).toBe('provisional')
+  it('autoApply:true with a LOW score STILL confirms — an informational completeness score no longer vetoes the gate', async () => {
+    expect((await decisions.ingest(decision({ confidence: 50, autoApply: true }))).reviewStatus).toBe('confirmed')
   })
 
   it('autoApply omitted (legacy caller) routes on confidence alone — unchanged', async () => {
@@ -98,6 +98,22 @@ describe('DecisionsService (integration)', () => {
     await decisions.ingest(decision({ confidence: 92, disposition: 'skip' }))
     expect(await db.select().from(schema.shipments)).toHaveLength(0)
     expect(await db.select().from(schema.bookings)).toHaveLength(0)
+  })
+
+  it('a PO-only decision is idempotent BY PO — a re-POST amends, never a duplicate leg', async () => {
+    const po = (eta: string) => decision({ matchKey: { customer_po: 'PO-DUP' }, pos: ['PO-DUP'], fields: { customer_po: 'PO-DUP', eta } })
+    await decisions.ingest(po('2026-03-01'))
+    await decisions.ingest(po('2026-04-01')) // re-send / follow-up of the same PO-only email
+    expect(await db.select().from(schema.shipments)).toHaveLength(1) // NOT two phantom legs
+    expect(await db.select().from(schema.bookings)).toHaveLength(1)
+  })
+
+  it('a PO-only leg is UPGRADED (not duplicated) when its first strong id arrives sharing the PO', async () => {
+    await decisions.ingest(decision({ matchKey: { customer_po: 'PO-UP' }, pos: ['PO-UP'], fields: { customer_po: 'PO-UP' } }))
+    await decisions.ingest(decision({ matchKey: { booking_no: 'BK-UP', customer_po: 'PO-UP' }, pos: ['PO-UP'], fields: { booking_no: 'BK-UP', customer_po: 'PO-UP' } }))
+    const legs = await db.select().from(schema.shipments)
+    expect(legs).toHaveLength(1) // the nascent PO-only leg gained BK-UP — not a second shipment
+    expect(legs[0].bookingNo).toBe('BK-UP')
   })
 
   it('upserts the same shipment by match-key (idempotent across emails)', async () => {

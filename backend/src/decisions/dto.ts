@@ -35,9 +35,9 @@ export class CreateDecisionDto {
   /** The Critic's per-shipment confidence, 0-100. Routes to confirmed/provisional vs the threshold. */
   @IsInt() @Min(0) @Max(100) confidence!: number
 
-  /** The agent's DETERMINISTIC review-gate verdict: true = safe to auto-apply, false = route to a human.
-   *  Composed with the confidence threshold — a `false` here VETOES an auto-confirm the score alone would
-   *  allow; it never forces one. Omitted by legacy callers → score-only routing (unchanged). */
+  /** The agent's DETERMINISTIC review-gate verdict, now AUTHORITATIVE: true → confirmed, false → provisional
+   *  (route to a human) — independent of the confidence score, which is informational. Omitted by legacy
+   *  callers → score-vs-threshold routing (unchanged). */
   @IsOptional() @IsBoolean() autoApply?: boolean
 
   /** The gate's 3-way disposition. `skip` = 不需處理: a notification/invoice with no actionable shipment
