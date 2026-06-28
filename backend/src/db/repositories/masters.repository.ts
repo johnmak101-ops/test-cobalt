@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common'
-import { eq, ilike, desc, sql } from 'drizzle-orm'
+import { and, eq, ilike, desc, sql } from 'drizzle-orm'
 import * as schema from '@cobalt/contracts'
 import { DRIZZLE, type DrizzleDB } from '../drizzle.provider'
 
@@ -29,6 +29,30 @@ export class MastersRepository {
   async customerIdByCode(code: string) {
     const [r] = await this.db.select().from(schema.customers).where(eq(schema.customers.code, code.toUpperCase()))
     return r?.id ?? null
+  }
+  async customerByCode(code: string) {
+    const [r] = await this.db.select().from(schema.customers).where(eq(schema.customers.code, code.toUpperCase()))
+    return r ? { id: r.id, code: r.code, name: r.name } : null
+  }
+  /** Fold an alias/duplicate code to its approved canonical (COLEB→COLE). Returns the input (uppercased)
+   *  when no approved customer_canonical fact exists. */
+  async canonicalCode(code: string): Promise<string> {
+    const c = code.toUpperCase()
+    const [r] = await this.db
+      .select()
+      .from(schema.masterResolution)
+      .where(and(eq(schema.masterResolution.kind, 'customer_canonical'), eq(schema.masterResolution.lhs, c), eq(schema.masterResolution.status, 'approved')))
+    return r?.rhs?.toUpperCase() ?? c
+  }
+  /** The approved buyer-group id for a code, or null. A BLANK group id is treated as NO fact (fail-safe:
+   *  an empty key must never read as "same group" against another empty one). */
+  async customerGroupOf(code: string): Promise<string | null> {
+    const [r] = await this.db
+      .select()
+      .from(schema.masterResolution)
+      .where(and(eq(schema.masterResolution.kind, 'customer_group'), eq(schema.masterResolution.lhs, code.toUpperCase()), eq(schema.masterResolution.status, 'approved')))
+    const g = r?.rhs?.trim()
+    return g ? g.toUpperCase() : null
   }
   async vendorIdByCode(code: string) {
     const [r] = await this.db.select().from(schema.vendors).where(eq(schema.vendors.code, code.toUpperCase()))

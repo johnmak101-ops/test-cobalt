@@ -71,6 +71,7 @@ export class DecisionsService {
       conversationId: dto.conversationId ?? null,
       conflicts: dto.conflicts ?? [],
       identifiers: dto.identifiers ?? [],
+      entities: dto.entities ?? [],
       evidenceIds,
       confidence: dto.confidence,
       reviewStatus,
