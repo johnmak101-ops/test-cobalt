@@ -182,4 +182,17 @@ export class ShipmentRepository {
     await this.db.delete(schema.shipmentIdentifiers).where(eq(schema.shipmentIdentifiers.shipmentId, shipmentId))
     if (rows.length) await this.db.insert(schema.shipmentIdentifiers).values(rows)
   }
+
+  // --- shipment_parties (co-valid customer entities with roles — the primary first) ---
+  partiesFor(shipmentId: string) {
+    return this.db
+      .select()
+      .from(schema.shipmentParties)
+      .where(eq(schema.shipmentParties.shipmentId, shipmentId))
+      .orderBy(desc(schema.shipmentParties.isPrimary), desc(schema.shipmentParties.rank))
+  }
+  async replaceParties(shipmentId: string, rows: (typeof schema.shipmentParties.$inferInsert)[]) {
+    await this.db.delete(schema.shipmentParties).where(eq(schema.shipmentParties.shipmentId, shipmentId))
+    if (rows.length) await this.db.insert(schema.shipmentParties).values(rows)
+  }
 }

@@ -18,6 +18,10 @@ export const REVIEW_STATUS = ['provisional', 'confirmed'] as const
 /** The rotating identifier kinds a shipment carries across its lifecycle (booking# → SO# → HBL/AWB).
  *  Every value ever stated is retained in shipment_identifiers; the leg column holds the current one. */
 export const SHIPMENT_IDENTIFIER_TYPE = ['booking_no', 'so_no', 'hbl_awb_fcr_no', 'mbl', 'container_no'] as const
+/** The role a customer entity plays on a shipment. A buyer can present a bill-to AND an importer-of-record
+ *  AND a booking entity — all co-valid parties of ONE shipment, retained in shipment_parties. The leg's
+ *  booking.customer_id holds the PRIMARY (the bill_to). */
+export const SHIPMENT_PARTY_ROLE = ['bill_to', 'importer_of_record', 'booking_entity', 'consignee', 'other'] as const
 
 // ---- Booking (the stable parent) ----
 export const BOOKING_STATUS = ['ACTIVE', 'CLOSED', 'CANCELLED'] as const
@@ -26,8 +30,10 @@ export const BOOKING_STATUS = ['ACTIVE', 'CLOSED', 'CANCELLED'] as const
 export const QTY_UNIT = ['cartons', 'pieces', 'cbm'] as const
 export const VENDOR_TYPE = ['factory', 'subcontractor', 'agent'] as const
 export const FORWARDER_ALIAS_TYPE = ['name', 'domain', 'chinese_name'] as const
-/** master_resolution — the resolution facts the validator enforces, curated from human corrections. */
-export const MASTER_RESOLUTION_KIND = ['vendor_alias', 'vendor_name_marker', 'customer_vendor', 'consignee_for_customer', 'forwarder_ref'] as const
+/** master_resolution — the resolution facts the validator enforces, curated from human corrections.
+ *  customer_canonical (alias code → survivor code, COLEB→COLE), customer_group (code → buyer-group id),
+ *  customer_role (code → bill_to/importer_of_record/booking_entity) drive the co-valid entity model. */
+export const MASTER_RESOLUTION_KIND = ['vendor_alias', 'vendor_name_marker', 'customer_vendor', 'consignee_for_customer', 'forwarder_ref', 'customer_canonical', 'customer_group', 'customer_role'] as const
 export const MASTER_RESOLUTION_STATUS = ['approved', 'proposed', 'rejected'] as const
 export const MASTER_RESOLUTION_SOURCE = ['seed', 'curator', 'ops'] as const
 export const PORT_MODE = ['sea', 'air', 'both'] as const

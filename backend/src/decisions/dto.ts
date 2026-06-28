@@ -32,6 +32,20 @@ export class CreateDecisionDto {
     observedAt?: string | null
   }[]
 
+  /** Co-valid customer entities with roles — persisted as shipment_parties. Present only when ≥2 RELATED
+   *  customer codes co-occur; the isPrimary one equals fields.customer_code (booking.customer_id). Omitted
+   *  by legacy callers → no parties written (unchanged). */
+  @IsOptional() @IsArray() entities?: {
+    type: string
+    value: string
+    role?: string | null
+    docType?: string
+    rank?: number
+    isPrimary?: boolean
+    sourceEmailId?: string | null
+    observedAt?: string | null
+  }[]
+
   /** The Critic's per-shipment confidence, 0-100. Routes to confirmed/provisional vs the threshold. */
   @IsInt() @Min(0) @Max(100) confidence!: number
 

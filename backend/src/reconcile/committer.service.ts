@@ -35,6 +35,17 @@ export interface ReconGroup {
     sourceEmailId?: string | null
     observedAt?: string | null
   }[]
+  /** co-valid customer entities with roles — persisted as shipment_parties (the primary == booking.customerId) */
+  entities?: {
+    type: string
+    value: string
+    role?: string | null
+    docType?: string | null
+    rank?: number | null
+    isPrimary?: boolean
+    sourceEmailId?: string | null
+    observedAt?: string | null
+  }[]
 }
 
 export interface CommitResult {
@@ -173,6 +184,7 @@ export class CommitterService {
     }
 
     await this.writeIdentifiers(shipmentId, g)
+    await this.writeParties(shipmentId, g)
     await this.syncMilestones(shipmentId, g)
     return { action, jobNo, bookingId, shipmentId, state, conflicts: g.conflicts, skippedLockedFields }
   }
@@ -249,6 +261,51 @@ export class CommitterService {
     await this.shipments.replaceIdentifiers(shipmentId, rows)
   }
 
+  /**
+   * Persist co-valid customer PARTIES (bill-to + importer-of-record + booking entity of one buyer) — the
+   * entity analogue of writeIdentifiers, written only when the agent sent ≥2 related entities. isPrimary is
+   * RECOMPUTED here by canonical equality with the code that actually became booking.customer_id (the agent
+   * cannot demote/replace the primary even with a malformed payload). Last-line over-merge defence: an
+   * alternate whose buyer group differs from — or shares no NON-EMPTY group with — the primary is DROPPED,
+   * so a wrong/blank group fact can never co-list an unrelated party. The CANONICAL code is stored (so the
+   * (shipment,role,code) unique key agrees with the dedupe). Idempotent (delete+insert); never touches
+   * booking.customer_id. */
+  private async writeParties(shipmentId: string, g: ReconGroup) {
+    if (!g.entities?.length) return
+    const primaryCanon = await this.masters.canonicalCode(str(g.fields.customer_code) ?? '')
+    if (!primaryCanon) return
+    const primaryGroup = await this.masters.customerGroupOf(primaryCanon)
+    const seen = new Set<string>()
+    const rows: (typeof schema.shipmentParties.$inferInsert)[] = []
+    for (const e of g.entities) {
+      if (e.type !== 'customer_code' || !e.value) continue
+      const canon = await this.masters.canonicalCode(String(e.value))
+      const isPrimary = canon === primaryCanon
+      if (!isPrimary) {
+        const grp = await this.masters.customerGroupOf(canon)
+        if (!primaryGroup || !grp || grp !== primaryGroup) continue // unrelated/blank → never co-list
+      }
+      const key = `${e.role ?? 'other'}:${canon}`
+      if (seen.has(key)) continue
+      seen.add(key)
+      const cust = await this.masters.customerByCode(canon)
+      rows.push({
+        shipmentId,
+        role: (e.role ?? 'other') as (typeof schema.shipmentParties.$inferInsert)['role'],
+        customerId: cust?.id ?? null,
+        customerCode: canon,
+        customerName: cust?.name ?? null,
+        isPrimary,
+        docType: e.docType ?? null,
+        rank: e.rank ?? null,
+        isCurrent: true,
+        sourceEmailId: e.sourceEmailId ?? null,
+        observedAt: e.observedAt ? new Date(e.observedAt) : null,
+      })
+    }
+    await this.shipments.replaceParties(shipmentId, rows)
+  }
+
   private async syncMilestones(shipmentId: string, g: ReconGroup) {
     const seen = new Set<string>()
     const rows: (typeof schema.shipmentMilestones.$inferInsert)[] = []
@@ -288,9 +345,13 @@ export class CommitterService {
     })
   }
 
-  private resolveCustomer(code: unknown) {
+  private async resolveCustomer(code: unknown): Promise<string | null> {
     const c = str(code)
-    return c ? this.masters.customerIdByCode(c) : Promise.resolve(null)
+    if (!c) return null
+    // canonical-aware: COLEB silently resolves to COLE's id. A canonical fact must never NULL an otherwise
+    // -resolvable customer, so fall back to the original code when the canonical has no master row (Hole-2 guard).
+    const canon = await this.masters.canonicalCode(c)
+    return (await this.masters.customerIdByCode(canon)) ?? (canon !== c.toUpperCase() ? await this.masters.customerIdByCode(c) : null)
   }
   private resolveVendor(code: unknown) {
     const c = str(code)

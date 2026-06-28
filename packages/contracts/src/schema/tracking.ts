@@ -3,7 +3,7 @@ import {
   SHIPMENT_STATE, LEG_STATUS, SHIPMENT_MODE, RISK_LEVEL, REVIEW_STATUS, BOOKING_STATUS, QTY_UNIT,
   VENDOR_TYPE, FORWARDER_ALIAS_TYPE, PORT_MODE, USER_ROLE, MILESTONE_TYPE, WAREHOUSE_SIGNAL, FIELD_LOCK_ENTITY,
   MASTER_RESOLUTION_KIND, MASTER_RESOLUTION_STATUS, MASTER_RESOLUTION_SOURCE, SHIPMENT_IDENTIFIER_TYPE,
-  EMAIL_TYPE, REVIEW_EMAIL_STATUS,
+  SHIPMENT_PARTY_ROLE, EMAIL_TYPE, REVIEW_EMAIL_STATUS,
 } from './enums'
 
 /** TRUTH (mutable) + masters + auth. Owned and WRITTEN by track-system (VM1 NestJS). */
@@ -249,6 +249,30 @@ export const shipmentIdentifiers = tracking.table('shipment_identifiers', {
   observedAt: timestamp('observed_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [unique('shipment_identifiers_uq').on(t.shipmentId, t.type, t.value)])
+
+/**
+ * Co-valid customer PARTIES — the entity analogue of shipment_identifiers. A buyer can present several
+ * related legal entities in different roles on ONE shipment: the bill-to (whom we invoice), the
+ * importer-of-record (e.g. American Eagle's Blue Star Imports), and the booking entity. booking.customer_id
+ * holds the PRIMARY (the bill_to); this table keeps the full co-current set with role + provenance, written
+ * only when ≥2 RELATED customer codes co-occur. One row per (shipment, role, customer_code). Additive:
+ * nothing reads it until the committer's writeParties lands and relationship facts are curated.
+ */
+export const shipmentParties = tracking.table('shipment_parties', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  shipmentId: uuid('shipment_id').notNull().references(() => shipments.id, { onDelete: 'cascade' }),
+  role: text('role', { enum: SHIPMENT_PARTY_ROLE }).notNull(),
+  customerId: uuid('customer_id').references(() => customers.id), // nullable: the code may not (yet) be a master row
+  customerCode: text('customer_code').notNull(), // the CANONICAL master code (an alias is folded first)
+  customerName: text('customer_name'),
+  isPrimary: boolean('is_primary').notNull().default(false), // the one == booking.customer_id (the bill_to)
+  docType: text('doc_type'), // the email type that stated it
+  rank: integer('rank'), // document authority
+  isCurrent: boolean('is_current').notNull().default(true),
+  sourceEmailId: text('source_email_id'), // graph id → "view original"
+  observedAt: timestamp('observed_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [unique('shipment_parties_uq').on(t.shipmentId, t.role, t.customerCode)])
 
 export const shipmentMilestones = tracking.table('shipment_milestones', {
   id: uuid('id').primaryKey().defaultRandom(),
