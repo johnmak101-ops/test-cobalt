@@ -9,6 +9,7 @@ interface SessionUser {
   email: string
   name: string
   role: string
+  avatarInitials?: string | null
 }
 
 const SESSION_COOKIE = 'session'

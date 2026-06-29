@@ -68,8 +68,13 @@ const build = () => {
     allRules: async () => rules,
   }
   const auditRepo = { listForEntity: async (_t: string, id: string) => (id === 'leg1' ? auditRows : []) }
+  const emailRepo = {
+    countPendingReview: async () => 3,
+    ingestionStatus: async () => ({ count: 0, lastAt: null }),
+    ingestState: async () => null,
+  }
   return new PresentationService(
-    shipmentRepo as any, bookingRepo as any, mastersRepo as any, alertRepo as any, auditRepo as any,
+    shipmentRepo as any, bookingRepo as any, mastersRepo as any, alertRepo as any, auditRepo as any, emailRepo as any,
   )
 }
 
@@ -163,6 +168,7 @@ describe('PresentationService.dashboard', () => {
     expect(d.stats.activeShipments).toBe(1) // non-DELIVERED active legs
     expect(d.stats.atRiskShipments).toBe(1) // leg1 AT_RISK
     expect(d.stats.criticalAlerts).toBe(1)
+    expect(d.stats.newEmails).toBe(3) // pending-review count, not a hardcoded 0
     expect(Array.isArray(d.recentAlerts)).toBe(true)
     expect(Array.isArray(d.recentActivity)).toBe(true)
   })

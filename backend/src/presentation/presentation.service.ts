@@ -326,8 +326,12 @@ export class PresentationService {
   // ---- email integration (read-only status; credentials live in the ingestion service) ----
 
   async emailIntegration() {
-    const { count, lastAt } = await this.emailRepo.ingestionStatus()
-    const iso = lastAt instanceof Date ? lastAt.toISOString() : lastAt ? String(lastAt) : null
+    const [{ count, lastAt }, st] = await Promise.all([this.emailRepo.ingestionStatus(), this.emailRepo.ingestState()])
+    // Real last-sync time = the Graph ingestion watermark; status from the stuck-counter (not count>0).
+    const syncDate = (st?.updatedAt ?? st?.watermark ?? lastAt) as Date | string | null
+    const iso = syncDate instanceof Date ? syncDate.toISOString() : syncDate ? String(syncDate) : null
+    const stuck = (st?.stuckCount ?? 0) > 0
+    const mailbox = st?.id ? String(st.id).replace(/^inbox:/, '') : null
     return {
       config: {
         id: 'ingestion',
@@ -335,12 +339,12 @@ export class PresentationService {
         clientId: '',
         clientSecret: '',
         _secretMasked: true,
-        mailboxEmail: null,
-        isActive: count > 0,
+        mailboxEmail: mailbox,
+        isActive: !!st || count > 0,
         lastSyncAt: iso,
-        lastSyncStatus: count > 0 ? 'SUCCESS' : null,
-        lastSyncError: null,
-        lastSyncCount: count,
+        lastSyncStatus: st ? (stuck ? 'FAILED' : 'SUCCESS') : count > 0 ? 'SUCCESS' : null,
+        lastSyncError: stuck ? `ingestion stuck on message ${st?.stuckGraphId ?? '(unknown)'} (${st?.stuckCount} retries)` : null,
+        lastSyncCount: count, // lifetime ingested (queue keeps no per-sync count) — labeled "emails synced"
         createdAt: iso ?? '',
         updatedAt: iso ?? '',
       },
@@ -460,18 +464,19 @@ export class PresentationService {
   // ---- dashboard ----
 
   async dashboard() {
-    const [legs, activeAlerts, maps, bookingRows] = await Promise.all([
+    const [legs, activeAlerts, maps, bookingRows, pendingReview] = await Promise.all([
       this.shipmentRepo.activeLegs(),
       this.alertRepo.list('ACTIVE'),
       this.masterMaps(),
       this.bookingRepo.listOrdered(),
+      this.emailRepo.countPendingReview(),
     ])
     const nonDelivered = legs.filter((l) => l.state !== 'DELIVERED')
     const stats = {
       activeShipments: nonDelivered.length,
       atRiskShipments: nonDelivered.filter((l) => l.riskLevel != null && AT_RISK.has(l.riskLevel)).length,
       criticalAlerts: activeAlerts.filter((a) => a.severity === 'CRITICAL').length,
-      newEmails: 0, // Phase 3: queue-message read-state
+      newEmails: pendingReview, // emails awaiting human review — the actionable "new" count
     }
 
     const recentAlerts = []

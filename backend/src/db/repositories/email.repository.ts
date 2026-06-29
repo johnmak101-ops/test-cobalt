@@ -104,6 +104,25 @@ export class EmailRepository {
     return { count: row?.count ?? 0, lastAt: row?.lastAt ?? null }
   }
 
+  /** The Graph ingestion watermark/health (queue.ingest_state) — the REAL last-sync signal. */
+  async ingestState() {
+    const rows = await this.db
+      .select()
+      .from(schema.ingestState)
+      .orderBy(desc(schema.ingestState.updatedAt))
+      .limit(1)
+    return rows[0] ?? null
+  }
+
+  /** Emails awaiting human review — the actionable "new" count for the dashboard KPI. */
+  async countPendingReview() {
+    const [r] = await this.db
+      .select({ n: sql<number>`count(*)::int` })
+      .from(schema.reviewEmail)
+      .where(eq(schema.reviewEmail.reviewStatus, 'NEEDS_REVIEW' as never))
+    return r?.n ?? 0
+  }
+
   /** Attachments of an ingested email, keyed by the queue_message id (the inbox row id). */
   attachmentsByMessageId(messageId: string) {
     return this.db

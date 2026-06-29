@@ -14,22 +14,29 @@ interface MilestoneTimelineProps {
   horizontal?: boolean
 }
 
+// The real backend MILESTONE_TYPE vocabulary (data-wiring audit gap 33): the old order used
+// DEPARTED/ARRIVED which no backend producer emits, and dropped AT_WAREHOUSE/TELEX_RELEASED/
+// INVOICE_RECEIVED (INVOICE_RECEIVED is the single most common milestone).
 const milestoneOrder = [
   'BOOKING_SENT',
   'SO_RECEIVED',
+  'AT_WAREHOUSE',
   'DRAFT_BL_RECEIVED',
   'FINAL_BL_RECEIVED',
-  'DEPARTED',
-  'ARRIVED',
+  'TELEX_RELEASED',
+  'INVOICE_RECEIVED',
+  'DELIVERED',
 ]
 
 const milestoneLabels: Record<string, string> = {
   BOOKING_SENT: 'Booking Request',
   SO_RECEIVED: 'SO Received',
+  AT_WAREHOUSE: 'At Warehouse',
   DRAFT_BL_RECEIVED: 'Draft BOL',
   FINAL_BL_RECEIVED: 'Final BOL',
-  DEPARTED: 'Departure',
-  ARRIVED: 'Delivered',
+  TELEX_RELEASED: 'Telex Released',
+  INVOICE_RECEIVED: 'Invoice Received',
+  DELIVERED: 'Delivered',
 }
 
 export function MilestoneTimeline({ milestones, currentStatus: _currentStatus, horizontal }: MilestoneTimelineProps) {
