@@ -82,7 +82,7 @@ export class CommitterService {
       this.resolveCustomer(f.customer_code),
       this.resolveVendor(f.vendor_code),
       this.resolveForwarder(f.forwarder_name),
-      this.resolvePort(f.poi),
+      this.resolvePort(f.poi ?? (f as Record<string, unknown>).pol), // alias: parser still emits `pol`
       this.resolvePort(f.pod),
     ])
 
@@ -99,7 +99,7 @@ export class CommitterService {
       hblAwbFcrNo: str(f.hbl_awb_fcr_no),
       mbl: str(f.mbl),
       containerNo: str(f.container_no),
-      scacCode: str(f.scac_code),
+      scacCode: str(f.scac_code ?? (f as Record<string, unknown>).scac), // alias: parser still emits `scac`
       cargoReadyDate: date(f.cargo_ready_date),
       warehouseStartDate: date(f.warehouse_start_date),
       warehouseEndDate: date(f.warehouse_end_date),
