@@ -177,4 +177,22 @@ export class EmailRepository {
       .from(schema.queueAttachment)
       .where(eq(schema.queueAttachment.messageId, messageId))
   }
+
+  /** A single ingested email's full content (for the "view email" panel), keyed by queue_message id. */
+  async emailBody(id: string) {
+    const [row] = await this.db
+      .select({
+        id: schema.queueMessage.id,
+        graphMessageId: schema.queueMessage.graphMessageId,
+        subject: schema.queueMessage.subject,
+        sender: schema.queueMessage.sender,
+        receivedAt: schema.queueMessage.receivedAt,
+        bodyText: schema.queueMessage.bodyText,
+        bodyHtml: schema.queueMessage.bodyHtml,
+      })
+      .from(schema.queueMessage)
+      .where(eq(schema.queueMessage.id, id))
+      .limit(1)
+    return row ?? null
+  }
 }

@@ -328,6 +328,19 @@ export class PresentationService {
     }
   }
 
+  async emailBody(id: string) {
+    const row = await this.emailRepo.emailBody(id)
+    if (!row) throw new NotFoundException('email not found')
+    return {
+      id: row.id,
+      subject: row.subject,
+      sender: row.sender,
+      receivedAt: isoOrNull(row.receivedAt),
+      bodyText: row.bodyText ?? null,
+      bodyHtml: row.bodyHtml ?? null,
+    }
+  }
+
   // Inbox read-state lives in the app-owned tracking.email_read table.
   async emailsUnreadCount() {
     return { unread: await this.emailRepo.unreadCount() }

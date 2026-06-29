@@ -82,6 +82,9 @@ export class UiEmailsController {
   @Get(':id/attachments') attachments(@Param('id') id: string) {
     return this.ui.emailAttachments(id)
   }
+  @Get(':id/body') body(@Param('id') id: string) {
+    return this.ui.emailBody(id)
+  }
   @Patch(':id/read') markRead(@Param('id') id: string, @CurrentUser() user: { id: string }) {
     return this.ui.emailMarkRead(id, user.id)
   }

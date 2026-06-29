@@ -53,6 +53,23 @@ export function useEmailAttachments(emailId: string | undefined) {
   })
 }
 
+export interface EmailBody {
+  id: string
+  subject: string
+  sender: string
+  receivedAt: string | null
+  bodyText: string | null
+  bodyHtml: string | null
+}
+
+export function useEmailBody(emailId: string | undefined) {
+  return useQuery<EmailBody>({
+    queryKey: ['email-body', emailId],
+    queryFn: () => api.get(`/emails/${emailId}/body`),
+    enabled: !!emailId,
+  })
+}
+
 export function useUnreadCount() {
   return useQuery<{ unread: number }>({
     queryKey: ['emails', 'unread-count'],
