@@ -343,3 +343,11 @@ export const reviewEmail = tracking.table('review_email', {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 })
+
+/** Inbox read-state (app-owned; queue.queue_message lives in the ingestion system). Global read-state,
+ *  one row per message; the mark-read action upserts here. */
+export const emailRead = tracking.table('email_read', {
+  messageId: uuid('message_id').primaryKey(), // logical FK → queue.queue_message.id (no hard FK across the seam)
+  readAt: timestamp('read_at', { withTimezone: true }).notNull().defaultNow(),
+  readBy: uuid('read_by').references(() => users.id),
+})

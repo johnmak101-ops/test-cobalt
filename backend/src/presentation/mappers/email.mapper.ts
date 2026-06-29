@@ -30,6 +30,7 @@ export interface EmailReviewOverlay {
 export interface EmailMapperInput {
   message: EmailMessageRow
   review?: EmailReviewOverlay | null
+  readAt?: Dateish // app-owned read-state (tracking.email_read); null/undefined = unread
 }
 
 export interface UiShippingEmail {
@@ -93,7 +94,7 @@ export function toUiEmail(input: EmailMapperInput): UiShippingEmail {
     extractionConfidence: review?.extractionConfidence ?? null,
     shipmentId: review?.shipmentId ?? null,
     isMatched: review?.shipmentId != null,
-    isRead: false, // Phase 3 read-state storage
+    isRead: input.readAt != null,
     processingStatus: (message.status && QUEUE_STATUS_TO_UI[message.status]) || 'PENDING',
     reviewStatus: review?.reviewStatus ?? null,
     reviewedBy: review?.reviewedBy ?? null,

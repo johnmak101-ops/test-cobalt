@@ -90,11 +90,32 @@ export class EmailRepository {
         matchedShipmentId: sql<
           string | null
         >`(select m.shipment_id from tracking.shipment_milestones m where m.email_message_id = ${schema.queueMessage.graphMessageId} limit 1)`,
+        readAt: schema.emailRead.readAt,
       })
       .from(schema.queueMessage)
       .leftJoin(schema.reviewEmail, eq(schema.reviewEmail.messageId, schema.queueMessage.id))
+      .leftJoin(schema.emailRead, eq(schema.emailRead.messageId, schema.queueMessage.id))
       .orderBy(desc(schema.queueMessage.receivedAt))
       .limit(limit)
+  }
+
+  /** Mark an inbox message read (idempotent upsert on the app-owned read-state). */
+  async markRead(messageId: string, userId: string | null) {
+    await this.db
+      .insert(schema.emailRead)
+      .values({ messageId, readBy: userId })
+      .onConflictDoNothing()
+    return { success: true }
+  }
+
+  /** Unread = ingested messages with no read-state row. */
+  async unreadCount() {
+    const [r] = await this.db
+      .select({ n: sql<number>`count(*)::int` })
+      .from(schema.queueMessage)
+      .leftJoin(schema.emailRead, eq(schema.emailRead.messageId, schema.queueMessage.id))
+      .where(sql`${schema.emailRead.messageId} is null`)
+    return r?.n ?? 0
   }
 
   /** Ingestion status for the Settings page: how many emails have been ingested, and when last. */

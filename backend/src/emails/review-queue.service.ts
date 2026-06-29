@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common'
 import { ReviewEmailRepository } from '../db/repositories/review-email.repository'
+import { stateToUiStatus } from '../presentation/adapters/enums'
 import type { ReviewEmailDto } from './review-queue.dto'
 
 /**
@@ -12,9 +13,24 @@ import type { ReviewEmailDto } from './review-queue.dto'
 export class ReviewQueueService {
   constructor(private readonly reviewEmails: ReviewEmailRepository) {}
 
-  /** Emails in one review state (default: the pending NEEDS_REVIEW tab). */
+  /** Emails in one review state (default: the pending NEEDS_REVIEW tab). The repo returns the linked
+   *  shipment FLAT (jobNo/shipmentState); the UI reads a nested `shipment` + isMatched/processingStatus. */
   async queue(status?: string) {
-    const emails = await this.reviewEmails.listByStatus(status)
+    const rows = await this.reviewEmails.listByStatus(status)
+    const emails = rows.map(({ jobNo, shipmentState, ...rest }) => ({
+      ...rest,
+      isMatched: rest.shipmentId != null,
+      processingStatus: 'COMPLETED', // the extraction already ran (commit-first); this gates the human look
+      shipment: rest.shipmentId
+        ? {
+            id: rest.shipmentId,
+            status: shipmentState ? stateToUiStatus(shipmentState) : null,
+            bookingNo: jobNo ?? null,
+            poNumbers: '[]',
+            route: null,
+          }
+        : null,
+    }))
     return { emails }
   }
 

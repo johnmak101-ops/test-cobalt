@@ -6,7 +6,7 @@
  */
 import { Body, Controller, Get, Param, Patch, Post, Put, Query } from '@nestjs/common'
 import { PresentationService } from './presentation.service'
-import { Roles } from '../auth/decorators'
+import { CurrentUser, Roles } from '../auth/decorators'
 
 @Controller('dashboard')
 export class UiDashboardController {
@@ -82,8 +82,8 @@ export class UiEmailsController {
   @Get(':id/attachments') attachments(@Param('id') id: string) {
     return this.ui.emailAttachments(id)
   }
-  @Patch(':id/read') markRead(@Param('id') id: string) {
-    return this.ui.emailMarkRead(id)
+  @Patch(':id/read') markRead(@Param('id') id: string, @CurrentUser() user: { id: string }) {
+    return this.ui.emailMarkRead(id, user.id)
   }
 }
 

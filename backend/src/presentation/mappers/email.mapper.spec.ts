@@ -39,7 +39,12 @@ describe('toUiEmail — queue message (+review overlay) -> UI ShippingEmail', ()
     expect(e.isMatched).toBe(true)
     expect(e.reviewStatus).toBe('NEEDS_REVIEW')
     expect(e.processingStatus).toBe('COMPLETED') // queue DONE -> UI COMPLETED
-    expect(e.isRead).toBe(false) // no storage yet (Phase 3)
+    expect(e.isRead).toBe(false) // no read-state row → unread
+  })
+
+  it('marks isRead true when an email_read row (readAt) is present', () => {
+    expect(toUiEmail({ message: message(), readAt: new Date('2026-06-29T00:00:00.000Z') }).isRead).toBe(true)
+    expect(toUiEmail({ message: message(), readAt: null }).isRead).toBe(false)
   })
 
   it('handles a message with no review overlay', () => {

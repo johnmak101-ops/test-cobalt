@@ -308,6 +308,7 @@ export class PresentationService {
                   shipmentId: r.matchedShipmentId ?? r.shipmentId,
                 }
               : null,
+          readAt: r.readAt,
         }),
       ),
     }
@@ -327,12 +328,12 @@ export class PresentationService {
     }
   }
 
-  // is_read storage is a Phase-3 deferral; expose stable shapes so the inbox badge/mark-read don't 404.
-  emailsUnreadCount() {
-    return { unread: 0 }
+  // Inbox read-state lives in the app-owned tracking.email_read table.
+  async emailsUnreadCount() {
+    return { unread: await this.emailRepo.unreadCount() }
   }
-  emailMarkRead(_id: string) {
-    return { success: true }
+  emailMarkRead(id: string, userId: string | null) {
+    return this.emailRepo.markRead(id, userId)
   }
 
   // ---- email integration (read-only status; credentials live in the ingestion service) ----
