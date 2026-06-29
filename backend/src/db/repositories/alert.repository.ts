@@ -31,4 +31,13 @@ export class AlertRepository {
       .returning()
     return row ?? null
   }
+  /** Stamp/clear read_at without touching status (an ACTIVE alert can still be read). */
+  async setReadAt(id: string, readAt: Date | null) {
+    const [row] = await this.db
+      .update(schema.alertInstances)
+      .set({ readAt })
+      .where(eq(schema.alertInstances.id, id))
+      .returning()
+    return row ?? null
+  }
 }

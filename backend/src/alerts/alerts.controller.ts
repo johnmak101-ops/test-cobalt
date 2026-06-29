@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common'
+import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common'
 import { AlertsService } from './alerts.service'
 import { AlertEvaluatorService } from './alert-evaluator.service'
 import { PresentationService } from '../presentation/presentation.service'
@@ -35,5 +35,23 @@ export class AlertsController {
   @Roles('EDITOR', 'ADMIN')
   @Post(':id/snooze') snooze(@Param('id') id: string, @Body() body: { until: string }) {
     return this.alerts.snooze(id, new Date(body.until))
+  }
+
+  // PATCH variants the new UI calls (idempotent state changes on a single alert).
+  @Roles('EDITOR', 'ADMIN')
+  @Patch(':id/dismiss') patchDismiss(@Param('id') id: string) {
+    return this.alerts.dismiss(id)
+  }
+  @Roles('EDITOR', 'ADMIN')
+  @Patch(':id/snooze') patchSnooze(@Param('id') id: string, @Body() body: { hours?: number }) {
+    return this.alerts.snoozeForHours(id, body?.hours ?? 24)
+  }
+  @Roles('EDITOR', 'ADMIN')
+  @Patch(':id/read') patchRead(@Param('id') id: string) {
+    return this.alerts.markRead(id)
+  }
+  @Roles('EDITOR', 'ADMIN')
+  @Patch(':id/unread') patchUnread(@Param('id') id: string) {
+    return this.alerts.markUnread(id)
   }
 }
