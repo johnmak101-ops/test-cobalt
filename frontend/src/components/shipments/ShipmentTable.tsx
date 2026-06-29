@@ -30,7 +30,8 @@ export function ShipmentTable({ shipments }: ShipmentTableProps) {
           <thead>
             <tr className="border-b border-border bg-surface-900/50">
               <th className="w-8 px-2 py-3"></th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-text-muted">Shipment ID</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-text-muted">Booking No</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-text-muted">SO No</th>
               <th className="px-4 py-3 text-left text-xs font-medium text-text-muted">Customer PO#</th>
               <th className="px-4 py-3 text-left text-xs font-medium text-text-muted">Customer</th>
               <th className="px-4 py-3 text-left text-xs font-medium text-text-muted">Forwarder</th>
@@ -46,10 +47,6 @@ export function ShipmentTable({ shipments }: ShipmentTableProps) {
             {shipments.map((s) => {
               const isExpanded = expandedIds.has(s.id)
               const poCount = s.linkedPOs?.length ?? 0
-              // Meaningful identifiers — booking no / SO no (then a PO), never the opaque UUID.
-              const ids = [s.bookingNo, s.soNumber].filter(Boolean) as string[]
-              const primaryId = ids[0] ?? s.linkedPOs?.[0]?.poNumber ?? s.id.slice(0, 8)
-              const secondaryId = ids[1] ?? null
 
               return (
                 <>
@@ -70,10 +67,10 @@ export function ShipmentTable({ shipments }: ShipmentTableProps) {
                       ) : null}
                     </td>
                     <td className="px-4 py-3 font-mono text-sm font-medium text-cobalt-primary-light">
-                      {primaryId}
-                      {secondaryId && (
-                        <div className="text-[11px] font-normal text-text-muted">SO {secondaryId}</div>
-                      )}
+                      {s.bookingNo ?? '—'}
+                    </td>
+                    <td className="px-4 py-3 font-mono text-sm text-text-secondary">
+                      {s.soNumber ?? '—'}
                     </td>
                     <td className="px-4 py-3">
                       <div className="group relative inline-block">
@@ -146,6 +143,7 @@ export function ShipmentTable({ shipments }: ShipmentTableProps) {
                       <td className="px-4 py-2 pl-8">
                         <span className="text-[11px] text-text-muted">└</span>
                       </td>
+                      <td className="px-4 py-2"></td>
                       <td className="px-4 py-2 font-mono text-xs text-cobalt-primary-light/80">
                         {po.poNumber}
                       </td>
@@ -163,7 +161,7 @@ export function ShipmentTable({ shipments }: ShipmentTableProps) {
             })}
             {shipments.length === 0 && (
               <tr>
-                <td colSpan={11} className="px-4 py-12 text-center text-sm text-text-muted">
+                <td colSpan={12} className="px-4 py-12 text-center text-sm text-text-muted">
                   No shipments found
                 </td>
               </tr>
