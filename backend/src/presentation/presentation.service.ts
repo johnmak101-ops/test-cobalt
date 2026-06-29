@@ -295,6 +295,29 @@ export class PresentationService {
     return { rules: rows.map(toUiAlertRule) }
   }
 
+  /** Persist edited alert rules. The UI works in DAYS; we store HOURS. Locked rules stay immutable. */
+  async saveAlertRules(input: { rules?: Array<Record<string, unknown>> }) {
+    for (const r of input?.rules ?? []) {
+      if (r.locked) continue // A3 etc. are locked — never mutate
+      const id = String(r.id ?? '')
+      if (!id) continue
+      const patch: Record<string, unknown> = {}
+      if (typeof r.thresholdDays === 'number') patch.thresholdHours = Math.round(r.thresholdDays * 24)
+      if (typeof r.severity === 'string') patch.severity = r.severity
+      if (typeof r.enabled === 'boolean') patch.enabled = r.enabled
+      const raw = r.countryThresholds
+      const ct = typeof raw === 'string' ? (raw ? JSON.parse(raw) : null) : (raw ?? null)
+      patch.countryThresholds =
+        ct && typeof ct === 'object' && Object.keys(ct as object).length > 0
+          ? Object.fromEntries(
+              Object.entries(ct as Record<string, unknown>).map(([k, d]) => [k, Math.round(Number(d) * 24)]),
+            )
+          : null
+      await this.alertRepo.updateRule(id, patch)
+    }
+    return this.alertRules()
+  }
+
   // ---- dashboard ----
 
   async dashboard() {

@@ -29,9 +29,9 @@ describe('toUiAlertRule — alert rule row -> UI rule', () => {
     expect(r.locked).toBe(false)
   })
 
-  it('passes countryThresholds through (null when absent)', () => {
+  it('converts countryThresholds hours -> days (null when absent), to match the UI day-based editor', () => {
     expect(toUiAlertRule(rule()).countryThresholds).toBeNull()
-    expect(toUiAlertRule(rule({ countryThresholds: { BD: 168, KH: 168 } })).countryThresholds).toEqual({ BD: 168, KH: 168 })
+    expect(toUiAlertRule(rule({ countryThresholds: { BD: 168, KH: 168 } })).countryThresholds).toEqual({ BD: 7, KH: 7 })
   })
 
   it('maps the tail state RELEASED -> DEPARTED and keeps a null (cross-state) rule null', () => {

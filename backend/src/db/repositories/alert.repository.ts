@@ -40,4 +40,13 @@ export class AlertRepository {
       .returning()
     return row ?? null
   }
+  /** Patch an alert rule (threshold/severity/enabled/country overrides). */
+  async updateRule(id: string, patch: Record<string, unknown>) {
+    const [row] = await this.db
+      .update(schema.alertRules)
+      .set(patch)
+      .where(eq(schema.alertRules.id, id))
+      .returning()
+    return row ?? null
+  }
 }

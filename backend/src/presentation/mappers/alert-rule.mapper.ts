@@ -42,7 +42,11 @@ export function toUiAlertRule(rule: AlertRuleRow): UiAlertRule {
     triggerType: rule.triggerType,
     triggerReference: rule.triggerReference,
     thresholdDays: thresholdHoursToDays(rule.thresholdHours),
-    countryThresholds: rule.countryThresholds ?? null,
+    countryThresholds: rule.countryThresholds
+      ? Object.fromEntries(
+          Object.entries(rule.countryThresholds).map(([country, hours]) => [country, thresholdHoursToDays(hours)]),
+        )
+      : null,
     severity: rule.severity,
     enabled: rule.enabled,
     locked: rule.locked,

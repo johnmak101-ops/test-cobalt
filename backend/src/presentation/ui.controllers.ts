@@ -4,8 +4,9 @@
  * controllers to PresentationService instead, to preserve the agent-matcher branch.)
  * All are protected by the global JwtAuthGuard.
  */
-import { Controller, Get, Param, Patch, Query } from '@nestjs/common'
+import { Body, Controller, Get, Param, Patch, Put, Query } from '@nestjs/common'
 import { PresentationService } from './presentation.service'
+import { Roles } from '../auth/decorators'
 
 @Controller('dashboard')
 export class UiDashboardController {
@@ -40,6 +41,10 @@ export class UiAlertRulesController {
 
   @Get() get() {
     return this.ui.alertRules()
+  }
+  @Roles('EDITOR', 'ADMIN')
+  @Put() save(@Body() body: { rules?: Array<Record<string, unknown>> }) {
+    return this.ui.saveAlertRules(body)
   }
 }
 
