@@ -37,8 +37,13 @@ export default function ShipmentDetailPage() {
     )
   }
 
-  const shortId = shipment.bookingNo ?? shipment.id.slice(0, 12)
   const linkedPOs = shipment.linkedPOs ?? []
+  // Title from MEANINGFUL identifiers — booking no / SO no (then a PO), never the opaque UUID.
+  const titleIds = [
+    shipment.bookingNo && { label: 'BK', value: shipment.bookingNo },
+    shipment.soNumber && { label: 'SO', value: shipment.soNumber },
+  ].filter(Boolean) as { label: string; value: string }[]
+  if (titleIds.length === 0 && linkedPOs[0]) titleIds.push({ label: 'PO', value: linkedPOs[0].poNumber })
   const activeAlerts = (shipment.alerts ?? []).filter((a) => a.status === 'ACTIVE')
   const criticalCount = activeAlerts.filter((a) => a.severity === 'CRITICAL').length
   const warningCount = activeAlerts.filter((a) => a.severity === 'WARNING').length
@@ -60,7 +65,17 @@ export default function ShipmentDetailPage() {
         <div className="flex items-start justify-between">
           <div>
             <h1 className="font-mono text-xl font-semibold text-text-primary">
-              {shortId}
+              {titleIds.length > 0 ? (
+                titleIds.map((x, i) => (
+                  <span key={x.label + x.value}>
+                    {i > 0 && <span className="mx-2 text-text-muted">·</span>}
+                    <span className="text-sm font-normal text-text-muted">{x.label} </span>
+                    {x.value}
+                  </span>
+                ))
+              ) : (
+                <span className="text-text-muted">{shipment.id.slice(0, 8)}</span>
+              )}
             </h1>
             <p className="mt-1 text-sm text-text-secondary">
               {shipment.customer?.name ?? 'Unknown Customer'}

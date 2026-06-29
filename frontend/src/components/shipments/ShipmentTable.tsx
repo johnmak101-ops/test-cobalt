@@ -46,7 +46,10 @@ export function ShipmentTable({ shipments }: ShipmentTableProps) {
             {shipments.map((s) => {
               const isExpanded = expandedIds.has(s.id)
               const poCount = s.linkedPOs?.length ?? 0
-              const shortId = s.bookingNo ?? s.id.slice(0, 12)
+              // Meaningful identifiers — booking no / SO no (then a PO), never the opaque UUID.
+              const ids = [s.bookingNo, s.soNumber].filter(Boolean) as string[]
+              const primaryId = ids[0] ?? s.linkedPOs?.[0]?.poNumber ?? s.id.slice(0, 8)
+              const secondaryId = ids[1] ?? null
 
               return (
                 <>
@@ -67,7 +70,10 @@ export function ShipmentTable({ shipments }: ShipmentTableProps) {
                       ) : null}
                     </td>
                     <td className="px-4 py-3 font-mono text-sm font-medium text-cobalt-primary-light">
-                      {shortId}
+                      {primaryId}
+                      {secondaryId && (
+                        <div className="text-[11px] font-normal text-text-muted">SO {secondaryId}</div>
+                      )}
                     </td>
                     <td className="px-4 py-3">
                       <div className="group relative inline-block">
