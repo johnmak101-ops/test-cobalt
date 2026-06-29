@@ -1,6 +1,7 @@
 import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common'
 import { AlertsService } from './alerts.service'
 import { AlertEvaluatorService } from './alert-evaluator.service'
+import { PresentationService } from '../presentation/presentation.service'
 import { Roles } from '../auth/decorators'
 
 @Controller('alerts')
@@ -8,10 +9,12 @@ export class AlertsController {
   constructor(
     private readonly alerts: AlertsService,
     private readonly evaluator: AlertEvaluatorService,
+    private readonly ui: PresentationService,
   ) {}
 
+  /** UI alert list: wrapped `{ alerts }` with the nested shipment summary the UI renders. */
   @Get() list(@Query('status') status?: string) {
-    return this.alerts.list(status)
+    return this.ui.alerts(status)
   }
   @Get('rules') rules() {
     return this.alerts.rules()

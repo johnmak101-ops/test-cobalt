@@ -12,7 +12,9 @@ async function bootstrap() {
   app.useBodyParser('json', { limit: '25mb' })
   app.setGlobalPrefix('api')
   app.useGlobalPipes(new ValidationPipe({ transform: true, whitelist: true }))
-  app.enableCors()
+  // Credentialed CORS so the UI's `credentials:'include'` cookie reaches the API.
+  // `origin: true` reflects the request origin (never `*`, which browsers reject with credentials).
+  app.enableCors({ origin: true, credentials: true })
   const port = process.env.PORT ? Number(process.env.PORT) : 3000
   await app.listen(port)
   // eslint-disable-next-line no-console

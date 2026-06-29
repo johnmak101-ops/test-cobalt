@@ -13,6 +13,7 @@ import { SettingsModule } from './settings/settings.module'
 import { AlertsModule } from './alerts/alerts.module'
 import { EmailsModule } from './emails/emails.module'
 import { RepositoriesModule } from './db/repositories.module'
+import { PresentationModule } from './presentation/presentation.module'
 import { AuthModule } from './auth/auth.module'
 import { UsersModule } from './users/users.module'
 
@@ -21,6 +22,7 @@ import { UsersModule } from './users/users.module'
     ConfigModule.forRoot({ isGlobal: true }),
     DrizzleModule,
     RepositoriesModule,
+    PresentationModule,
     AuthModule,
     UsersModule,
     HealthModule,
