@@ -15,10 +15,15 @@ export function KPICard({ icon: Icon, label, value, color, onClick }: KPICardPro
       onClick={onClick}
       className={cn(
         'group flex items-center gap-4 rounded-xl border border-border bg-surface-800 p-5 transition-all hover:border-border-light hover:shadow-lg hover:shadow-black/20',
-        onClick && 'cursor-pointer',
+        onClick && 'cursor-pointer'
       )}
     >
-      <div className={cn('flex h-11 w-11 shrink-0 items-center justify-center rounded-lg', color)}>
+      <div
+        className={cn(
+          'flex h-11 w-11 shrink-0 items-center justify-center rounded-lg',
+          color
+        )}
+      >
         <Icon size={20} />
       </div>
       <div>

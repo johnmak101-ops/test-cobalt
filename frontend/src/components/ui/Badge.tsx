@@ -1,4 +1,4 @@
-import { cn, stateLabel } from '../../lib/utils'
+import { cn } from '../../lib/utils'
 
 const severityStyles: Record<string, string> = {
   CRITICAL: 'bg-status-critical/15 text-status-critical border-status-critical/30',
@@ -12,8 +12,8 @@ const statusStyles: Record<string, string> = {
   CONFIRMED: 'bg-state-confirmed/15 text-state-confirmed border-state-confirmed/30',
   AT_WAREHOUSE: 'bg-state-warehouse/15 text-state-warehouse border-state-warehouse/30',
   SAILED: 'bg-state-sailed/15 text-state-sailed border-state-sailed/30',
-  RELEASED: 'bg-state-released/15 text-state-released border-state-released/30',
-  DELIVERED: 'bg-state-delivered/15 text-state-delivered border-state-delivered/30',
+  DEPARTED: 'bg-state-released/15 text-state-released border-state-released/30',
+  ARRIVED: 'bg-state-delivered/15 text-state-delivered border-state-delivered/30',
 }
 
 const emailTypeStyles: Record<string, string> = {
@@ -21,18 +21,27 @@ const emailTypeStyles: Record<string, string> = {
   SHIPPING_ORDER: 'bg-state-confirmed/15 text-state-confirmed',
   DRAFT_BL: 'bg-state-warehouse/15 text-state-warehouse',
   FINAL_BL: 'bg-state-sailed/15 text-state-sailed',
-  TELEX_RELEASE: 'bg-state-released/15 text-state-released',
+  DEPARTURE_NOTICE: 'bg-state-released/15 text-state-released',
   OTHER: 'bg-surface-700 text-text-muted',
 }
 
 const emailTypeLabels: Record<string, string> = {
   BOOKING_REQUEST: 'BOOKING',
   SHIPPING_ORDER: 'SO',
-  DRAFT_BL: 'DRAFT B/L',
-  FINAL_BL: 'FINAL B/L',
-  TELEX_RELEASE: 'TELEX',
+  DRAFT_BL: 'DRAFT BOL',
+  FINAL_BL: 'FINAL BOL',
+  DEPARTURE_NOTICE: 'DEPARTURE',
   DELAY_NOTICE: 'DELAY',
   OTHER: 'UNCLASSIFIED',
+}
+
+const statusLabels: Record<string, string> = {
+  BOOKED: 'Booking Request',
+  CONFIRMED: 'SO Received',
+  AT_WAREHOUSE: 'Draft BOL',
+  SAILED: 'Final BOL',
+  DEPARTED: 'Departure',
+  ARRIVED: 'Delivered',
 }
 
 interface BadgeProps {
@@ -50,7 +59,7 @@ export function Badge({ variant = 'severity', value, className }: BadgeProps) {
         : severityStyles
 
   const label = variant === 'emailType' ? emailTypeLabels[value] ?? value : value
-  const displayLabel = variant === 'status' ? stateLabel(value) : label
+  const displayLabel = variant === 'status' ? statusLabels[value] ?? value.replace('_', ' ') : label
 
   return (
     <span

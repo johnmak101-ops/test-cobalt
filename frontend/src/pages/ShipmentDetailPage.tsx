@@ -1,201 +1,329 @@
-import { useParams, Link } from 'react-router-dom'
-import { ArrowLeft, Package } from 'lucide-react'
+import { useState } from 'react'
+import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import { useShipment } from '../hooks/use-shipments'
-import { Card } from '../components/ui/Card'
+import { useShipmentHistory } from '../hooks/use-shipment-history'
 import { Badge } from '../components/ui/Badge'
-import { MilestoneTimeline } from '../components/MilestoneTimeline'
-import { ConflictList } from '../components/ConflictList'
-import { formatDate, modeLabel } from '../lib/utils'
+import { Card } from '../components/ui/Card'
+import { MilestoneTimeline } from '../components/shipments/MilestoneTimeline'
+import { ShipmentHistoryTimeline } from '../components/shipments/ShipmentHistoryTimeline'
+import { AlertCard } from '../components/alerts/AlertCard'
+import { formatRelativeTime, formatDate, cn } from '../lib/utils'
+import { ArrowLeft, Mail, Clock, ClipboardList, Package, Ship, Calendar, AlertTriangle, AlertCircle, Info } from 'lucide-react'
 
-interface LinkedPO {
-  id: string
-  poNumber: string
-  totalQuantity: number | null
-  quantityUnit: string | null
-  vendor?: { name: string } | null
-}
+export default function ShipmentDetailPage() {
+  const { id } = useParams<{ id: string }>()
+  const navigate = useNavigate()
+  const location = useLocation()
+  const fromAlerts = (location.state as { fromAlerts?: boolean })?.fromAlerts
+  const { data: shipment, isLoading } = useShipment(id!)
+  const { data: historyData } = useShipmentHistory(id!)
+  const [activeTab, setActiveTab] = useState<'details' | 'history'>('details')
 
-interface Identifier {
-  type: string
-  value: string
-  docType: string | null
-  isCurrent: boolean
-  sourceEmailId: string | null
-}
-
-interface LegDetail {
-  id: string
-  state: string
-  mode: string | null
-  reviewStatus: string
-  confidence: number | null
-  reviewReasons: string[] | null
-  bookingNo: string | null
-  soNo: string | null
-  hblAwbFcrNo: string | null
-  mbl: string | null
-  containerNo: string | null
-  etd: string | null
-  atd: string | null
-  eta: string | null
-  route: string | null
-  customer?: { id: string; name: string; code: string } | null
-  forwarder?: { id: string; name: string } | null
-  pos: LinkedPO[]
-  milestones: unknown[]
-  identifiers?: Identifier[]
-}
-
-const ID_LABEL: Record<string, string> = {
-  booking_no: 'Booking #', so_no: 'SO #', hbl_awb_fcr_no: 'HBL / AWB', mbl: 'MBL', container_no: 'Container',
-}
-const openEmail = (messageId: string) => window.open(`/emails/view?messageId=${encodeURIComponent(messageId)}`, '_blank', 'noopener')
-
-/** Every value each rotating identifier ever held — current (bold) + the superseded / conflict
- *  alternates that the single column can't show, so nothing extracted is buried. */
-function IdentifierHistory({ identifiers }: { identifiers: Identifier[] }) {
-  const byType = new Map<string, Identifier[]>()
-  for (const i of identifiers) {
-    const a = byType.get(i.type) ?? []
-    a.push(i)
-    byType.set(i.type, a)
+  if (isLoading) {
+    return (
+      <div className="flex h-64 items-center justify-center">
+        <span className="text-sm text-text-muted">Loading shipment...</span>
+      </div>
+    )
   }
-  const withHistory = [...byType.entries()].filter(([, vs]) => vs.length > 1)
-  if (!withHistory.length) return null
+
+  if (!shipment) {
+    return (
+      <div className="flex h-64 items-center justify-center">
+        <span className="text-sm text-text-muted">Shipment not found</span>
+      </div>
+    )
+  }
+
+  const shortId = shipment.bookingNo ?? shipment.id.slice(0, 12)
+  const linkedPOs = shipment.linkedPOs ?? []
+  const activeAlerts = (shipment.alerts ?? []).filter((a) => a.status === 'ACTIVE')
+  const criticalCount = activeAlerts.filter((a) => a.severity === 'CRITICAL').length
+  const warningCount = activeAlerts.filter((a) => a.severity === 'WARNING').length
+  const infoCount = activeAlerts.filter((a) => a.severity === 'INFO').length
+  const topSeverity = criticalCount > 0 ? 'CRITICAL' : warningCount > 0 ? 'WARNING' : 'INFO'
+
   return (
-    <Card>
-      <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-text-muted">Identifier history</div>
-      <p className="muted mb-3 text-xs">
-        Every value this shipment carried for each rotating ID — the current one plus alternates that were superseded
-        or lost a conflict. Click an alternate to view its source email.
-      </p>
-      <div className="space-y-3">
-        {withHistory.map(([type, vs]) => {
-          const current = vs.find((v) => v.isCurrent) ?? vs[0]
-          const alts = vs.filter((v) => v !== current)
-          return (
-            <div key={type} className="text-sm">
-              <div className="text-xs text-text-muted">{ID_LABEL[type] ?? type}</div>
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="font-mono font-semibold text-text-primary">{current?.value ?? '—'}</span>
-                {alts.map((a, k) => (
-                  <button
-                    key={k}
-                    onClick={() => a.sourceEmailId && openEmail(a.sourceEmailId)}
-                    disabled={!a.sourceEmailId}
-                    title={a.sourceEmailId ? 'View original email' : undefined}
-                    className={`rounded bg-surface-700 px-1.5 py-0.5 font-mono text-xs text-text-muted line-through decoration-text-muted/50 ${a.sourceEmailId ? 'hover:text-cobalt-primary hover:no-underline' : 'cursor-default'}`}
+    <div className="space-y-6">
+
+      {/* Header */}
+      <div>
+        <button
+          onClick={() => navigate(fromAlerts ? '/alerts' : '/shipments')}
+          className="mb-3 inline-flex items-center gap-1.5 text-sm text-text-muted hover:text-text-primary"
+        >
+          <ArrowLeft size={14} />
+          {fromAlerts ? 'Back to Alerts' : 'Back to Shipments'}
+        </button>
+        <div className="flex items-start justify-between">
+          <div>
+            <h1 className="font-mono text-xl font-semibold text-text-primary">
+              {shortId}
+            </h1>
+            <p className="mt-1 text-sm text-text-secondary">
+              {shipment.customer?.name ?? 'Unknown Customer'}
+              {shipment.forwarder && ` · ${shipment.forwarder.name}`}
+              {shipment.route && ` · ${shipment.route}`}
+            </p>
+          </div>
+          <Badge variant="status" value={shipment.status} />
+        </div>
+      </div>
+
+      {/* Alert banner */}
+      {activeAlerts.length > 0 && (
+        <div
+          className={cn(
+            'flex items-center gap-3 rounded-lg border px-4 py-3',
+            topSeverity === 'CRITICAL'
+              ? 'border-status-critical/30 bg-status-critical/10 text-status-critical'
+              : topSeverity === 'WARNING'
+                ? 'border-status-warning/30 bg-status-warning/10 text-status-warning'
+                : 'border-status-info/30 bg-status-info/10 text-status-info'
+          )}
+        >
+          {topSeverity === 'CRITICAL' ? (
+            <AlertCircle size={18} className="shrink-0" />
+          ) : topSeverity === 'WARNING' ? (
+            <AlertTriangle size={18} className="shrink-0" />
+          ) : (
+            <Info size={18} className="shrink-0" />
+          )}
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-medium">
+              {activeAlerts.length === 1
+                ? activeAlerts[0].message
+                : `${activeAlerts.length} active alerts on this shipment`}
+            </p>
+            {activeAlerts.length > 1 && (
+              <p className="mt-0.5 text-xs opacity-75">
+                {[
+                  criticalCount > 0 && `${criticalCount} critical`,
+                  warningCount > 0 && `${warningCount} warning`,
+                  infoCount > 0 && `${infoCount} info`,
+                ]
+                  .filter(Boolean)
+                  .join(' · ')}
+              </p>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Horizontal Milestone Timeline (full width) */}
+      <Card>
+        <h4 className="mb-4 text-sm font-semibold text-text-primary">Milestone Timeline</h4>
+        <MilestoneTimeline
+          milestones={shipment.milestones ?? []}
+          currentStatus={shipment.status}
+          horizontal
+        />
+      </Card>
+
+      {/* Linked POs card */}
+      {linkedPOs.length > 0 && (
+        <Card>
+          <div className="mb-3 flex items-center gap-2">
+            <Package size={14} className="text-text-muted" />
+            <h4 className="text-sm font-semibold text-text-primary">
+              Customer Purchase Orders
+              <span className="ml-2 text-xs font-normal text-text-muted">
+                {linkedPOs.length} PO{linkedPOs.length !== 1 ? 's' : ''} on this shipment
+              </span>
+            </h4>
+          </div>
+          <div className="overflow-hidden rounded-lg border border-border">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b border-border bg-surface-900/50">
+                  <th className="px-3 py-2 text-left text-[11px] font-medium text-text-muted">Customer PO#</th>
+                  <th className="px-3 py-2 text-left text-[11px] font-medium text-text-muted">Vendor</th>
+                  <th className="px-3 py-2 text-right text-[11px] font-medium text-text-muted">Shipped</th>
+                  <th className="px-3 py-2 text-right text-[11px] font-medium text-text-muted">Total</th>
+                  <th className="px-3 py-2 text-left text-[11px] font-medium text-text-muted">UOM</th>
+                </tr>
+              </thead>
+              <tbody>
+                {linkedPOs.map((po) => (
+                  <tr
+                    key={po.id}
+                    onClick={() => navigate(`/purchase-orders/${po.id}`, { state: { fromShipment: id } })}
+                    className="cursor-pointer border-b border-border last:border-0 transition-colors hover:bg-surface-700"
                   >
-                    {a.value}{a.docType ? ` · ${a.docType}` : ''}
-                  </button>
+                    <td className="px-3 py-2 font-mono text-sm text-cobalt-primary-light">{po.poNumber}</td>
+                    <td className="px-3 py-2 text-sm text-text-secondary">{po.vendor?.name ?? '—'}</td>
+                    <td className="px-3 py-2 text-right font-mono text-sm text-text-primary">{po.quantity ?? '—'}</td>
+                    <td className="px-3 py-2 text-right font-mono text-sm text-text-muted">{po.totalQuantity ?? '—'}</td>
+                    <td className="px-3 py-2 text-xs text-text-muted">{po.quantityUnit ?? ''}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      )}
+
+      {/* Order Details (full width) */}
+      <Card>
+        <h4 className="mb-4 text-sm font-semibold text-text-primary">Order Details</h4>
+        <div className="grid grid-cols-1 gap-x-8 gap-y-6 md:grid-cols-2">
+          {/* Section 1: Order Info */}
+          <DetailSection title="Order Info" icon={<ClipboardList size={14} className="text-text-muted" />}>
+            <DetailRow label="Customer Code" value={shipment.customer?.code ?? null} />
+            <DetailRow label="Vendor Code" value={shipment.vendor?.code ?? null} />
+            <DetailRow label="PO#" value={linkedPOs.length > 0 ? linkedPOs.map(p => p.poNumber).join(', ') : '—'} />
+            <DetailRow label="Booking No." value={shipment.bookingNo} />
+            <DetailRow label="SO#" value={shipment.soNumber} />
+            <DetailRow label="Item / Style No." value={shipment.itemStyleNo} />
+            <DetailRow label="Email Date" value={formatDate(shipment.createdAt)} />
+          </DetailSection>
+
+          {/* Section 2: Cargo & Logistics */}
+          <DetailSection title="Cargo & Logistics" icon={<Package size={14} className="text-text-muted" />}>
+            <DetailRow label="Qty" value={shipment.quantityShipped != null ? String(shipment.quantityShipped) : null} />
+            <DetailRow label="UOM" value={shipment.quantityUnit ?? null} />
+            <DetailRow label="Container No." value={shipment.containerNo} />
+            <DetailRow label="HBL / AWB / FCR No." value={shipment.hblNumber} />
+            <DetailRow label="MBL" value={shipment.mblNumber} />
+            <DetailRow label="SCAC Code" value={shipment.scacCode} />
+            <DetailRow label="Warehouse" value={shipment.warehouseAddress} />
+          </DetailSection>
+
+          {/* Section 3: Shipping */}
+          <DetailSection title="Shipping" icon={<Ship size={14} className="text-text-muted" />}>
+            <DetailRow label="Forwarder" value={shipment.forwarder?.name ?? null} />
+            <DetailRow label="Consignee Name" value={shipment.consigneeName} />
+            <DetailRow label="Consignee Address" value={shipment.consigneeAddress} />
+            <DetailRow label="Vessel" value={shipment.vesselName} />
+            <DetailRow label="Voyage" value={shipment.voyageNumber} />
+            <DetailRow label="Route" value={shipment.route} />
+            <DetailRow label="Origin Country" value={shipment.originCountry ?? '—'} />
+          </DetailSection>
+
+          {/* Section 4: Key Dates */}
+          <DetailSection title="Key Dates" icon={<Calendar size={14} className="text-text-muted" />}>
+            <DetailRow label="Cargo Ready Date" value={formatDate(shipment.crd)} />
+            <DetailRow label="WH Start Date" value={formatDate(shipment.warehouseStartDate)} />
+            <DetailRow label="WH End Date" value={formatDate(shipment.warehouseEndDate)} />
+            <DetailRow label="CFS Cut-off" value={formatDate(shipment.cfsCutoff)} />
+            <DetailRow label="ETD" value={formatDate(shipment.etd)} />
+            <DetailRow label="ATD" value={formatDate(shipment.actualDeparture)} />
+            <DetailRow label="ETA" value={formatDate(shipment.eta)} />
+            <DetailRow label="ATA" value={formatDate(shipment.actualArrival)} />
+            <DetailRow label="In DC Date" value={formatDate(shipment.inDcDate)} />
+          </DetailSection>
+        </div>
+      </Card>
+
+      {/* Tab switcher: Alerts/Emails vs History */}
+      <div className="flex gap-1 rounded-lg bg-surface-900 p-1">
+        <button
+          onClick={() => setActiveTab('details')}
+          className={cn(
+            'rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
+            activeTab === 'details'
+              ? 'bg-cobalt-primary text-white'
+              : 'text-text-muted hover:text-text-primary'
+          )}
+        >
+          Alerts & Emails
+        </button>
+        <button
+          onClick={() => setActiveTab('history')}
+          className={cn(
+            'flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
+            activeTab === 'history'
+              ? 'bg-cobalt-primary text-white'
+              : 'text-text-muted hover:text-text-primary'
+          )}
+        >
+          <Clock size={12} />
+          Change History
+          {historyData?.history && historyData.history.length > 0 && (
+            <span className="ml-1 inline-flex h-4 min-w-[16px] items-center justify-center rounded-full bg-white/20 px-1 text-[10px]">
+              {historyData.history.length}
+            </span>
+          )}
+        </button>
+      </div>
+
+      {activeTab === 'details' ? (
+        <>
+          {/* Active Alerts */}
+          {shipment.alerts && shipment.alerts.filter((a) => a.status === 'ACTIVE').length > 0 && (
+            <div className="space-y-2">
+              <h4 className="text-sm font-semibold text-text-primary">Active Alerts</h4>
+              {shipment.alerts
+                .filter((a) => a.status === 'ACTIVE')
+                .map((alert) => (
+                  <AlertCard
+                    key={alert.id}
+                    alert={{
+                      ...alert,
+                      shipmentId: shipment.id,
+                    }}
+                    compact
+                  />
+                ))}
+            </div>
+          )}
+
+          {/* Related Emails */}
+          {shipment.emails && shipment.emails.length > 0 && (
+            <Card>
+              <h4 className="mb-4 text-sm font-semibold text-text-primary">Related Emails</h4>
+              <div className="space-y-2">
+                {shipment.emails.map((email) => (
+                  <div
+                    key={email.id}
+                    className="flex items-center gap-3 rounded-lg bg-surface-900 p-3"
+                  >
+                    <Mail size={14} className="shrink-0 text-text-muted" />
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm text-text-primary">{email.subject}</p>
+                      <p className="text-xs text-text-muted">
+                        {email.sender} · {formatRelativeTime(email.receivedAt)}
+                      </p>
+                    </div>
+                    {email.emailType && (
+                      <Badge variant="emailType" value={email.emailType} />
+                    )}
+                  </div>
                 ))}
               </div>
-            </div>
-          )
-        })}
-      </div>
-    </Card>
-  )
-}
-
-function Field({ label, value }: { label: string; value: React.ReactNode }) {
-  return (
-    <div>
-      <div className="text-xs text-text-muted">{label}</div>
-      <div className="font-mono text-text-primary">{value || '—'}</div>
+            </Card>
+          )}
+        </>
+      ) : (
+        /* History tab */
+        <Card>
+          <h4 className="mb-4 text-sm font-semibold text-text-primary">Change History</h4>
+          <ShipmentHistoryTimeline history={historyData?.history ?? []} />
+        </Card>
+      )}
     </div>
   )
 }
 
-export default function ShipmentDetailPage() {
-  const { id } = useParams()
-  const { data, isLoading } = useShipment(id)
-  const s = data as LegDetail | undefined
-
-  if (isLoading) return <div className="text-sm text-text-muted">Loading…</div>
-  if (!s) return <div className="text-sm text-text-muted">Shipment not found.</div>
-
+function DetailSection({ title, icon, children }: { title: string; icon: React.ReactNode; children: React.ReactNode }) {
   return (
-    <div className="space-y-6">
-      <Link to="/shipments" className="inline-flex items-center gap-1 text-sm text-text-muted hover:text-text-primary">
-        <ArrowLeft size={14} /> Shipments
-      </Link>
-
-      <div className="space-y-1">
-        <div className="flex flex-wrap items-center gap-3">
-          <h1 className="font-mono text-xl font-bold">{s.bookingNo ?? s.hblAwbFcrNo ?? s.soNo ?? s.id.slice(0, 8)}</h1>
-          <Badge variant="status" value={s.state} />
-          {s.reviewStatus === 'provisional' && (
-            <span className="rounded bg-status-warning/15 px-2 py-0.5 text-[11px] font-semibold text-status-warning">
-              Provisional · conf {s.confidence ?? '—'}
-            </span>
-          )}
-        </div>
-        <div className="text-sm text-text-secondary">
-          {[s.customer?.name, s.forwarder?.name, s.route].filter(Boolean).join('  ·  ') || '—'}
-        </div>
+    <div>
+      <div className="mb-3 flex items-center gap-1.5">
+        {icon}
+        <span className="text-[11px] font-semibold uppercase tracking-wider text-text-muted">{title}</span>
       </div>
+      <div className="space-y-2.5">{children}</div>
+    </div>
+  )
+}
 
-      {s.reviewReasons?.length ? (
-        <Card>
-          <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-text-muted">Flagged for review</div>
-          <ConflictList reasons={s.reviewReasons ?? []} />
-        </Card>
-      ) : null}
-
-      <IdentifierHistory identifiers={s.identifiers ?? []} />
-
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-        <Card>
-          <h2 className="mb-3 font-semibold">Shipment</h2>
-          <div className="grid grid-cols-2 gap-3 text-sm">
-            <Field label="Mode" value={modeLabel(s.mode)} />
-            <Field label="Route" value={s.route} />
-            <Field label="Customer" value={s.customer?.name} />
-            <Field label="Forwarder" value={s.forwarder?.name} />
-            <Field label="Booking #" value={s.bookingNo} />
-            <Field label="SO #" value={s.soNo} />
-            <Field label="HBL / AWB" value={s.hblAwbFcrNo} />
-            <Field label="MBL" value={s.mbl} />
-            <Field label="Container" value={s.containerNo} />
-            <Field label="ETD" value={formatDate(s.etd)} />
-            <Field label="ATD" value={formatDate(s.atd)} />
-            <Field label="ETA" value={formatDate(s.eta)} />
-          </div>
-        </Card>
-        <Card>
-          <h2 className="mb-3 font-semibold">
-            Purchase Orders <span className="text-text-muted">({s.pos?.length ?? 0})</span>
-          </h2>
-          {s.pos?.length ? (
-            <ul className="divide-y divide-border/50">
-              {s.pos.map((po) => (
-                <li key={po.id}>
-                  <Link
-                    to={`/purchase-orders/${po.id}`}
-                    className="flex items-center justify-between py-2 transition-colors hover:text-cobalt-primary"
-                  >
-                    <span className="inline-flex items-center gap-2 font-mono text-sm">
-                      <Package size={13} className="text-text-muted" /> {po.poNumber}
-                    </span>
-                    <span className="text-xs text-text-muted">
-                      {po.vendor?.name ?? ''}
-                      {po.totalQuantity != null ? ` · ${po.totalQuantity}${po.quantityUnit ?? ''}` : ''}
-                    </span>
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <div className="text-sm text-text-muted">No linked POs.</div>
-          )}
-        </Card>
-      </div>
-
-      <Card>
-        <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-text-muted">Timeline</div>
-        <MilestoneTimeline milestones={(s.milestones ?? []) as never} />
-      </Card>
+function DetailRow({ label, value }: { label: string; value: string | null | undefined }) {
+  return (
+    <div className="grid grid-cols-[9rem_1fr] gap-x-2 items-baseline">
+      <span className="text-xs text-text-muted truncate">{label}</span>
+      <span className="font-mono text-sm text-text-primary break-words">
+        {value ?? <span className="italic text-text-muted">(pending)</span>}
+      </span>
     </div>
   )
 }

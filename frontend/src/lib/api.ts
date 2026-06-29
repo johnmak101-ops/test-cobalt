@@ -1,33 +1,39 @@
-const API_BASE = '/api'
-const TOKEN_KEY = 'cobalt_token'
+// Vite dev (5173) proxies /api → backend; backend (3000) serves /api directly;
+// PAVE / other origins hit the backend absolutely.
+const backendPort: string = (import.meta as any).env?.VITE_BACKEND_PORT ?? '3000'
 
-export const getToken = () => localStorage.getItem(TOKEN_KEY)
-export const setToken = (t: string) => localStorage.setItem(TOKEN_KEY, t)
-export const clearToken = () => localStorage.removeItem(TOKEN_KEY)
+const API_BASE =
+  window.location.port === '5173'
+    ? '/api' // Vite dev server — it proxies /api
+    : window.location.port === '3000'
+      ? '/api' // Backend serving static files
+      : `http://localhost:${backendPort}/api` // PAVE or other — hit backend directly
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
-  const token = getToken()
+  let token: string | null = null
+  try {
+    token = localStorage.getItem('cobalt_token')
+  } catch {
+    /* ignore */
+  }
   const res = await fetch(`${API_BASE}${path}`, {
+    credentials: 'include', // send the httpOnly session cookie
     headers: {
       'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(token ? { Authorization: `Bearer ${token}` } : {}), // belt-and-suspenders for proxied cookies
       ...options?.headers,
     },
     ...options,
   })
 
-  if (res.status === 401) {
-    clearToken()
-    if (!path.startsWith('/auth/login') && window.location.pathname !== '/login') {
-      window.location.href = '/login'
-    }
-    throw new Error('unauthorized')
-  }
   if (!res.ok) {
     const error = await res.text()
     throw new Error(`API error ${res.status}: ${error}`)
   }
-  return res.json()
+
+  // tolerate empty bodies (e.g. 204 / no-content from action endpoints)
+  const text = await res.text()
+  return (text ? JSON.parse(text) : undefined) as T
 }
 
 export const api = {

@@ -1,10 +1,11 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useQueryClient } from '@tanstack/react-query'
-import { Package, Search, RefreshCw } from 'lucide-react'
 import { usePurchaseOrders } from '../hooks/use-purchase-orders'
 import { cn } from '../lib/utils'
+import { formatDate } from '../lib/utils'
+import { Package, Search, RefreshCw, Download, Calendar } from 'lucide-react'
 import { Pagination, usePagination, PageSizeSelect } from '../components/ui/Pagination'
+import { useQueryClient } from '@tanstack/react-query'
 
 export default function PurchaseOrdersPage() {
   const navigate = useNavigate()
@@ -12,29 +13,234 @@ export default function PurchaseOrdersPage() {
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
   const [perPage, setPerPage] = useState(25)
+  const [dateFrom, setDateFrom] = useState('')
+  const [dateTo, setDateTo] = useState('')
+  const [exporting, setExporting] = useState(false)
   const qc = useQueryClient()
 
   const purchaseOrders = data?.purchaseOrders ?? []
-  const filtered = search
+
+  // Filter by search term (multi-term: space- or comma-separated, any term matches)
+  const searchFiltered = search
     ? purchaseOrders.filter((po) => {
-        const q = search.toLowerCase()
-        return (
-          po.poNumber.toLowerCase().includes(q) ||
-          po.customer?.name.toLowerCase().includes(q) ||
-          po.vendor?.name.toLowerCase().includes(q)
-        )
+        const terms = search.toLowerCase().trim().split(/[\s,]+/).filter(Boolean)
+        if (terms.length === 0) return true
+        const poFields = [
+          po.poNumber,
+          po.customer?.name,
+          po.vendor?.name,
+          po.quantityUnit,
+          po.notes,
+        ]
+        const shipmentFields = (po.shipmentSummary ?? []).flatMap((s) => [
+          s.bookingNo,
+          s.route,
+          s.containerNo,
+          s.hblNumber,
+          s.mblNumber,
+          s.scacCode,
+          s.vesselName,
+          s.status,
+        ])
+        const allFields = [...poFields, ...shipmentFields]
+        return terms.some((q) => allFields.some((f) => f?.toLowerCase().includes(q)))
       })
     : purchaseOrders
 
-  const { totalItems, totalPages, pageSize, getPage } = usePagination(filtered, perPage)
+  // Filter by date range (based on createdAt)
+  const filtered = useMemo(() => {
+    let result = searchFiltered
+    if (dateFrom) {
+      const from = new Date(dateFrom)
+      result = result.filter((po) => new Date(po.createdAt) >= from)
+    }
+    if (dateTo) {
+      const to = new Date(dateTo)
+      to.setHours(23, 59, 59, 999)
+      result = result.filter((po) => new Date(po.createdAt) <= to)
+    }
+    return result
+  }, [searchFiltered, dateFrom, dateTo])
+
+  // Sort by PO number
+  const sorted = useMemo(() => {
+    return [...filtered].sort((a, b) => a.poNumber.localeCompare(b.poNumber))
+  }, [filtered])
+
+  const { totalItems, totalPages, pageSize, getPage } = usePagination(sorted, perPage)
   const pageItems = getPage(page)
+
+  const handleSearch = (v: string) => {
+    setSearch(v)
+    setPage(1)
+  }
+
+  const handlePageSizeChange = (size: number) => {
+    setPerPage(size)
+    setPage(1)
+  }
+
+  const clearDateFilter = () => {
+    setDateFrom('')
+    setDateTo('')
+    setPage(1)
+  }
+
+  const handleExport = async () => {
+    setExporting(true)
+    try {
+      const api = (await import('../lib/api')).api
+      const detailRows: string[][] = []
+
+      for (const po of sorted) {
+        try {
+          const detail: any = await api.get(`/purchase-orders/${po.id}`)
+          const shipments = detail.linkedShipments ?? []
+
+          if (shipments.length === 0) {
+            // PO with no linked shipments — one row with PO data, empty shipment fields
+            detailRows.push([
+              po.poNumber,
+              po.customer?.name ?? '',
+              po.vendor?.name ?? '',
+              String(po.totalQuantity ?? ''),
+              po.quantityUnit ?? '',
+              String(po.shippedQuantity ?? ''),
+              po.totalQuantity ? String(Math.min((po.shippedQuantity ?? 0) / po.totalQuantity * 100, 100).toFixed(0) + '%') : '',
+              formatDate(po.createdAt),
+              // Shipment fields (empty)
+              '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '',
+            ])
+          } else {
+            // One row per shipment with full shipment detail
+            for (const s of shipments) {
+              detailRows.push([
+                po.poNumber,
+                po.customer?.name ?? '',
+                po.vendor?.name ?? '',
+                String(po.totalQuantity ?? ''),
+                po.quantityUnit ?? '',
+                String(po.shippedQuantity ?? ''),
+                po.totalQuantity ? String(Math.min((po.shippedQuantity ?? 0) / po.totalQuantity * 100, 100).toFixed(0) + '%') : '',
+                formatDate(po.createdAt),
+                // Shipment detail fields
+                s.bookingNo ?? '',
+                s.soNumber ?? '',
+                s.itemStyleNo ?? '',
+                s.status ?? '',
+                s.riskLevel ?? '',
+                s.route ?? '',
+                String(s.quantityShipped ?? ''),
+                s.quantityUnit ?? '',
+                String(s.linkedQuantity ?? ''),
+                s.customer?.name ?? '',
+                s.vendor?.name ?? '',
+                s.forwarder?.name ?? '',
+                s.consigneeName ?? '',
+                s.consigneeAddress ?? '',
+                s.containerNo ?? '',
+                s.hblNumber ?? '',
+                s.mblNumber ?? '',
+                s.scacCode ?? '',
+                s.vesselName ?? '',
+                s.voyageNumber ?? '',
+                s.warehouseAddress ?? '',
+                s.crd ? formatDate(s.crd) : '',
+                s.cfsCutoff ? formatDate(s.cfsCutoff) : '',
+                s.etd ? formatDate(s.etd) : '',
+                s.eta ? formatDate(s.eta) : '',
+                s.actualDeparture ? formatDate(s.actualDeparture) : '',
+                s.actualArrival ? formatDate(s.actualArrival) : '',
+                s.warehouseStartDate ? formatDate(s.warehouseStartDate) : '',
+                s.warehouseEndDate ? formatDate(s.warehouseEndDate) : '',
+                s.inDcDate ? formatDate(s.inDcDate) : '',
+              ])
+            }
+          }
+        } catch {
+          detailRows.push([
+            po.poNumber,
+            po.customer?.name ?? '',
+            po.vendor?.name ?? '',
+            String(po.totalQuantity ?? ''),
+            po.quantityUnit ?? '',
+            String(po.shippedQuantity ?? ''),
+            po.totalQuantity ? String(Math.min((po.shippedQuantity ?? 0) / po.totalQuantity * 100, 100).toFixed(0) + '%') : '',
+            formatDate(po.createdAt),
+            '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '',
+          ])
+        }
+      }
+
+      const headers = [
+        // PO fields
+        'Customer PO#',
+        'Customer',
+        'Vendor',
+        'Total Qty',
+        'UOM',
+        'Shipped Qty',
+        'Progress',
+        'PO Created Date',
+        // Shipment detail fields
+        'Booking No',
+        'SO#',
+        'Item/Style No',
+        'Shipment Status',
+        'Risk Level',
+        'Route',
+        'Qty Shipped',
+        'Shipment UOM',
+        'Linked Qty',
+        'Consignee Name',
+        'Consignee Address',
+        'Forwarder',
+        'Customer',
+        'Vendor',
+        'Container No',
+        'HBL/AWB/FCR No',
+        'MBL No',
+        'SCAC Code',
+        'Vessel Name',
+        'Voyage No',
+        'Warehouse Address',
+        'CRD',
+        'CFS Cutoff',
+        'ETD',
+        'ETA',
+        'ATD',
+        'ATA',
+        'WH Start Date',
+        'WH End Date',
+        'In DC Date',
+      ]
+
+      const escape = (v: string) => {
+        if (v.includes(',') || v.includes('"') || v.includes('\n')) return `"${v.replace(/"/g, '""')}"`
+        return v
+      }
+      const csv = [headers.map(escape).join(','), ...detailRows.map((r) => r.map(escape).join(','))].join('\n')
+      const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' })
+      const link = document.createElement('a')
+      link.href = URL.createObjectURL(blob)
+      const dateLabel = dateFrom || dateTo ? `_${dateFrom || 'start'}-${dateTo || 'end'}` : ''
+      link.download = `customer_purchase_orders${dateLabel}.csv`
+      link.click()
+      URL.revokeObjectURL(link.href)
+    } finally {
+      setExporting(false)
+    }
+  }
 
   return (
     <div className="space-y-6">
+      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-semibold text-text-primary">Purchase Orders</h1>
-          <p className="mt-1 text-sm text-text-secondary">Track POs across multiple partial shipments</p>
+          <h1 className="text-xl font-semibold text-text-primary">Customer Purchase Orders</h1>
+          <p className="mt-1 text-sm text-text-secondary">
+            Track customer POs across multiple partial shipments
+          </p>
         </div>
         <div className="flex items-center gap-2">
           <button
@@ -44,91 +250,176 @@ export default function PurchaseOrdersPage() {
             <RefreshCw size={14} />
             Refresh
           </button>
-          <PageSizeSelect value={perPage} onChange={(s) => { setPerPage(s); setPage(1) }} />
+          <PageSizeSelect value={perPage} onChange={handlePageSizeChange} />
         </div>
       </div>
 
-      <div className="relative">
-        <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
-        <input
-          type="text"
-          value={search}
-          onChange={(e) => { setSearch(e.target.value); setPage(1) }}
-          placeholder="Search by PO#, customer, or vendor..."
-          className="h-9 w-full rounded-lg border border-border bg-surface-800 pl-9 pr-3 text-sm text-text-primary placeholder:text-text-muted focus:border-cobalt-primary focus:outline-none"
-        />
+      {/* Search + Date Filter + Export */}
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="relative flex-1 min-w-[200px]">
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => handleSearch(e.target.value)}
+            placeholder="Search — PO#, customer, vendor, route, booking#, container, SCAC… (comma or space for multiple)"
+            className="h-9 w-full rounded-lg border border-border bg-surface-800 pl-9 pr-3 text-sm text-text-primary placeholder:text-text-muted"
+          />
+        </div>
+        <div className="flex items-center gap-1.5">
+          <Calendar size={14} className="text-text-muted" />
+          <input
+            type="date"
+            value={dateFrom}
+            onChange={(e) => { setDateFrom(e.target.value); setPage(1) }}
+            className="h-9 rounded-lg border border-border bg-surface-800 px-2 text-sm text-text-primary"
+            placeholder="From"
+          />
+          <span className="text-text-muted text-xs">—</span>
+          <input
+            type="date"
+            value={dateTo}
+            onChange={(e) => { setDateTo(e.target.value); setPage(1) }}
+            className="h-9 rounded-lg border border-border bg-surface-800 px-2 text-sm text-text-primary"
+            placeholder="To"
+          />
+          {(dateFrom || dateTo) && (
+            <button
+              onClick={clearDateFilter}
+              className="h-9 rounded-lg border border-border bg-surface-700 px-2 text-xs text-text-secondary hover:bg-surface-600 hover:text-text-primary"
+            >
+              Clear
+            </button>
+          )}
+        </div>
+        <button
+          onClick={handleExport}
+          disabled={exporting || filtered.length === 0}
+          className="inline-flex items-center gap-1.5 rounded-lg bg-cobalt-primary px-3 py-1.5 text-xs font-medium text-white hover:bg-cobalt-primary-light disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          <Download size={14} />
+          {exporting ? 'Exporting...' : 'Export CSV'}
+        </button>
       </div>
 
+      {/* Results count */}
+      {(dateFrom || dateTo || search) && (
+        <div className="text-xs text-text-muted">
+          Showing {filtered.length} of {purchaseOrders.length} POs
+          {dateFrom && ` from ${dateFrom}`}
+          {dateTo && ` to ${dateTo}`}
+        </div>
+      )}
+
+      {/* Table */}
       {isLoading ? (
-        <div className="flex h-32 items-center justify-center text-sm text-text-muted">Loading purchase orders...</div>
+        <div className="flex h-32 items-center justify-center text-sm text-text-muted">
+          Loading customer purchase orders...
+        </div>
       ) : filtered.length === 0 ? (
         <div className="flex h-32 flex-col items-center justify-center text-text-muted">
           <Package size={24} className="mb-2 opacity-50" />
-          <p className="text-sm">No purchase orders found</p>
+          <p className="text-sm">No customer purchase orders found</p>
         </div>
       ) : (
         <>
           <div className="overflow-hidden rounded-xl border border-border bg-surface-800">
             <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b border-border bg-surface-900/50">
-                    <th className="px-4 py-3 text-left text-xs font-medium text-text-muted">PO#</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-text-muted">Customer</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-text-muted">Vendor</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-text-muted">Quantity</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-text-muted">Shipped</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-text-muted">Progress</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-text-muted">Shipments</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {pageItems.map((po) => {
-                    const progress =
-                      po.totalQuantity && po.shippedQuantity ? Math.min((po.shippedQuantity / po.totalQuantity) * 100, 100) : 0
-                    return (
-                      <tr
-                        key={po.id}
-                        onClick={() => navigate(`/purchase-orders/${po.id}`)}
-                        className="cursor-pointer border-b border-border transition-colors last:border-0 hover:bg-surface-700"
-                      >
-                        <td className="px-4 py-3 font-mono text-sm font-medium text-cobalt-primary-light">{po.poNumber}</td>
-                        <td className="px-4 py-3 text-sm text-text-secondary">{po.customer?.name ?? '—'}</td>
-                        <td className="px-4 py-3 text-sm text-text-secondary">{po.vendor?.name ?? '—'}</td>
-                        <td className="px-4 py-3 font-mono text-sm text-text-secondary">
-                          {po.totalQuantity != null ? `${po.totalQuantity} ${po.quantityUnit ?? ''}` : '—'}
-                        </td>
-                        <td className="px-4 py-3 font-mono text-sm text-text-secondary">
-                          {po.shippedQuantity ? `${po.shippedQuantity} ${po.quantityUnit ?? ''}` : '—'}
-                        </td>
-                        <td className="px-4 py-3">
-                          {po.totalQuantity ? (
-                            <div className="flex items-center gap-2">
-                              <div className="h-2 w-20 overflow-hidden rounded-full bg-surface-600">
-                                <div
-                                  className={cn('h-full rounded-full transition-all', progress >= 100 ? 'bg-status-success' : progress > 0 ? 'bg-cobalt-primary' : 'bg-surface-600')}
-                                  style={{ width: `${progress}%` }}
-                                />
-                              </div>
-                              <span className="font-mono text-xs text-text-muted">{progress.toFixed(0)}%</span>
+            <table className="w-full">
+              <thead>
+                <tr className="border-b border-border bg-surface-900/50">
+                  <th className="px-4 py-3 text-left text-xs font-medium text-text-muted">Customer PO#</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-text-muted">
+                    Customer
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-text-muted">
+                    Vendor
+                  </th>
+                  <th className="px-4 py-3 text-right text-xs font-medium text-text-muted">
+                    Quantity
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-text-muted">
+UOM
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-text-muted">
+                    Progress
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-text-muted">
+                    Shipments
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {pageItems.map((po) => {
+                  const progress =
+                    po.totalQuantity && po.shippedQuantity
+                      ? Math.min((po.shippedQuantity / po.totalQuantity) * 100, 100)
+                      : 0
+
+                  return (
+                    <tr
+                      key={po.id}
+                      onClick={() => navigate(`/purchase-orders/${po.id}`)}
+                      className="cursor-pointer border-b border-border last:border-0 transition-colors hover:bg-surface-700"
+                    >
+                      <td className="px-4 py-3 font-mono text-sm font-medium text-cobalt-primary-light">
+                        {po.poNumber}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-text-secondary">
+                        {po.customer?.name ?? '—'}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-text-secondary">
+                        {po.vendor?.name ?? '—'}
+                      </td>
+                      <td className="px-4 py-3 font-mono text-sm text-right text-text-secondary">
+                        {po.totalQuantity ?? '—'}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-text-muted">
+                        {po.quantityUnit ?? '—'}
+                      </td>
+                      <td className="px-4 py-3">
+                        {po.totalQuantity ? (
+                          <div className="flex items-center gap-2">
+                            <div className="h-2 w-20 overflow-hidden rounded-full bg-surface-600">
+                              <div
+                                className={cn(
+                                  'h-full rounded-full transition-all',
+                                  progress >= 100
+                                    ? 'bg-status-success'
+                                    : progress > 0
+                                      ? 'bg-cobalt-primary'
+                                      : 'bg-surface-600'
+                                )}
+                                style={{ width: `${progress}%` }}
+                              />
                             </div>
-                          ) : (
-                            <span className="text-xs text-text-muted">—</span>
-                          )}
-                        </td>
-                        <td className="px-4 py-3">
-                          <span className="inline-flex h-6 min-w-[24px] items-center justify-center rounded-full bg-surface-600 px-2 font-mono text-xs text-text-secondary">
-                            {po.shipmentCount ?? 0}
-                          </span>
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
+                            <span className="font-mono text-xs text-text-muted">
+                              {progress.toFixed(0)}%
+                            </span>
+                          </div>
+                        ) : (
+                          <span className="text-xs text-text-muted">—</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className="inline-flex h-6 min-w-[24px] items-center justify-center rounded-full bg-surface-600 px-2 font-mono text-xs text-text-secondary">
+                          {po.shipmentCount ?? 0}
+                        </span>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
           </div>
-          <Pagination currentPage={page} totalPages={totalPages} totalItems={totalItems} pageSize={pageSize} onPageChange={setPage} />
+          </div>
+          <Pagination
+            currentPage={page}
+            totalPages={totalPages}
+            totalItems={totalItems}
+            pageSize={pageSize}
+            onPageChange={setPage}
+          />
         </>
       )}
     </div>

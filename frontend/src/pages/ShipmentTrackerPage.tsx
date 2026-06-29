@@ -1,45 +1,65 @@
-import { useState, useEffect } from 'react'
-import { useSearchParams } from 'react-router-dom'
-import { useQueryClient } from '@tanstack/react-query'
-import { Search, RefreshCw } from 'lucide-react'
+import { useState } from 'react'
 import { useShipments } from '../hooks/use-shipments'
 import { ShipmentTable } from '../components/shipments/ShipmentTable'
 import { ShipmentFilters } from '../components/shipments/ShipmentFilters'
 import { Pagination, usePagination, PageSizeSelect } from '../components/ui/Pagination'
+import { Search, RefreshCw } from 'lucide-react'
+import { useQueryClient } from '@tanstack/react-query'
 
 export default function ShipmentTrackerPage() {
-  const [params] = useSearchParams()
   const [statusFilter, setStatusFilter] = useState('ALL')
-  const [search, setSearch] = useState(params.get('q') ?? '')
+  const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
-  // sync the box when the global top-bar search navigates here with ?q=
-  useEffect(() => {
-    const q = params.get('q')
-    if (q != null) setSearch(q)
-  }, [params])
   const [perPage, setPerPage] = useState(25)
   const { data, isLoading } = useShipments({ status: statusFilter })
   const qc = useQueryClient()
 
   const allShipments = data?.shipments ?? []
+
+  // Multi-term search: space- or comma-separated, any term matches (OR)
   const filtered = search
     ? allShipments.filter((s) => {
-        const q = search.toLowerCase()
-        return (
-          s.customer?.name.toLowerCase().includes(q) ||
-          s.forwarder?.name.toLowerCase().includes(q) ||
-          s.route?.toLowerCase().includes(q) ||
-          s.bookingNo?.toLowerCase().includes(q) ||
-          s.containerNo?.toLowerCase().includes(q) ||
-          s.hblNumber?.toLowerCase().includes(q) ||
-          s.soNumber?.toLowerCase().includes(q) ||
-          s.linkedPOs.some((p) => p.poNumber.toLowerCase().includes(q))
-        )
+        const terms = search.toLowerCase().trim().split(/[\s,]+/).filter(Boolean)
+        if (terms.length === 0) return true
+        const fields = [
+          s.poNumbers,
+          s.customer?.name,
+          s.forwarder?.name,
+          s.vendor?.name,
+          s.route,
+          s.bookingNo,
+          s.soNumber,
+          s.containerNo,
+          s.hblNumber,
+          s.mblNumber,
+          s.vesselName,
+          s.voyageNumber,
+          s.consigneeName,
+          s.scacCode,
+          s.originCountry,
+          s.status,
+        ]
+        return terms.some((q) => fields.some((f) => f?.toLowerCase().includes(q)))
       })
     : allShipments
 
   const { totalItems, totalPages, pageSize, getPage } = usePagination(filtered, perPage)
   const pageShipments = getPage(page)
+
+  const handleFilterChange = (v: string) => {
+    setStatusFilter(v)
+    setPage(1)
+  }
+
+  const handleSearch = (v: string) => {
+    setSearch(v)
+    setPage(1)
+  }
+
+  const handlePageSizeChange = (size: number) => {
+    setPerPage(size)
+    setPage(1)
+  }
 
   return (
     <div className="space-y-5">
@@ -53,22 +73,23 @@ export default function ShipmentTrackerPage() {
             <RefreshCw size={14} />
             Refresh
           </button>
-          <PageSizeSelect value={perPage} onChange={(s) => { setPerPage(s); setPage(1) }} />
+          <PageSizeSelect value={perPage} onChange={handlePageSizeChange} />
         </div>
       </div>
 
+      {/* Search */}
       <div className="relative">
         <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
         <input
           type="text"
           value={search}
-          onChange={(e) => { setSearch(e.target.value); setPage(1) }}
-          placeholder="Search by PO#, customer, forwarder, route, booking#, container#..."
-          className="h-9 w-full rounded-lg border border-border bg-surface-800 pl-9 pr-3 text-sm text-text-primary placeholder:text-text-muted focus:border-cobalt-primary focus:outline-none"
+          onChange={(e) => handleSearch(e.target.value)}
+          placeholder="Search — PO#, customer, route, booking#, container, SCAC… (comma or space for multiple)"
+          className="h-9 w-full rounded-lg border border-border bg-surface-800 pl-9 pr-3 text-sm text-text-primary placeholder:text-text-muted"
         />
       </div>
 
-      <ShipmentFilters value={statusFilter} onChange={(v) => { setStatusFilter(v); setPage(1) }} />
+      <ShipmentFilters value={statusFilter} onChange={handleFilterChange} />
 
       {isLoading ? (
         <div className="flex h-64 items-center justify-center">
@@ -77,7 +98,13 @@ export default function ShipmentTrackerPage() {
       ) : (
         <>
           <ShipmentTable shipments={pageShipments} />
-          <Pagination currentPage={page} totalPages={totalPages} totalItems={totalItems} pageSize={pageSize} onPageChange={setPage} />
+          <Pagination
+            currentPage={page}
+            totalPages={totalPages}
+            totalItems={totalItems}
+            pageSize={pageSize}
+            onPageChange={setPage}
+          />
         </>
       )}
     </div>

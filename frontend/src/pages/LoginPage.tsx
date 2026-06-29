@@ -1,91 +1,107 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../hooks/use-auth'
 import { CobaltLogo } from '../components/ui/CobaltLogo'
+import { cn } from '../lib/utils'
+import { LogIn } from 'lucide-react'
 
-const quick = [
-  { email: 'viewer@cobalt.hk', role: 'Viewer' },
-  { email: 'editor@cobalt.hk', role: 'Editor' },
-  { email: 'admin@cobalt.hk', role: 'Admin' },
-  { email: 'super@cobalt.hk', role: 'Super' },
+const DEV_USERS = [
+  { email: 'editor@cobalt.hk', name: 'Editor', role: 'MANAGER', initials: 'ED', color: 'bg-cobalt-primary' },
+  { email: 'admin@cobalt.hk', name: 'Admin', role: 'ADMIN', initials: 'AD', color: 'bg-state-sailed' },
+  { email: 'viewer@cobalt.hk', name: 'Viewer', role: 'COORDINATOR', initials: 'VW', color: 'bg-cobalt-teal' },
 ]
 
 export default function LoginPage() {
   const { login } = useAuth()
-  const nav = useNavigate()
   const [email, setEmail] = useState('editor@cobalt.hk')
   const [password, setPassword] = useState('cobalt')
-  const [error, setError] = useState('')
+  const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
-  const submit = async (e: string, p: string) => {
+  async function doLogin(e?: string, p?: string) {
     setBusy(true)
-    setError('')
+    setError(null)
     try {
-      await login(e, p)
-      nav('/')
+      await login(e ?? email, p ?? password)
     } catch {
-      setError('Invalid credentials')
+      setError('Invalid email or password')
     } finally {
       setBusy(false)
     }
   }
 
   return (
-    <div className="flex h-screen items-center justify-center bg-bg">
-      <div className="w-80 space-y-6">
-        <div className="flex items-center justify-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-cobalt-primary">
-            <CobaltLogo size={22} color="white" />
+    <div className="flex min-h-screen items-center justify-center bg-bg px-4">
+      <div className="w-full max-w-sm">
+        <div className="mb-8 text-center">
+          <div className="mb-4 flex items-center justify-center">
+            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-cobalt-primary">
+              <CobaltLogo size={28} color="white" />
+            </div>
           </div>
-          <div className="text-lg font-bold">
-            COBALT <span className="text-sm font-medium text-text-muted">ShipTrack</span>
-          </div>
+          <h1 className="text-xl font-semibold text-text-primary">ShipTrack</h1>
+          <p className="mt-1 text-sm text-text-muted">Sign in to continue</p>
         </div>
 
         <form
           onSubmit={(ev) => {
             ev.preventDefault()
-            submit(email, password)
+            void doLogin()
           }}
           className="space-y-3"
         >
           <input
+            type="email"
             value={email}
-            onChange={(e) => setEmail(e.target.value)}
+            onChange={(ev) => setEmail(ev.target.value)}
             placeholder="Email"
-            className="input"
+            autoComplete="username"
+            className="w-full rounded-lg border border-border bg-surface-800 px-4 py-2.5 text-sm text-text-primary outline-none focus:border-cobalt-primary/40"
           />
           <input
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
             type="password"
+            value={password}
+            onChange={(ev) => setPassword(ev.target.value)}
             placeholder="Password"
-            className="input"
+            autoComplete="current-password"
+            className="w-full rounded-lg border border-border bg-surface-800 px-4 py-2.5 text-sm text-text-primary outline-none focus:border-cobalt-primary/40"
           />
-          {error && <div className="text-sm text-status-critical">{error}</div>}
+          {error && <p className="text-xs text-status-critical">{error}</p>}
           <button
+            type="submit"
             disabled={busy}
-            className="btn btn-primary w-full py-2"
+            className="flex w-full items-center justify-center gap-2 rounded-lg bg-cobalt-primary px-4 py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
           >
-            {busy ? 'Signing in…' : 'Sign in'}
+            <LogIn size={14} /> {busy ? 'Signing in…' : 'Sign in'}
           </button>
         </form>
 
-        <div className="space-y-1.5">
-          <div className="text-center text-xs text-text-muted">Quick sign-in (dev · password "cobalt")</div>
-          <div className="flex gap-2">
-            {quick.map((q) => (
-              <button
-                key={q.email}
-                onClick={() => submit(q.email, 'cobalt')}
-                className="btn btn-surface flex-1 py-1.5 text-xs"
+        <p className="mb-2 mt-6 text-center text-[11px] text-text-muted">Quick sign-in (dev · password “cobalt”)</p>
+        <div className="space-y-2">
+          {DEV_USERS.map((u) => (
+            <button
+              key={u.email}
+              onClick={() => void doLogin(u.email, 'cobalt')}
+              disabled={busy}
+              className="flex w-full items-center gap-3 rounded-lg border border-border bg-surface-800 px-4 py-3 text-left transition-all hover:border-cobalt-primary/40 hover:bg-surface-700 disabled:opacity-50"
+            >
+              <div
+                className={cn(
+                  'flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-xs font-bold text-white',
+                  u.color,
+                )}
               >
-                {q.role}
-              </button>
-            ))}
-          </div>
+                {u.initials}
+              </div>
+              <div className="min-w-0 flex-1">
+                <span className="text-sm font-medium text-text-primary">{u.name}</span>
+                <span className="ml-2 text-[10px] font-medium uppercase tracking-wider text-text-muted">{u.role}</span>
+              </div>
+              <LogIn size={14} className="text-text-muted" />
+            </button>
+          ))}
         </div>
+
+        <p className="mt-6 text-center text-[11px] text-text-muted">Cobalt Fashion Holding Limited</p>
       </div>
     </div>
   )
