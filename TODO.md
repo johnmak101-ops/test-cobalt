@@ -50,6 +50,39 @@ Context: see `C:\Users\John\.claude\plans\typed-wondering-moler.md` (merge refac
   `reconcile/merge.ts`) are hand-kept-in-sync with a "keep in sync" header. If drift becomes a risk,
   do the generated-copy + CI diff-guard from the plan.
 
+## Fields, SCAC & email disposition (added 2026-06-25 — parser-first)
+Field source-of-truth = the real `tracking.shipments` schema (`packages/contracts/src/schema/tracking.ts`) —
+comprehensive: pol/pod, vessel, voyage, flight, mawb, ata, cfs_cutoff, qty_unit, brand + the 21 labelling
+fields. `C:\Users\John\pave-apps\cobalt_track_system` is the **mock-UI reference ONLY**; real project = this
+(D:). Architecture: **cobalt-queue parser is the SOLE extractor (extracts all info); track-system only
+displays** — the mock's own `extractor.ts` is reference, not used. Disposition rules: see the
+`cobalt-email-disposition` memory.
+
+### [both] — VM1↔Agent candidate-shape contract (audit found this; backend-diff inert until fixed)
+- [ ] `[both]` **`GET /shipments` candidates must be `BackendShipment`-shaped** `{ fields:{<snake_case parser names>}, mode, matchKey, lockedFields, matchedBy }`. Today `tracking-client.lookupShipments` returns the raw VM1 response with NO adaptation, and the runner reads `candidate.fields` / `candidate.mode`. If VM1 returns FLAT camelCase legs, `backendDiff` → `backendMismatches=[]` always (the backend-conflict + locked-field review triggers + sea↔air mode-change never fire — unsafe auto-applies). FIX: confirm VM1's actual response; add an adapter in `tracking-client` (camelCase leg → snake_case `fields` + top-level `mode`/`matchedBy`/`lockedFields`) OR have VM1 emit that shape. Add an integration test on the real response.
+
+### [track] — deferred (doing parser first)
+- [ ] `[track]` **Add SCAC** — `tracking.shipments.scac_code text` (MISSING from the real schema; rule 6).
+  Migration + zod contract + Masters/Detail UI row + carrier-master validation. (Mock UI already has it.)
+- [ ] `[track]` **Update/identifier coverage (rule 5: "update = change in any tracked field").** Make the
+  change-history + `shipment_identifiers` paths cover the FULL field set (incl. crd, atd, scac, qty_unit,
+  brand, pol/pod) — not a stale subset.
+- [ ] `[track]` **Sync `reconcile/merge.ts` FIELD_CLASS** with the new fields added to cobalt-queue's
+  `critic/merge.ts` (the two are hand-kept-in-sync): `ata`(schedule) + `vessel_name/voyage_no/flight_no/mawb/scac/brand/qty_unit`(text). Without this the tracking-side merge silently drops them.
+- [ ] `[track]` **cfs_cutoff vs warehouse_end_date** — confirm distinct vs redundant (cheat sheet groups
+  截仓/CFS cut-off = warehouse end). Decide the mapping so the parser fills the right column(s).
+- [ ] `[track]` **Email disposition (matcher gates review, not the parser).** New PO+known customer→auto;
+  new customer / mode-change / moved-shipment / late-PO / dup-number→review; no status update→不需處理
+  (store, no human review). All emails parsed; sender-type tagged post-parse for field-trust.
+
+### [queue] — parser (FOCUS NOW)
+- [ ] `[queue]` **Parser "extract all info"** — add the fields the real schema has but the parser doesn't:
+  `vessel_name`, `voyage_no`, `flight_no` (air), `mawb` (split out of `mbl`), `ata`, `cfs_cutoff`,
+  `qty_unit`, `brand`, `scac`.
+- [ ] `[queue]` **SCAC extraction (rule 6):** MBL carrier-prefix → carrier name→carrier master →
+  carrier-direct sender domain; NOT container BIC prefix (probe: 0/31 matched a SCAC). Validate vs carrier master.
+- note: `pol`/`pod` KEPT — the real schema has `polId`/`podId`; the earlier "take away" was vs the mock UI, now reverted.
+
 ## Shipped this session (reference)
 supersede ≠ conflict + honest capped confidence · `shipment_identifiers` history + detail-page card ·
 legacy reconcile gate · gold→tracking `track-bench --assert` · OpenCode matcher (no Azure key) ·
