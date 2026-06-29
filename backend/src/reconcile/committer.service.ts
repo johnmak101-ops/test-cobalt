@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common'
 import type * as schema from '@cobalt/contracts'
 import { keysOverlap, strongKeys, normKey, str, num, date } from './match-keys'
+import { guardVendorForwarder } from './vendor-forwarder-guard'
 import { deriveState, MILESTONE_OF, normMode } from './state'
 import { MastersRepository } from '../db/repositories/masters.repository'
 import { BookingRepository } from '../db/repositories/booking.repository'
@@ -88,12 +89,31 @@ export class CommitterService {
     const polId = pol?.id ?? null
     const originCountry = pol?.country ?? null
 
+    // Phase-4 guard: a forwarder mislabeled as the vendor must never land in the vendor slot.
+    // If flagged, the vendor link is dropped, the (empty) forwarder slot is filled, and the leg
+    // is routed to provisional review with a reason. See cobalt-master-data-governance.
+    const vendorCodeStr = str(f.vendor_code)
+    const guard = guardVendorForwarder({
+      vendorCode: vendorCodeStr,
+      vendorId,
+      forwarderId,
+      forwarderIdForVendorCode: vendorCodeStr ? await this.masters.forwarderIdByName(vendorCodeStr) : null,
+      approvedKeys: await this.masters.approvedKeys(),
+    })
+    const effVendorId = guard.vendorId
+    const effForwarderId = guard.forwarderId
+    const effReviewStatus = guard.misclassified ? 'provisional' : g.reviewStatus
+    const effReasons = ((): string[] | null => {
+      const all = [...(reviewReasonsFor(g) ?? []), ...guard.reasons]
+      return all.length ? all : null
+    })()
+
     const emailTypes = new Set(g.emailTypes)
     const state = deriveState(emailTypes, f)
     const legValues: Record<string, unknown> = {
       mode: normMode(g.mode),
       state,
-      forwarderId,
+      forwarderId: effForwarderId,
       polId,
       podId,
       originCountry,
@@ -154,26 +174,26 @@ export class CommitterService {
       const bk = await this.bookings.findById(bookingId)
       jobNo = bk?.jobNo ?? '(unknown)'
       await this.applyFields(shipmentId, existing as Record<string, unknown>, legValues, skippedLockedFields, g)
-      await this.fillBooking(bookingId, { customerId, vendorId, forwarderId, crd: date(f.cargo_ready_date) })
+      await this.fillBooking(bookingId, { customerId, vendorId: effVendorId, forwarderId: effForwarderId, crd: date(f.cargo_ready_date) })
       // review gate is metadata, not a lockable field — always reflect the latest agent score
-      if (g.reviewStatus !== undefined)
+      if (effReviewStatus !== undefined)
         await this.shipments.updateLeg(shipmentId, {
-          reviewStatus: g.reviewStatus,
+          reviewStatus: effReviewStatus,
           confidence: g.confidence ?? null,
-          reviewReasons: reviewReasonsFor(g),
+          reviewReasons: effReasons,
         })
     } else {
       jobNo = await this.nextJobNo()
-      const booking = await this.bookings.create({ jobNo, customerId, vendorId, forwarderId, crd: date(f.cargo_ready_date) })
+      const booking = await this.bookings.create({ jobNo, customerId, vendorId: effVendorId, forwarderId: effForwarderId, crd: date(f.cargo_ready_date) })
       bookingId = booking.id
       const leg = await this.shipments.insertLeg({
         bookingId,
         legNo: 1,
         legStatus: 'ACTIVE',
         ...(legValues as object),
-        reviewStatus: g.reviewStatus ?? 'confirmed',
+        reviewStatus: effReviewStatus ?? 'confirmed',
         confidence: g.confidence ?? null,
-        reviewReasons: g.reviewStatus !== undefined ? reviewReasonsFor(g) : null,
+        reviewReasons: effReviewStatus !== undefined ? effReasons : null,
       })
       shipmentId = leg.id
       action = 'create_booking'
@@ -182,7 +202,7 @@ export class CommitterService {
     }
 
     for (const poNo of g.pos) {
-      const poId = await this.bookings.upsertPo(poNo, customerId, vendorId)
+      const poId = await this.bookings.upsertPo(poNo, customerId, effVendorId)
       await this.bookings.linkPo(bookingId, poId)
       await this.shipments.linkPo(shipmentId, poId, num(f.qty), 'pieces')
     }
