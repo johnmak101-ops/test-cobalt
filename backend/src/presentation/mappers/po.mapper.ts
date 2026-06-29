@@ -14,6 +14,7 @@ export interface PoRow {
   vendorId: string | null
   totalQuantity: number | null
   quantityUnit: string | null
+  notes?: string | null
   createdAt: Dateish
   updatedAt: Dateish
 }
@@ -65,7 +66,7 @@ export function toUiPurchaseOrder(input: PoMapperInput): UiPurchaseOrder {
     vendorId: po.vendorId ?? null,
     totalQuantity: po.totalQuantity ?? null,
     quantityUnit: po.quantityUnit ?? null,
-    notes: null, // Phase 3 optional column
+    notes: po.notes ?? null,
     createdAt: isoOrNull(po.createdAt),
     updatedAt: isoOrNull(po.updatedAt),
     customer: input.customer ?? null,

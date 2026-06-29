@@ -6,6 +6,7 @@ import { MastersModule } from './masters/masters.module'
 import { BookingsModule } from './bookings/bookings.module'
 import { ShipmentsModule } from './shipments/shipments.module'
 import { PosModule } from './pos/pos.module'
+import { PurchaseOrdersModule } from './purchase-orders/purchase-orders.module'
 import { ReconcileModule } from './reconcile/reconcile.module'
 import { DecisionsModule } from './decisions/decisions.module'
 import { ReviewModule } from './review/review.module'
@@ -30,6 +31,7 @@ import { UsersModule } from './users/users.module'
     BookingsModule,
     ShipmentsModule,
     PosModule,
+    PurchaseOrdersModule,
     ReconcileModule,
     DecisionsModule,
     ReviewModule,

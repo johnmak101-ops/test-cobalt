@@ -157,7 +157,7 @@ export class PresentationService {
         toUiPurchaseOrder({
           po: {
             id: r.id, poNumber: r.poNumber, customerId: r.customerId ?? null, vendorId: r.vendorId ?? null,
-            totalQuantity: r.totalQuantity ?? null, quantityUnit: r.quantityUnit ?? null,
+            totalQuantity: r.totalQuantity ?? null, quantityUnit: r.quantityUnit ?? null, notes: r.notes ?? null,
             createdAt: r.createdAt, updatedAt: r.updatedAt,
           },
           customer: r.customerName || r.customerCode ? { id: r.customerId ?? '', name: r.customerName ?? '', code: r.customerCode ?? null } : null,
@@ -177,7 +177,7 @@ export class PresentationService {
     return toUiPurchaseOrderDetail({
       po: {
         id: po.id, poNumber: po.poNumber, customerId: po.customerId ?? null, vendorId: po.vendorId ?? null,
-        totalQuantity: po.totalQuantity ?? null, quantityUnit: po.quantityUnit ?? null,
+        totalQuantity: po.totalQuantity ?? null, quantityUnit: po.quantityUnit ?? null, notes: po.notes ?? null,
         createdAt: po.createdAt, updatedAt: po.updatedAt,
       },
       customer: po.customerName || po.customerCode ? { id: po.customerId ?? '', name: po.customerName ?? '', code: po.customerCode ?? null } : null,

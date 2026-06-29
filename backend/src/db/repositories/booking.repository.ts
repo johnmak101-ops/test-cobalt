@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common'
-import { desc, eq, inArray, sql } from 'drizzle-orm'
+import { and, desc, eq, inArray, sql } from 'drizzle-orm'
 import { alias } from 'drizzle-orm/pg-core'
 import * as schema from '@cobalt/contracts'
 import { DRIZZLE, type DrizzleDB } from '../drizzle.provider'
@@ -81,6 +81,7 @@ export class BookingRepository {
         crd: schema.purchaseOrders.crd,
         customerId: schema.purchaseOrders.customerId,
         vendorId: schema.purchaseOrders.vendorId,
+        notes: schema.purchaseOrders.notes,
         createdAt: schema.purchaseOrders.createdAt,
         updatedAt: schema.purchaseOrders.updatedAt,
       })
@@ -128,6 +129,7 @@ export class BookingRepository {
         crd: schema.purchaseOrders.crd,
         customerId: schema.purchaseOrders.customerId,
         vendorId: schema.purchaseOrders.vendorId,
+        notes: schema.purchaseOrders.notes,
         customerCode: schema.customers.code,
         customerName: schema.customers.name,
         vendorCode: schema.vendors.code,
@@ -170,5 +172,59 @@ export class BookingRepository {
     if (existing) return existing.id
     const [created] = await this.db.insert(schema.purchaseOrders).values({ poNumber, customerId, vendorId }).returning()
     return created.id
+  }
+
+  // ---- PO CRUD (app-owned; master refs are validated, never created) ----
+
+  async poById(id: string) {
+    const [row] = await this.db.select().from(schema.purchaseOrders).where(eq(schema.purchaseOrders.id, id))
+    return row ?? null
+  }
+  async findPoByNumber(poNumber: string) {
+    const [row] = await this.db.select().from(schema.purchaseOrders).where(eq(schema.purchaseOrders.poNumber, poNumber))
+    return row ?? null
+  }
+  async createPo(values: typeof schema.purchaseOrders.$inferInsert) {
+    const [row] = await this.db.insert(schema.purchaseOrders).values(values).returning()
+    return row
+  }
+  async updatePo(id: string, patch: Record<string, unknown>) {
+    const [row] = await this.db
+      .update(schema.purchaseOrders)
+      .set({ ...patch, updatedAt: new Date() })
+      .where(eq(schema.purchaseOrders.id, id))
+      .returning()
+    return row ?? null
+  }
+  /** How many shipment-legs and bookings this PO is linked to (delete-safety + FK RESTRICT). */
+  async poLinkCounts(id: string) {
+    const [s] = await this.db
+      .select({ n: sql<number>`count(*)::int` })
+      .from(schema.shipmentPos)
+      .where(eq(schema.shipmentPos.poId, id))
+    const [b] = await this.db
+      .select({ n: sql<number>`count(*)::int` })
+      .from(schema.bookingPos)
+      .where(eq(schema.bookingPos.poId, id))
+    return { shipments: s?.n ?? 0, bookings: b?.n ?? 0 }
+  }
+  async deletePo(id: string) {
+    const [row] = await this.db.delete(schema.purchaseOrders).where(eq(schema.purchaseOrders.id, id)).returning()
+    return row ?? null
+  }
+  async linkShipmentPo(poId: string, shipmentId: string, quantity: number | null, quantityUnit: string | null) {
+    const [row] = await this.db
+      .insert(schema.shipmentPos)
+      .values({ poId, shipmentId, quantity, quantityUnit: quantityUnit as never })
+      .onConflictDoNothing()
+      .returning()
+    return row ?? null
+  }
+  async unlinkShipmentPo(poId: string, linkId: string) {
+    const [row] = await this.db
+      .delete(schema.shipmentPos)
+      .where(and(eq(schema.shipmentPos.id, linkId), eq(schema.shipmentPos.poId, poId)))
+      .returning()
+    return row ?? null
   }
 }

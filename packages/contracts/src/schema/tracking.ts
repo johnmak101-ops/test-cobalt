@@ -135,6 +135,7 @@ export const purchaseOrders = tracking.table('purchase_orders', {
   crd: timestamp('crd', { withTimezone: true }),
   erpSyncedAt: timestamp('erp_synced_at', { withTimezone: true }),
   raw: jsonb('raw').$type<Record<string, unknown>>(), // ERP record snapshot
+  notes: text('notes'), // app-owned free-text (PO is app-owned; ERP has no notes)
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 })

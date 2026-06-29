@@ -58,6 +58,19 @@ export class MastersRepository {
     const [r] = await this.db.select().from(schema.vendors).where(eq(schema.vendors.code, code.toUpperCase()))
     return r?.id ?? null
   }
+  /** Existence checks for link-validation (PO writes never CREATE masters — resolve-or-reject). */
+  async customerExists(id: string) {
+    const [r] = await this.db.select({ id: schema.customers.id }).from(schema.customers).where(eq(schema.customers.id, id))
+    return !!r
+  }
+  async vendorExists(id: string) {
+    const [r] = await this.db.select({ id: schema.vendors.id }).from(schema.vendors).where(eq(schema.vendors.id, id))
+    return !!r
+  }
+  async forwarderById(id: string) {
+    const [r] = await this.db.select().from(schema.forwarders).where(eq(schema.forwarders.id, id))
+    return r ?? null
+  }
   async forwarderIdByName(name: string) {
     const [r] = await this.db.select().from(schema.forwarders).where(ilike(schema.forwarders.name, `%${name}%`))
     if (r) return r.id

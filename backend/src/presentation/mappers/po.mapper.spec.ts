@@ -9,6 +9,7 @@ const po = (over: Partial<PoRow> = {}): PoRow => ({
   vendorId: 'ven-1',
   totalQuantity: 500,
   quantityUnit: 'cartons',
+  notes: null,
   createdAt: new Date('2026-01-01T00:00:00.000Z'),
   updatedAt: new Date('2026-01-02T00:00:00.000Z'),
   ...over,
@@ -51,8 +52,9 @@ describe('toUiPurchaseOrder — PO + aggregates -> UI shape', () => {
     expect(p.shipmentSummary).toEqual([{ id: 'leg-1', status: 'SAILED' }])
   })
 
-  it('returns notes as null (added in Phase 3)', () => {
+  it('passes notes through from the PO row (null when absent)', () => {
     expect(toUiPurchaseOrder(input()).notes).toBeNull()
+    expect(toUiPurchaseOrder({ ...input(), po: po({ notes: 'rush order' }) }).notes).toBe('rush order')
   })
 
   it('is null-safe: no masters, no aggregates', () => {
