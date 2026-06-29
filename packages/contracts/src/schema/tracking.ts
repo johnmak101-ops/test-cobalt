@@ -191,6 +191,7 @@ export const shipments = tracking.table('shipments', {
   // sea-only
   vesselName: text('vessel_name'),
   voyageNo: text('voyage_no'),
+  scacCode: text('scac_code'), // SCAC — ocean carrier code, extracted as-is (no master/validation)
   // air-only
   flightNo: text('flight_no'),
   mawb: text('mawb'),

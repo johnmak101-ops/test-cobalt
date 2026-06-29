@@ -29,6 +29,7 @@ export interface ShipmentLegRow {
   hblAwbFcrNo: string | null
   vesselName: string | null
   voyageNo: string | null
+  scacCode: string | null
   cargoReadyDate: Dateish
   cfsCutoff: Dateish
   etd: Dateish
@@ -116,7 +117,7 @@ export function toUiShipment(input: ShipmentMapperInput): UiShipment {
     consigneeAddress: leg.consigneeAddress ?? null,
     containerNo: leg.containerNo ?? null,
     mblNumber: leg.mbl ?? null,
-    scacCode: null, // Phase 3 column
+    scacCode: leg.scacCode ?? null,
     crd: isoOrNull(leg.cargoReadyDate),
     cfsCutoff: isoOrNull(leg.cfsCutoff),
     etd: isoOrNull(leg.etd),

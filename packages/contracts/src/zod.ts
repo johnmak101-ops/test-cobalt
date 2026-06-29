@@ -9,7 +9,7 @@ import { z } from 'zod'
 
 const nullishStr = z.string().nullish()
 
-/** The 20 fields, one record per PO (mirrors email-parser-soul.md). */
+/** The 21 fields, one record per PO (mirrors email-parser-soul.md). */
 export const ParsedFields = z
   .object({
     customer_code: nullishStr,
@@ -21,6 +21,7 @@ export const ParsedFields = z
     hbl_awb_fcr_no: nullishStr,
     mbl: nullishStr,
     container_no: nullishStr,
+    scac_code: nullishStr, // SCAC — ocean carrier code (keyword/4-letter regex in the parser)
     forwarder_name: nullishStr,
     consignee_name: nullishStr,
     consignee_address: nullishStr,

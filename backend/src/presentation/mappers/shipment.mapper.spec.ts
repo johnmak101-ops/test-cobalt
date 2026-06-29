@@ -16,6 +16,7 @@ const leg = (over: Partial<ShipmentLegRow> = {}): ShipmentLegRow => ({
   hblAwbFcrNo: 'HBL-777',
   vesselName: 'EVER GLOBE',
   voyageNo: 'V42',
+  scacCode: 'MAEU',
   cargoReadyDate: new Date('2026-02-01T00:00:00.000Z'),
   cfsCutoff: new Date('2026-02-03T00:00:00.000Z'),
   etd: new Date('2026-02-05T00:00:00.000Z'),
@@ -93,9 +94,9 @@ describe('toUiShipment — flat active-leg projection', () => {
     expect(s.createdAt).toBe('2026-01-01T00:00:00.000Z')
   })
 
-  it('returns scacCode and warehouseAddress as null (added in Phase 3)', () => {
+  it('exposes scacCode from the leg; warehouseAddress stays null (Phase 3)', () => {
     const s = toUiShipment(fullInput())
-    expect(s.scacCode).toBeNull()
+    expect(s.scacCode).toBe('MAEU')
     expect(s.warehouseAddress).toBeNull()
   })
 
@@ -103,11 +104,12 @@ describe('toUiShipment — flat active-leg projection', () => {
     const s = toUiShipment({
       leg: leg({
         state: null, soNo: null, mbl: null, hblAwbFcrNo: null, voyageNo: null, qty: null,
-        qtyUnit: null, etd: null, atd: null, cargoReadyDate: null,
+        qtyUnit: null, etd: null, atd: null, cargoReadyDate: null, scacCode: null,
       }),
       booking: null,
     })
     expect(s.status).toBe('BOOKED')
+    expect(s.scacCode).toBeNull()
     expect(s.customerId).toBeNull()
     expect(s.vendorId).toBeNull()
     expect(s.route).toBeNull()

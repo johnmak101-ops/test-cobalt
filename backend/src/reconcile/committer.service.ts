@@ -99,6 +99,7 @@ export class CommitterService {
       hblAwbFcrNo: str(f.hbl_awb_fcr_no),
       mbl: str(f.mbl),
       containerNo: str(f.container_no),
+      scacCode: str(f.scac_code),
       cargoReadyDate: date(f.cargo_ready_date),
       warehouseStartDate: date(f.warehouse_start_date),
       warehouseEndDate: date(f.warehouse_end_date),
