@@ -144,7 +144,7 @@ export class PresentationService {
     ])
     const bookingsById = new Map<string, BookingRow>(bookingRows.map((b: BookingRow) => [b.id, b]))
     const poCache = new Map<string, LinkedPoRow[]>()
-    const out = []
+    const out: ReturnType<typeof toUiShipment>[] = []
     for (const leg of legs) {
       if (filter?.forwarderId && leg.forwarderId !== filter.forwarderId) continue
       const booking = bookingsById.get(leg.bookingId) ?? null
@@ -294,7 +294,7 @@ export class PresentationService {
       emails: rows.map((r) =>
         toUiEmail({
           message: {
-            id: r.id, graphMessageId: r.graphMessageId, subject: r.subject, sender: r.sender,
+            id: r.id, graphMessageId: r.graphMessageId, subject: r.subject ?? '', sender: r.sender ?? '',
             receivedAt: r.receivedAt, status: r.status, createdAt: r.createdAt,
           },
           review:
@@ -451,7 +451,7 @@ export class PresentationService {
 
   async alerts(status?: string) {
     const [rows, maps] = await Promise.all([this.alertRepo.list(status), this.masterMaps()])
-    const out = []
+    const out: ReturnType<typeof toUiAlert>[] = []
     for (const a of rows) {
       const shipment = a.shipmentId ? await this.shipmentSummary(a.shipmentId, maps) : null
       out.push(toUiAlert({ alert: a, shipment }))
@@ -505,7 +505,7 @@ export class PresentationService {
       newEmails: pendingReview, // emails awaiting human review — the actionable "new" count
     }
 
-    const recentAlerts = []
+    const recentAlerts: ReturnType<typeof toUiAlert>[] = []
     for (const a of activeAlerts.slice(0, 5)) {
       const shipment = a.shipmentId ? await this.shipmentSummary(a.shipmentId, maps) : null
       recentAlerts.push(toUiAlert({ alert: a, shipment }))
@@ -515,11 +515,13 @@ export class PresentationService {
     const recentLegs = [...legs]
       .sort((a, b) => new Date(b.updatedAt as Date).getTime() - new Date(a.updatedAt as Date).getTime())
       .slice(0, 8)
-    const recentActivity = []
+    const recentActivity: ReturnType<typeof toUiShipment>[] = []
     for (const leg of recentLegs) {
       const booking = bookingsById.get(leg.bookingId) ?? null
-      const poNumbers = await this.bookingRepo.poNumbersFor(leg.bookingId)
-      recentActivity.push(toUiShipment(this.assembleInput(leg, booking, maps, poNumbers)))
+      // must use the rich linkedPos (id/vendor/qty), not poNumbersFor (string[]) — the flat
+      // assembleInput expects LinkedPoRow[]; passing strings broke recent-activity poNumbers/linkedPOs.
+      const linkedPos = (await this.shipmentRepo.linkedPosForBooking(leg.bookingId)) as LinkedPoRow[]
+      recentActivity.push(toUiShipment(this.assembleInput(leg, booking, maps, linkedPos)))
     }
 
     return { stats, recentAlerts, recentActivity }

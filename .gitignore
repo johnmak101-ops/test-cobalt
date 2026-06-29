@@ -1,6 +1,10 @@
 # Dependencies
 node_modules
 .pnpm-store
+# pnpm workspace has ONE lockfile at the root — a per-package one means a stray standalone
+# `pnpm install` ran inside a package, giving it a divergent dep copy (e.g. drizzle-orm),
+# which breaks cross-package types. Never commit these.
+packages/*/pnpm-lock.yaml
 
 # Build outputs
 dist
