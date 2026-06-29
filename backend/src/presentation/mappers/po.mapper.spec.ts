@@ -72,7 +72,9 @@ describe('toUiPurchaseOrderDetail — adds full linked shipments', () => {
   it('maps each linked shipment to the full UI shipment shape + linkedQuantity', () => {
     const d = toUiPurchaseOrderDetail({
       ...input(),
-      linkedShipments: [{ shipment: legInput(), linkedQuantity: 120 }],
+      linkedShipments: [
+        { shipment: legInput(), linkedQuantity: 120, linkId: 'spo-1', linkedAt: new Date('2026-03-01T00:00:00.000Z') },
+      ],
     })
     expect(d.poNumber).toBe('100-100209')
     expect(d.linkedShipments).toHaveLength(1)
@@ -81,6 +83,9 @@ describe('toUiPurchaseOrderDetail — adds full linked shipments', () => {
     expect(ls.status).toBe('SAILED') // proves the full shipment mapper ran
     expect(ls.poNumbers).toBe('["100-100209"]')
     expect(ls.linkedQuantity).toBe(120)
+    // linkId + linkedAt must survive — the UI unlink action DELETEs by linkId
+    expect(ls.linkId).toBe('spo-1')
+    expect(ls.linkedAt).toBe('2026-03-01T00:00:00.000Z')
   })
 
   it('defaults linkedShipments to [] when none provided', () => {

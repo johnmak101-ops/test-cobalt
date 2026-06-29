@@ -17,6 +17,7 @@ import { toUiHistoryEntry } from './mappers/history.mapper'
 import { toUiPurchaseOrder, toUiPurchaseOrderDetail } from './mappers/po.mapper'
 import { toUiEmail } from './mappers/email.mapper'
 import { deriveRoute, poNumbersJson, isoOrNull } from './adapters/derive'
+import { stateToUiStatus } from './adapters/enums'
 
 type Ref = { id: string; code?: string | null; name: string }
 type PortRow = { id: string; unlocode?: string | null; country?: string | null }
@@ -182,8 +183,43 @@ export class PresentationService {
 
   // ---- purchase orders (app-owned) ----
 
+  // PO → one linked-shipment row, in the shape the PO list/detail search over (container/SCAC/booking#/vessel).
+  private toPoShipmentRow(s: {
+    shipmentId: string
+    bookingNo: string | null
+    status: string | null
+    containerNo: string | null
+    hbl: string | null
+    mbl: string | null
+    scacCode: string | null
+    vesselName: string | null
+    polCode: string | null
+    podCode: string | null
+  }) {
+    return {
+      id: s.shipmentId,
+      bookingNo: s.bookingNo ?? null,
+      route: deriveRoute(s.polCode ?? undefined, s.podCode ?? undefined),
+      containerNo: s.containerNo ?? null,
+      hblNumber: s.hbl ?? null,
+      mblNumber: s.mbl ?? null,
+      scacCode: s.scacCode ?? null,
+      vesselName: s.vesselName ?? null,
+      status: stateToUiStatus(s.status),
+    }
+  }
+
   async purchaseOrders(filter?: { customerId?: string; open?: boolean }) {
-    const rows = await this.bookingRepo.listPos(filter?.open ?? false)
+    const [rows, summaryRows] = await Promise.all([
+      this.bookingRepo.listPos(filter?.open ?? false),
+      this.bookingRepo.shipmentSummariesByPo(),
+    ])
+    const summariesByPo = new Map<string, unknown[]>()
+    for (const s of summaryRows) {
+      const arr = summariesByPo.get(s.poId) ?? []
+      arr.push(this.toPoShipmentRow(s))
+      summariesByPo.set(s.poId, arr)
+    }
     const out = rows
       .filter((r) => !filter?.customerId || r.customerId === filter.customerId)
       .map((r) =>
@@ -197,7 +233,7 @@ export class PresentationService {
           vendor: r.vendorName || r.vendorCode ? { id: r.vendorId ?? '', name: r.vendorName ?? '', code: r.vendorCode ?? null } : null,
           shipmentCount: r.shipmentCount,
           shippedQuantity: r.shippedQuantity,
-          shipmentSummary: [],
+          shipmentSummary: summariesByPo.get(r.id) ?? [],
         }),
       )
     return { purchaseOrders: out }
@@ -217,12 +253,17 @@ export class PresentationService {
       vendor: po.vendorName || po.vendorCode ? { id: po.vendorId ?? '', name: po.vendorName ?? '', code: po.vendorCode ?? null } : null,
       shipmentCount: links.length,
       shippedQuantity: links.reduce((s, l) => s + (l.linkedQuantity ?? 0), 0),
-      shipmentSummary: [],
+      shipmentSummary: links.map((l) =>
+        this.toPoShipmentRow({
+          shipmentId: l.shipmentId, bookingNo: l.bookingNo, status: l.status, containerNo: l.containerNo,
+          hbl: l.hbl, mbl: l.mbl, scacCode: l.scacCode, vesselName: l.vesselName, polCode: l.polCode, podCode: l.podCode,
+        }),
+      ),
       linkedShipments: links.map((l) => ({
         shipment: {
           leg: {
             id: l.shipmentId, state: l.status, bookingNo: l.bookingNo, soNo: l.so, hblAwbFcrNo: l.hbl,
-            etd: l.etd, eta: l.eta,
+            etd: l.etd, eta: l.eta, containerNo: l.containerNo, mbl: l.mbl, scacCode: l.scacCode, vesselName: l.vesselName,
           } as unknown as ShipmentLegRow,
           booking: null,
           polPort: l.polCode ? { unlocode: l.polCode } : null,
@@ -230,6 +271,8 @@ export class PresentationService {
           poNumbers: [po.poNumber],
         } as ShipmentMapperInput,
         linkedQuantity: l.linkedQuantity,
+        linkId: l.linkId,
+        linkedAt: l.linkedAt,
       })),
     })
   }

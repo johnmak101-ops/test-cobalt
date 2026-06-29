@@ -29,7 +29,7 @@ export interface PoMapperInput {
 }
 
 export interface PoDetailInput extends PoMapperInput {
-  linkedShipments?: Array<{ shipment: ShipmentMapperInput; linkedQuantity?: number | null }>
+  linkedShipments?: Array<{ shipment: ShipmentMapperInput; linkedQuantity?: number | null; linkId?: string | null; linkedAt?: Dateish }>
 }
 
 export interface UiPurchaseOrder {
@@ -51,6 +51,8 @@ export interface UiPurchaseOrder {
 
 export interface UiLinkedShipment extends UiShipment {
   linkedQuantity: number | null
+  linkId: string | null // shipment_pos.id — the UI unlink action DELETEs by this
+  linkedAt: string | null
 }
 
 export interface UiPurchaseOrderDetail extends UiPurchaseOrder {
@@ -83,6 +85,8 @@ export function toUiPurchaseOrderDetail(input: PoDetailInput): UiPurchaseOrderDe
     linkedShipments: (input.linkedShipments ?? []).map((ls) => ({
       ...toUiShipment(ls.shipment),
       linkedQuantity: ls.linkedQuantity ?? null,
+      linkId: ls.linkId ?? null,
+      linkedAt: isoOrNull(ls.linkedAt),
     })),
   }
 }

@@ -158,6 +158,11 @@ export class BookingRepository {
         eta: schema.shipments.eta,
         polCode: pol.unlocode,
         podCode: pod.unlocode,
+        linkedAt: schema.shipmentPos.createdAt,
+        containerNo: schema.shipments.containerNo,
+        mbl: schema.shipments.mbl,
+        scacCode: schema.shipments.scacCode,
+        vesselName: schema.shipments.vesselName,
       })
       .from(schema.shipmentPos)
       .innerJoin(schema.shipments, eq(schema.shipmentPos.shipmentId, schema.shipments.id))
@@ -165,6 +170,31 @@ export class BookingRepository {
       .leftJoin(pod, eq(schema.shipments.podId, pod.id))
       .where(eq(schema.shipmentPos.poId, poId))
     return { po, links }
+  }
+
+  /** One batched query: every PO's linked shipments with the fields the PO-list search needs
+   *  (container/SCAC/booking#/vessel/HBL/MBL). Grouped by poId in the service. */
+  async shipmentSummariesByPo() {
+    const pol = alias(schema.ports, 'sum_pol')
+    const pod = alias(schema.ports, 'sum_pod')
+    return this.db
+      .select({
+        poId: schema.shipmentPos.poId,
+        shipmentId: schema.shipmentPos.shipmentId,
+        bookingNo: schema.shipments.bookingNo,
+        status: schema.shipments.state,
+        containerNo: schema.shipments.containerNo,
+        hbl: schema.shipments.hblAwbFcrNo,
+        mbl: schema.shipments.mbl,
+        scacCode: schema.shipments.scacCode,
+        vesselName: schema.shipments.vesselName,
+        polCode: pol.unlocode,
+        podCode: pod.unlocode,
+      })
+      .from(schema.shipmentPos)
+      .innerJoin(schema.shipments, eq(schema.shipmentPos.shipmentId, schema.shipments.id))
+      .leftJoin(pol, eq(schema.shipments.polId, pol.id))
+      .leftJoin(pod, eq(schema.shipments.podId, pod.id))
   }
 
   async upsertPo(poNumber: string, customerId: string | null, vendorId: string | null) {
