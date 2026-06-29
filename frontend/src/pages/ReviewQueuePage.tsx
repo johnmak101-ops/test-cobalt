@@ -189,18 +189,23 @@ export default function ReviewQueuePage() {
           {pageEmails.map((email) => {
             const isExpanded = expandedId === email.id
             const confidence = email.extractionConfidence ?? 0
-            let extractedData: Record<string, unknown> = {}
-            try {
-              extractedData = email.extractedData ? JSON.parse(email.extractedData) : {}
-            } catch { /* skip */ }
-            let suggestedData: Record<string, unknown> | null = null
-            try {
-              suggestedData = email.suggestedData ? JSON.parse(email.suggestedData) : null
-            } catch { /* skip */ }
-            let originalData: Record<string, unknown> | null = null
-            try {
-              originalData = email.originalExtractedData ? JSON.parse(email.originalExtractedData) : null
-            } catch { /* skip */ }
+            // Backend returns these jsonb columns as objects (api.ts already hydrates the response);
+            // tolerate a string too. The old code JSON.parse'd an object → threw → "No data extracted".
+            const parseObj = (v: unknown): Record<string, unknown> | null =>
+              v == null
+                ? null
+                : typeof v === 'object'
+                  ? (v as Record<string, unknown>)
+                  : (() => {
+                      try {
+                        return JSON.parse(v as string) as Record<string, unknown>
+                      } catch {
+                        return null
+                      }
+                    })()
+            const extractedData: Record<string, unknown> = parseObj(email.extractedData) ?? {}
+            const suggestedData: Record<string, unknown> | null = parseObj(email.suggestedData)
+            const originalData: Record<string, unknown> | null = parseObj(email.originalExtractedData)
             const isCorrected = email.reviewStatus === 'REVIEWED_CORRECTED' && originalData !== null
 
             // Count diffs for badge on card header
@@ -567,13 +572,31 @@ const FIELD_LABELS: Record<string, string> = {
   warehouse_start_date: 'WH Start Date',
   warehouse_end_date: 'WH End Date',
   in_dc_date: 'In DC Date',
+  // extractor (email-parser) keys — the ACTUAL keys extractedData carries (vocabulary-drift fix).
+  customer_po: 'Customer PO',
+  customer_code: 'Customer Code',
+  customer_name: 'Customer Name',
+  so_no: 'SO#',
+  hbl_awb_fcr_no: 'HBL / AWB / FCR No.',
+  mbl: 'MBL',
+  forwarder_name: 'Forwarder',
+  vendor_code: 'Vendor',
+  cargo_ready_date: 'Cargo Ready Date',
+  pol: 'POL',
+  poi: 'POL',
+  pod: 'POD',
+  vessel_name: 'Vessel',
+  voyage_no: 'Voyage No.',
+  qty: 'Qty',
+  qty_unit: 'UOM',
+  mode: 'Mode',
 }
 
 const FIELD_SECTIONS: Record<string, string[]> = {
-  'Order Info': ['po_numbers', 'customer', 'forwarder', 'route', 'booking_no', 'so_number', 'item_style_no'],
-  'Cargo & Logistics': ['quantity', 'quantity_unit', 'quantity_raw', 'container_no', 'hbl_number', 'mbl_number', 'scac_code', 'warehouse_address'],
-  'Shipping Parties': ['consignee_name', 'consignee_address', 'vessel', 'voyage_number'],
-  'Dates': ['crd', 'cfs_cutoff', 'warehouse_start_date', 'warehouse_end_date', 'etd', 'eta', 'in_dc_date'],
+  'Order Info': ['po_numbers', 'customer_po', 'customer', 'customer_code', 'customer_name', 'forwarder', 'forwarder_name', 'vendor_code', 'route', 'pol', 'poi', 'pod', 'mode', 'booking_no', 'so_number', 'so_no', 'item_style_no'],
+  'Cargo & Logistics': ['quantity', 'qty', 'quantity_unit', 'qty_unit', 'quantity_raw', 'container_no', 'hbl_number', 'hbl_awb_fcr_no', 'mbl_number', 'mbl', 'scac_code', 'warehouse_address'],
+  'Shipping Parties': ['consignee_name', 'consignee_address', 'vessel', 'vessel_name', 'voyage_number', 'voyage_no'],
+  'Dates': ['crd', 'cargo_ready_date', 'cfs_cutoff', 'warehouse_start_date', 'warehouse_end_date', 'etd', 'eta', 'in_dc_date'],
 }
 
 // ─── Comparison view: Extracted vs Suggested ─────────────

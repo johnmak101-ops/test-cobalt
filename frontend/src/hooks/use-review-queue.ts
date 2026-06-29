@@ -9,8 +9,8 @@ export interface ReviewEmail {
   receivedAt: string
   bodyText: string | null
   emailType: string | null
-  extractedData: string | null
-  originalExtractedData: string | null
+  extractedData: Record<string, unknown> | string | null
+  originalExtractedData: Record<string, unknown> | string | null
   extractionConfidence: number | null
   shipmentId: string | null
   isMatched: boolean
@@ -20,7 +20,7 @@ export interface ReviewEmail {
   reviewedAt: string | null
   reviewNotes: string | null
   createdAt: string
-  suggestedData: string | null
+  suggestedData: Record<string, unknown> | string | null
   reviewerNotes: string | null
   shipment?: {
     id: string
