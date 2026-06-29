@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common'
-import { desc, eq } from 'drizzle-orm'
+import { desc, eq, sql } from 'drizzle-orm'
 import * as schema from '@cobalt/contracts'
 import { DRIZZLE, type DrizzleDB } from '../drizzle.provider'
 
@@ -91,6 +91,17 @@ export class EmailRepository {
       .leftJoin(schema.reviewEmail, eq(schema.reviewEmail.messageId, schema.queueMessage.id))
       .orderBy(desc(schema.queueMessage.receivedAt))
       .limit(limit)
+  }
+
+  /** Ingestion status for the Settings page: how many emails have been ingested, and when last. */
+  async ingestionStatus() {
+    const [row] = await this.db
+      .select({
+        count: sql<number>`count(*)::int`,
+        lastAt: sql<Date | null>`max(${schema.queueMessage.createdAt})`,
+      })
+      .from(schema.queueMessage)
+    return { count: row?.count ?? 0, lastAt: row?.lastAt ?? null }
   }
 
   /** Attachments of an ingested email, keyed by the queue_message id (the inbox row id). */

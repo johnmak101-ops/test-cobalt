@@ -7,6 +7,7 @@ import {
   UiShipmentHistoryController,
   UiPosController,
   UiEmailsController,
+  UiEmailIntegrationController,
 } from './ui.controllers'
 
 /**
@@ -23,6 +24,7 @@ import {
     UiShipmentHistoryController,
     UiPosController,
     UiEmailsController,
+    UiEmailIntegrationController,
   ],
   providers: [PresentationService],
   exports: [PresentationService],

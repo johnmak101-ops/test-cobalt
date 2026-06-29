@@ -247,6 +247,46 @@ export class PresentationService {
     return { success: true }
   }
 
+  // ---- email integration (read-only status; credentials live in the ingestion service) ----
+
+  async emailIntegration() {
+    const { count, lastAt } = await this.emailRepo.ingestionStatus()
+    const iso = lastAt instanceof Date ? lastAt.toISOString() : lastAt ? String(lastAt) : null
+    return {
+      config: {
+        id: 'ingestion',
+        tenantId: '',
+        clientId: '',
+        clientSecret: '',
+        _secretMasked: true,
+        mailboxEmail: null,
+        isActive: count > 0,
+        lastSyncAt: iso,
+        lastSyncStatus: count > 0 ? 'SUCCESS' : null,
+        lastSyncError: null,
+        lastSyncCount: count,
+        createdAt: iso ?? '',
+        updatedAt: iso ?? '',
+      },
+    }
+  }
+  // Governance: Graph credentials are owned by the ingestion service (graph_api), never persisted here.
+  emailIntegrationSave() {
+    return this.emailIntegration()
+  }
+  emailIntegrationTest() {
+    return {
+      success: true,
+      message:
+        'Email ingestion runs in the Cobalt ingestion service (graph_api). Credentials are managed there, not in the tracking app.',
+      userCount: 0,
+    }
+  }
+  async emailIntegrationSync() {
+    const { count } = await this.emailRepo.ingestionStatus()
+    return { synced: 0, skipped: count, errors: [] as string[] }
+  }
+
   // ---- masters (read-only search) ----
 
   private static search<T extends { name: string; code?: string | null }>(rows: T[], q?: string): T[] {

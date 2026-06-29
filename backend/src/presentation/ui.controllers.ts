@@ -4,7 +4,7 @@
  * controllers to PresentationService instead, to preserve the agent-matcher branch.)
  * All are protected by the global JwtAuthGuard.
  */
-import { Body, Controller, Get, Param, Patch, Put, Query } from '@nestjs/common'
+import { Body, Controller, Get, Param, Patch, Post, Put, Query } from '@nestjs/common'
 import { PresentationService } from './presentation.service'
 import { Roles } from '../auth/decorators'
 
@@ -84,5 +84,23 @@ export class UiEmailsController {
   }
   @Patch(':id/read') markRead(@Param('id') id: string) {
     return this.ui.emailMarkRead(id)
+  }
+}
+
+@Controller('email-integrations')
+export class UiEmailIntegrationController {
+  constructor(private readonly ui: PresentationService) {}
+
+  @Get() get() {
+    return this.ui.emailIntegration()
+  }
+  @Roles('ADMIN') @Put() save() {
+    return this.ui.emailIntegrationSave()
+  }
+  @Roles('ADMIN') @Post('test') test() {
+    return this.ui.emailIntegrationTest()
+  }
+  @Roles('ADMIN') @Post('sync') sync() {
+    return this.ui.emailIntegrationSync()
   }
 }
