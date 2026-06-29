@@ -43,9 +43,11 @@ export class AlertEvaluatorService {
     const at = (t: string) => ms.find((m) => m.milestoneType === t)?.occurredAt ?? null
     return {
       state: leg.state,
+      originCountry: leg.originCountry ?? null,
       bookingRequestAt: at('BOOKING_SENT'),
       cfsCutoff: leg.cfsCutoff,
       atd: leg.atd,
+      etd: leg.etd,
       warehouseInAt: at('AT_WAREHOUSE') ?? leg.warehouseStartDate,
       finalBlAt: at('FINAL_BL_RECEIVED'),
       has: {

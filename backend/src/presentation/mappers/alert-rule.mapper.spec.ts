@@ -29,8 +29,9 @@ describe('toUiAlertRule — alert rule row -> UI rule', () => {
     expect(r.locked).toBe(false)
   })
 
-  it('returns countryThresholds as null until Phase 3', () => {
+  it('passes countryThresholds through (null when absent)', () => {
     expect(toUiAlertRule(rule()).countryThresholds).toBeNull()
+    expect(toUiAlertRule(rule({ countryThresholds: { BD: 168, KH: 168 } })).countryThresholds).toEqual({ BD: 168, KH: 168 })
   })
 
   it('maps the tail state RELEASED -> DEPARTED and keeps a null (cross-state) rule null', () => {

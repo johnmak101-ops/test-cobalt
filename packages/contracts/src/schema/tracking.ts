@@ -198,6 +198,7 @@ export const shipments = tracking.table('shipments', {
   // route
   polId: uuid('pol_id').references(() => ports.id),
   podId: uuid('pod_id').references(() => ports.id),
+  originCountry: text('origin_country'), // ISO-2 from the POL port's country, denormalized at commit (alert evaluator reads it)
   // schedule (all timestamptz; A2/A3 alerts compute in vessel TZ)
   cargoReadyDate: timestamp('cargo_ready_date', { withTimezone: true }),
   cfsCutoff: timestamp('cfs_cutoff', { withTimezone: true }),

@@ -7,18 +7,21 @@
 export interface Rule {
   id: string
   triggerType: 'days_after' | 'days_before'
-  triggerReference: string // booking_request | cutoff | departure | warehouse_in | final_bl
+  triggerReference: string // booking_request | cutoff | departure | warehouse_in | final_bl | etd
   watchFor: string // so | draft_bl | final_bl | telex | sailed | invoice
-  thresholdHours: number
+  thresholdHours: number // default fallback (hours)
+  countryThresholds?: Record<string, number> | null // per-origin-country hour overrides (CN/BD/KH/VN/IN)
   severity: string
   enabled: boolean
 }
 
 export interface LegFacts {
   state: string
+  originCountry: string | null
   bookingRequestAt: Date | null
   cfsCutoff: Date | null
   atd: Date | null
+  etd: Date | null
   warehouseInAt: Date | null
   finalBlAt: Date | null
   has: { so: boolean; draftBl: boolean; finalBl: boolean; telex: boolean; invoice: boolean; sailed: boolean }
@@ -36,6 +39,8 @@ export function referenceTime(rule: Rule, f: LegFacts): Date | null {
       return f.warehouseInAt
     case 'final_bl':
       return f.finalBlAt
+    case 'etd':
+      return f.etd
     default:
       return null
   }
@@ -60,8 +65,17 @@ export function watchMet(watchFor: string, f: LegFacts): boolean {
   }
 }
 
-export function deadline(rule: Rule, ref: Date): Date {
-  const ms = rule.thresholdHours * 3_600_000
+/** The effective threshold (hours) for an origin country: a per-country override if one exists
+ *  (checked by KEY PRESENCE so an explicit 0 is honoured), else the rule's default thresholdHours. */
+export function resolveThresholdHours(rule: Rule, originCountry: string | null): number {
+  if (originCountry && rule.countryThresholds && originCountry in rule.countryThresholds) {
+    return rule.countryThresholds[originCountry]
+  }
+  return rule.thresholdHours
+}
+
+export function deadline(rule: Rule, ref: Date, originCountry: string | null): Date {
+  const ms = resolveThresholdHours(rule, originCountry) * 3_600_000
   return rule.triggerType === 'days_before' ? new Date(ref.getTime() - ms) : new Date(ref.getTime() + ms)
 }
 
@@ -71,5 +85,5 @@ export function isFiring(rule: Rule, f: LegFacts, now: Date): boolean {
   const ref = referenceTime(rule, f)
   if (!ref) return false // anchor not reached → not applicable yet
   if (watchMet(rule.watchFor, f)) return false // the awaited thing arrived → no alert
-  return now.getTime() > deadline(rule, ref).getTime()
+  return now.getTime() > deadline(rule, ref, f.originCountry).getTime()
 }

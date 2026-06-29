@@ -17,6 +17,7 @@ const leg = (over: Partial<ShipmentLegRow> = {}): ShipmentLegRow => ({
   vesselName: 'EVER GLOBE',
   voyageNo: 'V42',
   scacCode: 'MAEU',
+  originCountry: null,
   cargoReadyDate: new Date('2026-02-01T00:00:00.000Z'),
   cfsCutoff: new Date('2026-02-03T00:00:00.000Z'),
   etd: new Date('2026-02-05T00:00:00.000Z'),
@@ -83,6 +84,10 @@ describe('toUiShipment — flat active-leg projection', () => {
     expect(s.originCountry).toBe('CN')
     expect(s.poNumbers).toBe('["PO-1","PO-2"]')
     expect(s.linkedPOs).toEqual([{ id: 'spo-1', poNumber: 'PO-1' }])
+  })
+
+  it('prefers the stored origin_country column over the derived POL country', () => {
+    expect(toUiShipment({ ...fullInput(), leg: leg({ originCountry: 'BD' }) }).originCountry).toBe('BD')
   })
 
   it('serializes dates to ISO strings (and renames atd/ata, crd)', () => {

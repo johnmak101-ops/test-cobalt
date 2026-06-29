@@ -13,6 +13,7 @@ export interface AlertRuleRow {
   triggerType: string
   triggerReference: string
   thresholdHours: number | null
+  countryThresholds: Record<string, number> | null
   severity: string
   enabled: boolean
   locked: boolean
@@ -41,7 +42,7 @@ export function toUiAlertRule(rule: AlertRuleRow): UiAlertRule {
     triggerType: rule.triggerType,
     triggerReference: rule.triggerReference,
     thresholdDays: thresholdHoursToDays(rule.thresholdHours),
-    countryThresholds: null, // Phase 3 additive column
+    countryThresholds: rule.countryThresholds ?? null,
     severity: rule.severity,
     enabled: rule.enabled,
     locked: rule.locked,

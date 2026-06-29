@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { isFiring, type Rule, type LegFacts } from './alert-rules'
+import { isFiring, resolveThresholdHours, type Rule, type LegFacts } from './alert-rules'
 
 const facts = (over: Partial<LegFacts> = {}): LegFacts => ({
   state: 'CONFIRMED',
@@ -8,6 +8,8 @@ const facts = (over: Partial<LegFacts> = {}): LegFacts => ({
   atd: null,
   warehouseInAt: null,
   finalBlAt: null,
+  originCountry: null,
+  etd: null,
   has: { so: false, draftBl: false, finalBl: false, telex: false, invoice: false, sailed: false },
   ...over,
 })
@@ -58,5 +60,61 @@ describe('isFiring — Pillar-4 rule logic', () => {
 
   it('a disabled rule never fires', () => {
     expect(isFiring(rule({ enabled: false }), facts({ cfsCutoff: D('2026-02-01') }), D('2026-03-01'))).toBe(false)
+  })
+})
+
+describe('resolveThresholdHours — per-origin-country override (Phase 3)', () => {
+  const r = (over: Partial<Rule> = {}) =>
+    rule({ thresholdHours: 72, countryThresholds: { CN: 72, BD: 168, KH: 168 }, ...over })
+
+  it('returns the country override when the origin has one', () => {
+    expect(resolveThresholdHours(r(), 'BD')).toBe(168)
+    expect(resolveThresholdHours(r(), 'KH')).toBe(168)
+  })
+
+  it('falls back to thresholdHours when the country has no override', () => {
+    expect(resolveThresholdHours(r(), 'VN')).toBe(72)
+  })
+
+  it('falls back to thresholdHours when originCountry is null or empty', () => {
+    expect(resolveThresholdHours(r(), null)).toBe(72)
+    expect(resolveThresholdHours(r(), '')).toBe(72)
+  })
+
+  it('falls back when countryThresholds is absent', () => {
+    expect(resolveThresholdHours(rule({ thresholdHours: 24 }), 'BD')).toBe(24)
+  })
+
+  it('honors an explicit 0 override (key presence, not truthiness)', () => {
+    expect(resolveThresholdHours(rule({ thresholdHours: 24, countryThresholds: { CN: 0 } }), 'CN')).toBe(0)
+  })
+})
+
+describe('isFiring — country-aware A1, anchored on scheduled ETD (Phase 3)', () => {
+  const a1 = (over: Partial<Rule> = {}) =>
+    rule({
+      id: 'A1', triggerType: 'days_after', triggerReference: 'etd', watchFor: 'draft_bl',
+      thresholdHours: 24, countryThresholds: { BD: 48, KH: 48 }, ...over,
+    })
+  const etd = D('2026-02-01T00:00:00Z')
+
+  it('CN leg fires once 24h past ETD with no Draft B/L', () => {
+    expect(isFiring(a1(), facts({ etd, originCountry: 'CN' }), D('2026-02-02T01:00:00Z'))).toBe(true)
+  })
+
+  it('BD leg does NOT fire at 24h (BD threshold is 48h)', () => {
+    expect(isFiring(a1(), facts({ etd, originCountry: 'BD' }), D('2026-02-02T01:00:00Z'))).toBe(false)
+  })
+
+  it('BD leg fires once 48h past ETD', () => {
+    expect(isFiring(a1(), facts({ etd, originCountry: 'BD' }), D('2026-02-03T01:00:00Z'))).toBe(true)
+  })
+
+  it('does not fire once the Draft B/L has arrived', () => {
+    expect(isFiring(a1(), facts({ etd, originCountry: 'CN', has: hasOf({ draftBl: true }) }), D('2026-02-10T00:00:00Z'))).toBe(false)
+  })
+
+  it('does not fire before ETD is known (anchor missing)', () => {
+    expect(isFiring(a1(), facts({ etd: null, originCountry: 'CN' }), D('2026-02-10T00:00:00Z'))).toBe(false)
   })
 })

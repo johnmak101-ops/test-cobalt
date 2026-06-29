@@ -30,6 +30,7 @@ export interface ShipmentLegRow {
   vesselName: string | null
   voyageNo: string | null
   scacCode: string | null
+  originCountry: string | null
   cargoReadyDate: Dateish
   cfsCutoff: Dateish
   etd: Dateish
@@ -107,7 +108,7 @@ export function toUiShipment(input: ShipmentMapperInput): UiShipment {
     vendorId: booking?.vendorId ?? null,
     forwarderId: leg.forwarderId ?? null,
     route: deriveRoute(input.polPort?.unlocode, input.podPort?.unlocode),
-    originCountry: deriveOriginCountry(input.polPort),
+    originCountry: leg.originCountry ?? deriveOriginCountry(input.polPort),
     status: stateToUiStatus(leg.state),
     riskLevel: leg.riskLevel ?? null,
     bookingNo: leg.bookingNo ?? null,

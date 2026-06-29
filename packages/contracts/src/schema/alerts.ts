@@ -1,4 +1,4 @@
-import { pgSchema, uuid, text, integer, boolean, timestamp } from 'drizzle-orm/pg-core'
+import { pgSchema, uuid, text, integer, boolean, timestamp, jsonb } from 'drizzle-orm/pg-core'
 import {
   ALERT_SEVERITY, ALERT_STATUS, ALERT_TRIGGER_TYPE, ALERT_TRIGGER_REF, ALERT_WATCH_FOR, COMPUTE_TZ, SHIPMENT_STATE,
 } from './enums'
@@ -19,7 +19,8 @@ export const alertRules = alerts.table('alert_rules', {
   triggerType: text('trigger_type', { enum: ALERT_TRIGGER_TYPE }).notNull(),
   triggerReference: text('trigger_reference', { enum: ALERT_TRIGGER_REF }).notNull(),
   watchFor: text('watch_for', { enum: ALERT_WATCH_FOR }).notNull(),
-  thresholdHours: integer('threshold_hours').notNull(), // hours, to capture 48h/72h precisely
+  thresholdHours: integer('threshold_hours').notNull(), // hours, to capture 48h/72h precisely (default fallback)
+  countryThresholds: jsonb('country_thresholds').$type<Record<string, number>>(), // per-origin-country hour overrides (CN/BD/KH/VN/IN)
   severity: text('severity', { enum: ALERT_SEVERITY }).notNull(),
   computeTz: text('compute_tz', { enum: COMPUTE_TZ }).notNull().default('server'),
   enabled: boolean('enabled').notNull().default(true),

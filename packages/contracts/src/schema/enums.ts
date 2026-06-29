@@ -73,16 +73,8 @@ export const ALERT_SEVERITY = ['CRITICAL', 'WARNING', 'INFO'] as const
 export const ALERT_STATUS = ['ACTIVE', 'DISMISSED', 'SNOOZED', 'RESOLVED'] as const
 export const ALERT_TRIGGER_TYPE = ['days_after', 'days_before'] as const
 /** The anchor a rule measures from. */
-export const ALERT_TRIGGER_REF = ['booking_request', 'cutoff', 'departure', 'warehouse_in', 'final_bl'] as const
+export const ALERT_TRIGGER_REF = ['booking_request', 'cutoff', 'departure', 'warehouse_in', 'final_bl', 'etd'] as const
 /** The thing whose ABSENCE fires the rule. */
 export const ALERT_WATCH_FOR = ['so', 'draft_bl', 'final_bl', 'telex', 'sailed', 'invoice'] as const
 /** A2/A3 must compute in the vessel's timezone, not the server's. */
 export const COMPUTE_TZ = ['server', 'vessel'] as const
-
-// ---- Match boundary (VM2 agent -> VM1 committer) ----
-export const MATCH_ACTION = [
-  'create_booking', 'add_leg', 'amend_fields', 'merge_into_leg', 'flag_conflict', 'needs_review',
-] as const
-export const MATCH_REQUEST_STATUS = ['PENDING', 'CLAIMED', 'DONE', 'FAILED'] as const
-export const MATCH_DECISION_STATUS = ['PENDING_COMMIT', 'COMMITTED', 'REJECTED', 'NEEDS_REVIEW'] as const
-export const CONFIDENCE = ['high', 'medium', 'low'] as const

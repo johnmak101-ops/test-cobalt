@@ -73,18 +73,3 @@ export const ParsedRecordZ = z.object({
   confidence: z.enum(['high', 'medium', 'low']),
 })
 export type ParsedRecordZ = z.infer<typeof ParsedRecordZ>
-
-/** What the MATCHING AGENT returns — applied by the deterministic committer. */
-export const MatchDecisionZ = z.object({
-  action: z.enum(['create_booking', 'add_leg', 'amend_fields', 'merge_into_leg', 'flag_conflict', 'needs_review']),
-  targetBookingId: z.string().uuid().nullish(),
-  targetShipmentId: z.string().uuid().nullish(),
-  fieldDiffs: z
-    .array(z.object({ field: z.string(), from: z.unknown().nullish(), to: z.unknown().nullish() }))
-    .default([]),
-  matchKeys: MatchKeys.nullish(),
-  extractionConfidence: z.enum(['high', 'medium', 'low']),
-  resolutionConfidence: z.enum(['high', 'medium', 'low']),
-  reasoning: z.string().nullish(),
-})
-export type MatchDecisionZ = z.infer<typeof MatchDecisionZ>

@@ -6,4 +6,3 @@ export * from './evidence' // owned by cobalt-queue (parser output) — the cont
 export * from './tracking' // owned by track-system (truth + masters + auth)
 export * from './audit' // owned by track-system
 export * from './alerts' // owned by track-system
-export * from './match' // VM2 agent ↔ VM1 committer boundary

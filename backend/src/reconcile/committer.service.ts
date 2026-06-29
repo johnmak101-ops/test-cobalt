@@ -78,13 +78,15 @@ export class CommitterService {
     const f = g.fields
     const gk = strongKeys(g.matchKeys)
 
-    const [customerId, vendorId, forwarderId, polId, podId] = await Promise.all([
+    const [customerId, vendorId, forwarderId, pol, podId] = await Promise.all([
       this.resolveCustomer(f.customer_code),
       this.resolveVendor(f.vendor_code),
       this.resolveForwarder(f.forwarder_name),
-      this.resolvePort(f.poi ?? (f as Record<string, unknown>).pol), // alias: parser still emits `pol`
+      this.resolvePortFull(f.poi ?? (f as Record<string, unknown>).pol), // POL: id + country (origin_country); alias: parser still emits `pol`
       this.resolvePort(f.pod),
     ])
+    const polId = pol?.id ?? null
+    const originCountry = pol?.country ?? null
 
     const emailTypes = new Set(g.emailTypes)
     const state = deriveState(emailTypes, f)
@@ -94,6 +96,7 @@ export class CommitterService {
       forwarderId,
       polId,
       podId,
+      originCountry,
       bookingNo: str(f.booking_no),
       soNo: str(f.so_no),
       hblAwbFcrNo: str(f.hbl_awb_fcr_no),
@@ -365,6 +368,10 @@ export class CommitterService {
   private resolvePort(code: unknown) {
     const c = str(code)
     return c ? this.masters.portIdByCodeOrName(c) : Promise.resolve(null)
+  }
+  private resolvePortFull(code: unknown) {
+    const c = str(code)
+    return c ? this.masters.portByCodeOrName(c) : Promise.resolve(null)
   }
   private async nextJobNo(): Promise<string> {
     return `JOB-2026-${String(await this.bookings.nextJobSeq()).padStart(4, '0')}`

@@ -70,6 +70,13 @@ export class MastersRepository {
     const [byName] = await this.db.select().from(schema.ports).where(ilike(schema.ports.name, `%${code}%`))
     return byName?.id ?? null
   }
+  /** Like portIdByCodeOrName but also returns country — for denormalizing origin_country at commit. */
+  async portByCodeOrName(code: string): Promise<{ id: string; country: string | null } | null> {
+    const [byCode] = await this.db.select().from(schema.ports).where(eq(schema.ports.unlocode, code.toUpperCase()))
+    if (byCode) return { id: byCode.id, country: byCode.country }
+    const [byName] = await this.db.select().from(schema.ports).where(ilike(schema.ports.name, `%${code}%`))
+    return byName ? { id: byName.id, country: byName.country } : null
+  }
 
   // --- writes (Ops-maintained masters: forwarders / ports / consignees) ---
   async createForwarder(v: { code: string | null; name: string }) {

@@ -158,14 +158,11 @@ async function main() {
     { shipmentId: atRiskLeg.id, milestoneType: 'SO_RECEIVED', occurredAt: new Date('2026-02-12T00:00:00Z'), senderType: 'forwarder' },
   ])
 
-  // ---- Pillar-4 alert rules (thresholds in hours; A2/A3 compute in vessel TZ; A3 locked) ----
+  // ---- Pillar-4 alert rules — only A1/A2 active, country-aware (CN/BD/KH/VN/IN), anchored on ETD ----
+  // Per Cobalt_SYSTEM_UPDATE_SUMMARY_20260623: threshold in hours; per-country overrides in country_thresholds.
   await db.insert(schema.alertRules).values([
-    { id: 'A1', name: 'No SO after Booking', description: 'No SO within 48h of Booking Request', state: 'BOOKED', triggerType: 'days_after', triggerReference: 'booking_request', watchFor: 'so', thresholdHours: 48, severity: 'WARNING', computeTz: 'server' },
-    { id: 'A2', name: 'Draft B/L before cut-off', description: 'Draft B/L not received 72h before cut-off', state: 'CONFIRMED', triggerType: 'days_before', triggerReference: 'cutoff', watchFor: 'draft_bl', thresholdHours: 72, severity: 'WARNING', computeTz: 'vessel' },
-    { id: 'A3', name: 'Cut-off passed, no Final B/L', description: 'Cut-off passed without Final B/L', state: 'CONFIRMED', triggerType: 'days_after', triggerReference: 'cutoff', watchFor: 'final_bl', thresholdHours: 0, severity: 'CRITICAL', computeTz: 'vessel', locked: true },
-    { id: 'A4', name: 'Telex after departure', description: 'Telex not received within 5d of departure', state: 'SAILED', triggerType: 'days_after', triggerReference: 'departure', watchFor: 'telex', thresholdHours: 120, severity: 'WARNING', computeTz: 'server' },
-    { id: 'A5', name: 'Warehouse aging', description: 'In warehouse >14d with no departure', state: 'AT_WAREHOUSE', triggerType: 'days_after', triggerReference: 'warehouse_in', watchFor: 'sailed', thresholdHours: 336, severity: 'WARNING', computeTz: 'server' },
-    { id: 'A6', name: 'Invoice missing', description: 'Final B/L issued but invoice missing >7d', state: 'RELEASED', triggerType: 'days_after', triggerReference: 'final_bl', watchFor: 'invoice', thresholdHours: 168, severity: 'WARNING', computeTz: 'server' },
+    { id: 'A1', name: 'No Draft BOL', description: 'No Draft B/L by ETD + 1 day (BD/KH: +2 days)', state: 'CONFIRMED', triggerType: 'days_after', triggerReference: 'etd', watchFor: 'draft_bl', thresholdHours: 24, countryThresholds: { BD: 48, KH: 48 }, severity: 'WARNING', computeTz: 'vessel' },
+    { id: 'A2', name: 'No Final BOL', description: 'No Final B/L by ETD + 3 days (BD/KH: +7 days)', state: 'AT_WAREHOUSE', triggerType: 'days_after', triggerReference: 'etd', watchFor: 'final_bl', thresholdHours: 72, countryThresholds: { BD: 168, KH: 168 }, severity: 'WARNING', computeTz: 'vessel' },
   ])
 
   // ---- auth users (dev: every password is 'cobalt') ----
