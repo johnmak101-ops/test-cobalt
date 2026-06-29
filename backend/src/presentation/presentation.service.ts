@@ -9,11 +9,13 @@ import { BookingRepository } from '../db/repositories/booking.repository'
 import { MastersRepository } from '../db/repositories/masters.repository'
 import { AlertRepository } from '../db/repositories/alert.repository'
 import { AuditRepository } from '../db/repositories/audit.repository'
+import { EmailRepository } from '../db/repositories/email.repository'
 import { toUiShipment, type ShipmentMapperInput, type ShipmentLegRow } from './mappers/shipment.mapper'
 import { toUiAlert } from './mappers/alert.mapper'
 import { toUiAlertRule } from './mappers/alert-rule.mapper'
 import { toUiHistoryEntry } from './mappers/history.mapper'
 import { toUiPurchaseOrder, toUiPurchaseOrderDetail } from './mappers/po.mapper'
+import { toUiEmail } from './mappers/email.mapper'
 import { deriveRoute, poNumbersJson } from './adapters/derive'
 
 type Ref = { id: string; code?: string | null; name: string }
@@ -37,6 +39,7 @@ export class PresentationService {
     private readonly mastersRepo: MastersRepository,
     private readonly alertRepo: AlertRepository,
     private readonly auditRepo: AuditRepository,
+    private readonly emailRepo: EmailRepository,
   ) {}
 
   // ---- shared assembly ----
@@ -196,6 +199,52 @@ export class PresentationService {
         linkedQuantity: l.linkedQuantity,
       })),
     })
+  }
+
+  // ---- emails / inbox ----
+
+  async emails(limit = 100) {
+    const rows = await this.emailRepo.listInbox(limit)
+    return {
+      emails: rows.map((r) =>
+        toUiEmail({
+          message: {
+            id: r.id, graphMessageId: r.graphMessageId, subject: r.subject, sender: r.sender,
+            receivedAt: r.receivedAt, status: r.status, createdAt: r.createdAt,
+          },
+          review:
+            r.reviewStatus != null || r.emailType != null
+              ? {
+                  emailType: r.emailType, extractedData: r.extractedData, extractionConfidence: r.extractionConfidence,
+                  reviewStatus: r.reviewStatus, reviewedBy: r.reviewedBy, reviewedAt: r.reviewedAt,
+                  reviewNotes: r.reviewNotes, shipmentId: r.shipmentId,
+                }
+              : null,
+        }),
+      ),
+    }
+  }
+
+  async emailAttachments(messageId: string) {
+    const rows = await this.emailRepo.attachmentsByMessageId(messageId)
+    return {
+      attachments: rows.map((a) => ({
+        id: a.attachmentId,
+        emailId: messageId,
+        filename: a.filename,
+        mimeType: a.declaredMime ?? 'application/octet-stream',
+        sizeBytes: a.sizeBytes ?? 0,
+        createdAt: a.createdAt instanceof Date ? a.createdAt.toISOString() : String(a.createdAt ?? ''),
+      })),
+    }
+  }
+
+  // is_read storage is a Phase-3 deferral; expose stable shapes so the inbox badge/mark-read don't 404.
+  emailsUnreadCount() {
+    return { unread: 0 }
+  }
+  emailMarkRead(_id: string) {
+    return { success: true }
   }
 
   // ---- masters (read-only search) ----

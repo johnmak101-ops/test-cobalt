@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common'
-import { eq } from 'drizzle-orm'
+import { desc, eq } from 'drizzle-orm'
 import * as schema from '@cobalt/contracts'
 import { DRIZZLE, type DrizzleDB } from '../drizzle.provider'
 
@@ -64,6 +64,46 @@ export class EmailRepository {
       })
       .from(schema.queueAttachment)
       .leftJoin(schema.queueNormalized, eq(schema.queueNormalized.attachmentId, schema.queueAttachment.id))
+      .where(eq(schema.queueAttachment.messageId, messageId))
+  }
+
+  /** The inbox: recent ingested emails (queue_message) with their review-extraction overlay. */
+  listInbox(limit = 100) {
+    return this.db
+      .select({
+        id: schema.queueMessage.id,
+        graphMessageId: schema.queueMessage.graphMessageId,
+        subject: schema.queueMessage.subject,
+        sender: schema.queueMessage.sender,
+        receivedAt: schema.queueMessage.receivedAt,
+        status: schema.queueMessage.status,
+        createdAt: schema.queueMessage.createdAt,
+        emailType: schema.reviewEmail.emailType,
+        extractedData: schema.reviewEmail.extractedData,
+        extractionConfidence: schema.reviewEmail.extractionConfidence,
+        reviewStatus: schema.reviewEmail.reviewStatus,
+        reviewedBy: schema.reviewEmail.reviewedBy,
+        reviewedAt: schema.reviewEmail.reviewedAt,
+        reviewNotes: schema.reviewEmail.reviewNotes,
+        shipmentId: schema.reviewEmail.shipmentId,
+      })
+      .from(schema.queueMessage)
+      .leftJoin(schema.reviewEmail, eq(schema.reviewEmail.messageId, schema.queueMessage.id))
+      .orderBy(desc(schema.queueMessage.receivedAt))
+      .limit(limit)
+  }
+
+  /** Attachments of an ingested email, keyed by the queue_message id (the inbox row id). */
+  attachmentsByMessageId(messageId: string) {
+    return this.db
+      .select({
+        attachmentId: schema.queueAttachment.id,
+        filename: schema.queueAttachment.filename,
+        declaredMime: schema.queueAttachment.declaredMime,
+        sizeBytes: schema.queueAttachment.sizeBytes,
+        createdAt: schema.queueAttachment.createdAt,
+      })
+      .from(schema.queueAttachment)
       .where(eq(schema.queueAttachment.messageId, messageId))
   }
 }

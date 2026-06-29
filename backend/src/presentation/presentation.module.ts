@@ -6,6 +6,7 @@ import {
   UiAlertRulesController,
   UiShipmentHistoryController,
   UiPosController,
+  UiEmailsController,
 } from './ui.controllers'
 
 /**
@@ -21,6 +22,7 @@ import {
     UiAlertRulesController,
     UiShipmentHistoryController,
     UiPosController,
+    UiEmailsController,
   ],
   providers: [PresentationService],
   exports: [PresentationService],
