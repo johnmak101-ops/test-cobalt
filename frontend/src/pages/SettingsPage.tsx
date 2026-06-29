@@ -227,26 +227,31 @@ function VendorsSettings() {
         <div>
           <h2 className="text-base font-semibold text-text-primary">Vendors / Factories</h2>
           <p className="text-sm text-text-secondary">
-            Manage vendor and factory records. Import from CSV or add manually.
+            Vendor &amp; factory records are mirrored read-only from the Cobalt ERP. Maintain them in the ERP;
+            this app resolves them or flags unknowns for review.
           </p>
         </div>
         <div className="flex gap-2">
           <button
+            disabled
+            title="Vendors are maintained in the Cobalt ERP — read-only here"
             onClick={() => {
               setShowCsvImport(!showCsvImport)
               setShowCreate(false)
             }}
-            className="flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-text-secondary hover:text-text-primary"
+            className="flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-text-secondary hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-40"
           >
             <Upload size={13} />
             CSV Import
           </button>
           <button
+            disabled
+            title="Vendors are maintained in the Cobalt ERP — read-only here"
             onClick={() => {
               setShowCreate(!showCreate)
               setShowCsvImport(false)
             }}
-            className="flex items-center gap-1.5 rounded-lg bg-cobalt-primary px-3 py-1.5 text-xs font-medium text-white hover:bg-cobalt-primary-light"
+            className="flex items-center gap-1.5 rounded-lg bg-cobalt-primary px-3 py-1.5 text-xs font-medium text-white hover:bg-cobalt-primary-light disabled:cursor-not-allowed disabled:opacity-40"
           >
             <Plus size={13} />
             Add Vendor
@@ -598,10 +603,11 @@ function EmailIntegrationSettings() {
         </button>
         <button
           onClick={handleSave}
-          disabled={saveConfig.isPending}
-          className="rounded-lg bg-cobalt-primary px-4 py-2 text-sm font-medium text-white hover:bg-cobalt-primary-light disabled:opacity-50"
+          disabled
+          title="Graph credentials are managed in the ingestion service (graph_api), not stored in the tracking app"
+          className="rounded-lg bg-cobalt-primary px-4 py-2 text-sm font-medium text-white hover:bg-cobalt-primary-light disabled:cursor-not-allowed disabled:opacity-40"
         >
-          {saveConfig.isPending ? 'Saving...' : 'Save'}
+          Save
         </button>
       </div>
 

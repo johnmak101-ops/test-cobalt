@@ -186,7 +186,6 @@ export default function ShipmentDetailPage() {
             <DetailRow label="HBL / AWB / FCR No." value={shipment.hblNumber} />
             <DetailRow label="MBL" value={shipment.mblNumber} />
             <DetailRow label="SCAC Code" value={shipment.scacCode} />
-            <DetailRow label="Warehouse" value={shipment.warehouseAddress} />
           </DetailSection>
 
           {/* Section 3: Shipping */}
