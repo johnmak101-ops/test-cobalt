@@ -72,6 +72,26 @@ async function main() {
       { unlocode: 'USLAX', name: 'Los Angeles', country: 'US', mode: 'sea' },
       { unlocode: 'HKG', name: 'Hong Kong Intl', country: 'HK', mode: 'air' },
       { unlocode: 'LHR', name: 'London Heathrow', country: 'GB', mode: 'air' },
+      // widened origins/destinations seen in real evidence (data-wiring audit: route was null 98/98)
+      { unlocode: 'CNTAO', name: 'Qingdao', country: 'CN', mode: 'sea' },
+      { unlocode: 'CNNGB', name: 'Ningbo', country: 'CN', mode: 'sea' },
+      { unlocode: 'CNCAN', name: 'Guangzhou', country: 'CN', mode: 'sea' },
+      { unlocode: 'CNZUH', name: 'Zhuhai', country: 'CN', mode: 'sea' },
+      { unlocode: 'CNYNT', name: 'Yantai', country: 'CN', mode: 'sea' },
+      { unlocode: 'CNNSA', name: 'Nansha', country: 'CN', mode: 'sea' },
+      { unlocode: 'HKHKG', name: 'Hong Kong', country: 'HK', mode: 'sea' },
+      { unlocode: 'BDCGP', name: 'Chittagong', country: 'BD', mode: 'sea' },
+      { unlocode: 'KHPNH', name: 'Phnom Penh', country: 'KH', mode: 'sea' },
+      { unlocode: 'VNSGN', name: 'Ho Chi Minh', country: 'VN', mode: 'sea' },
+      { unlocode: 'NLAMS', name: 'Amsterdam', country: 'NL', mode: 'sea' },
+      { unlocode: 'SEGOT', name: 'Gothenburg', country: 'SE', mode: 'sea' },
+      { unlocode: 'DEHAM', name: 'Hamburg', country: 'DE', mode: 'sea' },
+      { unlocode: 'CATOR', name: 'Toronto', country: 'CA', mode: 'sea' },
+      { unlocode: 'CAMTR', name: 'Montreal', country: 'CA', mode: 'sea' },
+      { unlocode: 'USSEA', name: 'Seattle', country: 'US', mode: 'sea' },
+      { unlocode: 'USJAX', name: 'Jacksonville', country: 'US', mode: 'sea' },
+      { unlocode: 'USEWR', name: 'Newark', country: 'US', mode: 'sea' },
+      { unlocode: 'USNYC', name: 'New York', country: 'US', mode: 'sea' },
     ])
     .returning()
   const port = (code: string) => ports.find((p) => p.unlocode === code)

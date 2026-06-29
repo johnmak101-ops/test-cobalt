@@ -78,16 +78,23 @@ export class MastersRepository {
     return a?.forwarderId ?? null
   }
   async portIdByCodeOrName(code: string) {
-    const [byCode] = await this.db.select().from(schema.ports).where(eq(schema.ports.unlocode, code.toUpperCase()))
-    if (byCode) return byCode.id
-    const [byName] = await this.db.select().from(schema.ports).where(ilike(schema.ports.name, `%${code}%`))
-    return byName?.id ?? null
+    return (await this.portByCodeOrName(code))?.id ?? null
   }
-  /** Like portIdByCodeOrName but also returns country — for denormalizing origin_country at commit. */
+  /** Resolve a POL/POD string to a port (id + country, for denormalizing origin_country at commit).
+   *  Exact UN/LOCODE first; then a BIDIRECTIONAL name match (the port name appears in the free-text,
+   *  e.g. "QINGDAO, CHINA" → Qingdao, OR the input appears in the name) guarded by name length ≥ 4. */
   async portByCodeOrName(code: string): Promise<{ id: string; country: string | null } | null> {
-    const [byCode] = await this.db.select().from(schema.ports).where(eq(schema.ports.unlocode, code.toUpperCase()))
+    const c = code.trim()
+    if (!c) return null
+    const [byCode] = await this.db.select().from(schema.ports).where(eq(schema.ports.unlocode, c.toUpperCase()))
     if (byCode) return { id: byCode.id, country: byCode.country }
-    const [byName] = await this.db.select().from(schema.ports).where(ilike(schema.ports.name, `%${code}%`))
+    const [byName] = await this.db
+      .select()
+      .from(schema.ports)
+      .where(
+        sql`length(${schema.ports.name}) >= 4 AND (${schema.ports.name} ILIKE ${`%${c}%`} OR ${c} ILIKE '%' || ${schema.ports.name} || '%')`,
+      )
+      .limit(1)
     return byName ? { id: byName.id, country: byName.country } : null
   }
 
