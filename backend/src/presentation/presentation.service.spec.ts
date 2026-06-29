@@ -72,6 +72,7 @@ const build = () => {
     countPendingReview: async () => 3,
     ingestionStatus: async () => ({ count: 0, lastAt: null }),
     ingestState: async () => null,
+    emailsForShipment: async () => [],
   }
   return new PresentationService(
     shipmentRepo as any, bookingRepo as any, mastersRepo as any, alertRepo as any, auditRepo as any, emailRepo as any,

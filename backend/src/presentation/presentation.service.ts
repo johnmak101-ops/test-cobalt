@@ -164,16 +164,24 @@ export class PresentationService {
   async shipment(id: string) {
     const leg = await this.shipmentRepo.findById(id)
     if (!leg) throw new NotFoundException('shipment not found')
-    const [booking, maps, milestones, alertRows, linkedPos] = await Promise.all([
+    const [booking, maps, milestones, alertRows, linkedPos, relatedEmails] = await Promise.all([
       this.bookingRepo.findById(leg.bookingId),
       this.masterMaps(),
       this.shipmentRepo.milestonesFor(id),
       this.alertRepo.list(),
       this.shipmentRepo.linkedPosForBooking(leg.bookingId) as Promise<LinkedPoRow[]>,
+      this.emailRepo.emailsForShipment(id),
     ])
     const base = toUiShipment(this.assembleInput(leg, booking, maps, linkedPos))
     const legAlerts = alertRows.filter((a) => a.shipmentId === id).map((a) => toUiAlert({ alert: a, shipment: null }))
-    return { ...base, milestones, emails: [], alerts: legAlerts }
+    const emails = relatedEmails.map((e) => ({
+      id: e.id,
+      subject: e.subject,
+      sender: e.sender,
+      receivedAt: isoOrNull(e.receivedAt),
+      emailType: e.milestoneType ?? null,
+    }))
+    return { ...base, milestones, emails, alerts: legAlerts }
   }
 
   async shipmentHistory(id: string) {
@@ -279,7 +287,8 @@ export class PresentationService {
 
   // ---- emails / inbox ----
 
-  async emails(limit = 100) {
+  async emails(limit = 250) {
+    // window must cover the whole inbox so the (oldest) review-overlay rows aren't cut off (audit gap 15)
     const rows = await this.emailRepo.listInbox(limit)
     return {
       emails: rows.map((r) =>
@@ -289,11 +298,14 @@ export class PresentationService {
             receivedAt: r.receivedAt, status: r.status, createdAt: r.createdAt,
           },
           review:
-            r.reviewStatus != null || r.emailType != null
+            r.reviewStatus != null || r.emailType != null || r.matchedShipmentId != null
               ? {
                   emailType: r.emailType, extractedData: r.extractedData, extractionConfidence: r.extractionConfidence,
                   reviewStatus: r.reviewStatus, reviewedBy: r.reviewedBy, reviewedAt: r.reviewedAt,
-                  reviewNotes: r.reviewNotes, shipmentId: r.shipmentId,
+                  reviewNotes: r.reviewNotes,
+                  // an email is "matched" when it built a shipment (milestone linkage), not via the
+                  // review_email FK (which is null for unmatched review items by definition)
+                  shipmentId: r.matchedShipmentId ?? r.shipmentId,
                 }
               : null,
         }),

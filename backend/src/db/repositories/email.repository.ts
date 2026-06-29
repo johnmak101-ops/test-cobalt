@@ -86,6 +86,10 @@ export class EmailRepository {
         reviewedAt: schema.reviewEmail.reviewedAt,
         reviewNotes: schema.reviewEmail.reviewNotes,
         shipmentId: schema.reviewEmail.shipmentId,
+        // the shipment this email actually built (via its milestones) — the real "matched" signal
+        matchedShipmentId: sql<
+          string | null
+        >`(select m.shipment_id from tracking.shipment_milestones m where m.email_message_id = ${schema.queueMessage.graphMessageId} limit 1)`,
       })
       .from(schema.queueMessage)
       .leftJoin(schema.reviewEmail, eq(schema.reviewEmail.messageId, schema.queueMessage.id))
@@ -112,6 +116,22 @@ export class EmailRepository {
       .orderBy(desc(schema.ingestState.updatedAt))
       .limit(1)
     return rows[0] ?? null
+  }
+
+  /** The emails that built a shipment — joined via its milestones' graph message ids (Related Emails). */
+  async emailsForShipment(shipmentId: string) {
+    return this.db
+      .select({
+        id: schema.queueMessage.id,
+        subject: schema.queueMessage.subject,
+        sender: schema.queueMessage.sender,
+        receivedAt: schema.queueMessage.receivedAt,
+        milestoneType: schema.shipmentMilestones.milestoneType,
+      })
+      .from(schema.shipmentMilestones)
+      .innerJoin(schema.queueMessage, eq(schema.shipmentMilestones.emailMessageId, schema.queueMessage.graphMessageId))
+      .where(eq(schema.shipmentMilestones.shipmentId, shipmentId))
+      .orderBy(desc(schema.queueMessage.receivedAt))
   }
 
   /** Emails awaiting human review — the actionable "new" count for the dashboard KPI. */
