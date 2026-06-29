@@ -16,11 +16,12 @@ import { toUiAlertRule } from './mappers/alert-rule.mapper'
 import { toUiHistoryEntry } from './mappers/history.mapper'
 import { toUiPurchaseOrder, toUiPurchaseOrderDetail } from './mappers/po.mapper'
 import { toUiEmail } from './mappers/email.mapper'
-import { deriveRoute, poNumbersJson } from './adapters/derive'
+import { deriveRoute, poNumbersJson, isoOrNull } from './adapters/derive'
 
 type Ref = { id: string; code?: string | null; name: string }
 type PortRow = { id: string; unlocode?: string | null; country?: string | null }
 type BookingRow = { id: string; customerId: string | null; vendorId: string | null }
+type LinkedPoRow = { id: string; poNumber: string; totalQuantity: number | null; quantityUnit: string | null; vendorName: string | null }
 
 interface MasterMaps {
   customers: Map<string, Ref>
@@ -30,6 +31,31 @@ interface MasterMaps {
 }
 
 const AT_RISK = new Set(['AT_RISK', 'DELAYED'])
+
+// Attachment mime resolution: declared_mime is often the generic octet-stream; infer from the
+// filename extension instead so the UI shows real types (PDF/XLS/image) for ~87% that were wrong.
+const EXT_MIME: Record<string, string> = {
+  pdf: 'application/pdf',
+  xls: 'application/vnd.ms-excel',
+  xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  doc: 'application/msword',
+  docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  csv: 'text/csv',
+  png: 'image/png',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  gif: 'image/gif',
+  txt: 'text/plain',
+  html: 'text/html',
+  eml: 'message/rfc822',
+  zip: 'application/zip',
+  rtf: 'application/rtf',
+}
+function resolveMime(declared: string | null | undefined, filename: string | null | undefined): string {
+  if (declared && declared !== 'application/octet-stream') return declared
+  const ext = (filename ?? '').toLowerCase().split('.').pop() ?? ''
+  return EXT_MIME[ext] ?? declared ?? 'application/octet-stream'
+}
 
 @Injectable()
 export class PresentationService {
@@ -64,7 +90,7 @@ export class PresentationService {
     leg: ShipmentLegRow & { bookingId: string; polId?: string | null; podId?: string | null },
     booking: BookingRow | null,
     maps: MasterMaps,
-    poNumbers: string[],
+    linkedPos: LinkedPoRow[],
   ): ShipmentMapperInput {
     const customer = booking?.customerId ? maps.customers.get(booking.customerId) : undefined
     const vendor = booking?.vendorId ? maps.vendors.get(booking.vendorId) : undefined
@@ -77,8 +103,15 @@ export class PresentationService {
       forwarder: forwarder ? { id: forwarder.id, name: forwarder.name, code: forwarder.code ?? null } : null,
       polPort: leg.polId ? maps.ports.get(leg.polId) ?? null : null,
       podPort: leg.podId ? maps.ports.get(leg.podId) ?? null : null,
-      poNumbers,
-      linkedPOs: poNumbers.map((poNumber) => ({ poNumber, quantity: null })),
+      poNumbers: linkedPos.map((p) => p.poNumber),
+      linkedPOs: linkedPos.map((p) => ({
+        id: p.id,
+        poNumber: p.poNumber,
+        totalQuantity: p.totalQuantity ?? null,
+        quantityUnit: p.quantityUnit ?? null,
+        quantity: null, // per-leg split (shipment_pos) is not surfaced on the flat shipment row
+        vendor: p.vendorName ? { name: p.vendorName } : null,
+      })),
     }
   }
 
@@ -109,18 +142,18 @@ export class PresentationService {
       this.masterMaps(),
     ])
     const bookingsById = new Map<string, BookingRow>(bookingRows.map((b: BookingRow) => [b.id, b]))
-    const poCache = new Map<string, string[]>()
+    const poCache = new Map<string, LinkedPoRow[]>()
     const out = []
     for (const leg of legs) {
       if (filter?.forwarderId && leg.forwarderId !== filter.forwarderId) continue
       const booking = bookingsById.get(leg.bookingId) ?? null
       if (filter?.customerId && booking?.customerId !== filter.customerId) continue
-      let poNumbers = poCache.get(leg.bookingId)
-      if (!poNumbers) {
-        poNumbers = await this.bookingRepo.poNumbersFor(leg.bookingId)
-        poCache.set(leg.bookingId, poNumbers)
+      let linkedPos = poCache.get(leg.bookingId)
+      if (!linkedPos) {
+        linkedPos = (await this.shipmentRepo.linkedPosForBooking(leg.bookingId)) as LinkedPoRow[]
+        poCache.set(leg.bookingId, linkedPos)
       }
-      const ui = toUiShipment(this.assembleInput(leg, booking, maps, poNumbers))
+      const ui = toUiShipment(this.assembleInput(leg, booking, maps, linkedPos))
       if (filter?.status && ui.status !== filter.status) continue
       out.push(ui)
     }
@@ -130,14 +163,14 @@ export class PresentationService {
   async shipment(id: string) {
     const leg = await this.shipmentRepo.findById(id)
     if (!leg) throw new NotFoundException('shipment not found')
-    const [booking, maps, milestones, alertRows, poNumbers] = await Promise.all([
+    const [booking, maps, milestones, alertRows, linkedPos] = await Promise.all([
       this.bookingRepo.findById(leg.bookingId),
       this.masterMaps(),
       this.shipmentRepo.milestonesFor(id),
       this.alertRepo.list(),
-      this.bookingRepo.poNumbersFor(leg.bookingId),
+      this.shipmentRepo.linkedPosForBooking(leg.bookingId) as Promise<LinkedPoRow[]>,
     ])
-    const base = toUiShipment(this.assembleInput(leg, booking, maps, poNumbers))
+    const base = toUiShipment(this.assembleInput(leg, booking, maps, linkedPos))
     const legAlerts = alertRows.filter((a) => a.shipmentId === id).map((a) => toUiAlert({ alert: a, shipment: null }))
     return { ...base, milestones, emails: [], alerts: legAlerts }
   }
@@ -232,7 +265,7 @@ export class PresentationService {
         id: a.attachmentId,
         emailId: messageId,
         filename: a.filename,
-        mimeType: a.declaredMime ?? 'application/octet-stream',
+        mimeType: resolveMime(a.declaredMime, a.filename),
         sizeBytes: a.sizeBytes ?? 0,
         createdAt: a.createdAt instanceof Date ? a.createdAt.toISOString() : String(a.createdAt ?? ''),
       })),
@@ -298,9 +331,32 @@ export class PresentationService {
   }
 
   async vendors(q?: string, type?: string) {
-    let rows = (await this.mastersRepo.listVendors()) as Array<Ref & { type?: string }>
+    let rows = (await this.mastersRepo.listVendors()) as Array<
+      Ref & {
+        type?: string | null
+        location?: string | null
+        contactEmail?: string | null
+        contactPhone?: string | null
+        notes?: string | null
+        createdAt?: Date | string | null
+        updatedAt?: Date | string | null
+      }
+    >
     if (type) rows = rows.filter((r) => r.type === type)
-    return { vendors: PresentationService.search(rows, q).map((v) => ({ id: v.id, name: v.name, code: v.code ?? null })) }
+    return {
+      vendors: PresentationService.search(rows, q).map((v) => ({
+        id: v.id,
+        name: v.name,
+        code: v.code ?? null, // kept for the type-ahead consumer; the UI Vendor type ignores it
+        type: v.type ?? 'factory',
+        location: v.location ?? null,
+        contactEmail: v.contactEmail ?? null,
+        contactPhone: v.contactPhone ?? null,
+        notes: v.notes ?? null,
+        createdAt: isoOrNull(v.createdAt),
+        updatedAt: isoOrNull(v.updatedAt),
+      })),
+    }
   }
 
   async forwarders(q?: string) {

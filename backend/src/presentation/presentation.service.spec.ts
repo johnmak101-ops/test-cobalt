@@ -46,6 +46,10 @@ const build = () => {
     findById: async (id: string) => legs.find((l) => l.id === id) ?? null,
     milestonesFor: async () => [],
     posFor: async () => [],
+    linkedPosForBooking: async (id: string) =>
+      id === 'b1'
+        ? [{ id: 'po1', poNumber: 'PO-1', totalQuantity: 5000, quantityUnit: 'pieces', vendorName: 'Rose Knit' }]
+        : [],
   }
   const bookingRepo = {
     listOrdered: async () => bookings,
@@ -81,6 +85,10 @@ describe('PresentationService.shipments — list', () => {
     expect(s.customer).toEqual({ id: 'c1', name: 'Cole Haan', code: 'COLE' })
     expect(s.vendor).toEqual({ id: 'v1', name: 'Rose Knit', code: 'ROKNFT' })
     expect(s.forwarder).toEqual({ id: 'f1', name: 'Fairate', code: 'FAIR' })
+    // linkedPOs carry the real PO id (drill-down), vendor, and qty/unit — not the old {poNumber} stub
+    expect(s.linkedPOs).toEqual([
+      { id: 'po1', poNumber: 'PO-1', totalQuantity: 5000, quantityUnit: 'pieces', quantity: null, vendor: { name: 'Rose Knit' } },
+    ])
   })
 
   it('filters by UI status', async () => {
@@ -123,7 +131,9 @@ describe('PresentationService.shipmentHistory', () => {
 
 describe('PresentationService master search', () => {
   it('filters vendors by query (case-insensitive, code or name) and shapes the ref', async () => {
-    expect((await build().vendors('rose')).vendors).toEqual([{ id: 'v1', name: 'Rose Knit', code: 'ROKNFT' }])
+    expect((await build().vendors('rose')).vendors).toEqual([
+      { id: 'v1', name: 'Rose Knit', code: 'ROKNFT', type: 'factory', location: null, contactEmail: null, contactPhone: null, notes: null, createdAt: null, updatedAt: null },
+    ])
     expect((await build().vendors('ROKN')).vendors).toHaveLength(1)
     expect((await build().vendors('zzz')).vendors).toHaveLength(0)
     expect((await build().vendors()).vendors).toHaveLength(1)
