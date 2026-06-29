@@ -13,6 +13,7 @@ import { toUiShipment, type ShipmentMapperInput, type ShipmentLegRow } from './m
 import { toUiAlert } from './mappers/alert.mapper'
 import { toUiAlertRule } from './mappers/alert-rule.mapper'
 import { toUiHistoryEntry } from './mappers/history.mapper'
+import { toUiPurchaseOrder, toUiPurchaseOrderDetail } from './mappers/po.mapper'
 import { deriveRoute, poNumbersJson } from './adapters/derive'
 
 type Ref = { id: string; code?: string | null; name: string }
@@ -141,6 +142,60 @@ export class PresentationService {
   async shipmentHistory(id: string) {
     const rows = await this.auditRepo.listForEntity('shipment', id)
     return { history: rows.map(toUiHistoryEntry) }
+  }
+
+  // ---- purchase orders (app-owned) ----
+
+  async purchaseOrders(filter?: { customerId?: string; open?: boolean }) {
+    const rows = await this.bookingRepo.listPos(filter?.open ?? false)
+    const out = rows
+      .filter((r) => !filter?.customerId || r.customerId === filter.customerId)
+      .map((r) =>
+        toUiPurchaseOrder({
+          po: {
+            id: r.id, poNumber: r.poNumber, customerId: r.customerId ?? null, vendorId: r.vendorId ?? null,
+            totalQuantity: r.totalQuantity ?? null, quantityUnit: r.quantityUnit ?? null,
+            createdAt: r.createdAt, updatedAt: r.updatedAt,
+          },
+          customer: r.customerName || r.customerCode ? { id: r.customerId ?? '', name: r.customerName ?? '', code: r.customerCode ?? null } : null,
+          vendor: r.vendorName || r.vendorCode ? { id: r.vendorId ?? '', name: r.vendorName ?? '', code: r.vendorCode ?? null } : null,
+          shipmentCount: r.shipmentCount,
+          shippedQuantity: r.shippedQuantity,
+          shipmentSummary: [],
+        }),
+      )
+    return { purchaseOrders: out }
+  }
+
+  async purchaseOrder(id: string) {
+    const detail = await this.bookingRepo.poDetail(id)
+    if (!detail) throw new NotFoundException('purchase order not found')
+    const { po, links } = detail
+    return toUiPurchaseOrderDetail({
+      po: {
+        id: po.id, poNumber: po.poNumber, customerId: po.customerId ?? null, vendorId: po.vendorId ?? null,
+        totalQuantity: po.totalQuantity ?? null, quantityUnit: po.quantityUnit ?? null,
+        createdAt: po.createdAt, updatedAt: po.updatedAt,
+      },
+      customer: po.customerName || po.customerCode ? { id: po.customerId ?? '', name: po.customerName ?? '', code: po.customerCode ?? null } : null,
+      vendor: po.vendorName || po.vendorCode ? { id: po.vendorId ?? '', name: po.vendorName ?? '', code: po.vendorCode ?? null } : null,
+      shipmentCount: links.length,
+      shippedQuantity: links.reduce((s, l) => s + (l.linkedQuantity ?? 0), 0),
+      shipmentSummary: [],
+      linkedShipments: links.map((l) => ({
+        shipment: {
+          leg: {
+            id: l.shipmentId, state: l.status, bookingNo: l.bookingNo, soNo: l.so, hblAwbFcrNo: l.hbl,
+            etd: l.etd, eta: l.eta,
+          } as unknown as ShipmentLegRow,
+          booking: null,
+          polPort: l.polCode ? { unlocode: l.polCode } : null,
+          podPort: l.podCode ? { unlocode: l.podCode } : null,
+          poNumbers: [po.poNumber],
+        } as ShipmentMapperInput,
+        linkedQuantity: l.linkedQuantity,
+      })),
+    })
   }
 
   // ---- masters (read-only search) ----

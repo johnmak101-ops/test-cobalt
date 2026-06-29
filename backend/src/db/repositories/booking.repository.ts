@@ -79,6 +79,10 @@ export class BookingRepository {
         totalQuantity: schema.purchaseOrders.totalQuantity,
         quantityUnit: schema.purchaseOrders.quantityUnit,
         crd: schema.purchaseOrders.crd,
+        customerId: schema.purchaseOrders.customerId,
+        vendorId: schema.purchaseOrders.vendorId,
+        createdAt: schema.purchaseOrders.createdAt,
+        updatedAt: schema.purchaseOrders.updatedAt,
       })
       .from(schema.purchaseOrders)
       .leftJoin(schema.customers, eq(schema.purchaseOrders.customerId, schema.customers.id))
@@ -122,8 +126,14 @@ export class BookingRepository {
         totalQuantity: schema.purchaseOrders.totalQuantity,
         quantityUnit: schema.purchaseOrders.quantityUnit,
         crd: schema.purchaseOrders.crd,
+        customerId: schema.purchaseOrders.customerId,
+        vendorId: schema.purchaseOrders.vendorId,
+        customerCode: schema.customers.code,
         customerName: schema.customers.name,
+        vendorCode: schema.vendors.code,
         vendorName: schema.vendors.name,
+        createdAt: schema.purchaseOrders.createdAt,
+        updatedAt: schema.purchaseOrders.updatedAt,
       })
       .from(schema.purchaseOrders)
       .leftJoin(schema.customers, eq(schema.purchaseOrders.customerId, schema.customers.id))

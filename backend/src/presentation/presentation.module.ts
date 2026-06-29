@@ -5,6 +5,7 @@ import {
   UiMastersController,
   UiAlertRulesController,
   UiShipmentHistoryController,
+  UiPosController,
 } from './ui.controllers'
 
 /**
@@ -19,6 +20,7 @@ import {
     UiMastersController,
     UiAlertRulesController,
     UiShipmentHistoryController,
+    UiPosController,
   ],
   providers: [PresentationService],
   exports: [PresentationService],

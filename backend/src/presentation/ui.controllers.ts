@@ -51,3 +51,15 @@ export class UiShipmentHistoryController {
     return this.ui.shipmentHistory(id)
   }
 }
+
+@Controller('purchase-orders')
+export class UiPosController {
+  constructor(private readonly ui: PresentationService) {}
+
+  @Get() list(@Query('customerId') customerId?: string, @Query('open') open?: string) {
+    return this.ui.purchaseOrders({ customerId, open: open === 'true' })
+  }
+  @Get(':id') detail(@Param('id') id: string) {
+    return this.ui.purchaseOrder(id)
+  }
+}
