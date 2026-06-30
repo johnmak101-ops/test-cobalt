@@ -38,3 +38,7 @@ pave.log
 
 # Local Claude tooling (preview launch config, etc.)
 /.claude/
+
+# runtime logs / scratch
+backend/_run.*.log
+tmp/
