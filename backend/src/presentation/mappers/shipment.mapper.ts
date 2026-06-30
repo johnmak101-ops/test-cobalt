@@ -31,6 +31,11 @@ export interface ShipmentLegRow {
   voyageNo: string | null
   scacCode: string | null
   originCountry: string | null
+  polRaw: string | null
+  podRaw: string | null
+  forwarderRaw: string | null
+  grossWeight: number | null
+  measurement: number | null
   cargoReadyDate: Dateish
   cfsCutoff: Dateish
   etd: Dateish
@@ -91,6 +96,8 @@ export interface UiShipment {
   warehouseAddress: string | null
   quantityShipped: number | null
   quantityUnit: string | null
+  grossWeight: number | null
+  measurement: number | null
   createdAt: string | null
   updatedAt: string | null
   customer: MasterRef | null
@@ -107,7 +114,7 @@ export function toUiShipment(input: ShipmentMapperInput): UiShipment {
     customerId: booking?.customerId ?? null,
     vendorId: booking?.vendorId ?? null,
     forwarderId: leg.forwarderId ?? null,
-    route: deriveRoute(input.polPort?.unlocode, input.podPort?.unlocode),
+    route: deriveRoute(input.polPort?.unlocode ?? leg.polRaw, input.podPort?.unlocode ?? leg.podRaw),
     originCountry: leg.originCountry ?? deriveOriginCountry(input.polPort),
     status: stateToUiStatus(leg.state),
     riskLevel: leg.riskLevel ?? null,
@@ -134,11 +141,13 @@ export function toUiShipment(input: ShipmentMapperInput): UiShipment {
     warehouseAddress: null, // Phase 3 column
     quantityShipped: leg.qty ?? null,
     quantityUnit: leg.qtyUnit ?? null,
+    grossWeight: leg.grossWeight ?? null,
+    measurement: leg.measurement ?? null,
     createdAt: isoOrNull(leg.createdAt),
     updatedAt: isoOrNull(leg.updatedAt),
     customer: input.customer ?? null,
     vendor: input.vendor ?? null,
-    forwarder: input.forwarder ?? null,
+    forwarder: input.forwarder ?? (leg.forwarderRaw ? { id: '', name: leg.forwarderRaw } : null),
     linkedPOs: input.linkedPOs ?? [],
   }
 }

@@ -203,6 +203,8 @@ export default function ShipmentDetailPage() {
           <DetailSection title="Cargo & Logistics" icon={<Package size={14} className="text-text-muted" />}>
             <DetailRow label="Qty" value={shipment.quantityShipped != null ? String(shipment.quantityShipped) : null} />
             <DetailRow label="UOM" value={shipment.quantityUnit ?? null} />
+            <DetailRow label="Gross Weight" value={shipment.grossWeight != null ? `${shipment.grossWeight} KGS` : null} />
+            <DetailRow label="Measurement" value={shipment.measurement != null ? `${shipment.measurement} CBM` : null} />
             <DetailRow label="Container No." value={shipment.containerNo} />
             <DetailRow label="HBL / AWB / FCR No." value={shipment.hblNumber} />
             <DetailRow label="MBL" value={shipment.mblNumber} />

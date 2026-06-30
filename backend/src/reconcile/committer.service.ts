@@ -140,6 +140,8 @@ export class CommitterService {
       inDcDate: date(f.in_dc_date),
       qty: num(f.qty),
       qtyUnit: str(f.qty_unit) as 'cartons' | 'pieces' | 'cbm' | null,
+      grossWeight: num(f.gross_weight),
+      measurement: num(f.measurement),
       itemStyleNo: str(f.item_style_no),
       consigneeName: str(f.consignee_name),
       consigneeAddress: str(f.consignee_address),

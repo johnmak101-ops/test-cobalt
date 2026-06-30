@@ -45,6 +45,8 @@ export interface Shipment {
   warehouseAddress: string | null
   quantityShipped: number | null
   quantityUnit: string | null
+  grossWeight: number | null
+  measurement: number | null
   createdAt: string
   updatedAt: string
   customer?: { id: string; name: string; code: string } | null
