@@ -26,6 +26,7 @@ const COUNTRY_LIST = [
   { code: 'KH', label: 'Cambodia' },
   { code: 'VN', label: 'Vietnam' },
   { code: 'IN', label: 'India' },
+  { code: 'LK', label: 'Sri Lanka' },
 ]
 
 const STATE_LABELS: Record<string, string> = {
@@ -223,7 +224,7 @@ export default function AlertRulesPage() {
                     <p className="text-[10px] text-text-muted">
                       Override default threshold when shipment origin country matches
                     </p>
-                    <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-5">
+                    <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
                       {COUNTRY_LIST.map((country) => {
                         const currentDays = rule.countryThresholds?.[country.code]
                         return (

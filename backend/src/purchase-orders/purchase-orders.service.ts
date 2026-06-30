@@ -14,7 +14,7 @@ export interface CreatePoInput {
 }
 
 /**
- * PO writes. POs are APP-OWNED (the Mesh ERP has none), so create/edit/delete live here. Master refs
+ * PO writes. POs are APP-OWNED (the Cobalt Mesh API has none), so create/edit/delete live here. Master refs
  * (customer/vendor) are VALIDATED against the read-only masters but never created — governance:
  * resolve-or-reject (see cobalt-master-data-governance). Every mutation lands an audit row.
  */
@@ -35,9 +35,9 @@ export class PurchaseOrdersService {
 
   private async assertMasters(customerId?: string | null, vendorId?: string | null) {
     if (customerId && !(await this.masters.customerExists(customerId)))
-      throw new BadRequestException('customer not found — masters are ERP-managed and cannot be created here')
+      throw new BadRequestException('customer not found — masters are managed in the Cobalt Mesh API and cannot be created here')
     if (vendorId && !(await this.masters.vendorExists(vendorId)))
-      throw new BadRequestException('vendor not found — masters are ERP-managed and cannot be created here')
+      throw new BadRequestException('vendor not found — masters are managed in the Cobalt Mesh API and cannot be created here')
   }
 
   async create(input: CreatePoInput, actorId: string) {

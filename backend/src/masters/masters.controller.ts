@@ -33,7 +33,7 @@ export class MastersController {
     return this.masters.rejectProposal(id, u.id)
   }
 
-  // Writes — ADMIN+ , Ops-maintained masters only (customers/vendors are an ERP mirror).
+  // Writes — ADMIN+ , Ops-maintained masters only (customers/vendors are a Cobalt Mesh API mirror).
   @Roles('ADMIN') @Post('forwarders') createForwarder(@Body() dto: CreateForwarderDto) {
     return this.masters.createForwarder(dto)
   }

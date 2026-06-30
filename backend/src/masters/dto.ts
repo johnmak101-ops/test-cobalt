@@ -2,7 +2,7 @@ import { IsIn, IsOptional, IsString, MinLength } from 'class-validator'
 
 const PORT_MODES = ['sea', 'air']
 
-// Ops-maintained masters only. customers/vendors are an ERP mirror (read-only) — no write DTOs.
+// Ops-maintained masters only. customers/vendors are a Cobalt Mesh API mirror (read-only) — no write DTOs.
 
 export class CreateForwarderDto {
   @IsOptional() @IsString() code?: string

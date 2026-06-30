@@ -181,8 +181,8 @@ async function main() {
   // ---- Pillar-4 alert rules — only A1/A2 active, country-aware (CN/BD/KH/VN/IN), anchored on ETD ----
   // Per Cobalt_SYSTEM_UPDATE_SUMMARY_20260623: threshold in hours; per-country overrides in country_thresholds.
   await db.insert(schema.alertRules).values([
-    { id: 'A1', name: 'No Draft BOL', description: 'No Draft B/L by ETD + 1 day (BD/KH: +2 days)', state: 'CONFIRMED', triggerType: 'days_after', triggerReference: 'etd', watchFor: 'draft_bl', thresholdHours: 24, countryThresholds: { BD: 48, KH: 48 }, severity: 'WARNING', computeTz: 'vessel' },
-    { id: 'A2', name: 'No Final BOL', description: 'No Final B/L by ETD + 3 days (BD/KH: +7 days)', state: 'AT_WAREHOUSE', triggerType: 'days_after', triggerReference: 'etd', watchFor: 'final_bl', thresholdHours: 72, countryThresholds: { BD: 168, KH: 168 }, severity: 'WARNING', computeTz: 'vessel' },
+    { id: 'A1', name: 'No Draft BOL', description: 'No Draft B/L received after ETD', state: 'CONFIRMED', triggerType: 'days_after', triggerReference: 'etd', watchFor: 'draft_bl', thresholdHours: 24, countryThresholds: { BD: 48, KH: 48 }, severity: 'WARNING', computeTz: 'vessel' },
+    { id: 'A2', name: 'No Final BOL', description: 'No Final B/L received after ETD', state: 'AT_WAREHOUSE', triggerType: 'days_after', triggerReference: 'etd', watchFor: 'final_bl', thresholdHours: 72, countryThresholds: { BD: 168, KH: 168 }, severity: 'WARNING', computeTz: 'vessel' },
   ])
 
   // ---- auth users (dev: every password is 'cobalt') ----

@@ -26,9 +26,37 @@ interface AlertRule {
   triggerType: string
   triggerReference: string
   thresholdDays: number
+  countryThresholds: Record<string, number> | null // ABSOLUTE days per origin country (as stored by the API)
+  countryOffsets?: Record<string, number> // UI-only: extra days vs the default ("CN +1 day")
   severity: string
   enabled: boolean
   locked: boolean
+}
+
+const ALERT_COUNTRY_LIST = [
+  { code: 'CN', label: 'China' },
+  { code: 'BD', label: 'Bangladesh' },
+  { code: 'KH', label: 'Cambodia' },
+  { code: 'VN', label: 'Vietnam' },
+  { code: 'IN', label: 'India' },
+  { code: 'LK', label: 'Sri Lanka' },
+]
+
+/**
+ * The API stores per-country thresholds as ABSOLUTE days; this section edits them as an OFFSET
+ * vs the rule's default ("CN +1 day"). Converting at the load/save boundary keeps the backend,
+ * the evaluator, and the standalone Alert Rules page on their existing absolute model.
+ */
+function deriveCountryOffsets(rule: AlertRule): Record<string, number> {
+  const out: Record<string, number> = {}
+  if (rule.countryThresholds) {
+    for (const [code, days] of Object.entries(rule.countryThresholds)) out[code] = days - rule.thresholdDays
+  }
+  return out
+}
+
+function withOffsets(rules: AlertRule[]): AlertRule[] {
+  return rules.map((r) => ({ ...r, countryOffsets: deriveCountryOffsets(r) }))
 }
 
 function AlertRulesSettings() {
@@ -42,13 +70,24 @@ function AlertRulesSettings() {
 
   useEffect(() => {
     if (data?.rules) {
-      setLocalRules(data.rules)
+      setLocalRules(withOffsets(data.rules))
       setDirty(false)
     }
   }, [data])
 
   const saveRules = useMutation({
-    mutationFn: (rules: AlertRule[]) => api.put('/alert-rules', { rules }),
+    // Convert each rule's per-country OFFSET back to the API's ABSOLUTE days (default + offset)
+    // and drop the UI-only countryOffsets field before sending.
+    mutationFn: (rules: AlertRule[]) =>
+      api.put('/alert-rules', {
+        rules: rules.map(({ countryOffsets, ...rule }) => {
+          const ct: Record<string, number> = {}
+          for (const [code, off] of Object.entries(countryOffsets ?? {})) {
+            if (off) ct[code] = rule.thresholdDays + off
+          }
+          return { ...rule, countryThresholds: Object.keys(ct).length > 0 ? ct : null }
+        }),
+      }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['alertRules'] })
       setDirty(false)
@@ -62,35 +101,45 @@ function AlertRulesSettings() {
     setDirty(true)
   }
 
+  const updateCountryOffset = (id: string, code: string, offset: number | '') => {
+    setLocalRules((prev) =>
+      prev.map((r) => {
+        if (r.id !== id) return r
+        const offs = { ...(r.countryOffsets ?? {}) }
+        if (offset === '' || offset === 0) delete offs[code]
+        else offs[code] = offset
+        return { ...r, countryOffsets: offs }
+      })
+    )
+    setDirty(true)
+  }
+
   if (isLoading) {
     return <div className="text-sm text-text-muted">Loading alert rules...</div>
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
       <div>
         <h2 className="text-base font-semibold text-text-primary">Alert Rules Configuration</h2>
-        <p className="text-sm text-text-secondary">
+        <p className="mt-1 text-sm text-text-secondary">
           Configure when alerts are triggered for each shipment state. Changes take effect
           immediately.
         </p>
       </div>
 
-      <div className="space-y-3">
+      <div className="space-y-4">
         {localRules.map((rule) => (
           <Card key={rule.id}>
-            <div className="flex items-start justify-between gap-4">
-              <div className="flex-1">
-                <div className="flex items-center gap-2">
-                  <span className="font-mono text-xs text-text-muted">{rule.id}</span>
-                  <h4 className="text-sm font-semibold text-text-primary">{rule.name}</h4>
-                  {rule.locked && (
-                    <span className="rounded bg-status-critical/15 px-1.5 py-0.5 text-[10px] font-semibold text-status-critical">
-                      LOCKED
-                    </span>
-                  )}
-                </div>
-                <p className="mt-1 text-xs text-text-secondary">{rule.description}</p>
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex items-center gap-2">
+                <span className="font-mono text-xs text-text-muted">{rule.id}</span>
+                <h4 className="text-sm font-semibold text-text-primary">{rule.name}</h4>
+                {rule.locked && (
+                  <span className="rounded bg-status-critical/15 px-1.5 py-0.5 text-[10px] font-semibold text-status-critical">
+                    LOCKED
+                  </span>
+                )}
               </div>
 
               {/* Enabled toggle */}
@@ -112,7 +161,7 @@ function AlertRulesSettings() {
               </button>
             </div>
 
-            <div className="mt-4 flex flex-wrap items-center gap-4">
+            <div className="mt-5 flex flex-wrap items-center gap-x-8 gap-y-4">
               <div>
                 <label className="text-xs text-text-muted">
                   Trigger {rule.triggerType === 'days_before' ? 'before' : 'after'} (days)
@@ -152,6 +201,48 @@ function AlertRulesSettings() {
                 </p>
               </div>
             </div>
+
+            {/* Per-country warning days — extra days added to the default for a given origin country */}
+            {!rule.locked && (
+              <div className="mt-5 rounded-lg border border-border bg-surface-800/50 p-3.5">
+                <label className="text-xs font-medium text-text-secondary">Country warning days</label>
+                <p className="mt-0.5 text-[10px] text-text-muted">
+                  Extra days before this alert fires, by shipment origin country (added to the default of{' '}
+                  {rule.thresholdDays} {rule.thresholdDays === 1 ? 'day' : 'days'}). Leave blank for none.
+                </p>
+                <div className="mt-3 grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
+                  {ALERT_COUNTRY_LIST.map((country) => {
+                    const off = rule.countryOffsets?.[country.code]
+                    return (
+                      <div
+                        key={country.code}
+                        className="flex items-center justify-between gap-2 rounded border border-border bg-surface-700/40 px-2 py-1"
+                      >
+                        <span className="min-w-0 truncate text-xs text-text-secondary">
+                          <span className="font-semibold text-text-muted">{country.code}</span> {country.label}
+                        </span>
+                        <div className="flex shrink-0 items-center gap-1">
+                          <span className="text-[11px] text-text-muted">+</span>
+                          <input
+                            type="number"
+                            min={0}
+                            max={30}
+                            value={off ?? ''}
+                            onChange={(e) => {
+                              const v = e.target.value
+                              updateCountryOffset(rule.id, country.code, v === '' ? '' : parseInt(v) || 0)
+                            }}
+                            placeholder="0"
+                            className="h-7 w-14 rounded border border-border bg-surface-700 px-2 text-xs text-text-primary placeholder:text-text-muted/40"
+                          />
+                          <span className="text-[11px] text-text-muted">days</span>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
           </Card>
         ))}
       </div>
@@ -161,7 +252,7 @@ function AlertRulesSettings() {
         <button
           onClick={() => {
             if (data?.rules) {
-              setLocalRules(data.rules)
+              setLocalRules(withOffsets(data.rules))
               setDirty(false)
             }
           }}
@@ -227,14 +318,14 @@ function VendorsSettings() {
         <div>
           <h2 className="text-base font-semibold text-text-primary">Vendors / Factories</h2>
           <p className="text-sm text-text-secondary">
-            Vendor &amp; factory records are mirrored read-only from the Cobalt ERP. Maintain them in the ERP;
+            Vendor &amp; factory records are mirrored read-only from the Cobalt Mesh API. Maintain them in Cobalt Mesh;
             this app resolves them or flags unknowns for review.
           </p>
         </div>
         <div className="flex gap-2">
           <button
             disabled
-            title="Vendors are maintained in the Cobalt ERP — read-only here"
+            title="Vendors are maintained in the Cobalt Mesh API — read-only here"
             onClick={() => {
               setShowCsvImport(!showCsvImport)
               setShowCreate(false)
@@ -246,7 +337,7 @@ function VendorsSettings() {
           </button>
           <button
             disabled
-            title="Vendors are maintained in the Cobalt ERP — read-only here"
+            title="Vendors are maintained in the Cobalt Mesh API — read-only here"
             onClick={() => {
               setShowCreate(!showCreate)
               setShowCsvImport(false)
