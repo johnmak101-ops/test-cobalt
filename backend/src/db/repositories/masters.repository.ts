@@ -74,6 +74,23 @@ export class MastersRepository {
   async forwarderIdByName(name: string) {
     const [r] = await this.db.select().from(schema.forwarders).where(ilike(schema.forwarders.name, `%${name}%`))
     if (r) return r.id
+    // normalized exact match: strip ALL non-alphanumerics so punctuation/spacing variants resolve
+    // ('LX PANTOS LOGISTICS (SHENZHEN) CO.,LTD.' == master 'LX PANTOS LOGISTICS (SHENZHEN) CO. LTD').
+    const norm = name.toUpperCase().replace(/[^A-Z0-9]/g, '')
+    if (norm.length >= 4) {
+      const [n] = await this.db
+        .select()
+        .from(schema.forwarders)
+        .where(sql`regexp_replace(upper(${schema.forwarders.name}), '[^A-Z0-9]', '', 'g') = ${norm}`)
+        .limit(1)
+      if (n) return n.id
+      const [na] = await this.db
+        .select()
+        .from(schema.forwarderAliases)
+        .where(sql`regexp_replace(upper(${schema.forwarderAliases.value}), '[^A-Z0-9]', '', 'g') = ${norm}`)
+        .limit(1)
+      if (na) return na.forwarderId
+    }
     const [a] = await this.db.select().from(schema.forwarderAliases).where(ilike(schema.forwarderAliases.value, `%${name}%`))
     return a?.forwarderId ?? null
   }

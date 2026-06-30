@@ -195,7 +195,7 @@ export default function ShipmentDetailPage() {
             <DetailRow label="PO#" value={linkedPOs.length > 0 ? linkedPOs.map(p => p.poNumber).join(', ') : '—'} />
             <DetailRow label="Booking No." value={shipment.bookingNo} />
             <DetailRow label="SO#" value={shipment.soNumber} />
-            <DetailRow label="Item / Style No." value={shipment.itemStyleNo} />
+            <DetailRow label="Item / Style No." value={shipment.itemStyleNo?.replace(/,/g, ', ') ?? null} />
             <DetailRow label="Email Date" value={formatDate(shipment.createdAt)} />
           </DetailSection>
 
@@ -344,7 +344,7 @@ function DetailRow({ label, value }: { label: string; value: string | null | und
   return (
     <div className="grid grid-cols-[9rem_1fr] gap-x-2 items-baseline">
       <span className="text-xs text-text-muted truncate">{label}</span>
-      <span className="font-mono text-sm text-text-primary break-words">
+      <span className="font-mono text-sm text-text-primary break-words min-w-0">
         {value ?? <span className="italic text-text-muted">(pending)</span>}
       </span>
     </div>
