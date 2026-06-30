@@ -134,6 +134,10 @@ export default function ShipmentDetailPage() {
           milestones={shipment.milestones ?? []}
           currentStatus={shipment.status}
           horizontal
+          etd={shipment.etd}
+          atd={shipment.actualDeparture}
+          eta={shipment.eta}
+          ata={shipment.actualArrival}
         />
       </Card>
 
