@@ -47,6 +47,7 @@ export interface Shipment {
   quantityUnit: string | null
   grossWeight: number | null
   measurement: number | null
+  htsCode: string | null
   createdAt: string
   updatedAt: string
   customer?: { id: string; name: string; code: string } | null

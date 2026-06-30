@@ -142,6 +142,7 @@ export class CommitterService {
       qtyUnit: str(f.qty_unit) as 'cartons' | 'pieces' | 'cbm' | null,
       grossWeight: num(f.gross_weight),
       measurement: num(f.measurement),
+      htsCode: str(f.hts_code),
       itemStyleNo: str(f.item_style_no),
       consigneeName: str(f.consignee_name),
       consigneeAddress: str(f.consignee_address),

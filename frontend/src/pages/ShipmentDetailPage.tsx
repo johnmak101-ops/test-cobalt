@@ -138,6 +138,7 @@ export default function ShipmentDetailPage() {
           atd={shipment.actualDeparture}
           eta={shipment.eta}
           ata={shipment.actualArrival}
+          inDcDate={shipment.inDcDate}
         />
       </Card>
 
@@ -205,6 +206,7 @@ export default function ShipmentDetailPage() {
             <DetailRow label="UOM" value={shipment.quantityUnit ?? null} />
             <DetailRow label="Gross Weight" value={shipment.grossWeight != null ? `${shipment.grossWeight} KGS` : null} />
             <DetailRow label="Measurement" value={shipment.measurement != null ? `${shipment.measurement} CBM` : null} />
+            <DetailRow label="HTS Code" value={shipment.htsCode?.replace(/,/g, ', ') ?? null} />
             <DetailRow label="Container No." value={shipment.containerNo} />
             <DetailRow label="HBL / AWB / FCR No." value={shipment.hblNumber} />
             <DetailRow label="MBL" value={shipment.mblNumber} />

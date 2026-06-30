@@ -218,6 +218,7 @@ export const shipments = tracking.table('shipments', {
   qtyUnit: text('qty_unit', { enum: QTY_UNIT }),
   grossWeight: doublePrecision('gross_weight'), // total gross weight (KGS) off the B/L / invoice
   measurement: doublePrecision('measurement'), // total measurement (CBM) off the B/L / invoice
+  htsCode: text('hts_code'), // customs HTS/HS tariff code(s), comma-joined
   itemStyleNo: text('item_style_no'),
   consigneeName: text('consignee_name'),
   consigneeAddress: text('consignee_address'),

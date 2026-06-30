@@ -19,9 +19,10 @@ interface MilestoneTimelineProps {
   atd?: string | null
   eta?: string | null
   ata?: string | null
+  inDcDate?: string | null
 }
 
-const milestoneOrder = ['BOOKING_SENT', 'SO_RECEIVED', 'DRAFT_BL_RECEIVED', 'FINAL_BL_RECEIVED', 'DEPARTED', 'ARRIVED']
+const milestoneOrder = ['BOOKING_SENT', 'SO_RECEIVED', 'DRAFT_BL_RECEIVED', 'FINAL_BL_RECEIVED', 'DEPARTED', 'ARRIVED', 'DELIVERED']
 
 const milestoneLabels: Record<string, string> = {
   BOOKING_SENT: 'Booking Request',
@@ -29,7 +30,8 @@ const milestoneLabels: Record<string, string> = {
   DRAFT_BL_RECEIVED: 'Draft BOL',
   FINAL_BL_RECEIVED: 'Final BOL',
   DEPARTED: 'Departure',
-  ARRIVED: 'Delivered',
+  ARRIVED: 'Arrived',
+  DELIVERED: 'Delivered',
 }
 
 export function MilestoneTimeline({
@@ -40,13 +42,14 @@ export function MilestoneTimeline({
   atd,
   eta,
   ata,
+  inDcDate,
 }: MilestoneTimelineProps) {
   const milestoneMap = new Map(milestones.map((m) => [m.milestoneType, m]))
 
   // The ACTUAL date a stage occurred: a milestone EVENT for the document stages, or the shipment's own
   // atd/ata scalar for DEPARTED/ARRIVED (tracked as dates, not events).
   const actualDate = (type: string): string | null =>
-    milestoneMap.get(type)?.occurredAt ?? (type === 'DEPARTED' ? atd : type === 'ARRIVED' ? ata : null) ?? null
+    milestoneMap.get(type)?.occurredAt ?? (type === 'DEPARTED' ? atd : type === 'ARRIVED' ? ata : type === 'DELIVERED' ? inDcDate : null) ?? null
   // ESTIMATED date, for a departure/arrival stage not yet reached.
   const estDate = (type: string): string | null => (type === 'DEPARTED' ? etd : type === 'ARRIVED' ? eta : null) ?? null
 

@@ -36,6 +36,7 @@ export interface ShipmentLegRow {
   forwarderRaw: string | null
   grossWeight: number | null
   measurement: number | null
+  htsCode: string | null
   cargoReadyDate: Dateish
   cfsCutoff: Dateish
   etd: Dateish
@@ -98,6 +99,7 @@ export interface UiShipment {
   quantityUnit: string | null
   grossWeight: number | null
   measurement: number | null
+  htsCode: string | null
   createdAt: string | null
   updatedAt: string | null
   customer: MasterRef | null
@@ -143,6 +145,7 @@ export function toUiShipment(input: ShipmentMapperInput): UiShipment {
     quantityUnit: leg.qtyUnit ?? null,
     grossWeight: leg.grossWeight ?? null,
     measurement: leg.measurement ?? null,
+    htsCode: leg.htsCode ?? null,
     createdAt: isoOrNull(leg.createdAt),
     updatedAt: isoOrNull(leg.updatedAt),
     customer: input.customer ?? null,
