@@ -9,6 +9,22 @@ import { ShipmentRepository } from '../db/repositories/shipment.repository'
 import { FieldLockRepository } from '../db/repositories/field-lock.repository'
 import { AuditRepository } from '../db/repositories/audit.repository'
 
+/** Dedupe a comma-joined list (order-preserving, case-insensitive) — style/HTS lists pile up across the
+ *  multiple PO sheets + B/L rider, so the same value repeats. Applied at commit so it holds without a reparse. */
+const dedupeCsv = (s: string | null): string | null => {
+  if (!s || !s.includes(',')) return s
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const t of s.split(',').map((x) => x.trim()).filter(Boolean)) {
+    const k = t.toUpperCase()
+    if (!seen.has(k)) {
+      seen.add(k)
+      out.push(t)
+    }
+  }
+  return out.length ? out.join(',') : s
+}
+
 /** One reconciled shipment picture, ready to commit. */
 export interface ReconGroup {
   fields: Record<string, unknown>
@@ -142,8 +158,8 @@ export class CommitterService {
       qtyUnit: str(f.qty_unit) as 'cartons' | 'pieces' | 'cbm' | null,
       grossWeight: num(f.gross_weight),
       measurement: num(f.measurement),
-      htsCode: str(f.hts_code),
-      itemStyleNo: str(f.item_style_no),
+      htsCode: dedupeCsv(str(f.hts_code)),
+      itemStyleNo: dedupeCsv(str(f.item_style_no)),
       consigneeName: str(f.consignee_name),
       consigneeAddress: str(f.consignee_address),
       // persist the conversationId so a zero-identity (keyless, PO-less) leg has a cross-run handle (A2).
