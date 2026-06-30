@@ -3,6 +3,7 @@ import { ShipmentRepository } from '../db/repositories/shipment.repository'
 import { BookingRepository } from '../db/repositories/booking.repository'
 import { FieldLockRepository } from '../db/repositories/field-lock.repository'
 import { strongKeys, keysOverlap, normKey, str } from '../reconcile/match-keys'
+import { deriveRoute } from '../presentation/adapters/derive'
 
 @Injectable()
 export class ShipmentsService {
@@ -41,9 +42,9 @@ export class ShipmentsService {
       atd: leg.atd,
       eta: leg.eta,
       updatedAt: leg.updatedAt,
-      route: leg.polCode && leg.podCode ? `${leg.polCode}→${leg.podCode}` : (leg.polCode ?? leg.podCode ?? null),
+      route: deriveRoute(leg.polCode ?? leg.polRaw, leg.podCode ?? leg.podRaw),
       customer: leg.customerId ? { id: leg.customerId, name: leg.customerName, code: leg.customerCode } : null,
-      forwarder: leg.forwarderId ? { id: leg.forwarderId, name: leg.forwarderName } : null,
+      forwarder: leg.forwarderId ? { id: leg.forwarderId, name: leg.forwarderName } : leg.forwarderRaw ? { id: '', name: leg.forwarderRaw } : null,
       pos: pos.map((p) => ({
         id: p.id,
         poNumber: p.poNumber,
@@ -88,9 +89,9 @@ export class ShipmentsService {
           etd: r.etd,
           eta: r.eta,
           updatedAt: r.updatedAt,
-          route: r.polCode && r.podCode ? `${r.polCode}→${r.podCode}` : (r.polCode ?? r.podCode ?? null),
+          route: deriveRoute(r.polCode ?? r.polRaw, r.podCode ?? r.podRaw),
           customer: r.customerId ? { id: r.customerId, name: r.customerName, code: r.customerCode } : null,
-          forwarder: r.forwarderId ? { id: r.forwarderId, name: r.forwarderName } : null,
+          forwarder: r.forwarderId ? { id: r.forwarderId, name: r.forwarderName } : r.forwarderRaw ? { id: '', name: r.forwarderRaw } : null,
           linkedPOs: pos.map((p) => ({
             id: p.id,
             poNumber: p.poNumber,

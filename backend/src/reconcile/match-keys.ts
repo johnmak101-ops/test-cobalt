@@ -2,6 +2,16 @@
 
 export const normKey = (v: unknown): string => String(v ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '')
 
+/** A re-issued booking carries a revision suffix ('BX845666 V3', 'BX845666-REV2', 'BX845666 AMENDED') — the
+ *  SAME booking. Strip a SEPARATOR-delimited trailing revision marker so a revision amends rather than spawns
+ *  a duplicate. Must stay identical to the matcher's copy (cobalt-queue match-keys.ts) so commit-time match
+ *  == matcher lookup. booking_no ONLY. */
+export const normBookingKey = (v: unknown): string => {
+  const raw = String(v ?? '').toUpperCase().trim()
+  const base = raw.replace(/[\s\-/]+(?:V|R|REV|AMD|AMEND(?:ED)?|REVISION)\s*\d*$/, '')
+  return normKey(base)
+}
+
 /** Strong, rotation-resistant identifiers a leg can be matched on (NOT customer_po alone). */
 const STRONG = ['so_no', 'booking_no', 'hbl_awb_fcr_no', 'mbl', 'container_no'] as const
 
@@ -9,7 +19,7 @@ export function strongKeys(mk: Record<string, unknown> | null | undefined): Set<
   const s = new Set<string>()
   if (!mk) return s
   for (const k of STRONG) {
-    const v = normKey(mk[k])
+    const v = k === 'booking_no' ? normBookingKey(mk[k]) : normKey(mk[k])
     if (v) s.add(`${k}:${v}`)
   }
   return s

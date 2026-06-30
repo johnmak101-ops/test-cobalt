@@ -74,8 +74,11 @@ export class ShipmentRepository {
         customerCode: schema.customers.code,
         forwarderId: schema.forwarders.id,
         forwarderName: schema.forwarders.name,
+        forwarderRaw: schema.shipments.forwarderRaw,
         polCode: pol.unlocode,
         podCode: pod.unlocode,
+        polRaw: schema.shipments.polRaw,
+        podRaw: schema.shipments.podRaw,
       })
       .from(schema.shipments)
       .innerJoin(schema.bookings, eq(schema.shipments.bookingId, schema.bookings.id))
@@ -117,8 +120,11 @@ export class ShipmentRepository {
         customerCode: schema.customers.code,
         forwarderId: schema.forwarders.id,
         forwarderName: schema.forwarders.name,
+        forwarderRaw: schema.shipments.forwarderRaw,
         polCode: pol.unlocode,
         podCode: pod.unlocode,
+        polRaw: schema.shipments.polRaw,
+        podRaw: schema.shipments.podRaw,
       })
       .from(schema.shipments)
       .innerJoin(schema.bookings, eq(schema.shipments.bookingId, schema.bookings.id))

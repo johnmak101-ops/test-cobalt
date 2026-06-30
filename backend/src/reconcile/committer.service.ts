@@ -114,9 +114,12 @@ export class CommitterService {
       mode: normMode(g.mode),
       state,
       forwarderId: effForwarderId,
+      forwarderRaw: str(f.forwarder_name), // raw — surfaced when forwarderId doesn't resolve
       polId,
       podId,
       originCountry,
+      polRaw: str(f.poi ?? (f as Record<string, unknown>).pol), // raw — surfaced when polId doesn't resolve
+      podRaw: str(f.pod),
       bookingNo: str(f.booking_no),
       soNo: str(f.so_no),
       hblAwbFcrNo: str(f.hbl_awb_fcr_no),
@@ -140,7 +143,8 @@ export class CommitterService {
       itemStyleNo: str(f.item_style_no),
       consigneeName: str(f.consignee_name),
       consigneeAddress: str(f.consignee_address),
-      matchKeys: g.matchKeys,
+      // persist the conversationId so a zero-identity (keyless, PO-less) leg has a cross-run handle (A2).
+      matchKeys: g.conversationId ? { ...g.matchKeys, conversation_id: g.conversationId } : g.matchKeys,
     }
 
     // matching / idempotency. A leg matches when:
@@ -167,6 +171,17 @@ export class CommitterService {
       }
     }
 
+    // A2: a zero-identity group (no strong key AND no PO) has no cross-run handle, so each commit would
+    // insert a fresh ghost leg. Fall back to the conversationId persisted in match_keys, matching only
+    // another zero-identity leg of the same thread, so a re-ingest UPDATES the provisional row.
+    if (!existing && gk.size === 0 && groupPos.size === 0 && g.conversationId) {
+      const conv = normKey(g.conversationId)
+      existing = legs.find((l) => {
+        const mk = (l.matchKeys ?? {}) as Record<string, unknown>
+        return strongKeys(mk).size === 0 && normKey(mk.conversation_id) === conv
+      })
+    }
+
     let bookingId: string
     let shipmentId: string
     let jobNo: string
@@ -180,7 +195,7 @@ export class CommitterService {
       const bk = await this.bookings.findById(bookingId)
       jobNo = bk?.jobNo ?? '(unknown)'
       await this.applyFields(shipmentId, existing as Record<string, unknown>, legValues, skippedLockedFields, g)
-      await this.fillBooking(bookingId, { customerId, vendorId: effVendorId, forwarderId: effForwarderId, crd: date(f.cargo_ready_date) })
+      await this.fillBooking(bookingId, { customerId, vendorId: effVendorId, forwarderId: effForwarderId, brand: str(f.brand), crd: date(f.cargo_ready_date) })
       // review gate is metadata, not a lockable field — always reflect the latest agent score
       if (effReviewStatus !== undefined)
         await this.shipments.updateLeg(shipmentId, {
@@ -190,7 +205,7 @@ export class CommitterService {
         })
     } else {
       jobNo = await this.nextJobNo()
-      const booking = await this.bookings.create({ jobNo, customerId, vendorId: effVendorId, forwarderId: effForwarderId, crd: date(f.cargo_ready_date) })
+      const booking = await this.bookings.create({ jobNo, customerId, vendorId: effVendorId, forwarderId: effForwarderId, brand: str(f.brand), crd: date(f.cargo_ready_date) })
       bookingId = booking.id
       const leg = await this.shipments.insertLeg({
         bookingId,

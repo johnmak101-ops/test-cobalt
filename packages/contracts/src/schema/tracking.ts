@@ -182,6 +182,7 @@ export const shipments = tracking.table('shipments', {
   reviewedAt: timestamp('reviewed_at', { withTimezone: true }),
   confirmedByEmail: boolean('confirmed_by_email').notNull().default(false), // operator-first, email confirms later
   forwarderId: uuid('forwarder_id').references(() => forwarders.id),
+  forwarderRaw: text('forwarder_raw'), // raw extracted forwarder — shown when forwarder_id doesn't resolve
   consigneeId: uuid('consignee_id').references(() => consignees.id),
   // rotating identifiers (booking# → SO# → HBL/AWB across the thread)
   bookingNo: text('booking_no'),
@@ -199,6 +200,8 @@ export const shipments = tracking.table('shipments', {
   // route
   polId: uuid('pol_id').references(() => ports.id),
   podId: uuid('pod_id').references(() => ports.id),
+  polRaw: text('pol_raw'), // raw extracted POL — shown when pol_id doesn't resolve to a UN/LOCODE master
+  podRaw: text('pod_raw'), // raw extracted POD — shown when pod_id doesn't resolve
   originCountry: text('origin_country'), // ISO-2 from the POL port's country, denormalized at commit (alert evaluator reads it)
   // schedule (all timestamptz; A2/A3 alerts compute in vessel TZ)
   cargoReadyDate: timestamp('cargo_ready_date', { withTimezone: true }),
