@@ -228,7 +228,7 @@ export class CommitterService {
     for (const poNo of g.pos) {
       const poId = await this.bookings.upsertPo(poNo, customerId, effVendorId)
       await this.bookings.linkPo(bookingId, poId)
-      await this.shipments.linkPo(shipmentId, poId, num(f.qty), 'pieces')
+      await this.shipments.linkPo(shipmentId, poId, num(f.qty), str(f.qty_unit) ?? 'cartons')
     }
 
     await this.writeIdentifiers(shipmentId, g)

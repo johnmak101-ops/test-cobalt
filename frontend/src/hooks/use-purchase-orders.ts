@@ -15,6 +15,8 @@ export interface PurchaseOrder {
   vendor?: { id: string; name: string } | null
   shipmentCount?: number
   shippedQuantity?: number
+  shippedUnit?: string | null
+  status?: string | null
   shipmentSummary?: Array<{
     id: string
     bookingNo: string | null

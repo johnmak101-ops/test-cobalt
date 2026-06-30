@@ -96,14 +96,22 @@ export class BookingRepository {
         poId: schema.shipmentPos.poId,
         shipped: sql<number>`coalesce(sum(${schema.shipmentPos.quantity}), 0)::float`,
         shipments: sql<number>`count(distinct ${schema.shipmentPos.shipmentId})::int`,
+        unit: sql<string | null>`max(${schema.shipmentPos.quantityUnit})`,
+        // the furthest lifecycle state across this PO's shipments — Progress without an ERP order qty
+        status: sql<
+          string | null
+        >`(array_agg(${schema.shipments.state} ORDER BY (case ${schema.shipments.state} when 'DELIVERED' then 6 when 'RELEASED' then 5 when 'SAILED' then 4 when 'AT_WAREHOUSE' then 3 when 'CONFIRMED' then 2 else 1 end) desc))[1]`,
       })
       .from(schema.shipmentPos)
+      .innerJoin(schema.shipments, eq(schema.shipmentPos.shipmentId, schema.shipments.id))
       .groupBy(schema.shipmentPos.poId)
     const aggMap = new Map(agg.map((a) => [a.poId, a]))
     const enriched = rows.map((r) => ({
       ...r,
       shippedQuantity: aggMap.get(r.id)?.shipped ?? 0,
       shipmentCount: aggMap.get(r.id)?.shipments ?? 0,
+      shippedUnit: aggMap.get(r.id)?.unit ?? null,
+      status: aggMap.get(r.id)?.status ?? null,
     }))
 
     if (!openOnly) return enriched

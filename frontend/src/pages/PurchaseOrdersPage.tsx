@@ -351,10 +351,14 @@ UOM
               </thead>
               <tbody>
                 {pageItems.map((po) => {
+                  // No ERP order qty here, so Progress reflects the furthest shipment lifecycle state.
+                  const STATE_PCT: Record<string, number> = { BOOKED: 15, CONFIRMED: 30, AT_WAREHOUSE: 45, SAILED: 65, RELEASED: 85, DELIVERED: 100 }
                   const progress =
                     po.totalQuantity && po.shippedQuantity
                       ? Math.min((po.shippedQuantity / po.totalQuantity) * 100, 100)
-                      : 0
+                      : po.status
+                        ? STATE_PCT[po.status] ?? 0
+                        : 0
 
                   return (
                     <tr
@@ -372,13 +376,13 @@ UOM
                         {po.vendor?.name ?? '—'}
                       </td>
                       <td className="px-4 py-3 font-mono text-sm text-right text-text-secondary">
-                        {po.totalQuantity ?? '—'}
+                        {po.shippedQuantity || po.totalQuantity || '—'}
                       </td>
                       <td className="px-4 py-3 text-sm text-text-muted">
-                        {po.quantityUnit ?? '—'}
+                        {po.quantityUnit ?? po.shippedUnit ?? '—'}
                       </td>
                       <td className="px-4 py-3">
-                        {po.totalQuantity ? (
+                        {po.totalQuantity || po.status ? (
                           <div className="flex items-center gap-2">
                             <div className="h-2 w-20 overflow-hidden rounded-full bg-surface-600">
                               <div
@@ -393,8 +397,8 @@ UOM
                                 style={{ width: `${progress}%` }}
                               />
                             </div>
-                            <span className="font-mono text-xs text-text-muted">
-                              {progress.toFixed(0)}%
+                            <span className="font-mono text-xs text-text-muted capitalize">
+                              {po.totalQuantity ? `${progress.toFixed(0)}%` : (po.status ?? '').replace(/_/g, ' ').toLowerCase()}
                             </span>
                           </div>
                         ) : (
