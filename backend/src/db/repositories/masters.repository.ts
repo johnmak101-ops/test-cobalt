@@ -192,7 +192,6 @@ export class MastersRepository {
     const PORT_ALIASES: Record<string, string> = {
       GOTEBORG: 'SEGOT',
       GOTHENBURG: 'SEGOT',
-      'KHOR AL FAKKAN': 'AEKLF',
       KHORFAKKAN: 'AEKLF',
     }
     const aliasKey = c.toUpperCase().replace(/[^A-Z0-9 ]/g, '').replace(/\s+/g, ' ').trim()
@@ -205,6 +204,7 @@ export class MastersRepository {
     // 'CNCKG'/Chongqing entry. Deterministic, no fuzzy — re-runs the exact-unlocode lookup on the mapped code.
     const IATA_TO_UNLOCODE: Record<string, string> = {
       CKG: 'CNCKG',
+      PNH: 'KHPNH',
     }
     const iataCode = IATA_TO_UNLOCODE[aliasKey]
     if (iataCode) {
@@ -217,6 +217,8 @@ export class MastersRepository {
     const NAME_CONTAINS_ALIASES: Array<[string, string]> = [
       ['SHAHAJALAL', 'BDDAC'],
       ['SHAHJALAL', 'BDDAC'],
+      ['KHOR AL FAKKAN', 'AEKLF'],
+      ['KHOR FAKKAN', 'AEKLF'],
     ]
     for (const [frag, uloc] of NAME_CONTAINS_ALIASES) {
       if (aliasKey.includes(frag)) {
