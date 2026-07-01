@@ -172,6 +172,7 @@ export const shipments = tracking.table('shipments', {
   // in the "Unlinked Documents" view until a human links it (linked_shipment_id) onto a real shipment.
   kind: text('kind', { enum: ['SHIPMENT', 'DOCUMENT'] }).notNull().default('SHIPMENT'),
   linkedShipmentId: uuid('linked_shipment_id'), // logical self-FK → shipments.id (the leg a DOCUMENT was linked onto)
+  dismissedAt: timestamp('dismissed_at', { withTimezone: true }), // a human dismissed this DOCUMENT — drops it off the Unlinked Documents list
   mode: text('mode', { enum: SHIPMENT_MODE }), // null until known; drives sea/air display
   state: text('state', { enum: SHIPMENT_STATE }).notNull().default('BOOKED'),
   legStatus: text('leg_status', { enum: LEG_STATUS }).notNull().default('ACTIVE'),

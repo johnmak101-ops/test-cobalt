@@ -1,122 +1,57 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../lib/api'
 
-export interface ReviewEmail {
+/** A provisional shipment awaiting human confirmation. Shape fixed by the backend contract for
+ *  GET /api/shipments/review-queue. `reviewReasons` explains WHY the matcher held it back. */
+export interface ReviewShipment {
   id: string
-  messageId: string | null
-  subject: string
-  sender: string
-  receivedAt: string
-  bodyText: string | null
-  emailType: string | null
-  extractedData: Record<string, unknown> | string | null
-  originalExtractedData: Record<string, unknown> | string | null
-  extractionConfidence: number | null
-  shipmentId: string | null
-  isMatched: boolean
-  processingStatus: string
-  reviewStatus: string | null
-  reviewedBy: string | null
-  reviewedAt: string | null
-  reviewNotes: string | null
+  bookingNo: string | null
+  soNo: string | null
+  customer: string | null
+  forwarder: string | null
+  route: string | null
+  state: string | null
+  status: string
+  reviewReasons: string[]
   createdAt: string
-  suggestedData: Record<string, unknown> | string | null
-  reviewerNotes: string | null
-  shipment?: {
-    id: string
-    poNumbers: string
-    status: string
-    route: string | null
-    bookingNo: string | null
-    vesselName: string | null
-    voyageNumber: string | null
-    hblNumber: string | null
-    mblNumber: string | null
-    containerNo: string | null
-    quantityShipped: number | null
-    quantityUnit: string | null
-    etd: string | null
-    eta: string | null
-    crd: string | null
-    cfsCutoff: string | null
-    consigneeName: string | null
-    consigneeAddress: string | null
-    soNumber: string | null
-    warehouseAddress: string | null
-  } | null
+  poCount: number
 }
 
 interface ReviewQueueResponse {
-  emails: ReviewEmail[]
+  shipments: ReviewShipment[]
 }
 
 export interface ReviewCounts {
-  NEEDS_REVIEW: number
-  AUTO_ACCEPTED: number
-  REVIEWED_OK: number
-  REVIEWED_CORRECTED: number
-  REJECTED: number
-  total: number
-  pending: number
+  provisional: number
 }
 
-export function useReviewQueue(status?: string) {
-  const params = new URLSearchParams()
-  if (status) params.set('status', status)
-  const query = params.toString()
-
+export function useReviewQueue() {
   return useQuery<ReviewQueueResponse>({
-    queryKey: ['review-queue', status],
-    queryFn: () => api.get(`/emails/review-queue${query ? `?${query}` : ''}`),
+    queryKey: ['review-queue'],
+    queryFn: () => api.get('/shipments/review-queue'),
   })
 }
 
 export function useReviewCounts() {
   return useQuery<ReviewCounts>({
     queryKey: ['review-counts'],
-    queryFn: () => api.get('/emails/review-queue/counts'),
-    refetchInterval: 30000, // Refresh every 30s for badge count
+    queryFn: () => api.get('/shipments/review-queue/counts'),
+    refetchInterval: 30000, // Refresh every 30s for the sidebar badge count
   })
 }
 
-export function useReviewEmail() {
+/** Approve (confirm) a provisional shipment — promotes it out of the review queue. */
+export function useConfirmShipment() {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: ({
-      emailId,
-      action,
-      reviewedBy,
-      notes,
-      corrections,
-    }: {
-      emailId: string
-      action: 'approve' | 'correct' | 'reject'
-      reviewedBy: string
-      notes?: string
-      corrections?: {
-        extractedData?: Record<string, unknown>
-        emailType?: string
-        shipmentId?: string | null
-        shipmentUpdates?: Record<string, unknown>
-      }
-    }) =>
-      api.patch(`/emails/${emailId}/review`, {
-        action,
-        reviewedBy,
-        notes,
-        corrections,
-      }),
+    mutationFn: (shipmentId: string) => api.post(`/shipments/${shipmentId}/confirm`, {}),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['review-queue'] })
       queryClient.invalidateQueries({ queryKey: ['review-counts'] })
-      queryClient.invalidateQueries({ queryKey: ['emails'] })
       queryClient.invalidateQueries({ queryKey: ['shipments'] })
       queryClient.invalidateQueries({ queryKey: ['shipment'] })
-      queryClient.invalidateQueries({ queryKey: ['purchase-orders'] })
-      queryClient.invalidateQueries({ queryKey: ['purchase-order'] })
       queryClient.invalidateQueries({ queryKey: ['dashboard'] })
-      queryClient.invalidateQueries({ queryKey: ['alerts'] })
     },
   })
 }

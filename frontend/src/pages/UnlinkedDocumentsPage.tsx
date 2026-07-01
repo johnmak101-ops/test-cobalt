@@ -4,6 +4,7 @@ import { RefreshCw, Search, Package, Link2, FileText } from 'lucide-react'
 import { useDocuments, type UnlinkedDocument } from '../hooks/use-documents'
 import { Badge } from '../components/ui/Badge'
 import { LinkShipmentModal } from '../components/documents/LinkShipmentModal'
+import { DocumentDetailDrawer } from '../components/documents/DocumentDetailDrawer'
 import { Pagination, usePagination, PageSizeSelect } from '../components/ui/Pagination'
 import { formatShortDate } from '../lib/utils'
 
@@ -47,6 +48,7 @@ export default function UnlinkedDocumentsPage() {
   const [page, setPage] = useState(1)
   const [perPage, setPerPage] = useState(25)
   const [linkTarget, setLinkTarget] = useState<UnlinkedDocument | null>(null)
+  const [inspectTarget, setInspectTarget] = useState<UnlinkedDocument | null>(null)
   const qc = useQueryClient()
 
   const documents = data ?? []
@@ -141,7 +143,8 @@ export default function UnlinkedDocumentsPage() {
                   {pageDocs.map((d) => (
                     <tr
                       key={d.id}
-                      className="border-b border-border last:border-0 hover:bg-surface-700/50 transition-colors"
+                      onClick={() => setInspectTarget(d)}
+                      className="cursor-pointer border-b border-border last:border-0 hover:bg-surface-700/50 transition-colors"
                     >
                       <td className="px-4 py-3 text-sm text-text-secondary">
                         {d.customer ?? '—'}
@@ -167,11 +170,14 @@ export default function UnlinkedDocumentsPage() {
                       </td>
                       <td className="px-4 py-3 text-right">
                         <button
-                          onClick={() => setLinkTarget(d)}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setLinkTarget(d)
+                          }}
                           className="inline-flex items-center gap-1.5 rounded-lg bg-cobalt-primary/15 px-2.5 py-1.5 text-xs font-medium text-cobalt-primary transition-colors hover:bg-cobalt-primary/25"
                         >
                           <Link2 size={13} />
-                          Link to shipment
+                          Link
                         </button>
                       </td>
                     </tr>
@@ -201,6 +207,15 @@ export default function UnlinkedDocumentsPage() {
           />
         </>
       )}
+
+      <DocumentDetailDrawer
+        document={inspectTarget}
+        onClose={() => setInspectTarget(null)}
+        onLink={(doc) => {
+          setInspectTarget(null)
+          setLinkTarget(doc)
+        }}
+      />
 
       <LinkShipmentModal document={linkTarget} onClose={() => setLinkTarget(null)} />
     </div>

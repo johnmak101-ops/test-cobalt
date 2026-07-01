@@ -49,6 +49,21 @@ export interface DocumentRow {
   receivedAt: string | null
 }
 
+/** Detail shape returned by GET /api/documents/:id (the inspect drawer). Adds the source-email
+ *  linkage (`emailId`, nullable when the document has no backing queue message). */
+export interface DocumentDetail {
+  id: string
+  customer: string | null
+  emailType: string | null
+  senderType: string | null
+  poNumbers: string[]
+  poCount: number
+  qty: number | null
+  qtyUnit: string | null
+  receivedAt: string | null
+  emailId: string | null
+}
+
 export const api = {
   get: <T>(path: string) => request<T>(path),
   post: <T>(path: string, body: unknown) => request<T>(path, { method: 'POST', body: JSON.stringify(body) }),
@@ -59,9 +74,12 @@ export const api = {
   // --- Unlinked Documents (orphan invoice/misc emails) ---
   getDocuments: () =>
     request<{ documents: DocumentRow[] }>('/documents').then((r) => r.documents),
+  getDocument: (id: string) => request<DocumentDetail>(`/documents/${id}`),
   linkDocument: (id: string, shipmentId: string) =>
     request<{ ok: true }>(`/documents/${id}/link`, {
       method: 'POST',
       body: JSON.stringify({ shipmentId }),
     }),
+  dismissDocument: (id: string) =>
+    request<{ ok: true }>(`/documents/${id}/dismiss`, { method: 'POST' }),
 }

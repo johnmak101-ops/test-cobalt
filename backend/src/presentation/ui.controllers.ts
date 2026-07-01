@@ -64,9 +64,16 @@ export class UiDocumentsController {
   @Get() list() {
     return this.ui.documents()
   }
+  @Get(':id') detail(@Param('id') id: string) {
+    return this.ui.document(id)
+  }
   @Roles('EDITOR', 'ADMIN')
   @Post(':id/link') link(@Param('id') id: string, @Body() body: { shipmentId: string }) {
     return this.ui.linkDocument(id, body?.shipmentId)
+  }
+  @Roles('EDITOR', 'ADMIN')
+  @Post(':id/dismiss') dismiss(@Param('id') id: string) {
+    return this.ui.dismissDocument(id)
   }
 }
 

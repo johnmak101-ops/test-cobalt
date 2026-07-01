@@ -1,10 +1,13 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { api, type DocumentRow } from '../lib/api'
+import { api, type DocumentRow, type DocumentDetail } from '../lib/api'
 
 /** An orphan invoice / misc email that has no shipment identity yet — surfaced in the
  *  "Unlinked Documents" review inbox so a coordinator can manually link it to a shipment.
  *  Shape is fixed by the backend contract for GET /api/documents. */
 export type UnlinkedDocument = DocumentRow
+
+/** Full detail for a single unlinked document (inspect drawer). */
+export type UnlinkedDocumentDetail = DocumentDetail
 
 export function useDocuments() {
   return useQuery<UnlinkedDocument[]>({
@@ -19,6 +22,15 @@ export function useDocumentCount() {
   return data?.length ?? 0
 }
 
+/** Full detail for one document — powers the inspect drawer. Enabled only when an id is set. */
+export function useDocument(id: string | null) {
+  return useQuery<UnlinkedDocumentDetail>({
+    queryKey: ['document', id],
+    queryFn: () => api.getDocument(id as string),
+    enabled: !!id,
+  })
+}
+
 export function useLinkDocument() {
   const queryClient = useQueryClient()
 
@@ -30,6 +42,18 @@ export function useLinkDocument() {
       queryClient.invalidateQueries({ queryKey: ['documents'] })
       queryClient.invalidateQueries({ queryKey: ['shipments'] })
       queryClient.invalidateQueries({ queryKey: ['shipment'] })
+    },
+  })
+}
+
+/** Dismiss a document as "not a shipment" — it disappears from the inbox. */
+export function useDismissDocument() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: (documentId: string) => api.dismissDocument(documentId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['documents'] })
     },
   })
 }

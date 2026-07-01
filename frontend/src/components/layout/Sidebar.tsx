@@ -51,7 +51,7 @@ export function Sidebar() {
   const unreadAlerts = alertsData?.alerts?.filter((a) => a.status === 'ACTIVE' && !a.readAt).length ?? 0
 
   const badges: Record<string, number> = {
-    pending: reviewCounts?.pending ?? 0,
+    pending: reviewCounts?.provisional ?? 0,
     unreadAlerts,
     unreadEmails: unreadData?.unread ?? 0,
     documents: documentCount,

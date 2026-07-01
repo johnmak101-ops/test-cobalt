@@ -45,10 +45,9 @@ export function TopBar() {
   const unreadEmails =
     (emailsData?.emails ?? []).filter((e) => e.processingStatus === 'PENDING')
 
-  // Unread review items — needs review
-  const pendingReviewCount = reviewCounts?.pending ?? 0
-  const unreadReviews =
-    (reviewData?.emails ?? []).filter((e) => e.reviewStatus === 'NEEDS_REVIEW')
+  // Provisional shipments awaiting confirmation
+  const pendingReviewCount = reviewCounts?.provisional ?? 0
+  const unreadReviews = reviewData?.shipments ?? []
 
   const tabCounts: Record<NotiTab, number> = {
     alerts: unreadAlerts.length,
@@ -228,16 +227,18 @@ export function TopBar() {
                       unreadReviews.map((item) => (
                         <button
                           key={item.id}
-                          onClick={() => { setNotiOpen(false); navigate('/review-queue') }}
+                          onClick={() => { setNotiOpen(false); navigate(`/shipments/${item.id}`) }}
                           className="flex w-full items-start gap-2.5 px-4 py-2.5 text-left transition-colors hover:bg-surface-700"
                         >
                           <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-cobalt-primary-light" />
                           <div className="min-w-0 flex-1">
-                            <p className="truncate text-xs font-medium text-text-primary">{item.subject}</p>
+                            <p className="truncate text-xs font-medium text-text-primary">
+                              {item.customer ?? item.bookingNo ?? item.soNo ?? 'Provisional shipment'}
+                            </p>
                             <p className="mt-0.5 text-[10px] text-text-muted">
-                              {item.sender} · {formatRelativeTime(item.receivedAt)}
-                              {item.extractionConfidence != null && (
-                                <> · {Math.round(item.extractionConfidence * 100)}% conf</>
+                              {item.bookingNo ?? item.soNo ?? '—'} · {formatRelativeTime(item.createdAt)}
+                              {item.reviewReasons.length > 0 && (
+                                <> · {item.reviewReasons[0]}</>
                               )}
                             </p>
                           </div>

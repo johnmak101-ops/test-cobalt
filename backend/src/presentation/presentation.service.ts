@@ -196,6 +196,48 @@ export class PresentationService {
     return { history: rows.map(toUiHistoryEntry) }
   }
 
+  // ---- review queue (provisional shipments) ----
+
+  /**
+   * The Review Queue: provisional (low-confidence) real shipments awaiting human approval. Same
+   * customer/route resolution as the shipments() list (masters resolve pol/pod → route, customer name).
+   */
+  async reviewQueue() {
+    const rows = await this.shipmentRepo.reviewQueue()
+    return {
+      shipments: rows.map((r) => ({
+        id: r.id,
+        bookingNo: r.bookingNo ?? null,
+        soNo: r.soNo ?? null,
+        customer: r.customerId ? { id: r.customerId, name: r.customerName, code: r.customerCode ?? null } : null,
+        forwarder: r.forwarderId
+          ? { id: r.forwarderId, name: r.forwarderName }
+          : r.forwarderRaw
+            ? { id: '', name: r.forwarderRaw }
+            : null,
+        route: deriveRoute(r.polCode ?? r.polRaw, r.podCode ?? r.podRaw),
+        state: r.state,
+        status: stateToUiStatus(r.state, r.legStatus),
+        reviewReasons: r.reviewReasons ?? [],
+        createdAt: isoOrNull(r.createdAt),
+        poCount: r.poCount ?? 0,
+      })),
+    }
+  }
+
+  /** Nav badge count of provisional shipments awaiting review. */
+  async reviewQueueCounts() {
+    return { provisional: await this.shipmentRepo.reviewQueueCount() }
+  }
+
+  /** Human "approve": accept a provisional shipment as-is (review_status → confirmed). */
+  async confirmShipment(id: string): Promise<{ ok: true }> {
+    const leg = await this.shipmentRepo.findById(id)
+    if (!leg) throw new NotFoundException('shipment not found')
+    await this.shipmentRepo.updateLeg(id, { reviewStatus: 'confirmed', reviewedAt: new Date() })
+    return { ok: true }
+  }
+
   // ---- unlinked documents ----
 
   /** Orphan documents (kind='DOCUMENT', not yet linked) — the Unlinked Documents view. */
@@ -214,6 +256,33 @@ export class PresentationService {
         receivedAt: isoOrNull(r.receivedAt),
       })),
     }
+  }
+
+  /** One unlinked document's detail panel + the queue_message id of its source email (for the pop-up). */
+  async document(id: string) {
+    const r = await this.shipmentRepo.documentDetail(id)
+    if (!r) throw new NotFoundException('document not found')
+    return {
+      id: r.id,
+      customer: r.customerName ?? null,
+      emailType: r.emailType ?? null,
+      senderType: r.senderType ?? null,
+      poNumbers: r.poNumbers ?? [],
+      poCount: (r.poNumbers ?? []).length,
+      qty: r.qty ?? null,
+      qtyUnit: r.qtyUnit ?? null,
+      receivedAt: isoOrNull(r.receivedAt),
+      emailId: r.emailId ?? null,
+    }
+  }
+
+  /** Dismiss an unlinked document so it drops off the list (stamps dismissed_at). */
+  async dismissDocument(id: string): Promise<{ ok: true }> {
+    const kind = await this.shipmentRepo.kindOf(id)
+    if (kind == null) throw new NotFoundException('document not found')
+    if (kind !== 'DOCUMENT') throw new BadRequestException('not an unlinked document')
+    await this.shipmentRepo.dismissDocument(id)
+    return { ok: true }
   }
 
   /** Manually link a document onto a real shipment: fold its POs + emails over and mark it linked. */

@@ -32,6 +32,71 @@ export class ShipmentRepository {
       .where(eq(schema.shipments.reviewStatus, 'provisional'))
       .orderBy(schema.shipments.confidence)
   }
+  /**
+   * The shipment-based Review Queue: provisional (low-confidence) real shipments awaiting human
+   * approval — kind='SHIPMENT', review_status='provisional', not SUPERSEDED. Enriched with booking
+   * customer / forwarder / route / po-count, mirroring the tracker list joins. Lowest confidence first.
+   */
+  reviewQueue() {
+    const pol = alias(schema.ports, 'pol')
+    const pod = alias(schema.ports, 'pod')
+    return this.db
+      .select({
+        id: schema.shipments.id,
+        bookingNo: schema.shipments.bookingNo,
+        soNo: schema.shipments.soNo,
+        state: schema.shipments.state,
+        legStatus: schema.shipments.legStatus,
+        reviewReasons: schema.shipments.reviewReasons,
+        confidence: schema.shipments.confidence,
+        createdAt: schema.shipments.createdAt,
+        customerId: schema.customers.id,
+        customerName: schema.customers.name,
+        customerCode: schema.customers.code,
+        forwarderId: schema.forwarders.id,
+        forwarderName: schema.forwarders.name,
+        forwarderRaw: schema.shipments.forwarderRaw,
+        polCode: pol.unlocode,
+        podCode: pod.unlocode,
+        polRaw: schema.shipments.polRaw,
+        podRaw: schema.shipments.podRaw,
+        poCount: sql<number>`(
+          select count(*)::int
+          from tracking.booking_pos bp
+          where bp.booking_id = ${schema.shipments.bookingId}
+        )`,
+      })
+      .from(schema.shipments)
+      .innerJoin(schema.bookings, eq(schema.shipments.bookingId, schema.bookings.id))
+      .leftJoin(schema.customers, eq(schema.bookings.customerId, schema.customers.id))
+      .leftJoin(schema.forwarders, eq(schema.shipments.forwarderId, schema.forwarders.id))
+      .leftJoin(pol, eq(schema.shipments.polId, pol.id))
+      .leftJoin(pod, eq(schema.shipments.podId, pod.id))
+      .where(
+        and(
+          eq(schema.shipments.kind, 'SHIPMENT'),
+          eq(schema.shipments.reviewStatus, 'provisional'),
+          sql`${schema.shipments.legStatus} <> 'SUPERSEDED'`,
+        ),
+      )
+      .orderBy(schema.shipments.confidence, desc(schema.shipments.createdAt))
+  }
+
+  /** Count of provisional shipments awaiting review — the nav badge. */
+  async reviewQueueCount(): Promise<number> {
+    const [r] = await this.db
+      .select({ n: sql<number>`count(*)::int` })
+      .from(schema.shipments)
+      .where(
+        and(
+          eq(schema.shipments.kind, 'SHIPMENT'),
+          eq(schema.shipments.reviewStatus, 'provisional'),
+          sql`${schema.shipments.legStatus} <> 'SUPERSEDED'`,
+        ),
+      )
+    return r?.n ?? 0
+  }
+
   legsForBooking(bookingId: string) {
     return this.db.select().from(schema.shipments).where(eq(schema.shipments.bookingId, bookingId)).orderBy(schema.shipments.legNo)
   }
@@ -252,13 +317,74 @@ export class ShipmentRepository {
       .from(schema.shipments)
       .leftJoin(schema.bookings, eq(schema.shipments.bookingId, schema.bookings.id))
       .leftJoin(schema.customers, eq(schema.bookings.customerId, schema.customers.id))
-      .where(and(eq(schema.shipments.kind, 'DOCUMENT'), isNull(schema.shipments.linkedShipmentId)))
+      .where(and(eq(schema.shipments.kind, 'DOCUMENT'), isNull(schema.shipments.linkedShipmentId), isNull(schema.shipments.dismissedAt)))
       .orderBy(sql`(
         select max(se.received_at)
         from tracking.shipment_emails se
         where se.shipment_id = ${schema.shipments.id}
       ) desc nulls last`)
     return rows
+  }
+
+  /**
+   * One unlinked document's detail (the detail panel): booking customer + email type(s) + sender type +
+   * PO numbers + qty + newest received-at, plus the queue_message id of its most-recent source email
+   * (joined shipment_emails.graph_message_id → queue_message.graph_message_id) so the UI can open the
+   * source email pop-up. Null when the id isn't a document.
+   */
+  async documentDetail(id: string) {
+    const [row] = await this.db
+      .select({
+        id: schema.shipments.id,
+        customerName: schema.customers.name,
+        qty: schema.shipments.qty,
+        qtyUnit: schema.shipments.qtyUnit,
+        emailType: sql<string | null>`(
+          select string_agg(distinct se.email_type, ', ')
+          from tracking.shipment_emails se
+          where se.shipment_id = ${schema.shipments.id} and se.email_type is not null
+        )`,
+        senderType: sql<string | null>`(
+          select pr.sender_type
+          from tracking.shipment_emails se
+          join evidence.parsed_record pr on pr.graph_message_id = se.graph_message_id
+          where se.shipment_id = ${schema.shipments.id} and pr.sender_type is not null
+          limit 1
+        )`,
+        poNumbers: sql<string[]>`coalesce((
+          select array_agg(po.po_number order by po.po_number)
+          from tracking.shipment_pos sp
+          join tracking.purchase_orders po on po.id = sp.po_id
+          where sp.shipment_id = ${schema.shipments.id}
+        ), '{}')`,
+        receivedAt: sql<Date | null>`(
+          select max(se.received_at)
+          from tracking.shipment_emails se
+          where se.shipment_id = ${schema.shipments.id}
+        )`,
+        // queue_message id of the newest source email (for the /email/:emailId pop-up)
+        emailId: sql<string | null>`(
+          select qm.id
+          from tracking.shipment_emails se
+          join queue.queue_message qm on qm.graph_message_id = se.graph_message_id
+          where se.shipment_id = ${schema.shipments.id}
+          order by se.received_at desc nulls last
+          limit 1
+        )`,
+      })
+      .from(schema.shipments)
+      .leftJoin(schema.bookings, eq(schema.shipments.bookingId, schema.bookings.id))
+      .leftJoin(schema.customers, eq(schema.bookings.customerId, schema.customers.id))
+      .where(and(eq(schema.shipments.id, id), eq(schema.shipments.kind, 'DOCUMENT')))
+    return row ?? null
+  }
+
+  /** Mark an unlinked document dismissed (idempotent) — it drops off the Unlinked Documents list. */
+  dismissDocument(id: string) {
+    return this.db
+      .update(schema.shipments)
+      .set({ dismissedAt: new Date(), updatedAt: new Date() })
+      .where(and(eq(schema.shipments.id, id), eq(schema.shipments.kind, 'DOCUMENT')))
   }
 
   /** kind lookup for a leg (null when the id doesn't exist) — link-validation. */
