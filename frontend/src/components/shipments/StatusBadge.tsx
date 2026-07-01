@@ -12,6 +12,7 @@ const dotColors: Record<string, string> = {
   SAILED: 'bg-state-sailed',
   DEPARTED: 'bg-state-released',
   ARRIVED: 'bg-state-delivered',
+  CANCELLED: 'bg-status-critical',
 }
 
 const statusLabels: Record<string, string> = {
@@ -21,6 +22,7 @@ const statusLabels: Record<string, string> = {
   SAILED: 'Final BOL',
   DEPARTED: 'Departure',
   ARRIVED: 'Delivered',
+  CANCELLED: 'Cancelled',
 }
 
 export function StatusBadge({ status, className }: StatusBadgeProps) {

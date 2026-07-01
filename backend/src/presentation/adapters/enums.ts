@@ -13,7 +13,10 @@ const STATE_TO_UI_STATUS: Record<string, string> = {
   DELIVERED: 'ARRIVED',
 }
 
-export function stateToUiStatus(state: string | null | undefined): string {
+export function stateToUiStatus(state: string | null | undefined, legStatus?: string | null): string {
+  // A cancelled leg overrides its lifecycle state — the tracker shows Cancelled, never an active
+  // Booking Request. (SUPERSEDED legs are filtered out upstream, so only ACTIVE/CANCELLED reach here.)
+  if (legStatus === 'CANCELLED') return 'CANCELLED'
   return (state && STATE_TO_UI_STATUS[state]) || 'BOOKED'
 }
 

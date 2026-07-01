@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common'
-import { and, desc, eq, isNull, sql } from 'drizzle-orm'
+import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm'
 import { alias } from 'drizzle-orm/pg-core'
 import * as schema from '@cobalt/contracts'
 import { DRIZZLE, type DrizzleDB } from '../drizzle.provider'
@@ -12,8 +12,10 @@ export class ShipmentRepository {
   allLegs() {
     return this.db.select().from(schema.shipments)
   }
+  /** Legs for the tracker/dashboard: ACTIVE plus CANCELLED (so a cancelled booking still surfaces, shown as
+   *  Cancelled). Only SUPERSEDED legs are hidden. */
   activeLegs() {
-    return this.db.select().from(schema.shipments).where(eq(schema.shipments.legStatus, 'ACTIVE'))
+    return this.db.select().from(schema.shipments).where(inArray(schema.shipments.legStatus, ['ACTIVE', 'CANCELLED']))
   }
   /** Active AND confirmed — provisional (low-confidence) legs are excluded from alerts/automation. */
   activeConfirmedLegs() {

@@ -18,6 +18,7 @@ export interface ShipmentLegRow {
   id: string
   forwarderId: string | null
   state: string | null
+  legStatus?: string | null
   riskLevel: string | null
   bookingNo: string | null
   soNo: string | null
@@ -73,6 +74,7 @@ export interface UiShipment {
   route: string | null
   originCountry: string | null
   status: string
+  cancelled: boolean
   riskLevel: string | null
   bookingNo: string | null
   soNumber: string | null
@@ -118,7 +120,8 @@ export function toUiShipment(input: ShipmentMapperInput): UiShipment {
     forwarderId: leg.forwarderId ?? null,
     route: deriveRoute(input.polPort?.unlocode ?? leg.polRaw, input.podPort?.unlocode ?? leg.podRaw),
     originCountry: leg.originCountry ?? deriveOriginCountry(input.polPort),
-    status: stateToUiStatus(leg.state),
+    status: stateToUiStatus(leg.state, leg.legStatus),
+    cancelled: leg.legStatus === 'CANCELLED',
     riskLevel: leg.riskLevel ?? null,
     bookingNo: leg.bookingNo ?? null,
     soNumber: leg.soNo ?? null,

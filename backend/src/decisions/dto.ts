@@ -51,6 +51,11 @@ export class CreateDecisionDto {
     observedAt?: string | null
   }[]
 
+  /** The booking was CANCELLED (e.g. a cancellation notice for an existing booking). When true the
+   *  committed leg is marked leg_status='CANCELLED' and the UI surfaces it as Cancelled rather than an
+   *  active Booking Request. Omitted by legacy callers → treated as not cancelled (unchanged). */
+  @IsOptional() @IsBoolean() cancelled?: boolean
+
   /** The Critic's per-shipment confidence, 0-100. Routes to confirmed/provisional vs the threshold. */
   @IsInt() @Min(0) @Max(100) confidence!: number
 

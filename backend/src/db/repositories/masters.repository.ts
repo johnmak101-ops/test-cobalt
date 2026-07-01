@@ -122,6 +122,33 @@ export class MastersRepository {
     // resolve from an unordered heap scan either.
     const aliasContained = await this.db.select().from(schema.forwarderAliases).where(ilike(schema.forwarderAliases.value, `%${name}%`))
     if (aliasContained.length === 1) return aliasContained[0]!.forwarderId
+    // BUG 2: an email-form raw like 'om-booking-notifications@expeditors.com (Expeditors)' resolves to NULL
+    // above — the whole string contains no master and normalizes to nothing recognizable. But it carries the
+    // org identity in TWO deterministic places: the parenthetical CONTENT ('Expeditors') and the domain's
+    // second-level label ('expeditors' from expeditors.com). Run EACH such token back through the SAME
+    // exactly-one-guarded stages (containment + normalized-exact name/alias) — the seeded alias EXPEDITORS→225
+    // resolves 'Expeditors'. Only when EXACTLY ONE token resolves (and never to two different masters) do we
+    // accept it; on 0, >1, or an internal ambiguity we fall through to the stages below (raw surfaces).
+    const orgTokens: string[] = []
+    const parenContent = /\(([^)]*)\)/.exec(name)?.[1]?.trim()
+    if (parenContent) orgTokens.push(parenContent)
+    // domain second-level label — only when the raw is dominated by an email address (no meaningful text
+    // outside the address). expeditors.com → 'expeditors'; skips generic hosts (gmail/outlook/etc.).
+    const emailMatch = /([A-Za-z0-9._%+-]+)@([A-Za-z0-9.-]+\.[A-Za-z]{2,})/.exec(name)
+    if (emailMatch) {
+      const labels = emailMatch[2]!.toLowerCase().split('.')
+      const sld = labels.length >= 2 ? labels[labels.length - 2]! : ''
+      const GENERIC_HOSTS = new Set(['gmail', 'outlook', 'hotmail', 'yahoo', 'qq', '163', '126', 'live', 'icloud', 'googlemail'])
+      if (sld.length >= 3 && !GENERIC_HOSTS.has(sld)) orgTokens.push(sld)
+    }
+    let tokenResolved: string | null = null
+    for (const tok of orgTokens) {
+      const id = await this.resolveForwarderOrgToken(tok)
+      if (!id) continue
+      if (tokenResolved && tokenResolved !== id) { tokenResolved = null; break } // two tokens disagree → ambiguous
+      tokenResolved = id
+    }
+    if (tokenResolved) return tokenResolved
     // reverse-containment: a master whose normalized name is a SUBSTRING of the normalized input, so an
     // input with an appended office/domain ('EXPEDITORS INTERNATIONAL (LAX)') still resolves. Guarded by
     // master-name length ≥ 10 chars (avoids short generic tokens matching everything) and the LONGEST match
@@ -177,6 +204,34 @@ export class MastersRepository {
       if (inputFold.length < 4) continue
       const hits = foldAll.filter((f) => foldLegalForm(f.name) === inputFold)
       if (hits.length === 1) return hits[0]!.id
+    }
+    return null
+  }
+
+  /**
+   * BUG 2 helper: resolve a bare org token ('Expeditors', 'expeditors') extracted from a parenthetical or an
+   * email domain, using the SAME deterministic, exactly-one-guarded stages as forwarderIdByName: containment
+   * (%tok%) → normalized-exact on the forwarder NAME → normalized-exact on forwarder ALIASES. Returns a
+   * forwarder id only when EXACTLY ONE master/alias matches at a stage; on 0 or >1 it returns null so the
+   * caller keeps determinism and falls through (raw surfaces). Deliberately NOT recursive.
+   */
+  private async resolveForwarderOrgToken(token: string): Promise<string | null> {
+    const tok = token.trim()
+    if (tok.length < 3) return null
+    const contained = await this.db.select().from(schema.forwarders).where(ilike(schema.forwarders.name, `%${tok}%`))
+    if (contained.length === 1) return contained[0]!.id
+    const norm = tok.toUpperCase().replace(/[^A-Z0-9]/g, '')
+    if (norm.length >= 4) {
+      const n = await this.db
+        .select()
+        .from(schema.forwarders)
+        .where(sql`regexp_replace(upper(${schema.forwarders.name}), '[^A-Z0-9]', '', 'g') = ${norm}`)
+      if (n.length === 1) return n[0]!.id
+      const na = await this.db
+        .select()
+        .from(schema.forwarderAliases)
+        .where(sql`regexp_replace(upper(${schema.forwarderAliases.value}), '[^A-Z0-9]', '', 'g') = ${norm}`)
+      if (na.length === 1) return na[0]!.forwarderId
     }
     return null
   }

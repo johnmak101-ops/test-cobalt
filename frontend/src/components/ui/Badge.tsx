@@ -14,6 +14,7 @@ const statusStyles: Record<string, string> = {
   SAILED: 'bg-state-sailed/15 text-state-sailed border-state-sailed/30',
   DEPARTED: 'bg-state-released/15 text-state-released border-state-released/30',
   ARRIVED: 'bg-state-delivered/15 text-state-delivered border-state-delivered/30',
+  CANCELLED: 'bg-status-critical/15 text-status-critical border-status-critical/30',
 }
 
 const emailTypeStyles: Record<string, string> = {
@@ -42,6 +43,7 @@ const statusLabels: Record<string, string> = {
   SAILED: 'Final BOL',
   DEPARTED: 'Departure',
   ARRIVED: 'Delivered',
+  CANCELLED: 'Cancelled',
 }
 
 interface BadgeProps {

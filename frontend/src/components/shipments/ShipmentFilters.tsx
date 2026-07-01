@@ -5,7 +5,7 @@ interface StatusFilterProps {
   onChange: (v: string) => void
 }
 
-const statuses = ['ALL', 'BOOKED', 'CONFIRMED', 'AT_WAREHOUSE', 'SAILED', 'DEPARTED', 'ARRIVED']
+const statuses = ['ALL', 'BOOKED', 'CONFIRMED', 'AT_WAREHOUSE', 'SAILED', 'DEPARTED', 'ARRIVED', 'CANCELLED']
 
 const statusLabels: Record<string, string> = {
   ALL: 'All',
@@ -15,6 +15,7 @@ const statusLabels: Record<string, string> = {
   SAILED: 'Final BOL',
   DEPARTED: 'Departure',
   ARRIVED: 'Delivered',
+  CANCELLED: 'Cancelled',
 }
 
 export function ShipmentFilters({ value, onChange }: StatusFilterProps) {

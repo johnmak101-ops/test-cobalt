@@ -8,6 +8,8 @@ import { BookingRepository } from '../db/repositories/booking.repository'
 import { ShipmentRepository } from '../db/repositories/shipment.repository'
 import { FieldLockRepository } from '../db/repositories/field-lock.repository'
 import { AuditRepository } from '../db/repositories/audit.repository'
+import { EvidenceRepository } from '../db/repositories/evidence.repository'
+import { resolvePoEnrichment } from './po-enrichment'
 
 /** Dedupe a comma-joined list (order-preserving, case-insensitive) — style/HTS lists pile up across the
  *  multiple PO sheets + B/L rider, so the same value repeats. Applied at commit so it holds without a reparse. */
@@ -54,6 +56,9 @@ export interface ReconGroup {
   events: { emailType: string; receivedAt: string; graphId?: string | null }[]
   mode: string | null
   conversationId: string | null
+  /** The booking was cancelled — the committed leg's leg_status becomes 'CANCELLED' instead of 'ACTIVE'.
+   *  Undefined/false on the legacy path → leg stays 'ACTIVE' (unchanged). */
+  cancelled?: boolean
   conflicts: string[]
   evidenceIds: string[]
   /** Critic's per-shipment confidence (0-100) and the resulting review gate. Undefined on the
@@ -109,6 +114,7 @@ export class CommitterService {
     private readonly shipments: ShipmentRepository,
     private readonly fieldLocks: FieldLockRepository,
     private readonly audit: AuditRepository,
+    private readonly evidence: EvidenceRepository,
   ) {}
 
   async apply(g: ReconGroup): Promise<CommitResult> {
@@ -157,6 +163,9 @@ export class CommitterService {
 
     const emailTypes = new Set(g.emailTypes)
     const state = deriveState(emailTypes, f)
+    // A cancelled booking is marked leg_status='CANCELLED' (the UI surfaces it as Cancelled); otherwise the
+    // leg keeps the existing 'ACTIVE' default. This is a lifecycle flag, not a lockable field.
+    const legStatus: 'ACTIVE' | 'CANCELLED' = g.cancelled ? 'CANCELLED' : 'ACTIVE'
     // SHIPMENT (real leg) vs DOCUMENT (orphan invoice/misc with no shipping identity → Unlinked Documents).
     const kind = classifyKind(emailTypes, f)
     const legValues: Record<string, unknown> = {
@@ -259,13 +268,16 @@ export class CommitterService {
       jobNo = bk?.jobNo ?? '(unknown)'
       await this.applyFields(shipmentId, existing as Record<string, unknown>, legValues, skippedLockedFields, g)
       await this.fillBooking(bookingId, { customerId, vendorId: effVendorId, forwarderId: effForwarderId, brand: str(f.brand), crd: date(f.cargo_ready_date) })
-      // review gate is metadata, not a lockable field — always reflect the latest agent score
-      if (effReviewStatus !== undefined)
-        await this.shipments.updateLeg(shipmentId, {
-          reviewStatus: effReviewStatus,
-          confidence: g.confidence ?? null,
-          reviewReasons: effReasons,
-        })
+      // review gate + cancellation are lifecycle metadata, not lockable fields — always reflect the latest.
+      // leg_status only ever moves to CANCELLED here; never resurrect a leg the reconcile path superseded.
+      const metaPatch: Record<string, unknown> = {}
+      if (effReviewStatus !== undefined) {
+        metaPatch.reviewStatus = effReviewStatus
+        metaPatch.confidence = g.confidence ?? null
+        metaPatch.reviewReasons = effReasons
+      }
+      if (g.cancelled) metaPatch.legStatus = 'CANCELLED'
+      if (Object.keys(metaPatch).length) await this.shipments.updateLeg(shipmentId, metaPatch)
     } else {
       jobNo = await this.nextJobNo()
       const booking = await this.bookings.create({ jobNo, customerId, vendorId: effVendorId, forwarderId: effForwarderId, brand: str(f.brand), crd: date(f.cargo_ready_date) })
@@ -273,7 +285,7 @@ export class CommitterService {
       const leg = await this.shipments.insertLeg({
         bookingId,
         legNo: 1,
-        legStatus: 'ACTIVE',
+        legStatus,
         ...(legValues as object),
         reviewStatus: effReviewStatus ?? 'confirmed',
         confidence: g.confidence ?? null,
@@ -285,6 +297,11 @@ export class CommitterService {
       await this.writeAudit('shipment', shipmentId, 'create', null, state, g)
     }
 
+    // Per-PO master enrichment (brand / item_style_no / total_quantity + unit): pulled from the parsed_record
+    // whose PO matches — NOT the shipment-level aggregate — so a brand stated at the SO level never leaks onto
+    // every PO, and a PO showing two brands across a thread resolves latest-received-wins. See resolvePoEnrichment.
+    const poEnrichment = g.pos.length ? resolvePoEnrichment(await this.evidence.allWithMessage()) : null
+
     // per-PO shipped qty: prefer the Matcher's unambiguous per-PO qty map (keyed by normalized po_no) when it
     // provides one for this PO; else fall back to the single-PO case (a shipment carrying ONE PO owns the whole
     // qty). With several POs and no map entry the split is unknown, so qty stays null — never attribute the
@@ -295,7 +312,7 @@ export class CommitterService {
       // only default the unit to 'cartons' when there IS a qty — otherwise a phantom 'cartons' shows on the PO
       // table while CARGO shows (pending). No qty -> unit is whatever was extracted, or null.
       const perPoUnit = perPoQty != null ? str(f.qty_unit) ?? 'cartons' : str(f.qty_unit)
-      const poId = await this.bookings.upsertPo(poNo, customerId, effVendorId)
+      const poId = await this.bookings.upsertPo(poNo, customerId, effVendorId, poEnrichment?.get(normKey(poNo)))
       await this.bookings.linkPo(bookingId, poId)
       await this.shipments.linkPo(shipmentId, poId, perPoQty, perPoUnit)
     }

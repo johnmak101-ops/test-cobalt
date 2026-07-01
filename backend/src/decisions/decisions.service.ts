@@ -70,6 +70,7 @@ export class DecisionsService {
       events,
       mode: dto.mode ?? null,
       conversationId: dto.conversationId ?? null,
+      cancelled: dto.cancelled ?? false,
       conflicts: dto.conflicts ?? [],
       identifiers: dto.identifiers ?? [],
       entities: dto.entities ?? [],

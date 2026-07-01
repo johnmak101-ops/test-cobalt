@@ -541,7 +541,9 @@ export class PresentationService {
       this.bookingRepo.listOrdered(),
       this.emailRepo.countPendingReview(),
     ])
-    const nonDelivered = legs.filter((l) => l.state !== 'DELIVERED')
+    // active-shipments stats exclude cancelled legs (they still appear in the tracker list, shown as
+    // Cancelled, but must not inflate the active/at-risk counts).
+    const nonDelivered = legs.filter((l) => l.state !== 'DELIVERED' && (l as { legStatus?: string | null }).legStatus !== 'CANCELLED')
     const stats = {
       activeShipments: nonDelivered.length,
       atRiskShipments: nonDelivered.filter((l) => l.riskLevel != null && AT_RISK.has(l.riskLevel)).length,
