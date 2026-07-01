@@ -32,6 +32,14 @@ const scacFromMbl = (mbl: string | null): string | null => {
   return m ? m[1] : null
 }
 
+/** Origin countries spelled out in a free-text POL (e.g. "SHAHAJALAL INTL. AIR PORT, BANGLADESH") →
+ *  ISO-2. Only used as a last-resort origin_country backstop when the port itself doesn't resolve. */
+const COUNTRY_TO_ISO2: Record<string, string> = {
+  BANGLADESH: 'BD', CHINA: 'CN', CAMBODIA: 'KH', VIETNAM: 'VN', INDIA: 'IN', INDONESIA: 'ID',
+  THAILAND: 'TH', PAKISTAN: 'PK', 'SRI LANKA': 'LK', TURKEY: 'TR', MYANMAR: 'MM', 'HONG KONG': 'HK',
+  TAIWAN: 'TW', 'SOUTH KOREA': 'KR', KOREA: 'KR', JAPAN: 'JP', PHILIPPINES: 'PH', MALAYSIA: 'MY',
+}
+
 /** One reconciled shipment picture, ready to commit. */
 export interface ReconGroup {
   fields: Record<string, unknown>
@@ -117,7 +125,10 @@ export class CommitterService {
       pol?.country ??
       (() => {
         const rawPol = (str(f.poi ?? (f as Record<string, unknown>).pol) ?? '').toUpperCase()
-        return /^[A-Z]{2}[A-Z0-9]{3}$/.test(rawPol) ? rawPol.slice(0, 2) : null
+        if (/^[A-Z]{2}[A-Z0-9]{3}$/.test(rawPol)) return rawPol.slice(0, 2)
+        // free-text POL that spells out the origin country in its trailing segment
+        const tail = (rawPol.split(',').pop() ?? '').replace(/[^A-Z ]+/g, ' ').replace(/\s+/g, ' ').trim()
+        return COUNTRY_TO_ISO2[tail] ?? null
       })()
 
     // Phase-4 guard: a forwarder mislabeled as the vendor must never land in the vendor slot.
