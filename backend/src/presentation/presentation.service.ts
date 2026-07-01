@@ -266,7 +266,8 @@ export class PresentationService {
       customer: po.customerName || po.customerCode ? { id: po.customerId ?? '', name: po.customerName ?? '', code: po.customerCode ?? null } : null,
       vendor: po.vendorName || po.vendorCode ? { id: po.vendorId ?? '', name: po.vendorName ?? '', code: po.vendorCode ?? null } : null,
       shipmentCount: links.length,
-      shippedQuantity: links.reduce((s, l) => s + (l.linkedQuantity ?? 0), 0),
+      // null (unknown) when no linked shipment carries a quantity — a false "0 shipped" is misleading
+      shippedQuantity: links.some((l) => l.linkedQuantity != null) ? links.reduce((s, l) => s + (l.linkedQuantity ?? 0), 0) : null,
       shipmentSummary: links.map((l) =>
         this.toPoShipmentRow({
           shipmentId: l.shipmentId, bookingNo: l.bookingNo, status: l.status, containerNo: l.containerNo,

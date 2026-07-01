@@ -80,9 +80,7 @@ export default function PurchaseOrderDetailPage() {
           <div>
             <span className="text-xs text-text-muted">Shipped</span>
             <p className="mt-0.5 font-mono text-lg font-semibold text-cobalt-primary">
-              {po.shippedQuantity != null && po.shippedQuantity > 0
-                ? po.shippedQuantity
-                : '0'}
+              {po.shippedQuantity != null ? po.shippedQuantity : '—'}
             </p>
           </div>
           <div>
