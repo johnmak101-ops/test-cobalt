@@ -166,6 +166,16 @@ export class MastersRepository {
       const [byAlias] = await this.db.select().from(schema.ports).where(eq(schema.ports.unlocode, aliasCode))
       if (byAlias) return { id: byAlias.id, country: byAlias.country }
     }
+    // curated IATA (airport) code → UN/LOCODE aliases, so a bare air code like 'CKG' resolves to the seeded
+    // 'CNCKG'/Chongqing entry. Deterministic, no fuzzy — re-runs the exact-unlocode lookup on the mapped code.
+    const IATA_TO_UNLOCODE: Record<string, string> = {
+      CKG: 'CNCKG',
+    }
+    const iataCode = IATA_TO_UNLOCODE[aliasKey]
+    if (iataCode) {
+      const [byIata] = await this.db.select().from(schema.ports).where(eq(schema.ports.unlocode, iataCode))
+      if (byIata) return { id: byIata.id, country: byIata.country }
+    }
     return null
   }
 

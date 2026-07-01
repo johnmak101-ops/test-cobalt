@@ -15,7 +15,8 @@ export function deriveState(emailTypes: Set<string>, fields: Record<string, unkn
   if (has(fields.warehouse_start_date) || emailTypes.has('Draft B/L')) bump('AT_WAREHOUSE')
   if (has(fields.atd)) bump('SAILED')
   if (emailTypes.has('Telex Release') || emailTypes.has('Final B/L')) bump('RELEASED')
-  if (has(fields.in_dc_date)) bump('DELIVERED')
+  // A delivery cannot precede departure: only bump to DELIVERED when there is also a departure signal.
+  if (has(fields.in_dc_date) && (has(fields.atd) || emailTypes.has('Final B/L') || emailTypes.has('Telex Release'))) bump('DELIVERED')
   return s
 }
 
