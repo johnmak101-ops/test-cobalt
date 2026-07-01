@@ -72,8 +72,13 @@ export class MastersRepository {
     return r ?? null
   }
   async forwarderIdByName(name: string) {
-    const [r] = await this.db.select().from(schema.forwarders).where(ilike(schema.forwarders.name, `%${name}%`))
-    if (r) return r.id
+    // AMBIGUITY-GUARDED first-stage containment: '%name%' matches an UNORDERED heap scan, so a substring like
+    // 'Expeditors' hits 3 masters (EXPEDITORS - CHINA / EXPEDITORS CAMBODIA / EXPEDITORS INTERNATIONAL) and
+    // returning the first row is nondeterministic (a VACUUM can flip it). Fetch ALL matches and return ONLY
+    // when EXACTLY ONE master contains the name; on 0 or >1, fall through to the deterministic stages below
+    // (which correctly return null for a bare ambiguous 'Expeditors', leaving forwarder_raw to surface).
+    const contained = await this.db.select().from(schema.forwarders).where(ilike(schema.forwarders.name, `%${name}%`))
+    if (contained.length === 1) return contained[0]!.id
     // normalized exact match: strip ALL non-alphanumerics so punctuation/spacing variants resolve
     // ('LX PANTOS LOGISTICS (SHENZHEN) CO.,LTD.' == master 'LX PANTOS LOGISTICS (SHENZHEN) CO. LTD').
     const norm = name.toUpperCase().replace(/[^A-Z0-9]/g, '')
@@ -113,8 +118,10 @@ export class MastersRepository {
         .limit(1)
       if (na) return na.forwarderId
     }
-    const [a] = await this.db.select().from(schema.forwarderAliases).where(ilike(schema.forwarderAliases.value, `%${name}%`))
-    if (a) return a.forwarderId
+    // same exactly-one guard on the alias '%name%' ilike — an ambiguous alias substring must not arbitrarily
+    // resolve from an unordered heap scan either.
+    const aliasContained = await this.db.select().from(schema.forwarderAliases).where(ilike(schema.forwarderAliases.value, `%${name}%`))
+    if (aliasContained.length === 1) return aliasContained[0]!.forwarderId
     // reverse-containment: a master whose normalized name is a SUBSTRING of the normalized input, so an
     // input with an appended office/domain ('EXPEDITORS INTERNATIONAL (LAX)') still resolves. Guarded by
     // master-name length ≥ 10 chars (avoids short generic tokens matching everything) and the LONGEST match
