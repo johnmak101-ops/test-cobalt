@@ -130,6 +130,38 @@ export class MastersRepository {
         .limit(1)
       if (rc) return rc.id
     }
+    // legal-form fold: 'TradeLink Technologies Ltd' should reach master 'TRADELINK TECHNOLOGIES LIMITED'.
+    // Canonicalize the trailing legal-form token (LTD↔LIMITED, CO↔COMPANY, INC↔INCORPORATED,
+    // CORP↔CORPORATION) on BOTH the input and every master, then compare. DANGER: the table holds 50+
+    // pairs that differ ONLY by legal form as distinct coded rows (019/020 AGILITY, 630/631 U-OCEAN,
+    // 572/573 STANDARD FREIGHT HK, WAN HAI LINES ×2) — a blind fold + limit(1) would resolve those
+    // nondeterministically. So accept the folded match ONLY when EXACTLY ONE forwarder folds to it.
+    const foldLegalForm = (s: string): string => {
+      // normalize to alnum-separated-by-single-space tokens, then rewrite legal-form tokens to a canon.
+      const tokens = s
+        .toUpperCase()
+        .replace(/[^A-Z0-9]+/g, ' ')
+        .trim()
+        .split(' ')
+        .filter(Boolean)
+      const canon: Record<string, string> = {
+        LTD: 'LIMITED',
+        LIMITED: 'LIMITED',
+        CO: 'COMPANY',
+        COMPANY: 'COMPANY',
+        INC: 'INCORPORATED',
+        INCORPORATED: 'INCORPORATED',
+        CORP: 'CORPORATION',
+        CORPORATION: 'CORPORATION',
+      }
+      return tokens.map((t) => canon[t] ?? t).join('')
+    }
+    const inputFold = foldLegalForm(name)
+    if (inputFold.length >= 4) {
+      const all = await this.db.select({ id: schema.forwarders.id, name: schema.forwarders.name }).from(schema.forwarders)
+      const hits = all.filter((f) => foldLegalForm(f.name) === inputFold)
+      if (hits.length === 1) return hits[0].id
+    }
     return null
   }
   async portIdByCodeOrName(code: string) {
