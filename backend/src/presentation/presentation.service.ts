@@ -209,12 +209,9 @@ export class PresentationService {
         id: r.id,
         bookingNo: r.bookingNo ?? null,
         soNo: r.soNo ?? null,
-        customer: r.customerId ? { id: r.customerId, name: r.customerName, code: r.customerCode ?? null } : null,
-        forwarder: r.forwarderId
-          ? { id: r.forwarderId, name: r.forwarderName }
-          : r.forwarderRaw
-            ? { id: '', name: r.forwarderRaw }
-            : null,
+        // strings (not objects) — the review-queue table renders these directly; an object here crashes React
+        customer: r.customerName ?? null,
+        forwarder: r.forwarderName ?? r.forwarderRaw ?? null,
         route: deriveRoute(r.polCode ?? r.polRaw, r.podCode ?? r.podRaw),
         state: r.state,
         status: stateToUiStatus(r.state, r.legStatus),
