@@ -28,7 +28,9 @@ const dedupeCsv = (s: string | null): string | null => {
 /** The ocean carrier SCAC is the leading 4 letters of the MASTER B/L (MEDUP5180997 -> MEDU = MSC). A
  *  deterministic backstop for when the model didn't emit scac_code; SCAC is stored as-is (no master check). */
 const scacFromMbl = (mbl: string | null): string | null => {
-  const m = /^([A-Z]{4})/.exec((mbl ?? '').toUpperCase())
+  // BUG 12: require carrier-BL shape — 4 letters immediately followed by a digit (MAEU5..., MEDU8...) — so a
+  // house routing ref like 'HUN-HKG-FXT-...' doesn't coin a bogus SCAC from its leading letters.
+  const m = /^([A-Z]{4})\d/.exec((mbl ?? '').toUpperCase())
   return m ? m[1] : null
 }
 
@@ -300,7 +302,7 @@ export class CommitterService {
 
     await this.writeIdentifiers(shipmentId, g)
     await this.writeParties(shipmentId, g)
-    await this.syncMilestones(shipmentId, g)
+    await this.syncMilestones(shipmentId, g, state)
     return { action, jobNo, bookingId, shipmentId, state, conflicts: g.conflicts, skippedLockedFields }
   }
 
@@ -443,7 +445,7 @@ export class CommitterService {
     await this.shipments.replaceParties(shipmentId, rows)
   }
 
-  private async syncMilestones(shipmentId: string, g: ReconGroup) {
+  private async syncMilestones(shipmentId: string, g: ReconGroup, state: string) {
     const seen = new Set<string>()
     const rows: (typeof schema.shipmentMilestones.$inferInsert)[] = []
     for (const ev of [...g.events].sort((a, b) => a.receivedAt.localeCompare(b.receivedAt))) {
@@ -474,6 +476,23 @@ export class CommitterService {
         senderType: 'forwarder',
         notes: 'derived', // field-derived, not email-type-mapped
       })
+    }
+    // BUG 3: deriveState can reach SAILED via the Invoice/Billing + mbl + past-etd path with atd NULL, so the
+    // atd→SAILED derived milestone above never fires and the timeline shows a blank departure. When the committed
+    // state IS SAILED but no SAILED milestone was emitted (neither email- nor atd-derived) and atd is absent,
+    // emit one dated by etd. Idempotent via `seen`; never double-emits when atd already produced a SAILED row.
+    if (state === 'SAILED' && !seen.has('SAILED') && !date(g.fields.atd)) {
+      const etd = date(g.fields.etd)
+      if (etd) {
+        seen.add('SAILED')
+        rows.push({
+          shipmentId,
+          milestoneType: 'SAILED' as (typeof schema.shipmentMilestones.$inferInsert)['milestoneType'],
+          occurredAt: etd,
+          senderType: 'forwarder',
+          notes: 'derived from etd',
+        })
+      }
     }
     await this.shipments.replaceMilestones(shipmentId, rows)
     // Related Emails: EVERY source email (deduped by graph id) — including unmapped "Other"/Customs emails

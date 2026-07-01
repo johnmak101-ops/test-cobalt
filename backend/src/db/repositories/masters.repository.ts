@@ -164,9 +164,15 @@ export class MastersRepository {
       return tokens.map((t) => canon[t] ?? t).join('')
     }
     const foldAll = await this.db.select({ id: schema.forwarders.id, name: schema.forwarders.name }).from(schema.forwarders)
+    // BUG 8: also try the CONTENTS of the first parenthetical ('TradeLinkOne (TradeLink Technologies Ltd)' →
+    // 'TradeLink Technologies Ltd'). The stripped form drops the parenthetical entirely, so a name whose
+    // resolvable identity lives INSIDE the parentheses (an outer brand + an inner legal name) would otherwise
+    // miss. The exactly-one guard below keeps it deterministic — inner folds to exactly one master.
+    const inner = /\(([^)]*)\)/.exec(name)?.[1]?.trim()
     // try the office/email-stripped form FIRST ('TradeLink Technologies Ltd (…portal, …@…)' → 'TradeLink
-    // Technologies Ltd'), then the raw — accept only when EXACTLY ONE master folds to the same canon.
-    for (const cand of [stripped, name]) {
+    // Technologies Ltd'), then the inner-parenthetical content, then the raw — accept only when EXACTLY ONE
+    // master folds to the same canon.
+    for (const cand of [stripped, ...(inner ? [inner] : []), name]) {
       const inputFold = foldLegalForm(cand)
       if (inputFold.length < 4) continue
       const hits = foldAll.filter((f) => foldLegalForm(f.name) === inputFold)

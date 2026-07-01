@@ -20,13 +20,19 @@ interface MilestoneTimelineProps {
   eta?: string | null
   ata?: string | null
   inDcDate?: string | null
+  // BUG 11: the At-Warehouse stage's date. The backend emits an AT_WAREHOUSE milestone, but pass the scalar
+  // too so the stage still shows a date on legs where the milestone row is absent.
+  warehouseStartDate?: string | null
 }
 
-const milestoneOrder = ['BOOKING_SENT', 'SO_RECEIVED', 'DRAFT_BL_RECEIVED', 'FINAL_BL_RECEIVED', 'DEPARTED', 'ARRIVED', 'DELIVERED']
+// BUG 11: AT_WAREHOUSE is a first-class stage the backend emits (derived from warehouse_start_date). It was
+// missing here, so an at-warehouse date had no stage to render. Inserted between SO Received and Draft BOL.
+const milestoneOrder = ['BOOKING_SENT', 'SO_RECEIVED', 'AT_WAREHOUSE', 'DRAFT_BL_RECEIVED', 'FINAL_BL_RECEIVED', 'DEPARTED', 'ARRIVED', 'DELIVERED']
 
 const milestoneLabels: Record<string, string> = {
   BOOKING_SENT: 'Booking Request',
   SO_RECEIVED: 'SO Received',
+  AT_WAREHOUSE: 'At Warehouse',
   DRAFT_BL_RECEIVED: 'Draft BOL',
   FINAL_BL_RECEIVED: 'Final BOL',
   DEPARTED: 'Departure',
@@ -43,13 +49,26 @@ export function MilestoneTimeline({
   eta,
   ata,
   inDcDate,
+  warehouseStartDate,
 }: MilestoneTimelineProps) {
   const milestoneMap = new Map(milestones.map((m) => [m.milestoneType, m]))
 
   // The ACTUAL date a stage occurred: a milestone EVENT for the document stages, or the shipment's own
-  // atd/ata scalar for DEPARTED/ARRIVED (tracked as dates, not events).
+  // atd/ata scalar for DEPARTED/ARRIVED (tracked as dates, not events). DEPARTED also falls back to a
+  // backend-derived SAILED milestone (etd-derived, atd NULL — see committer BUG 3); AT_WAREHOUSE falls back
+  // to warehouseStartDate when no milestone row exists.
   const actualDate = (type: string): string | null =>
-    milestoneMap.get(type)?.occurredAt ?? (type === 'DEPARTED' ? atd : type === 'ARRIVED' ? ata : type === 'DELIVERED' ? inDcDate : null) ?? null
+    milestoneMap.get(type)?.occurredAt ??
+    (type === 'DEPARTED'
+      ? atd ?? milestoneMap.get('SAILED')?.occurredAt ?? null
+      : type === 'ARRIVED'
+        ? ata
+        : type === 'DELIVERED'
+          ? inDcDate
+          : type === 'AT_WAREHOUSE'
+            ? warehouseStartDate
+            : null) ??
+    null
   // ESTIMATED date, for a departure/arrival stage not yet reached.
   const estDate = (type: string): string | null => (type === 'DEPARTED' ? etd : type === 'ARRIVED' ? eta : null) ?? null
 
@@ -65,7 +84,10 @@ export function MilestoneTimeline({
   // the derived STATE implies progress even with no per-stage milestone EVENT — e.g. a shipment whose emails
   // are all "Other" but carry an so_no sits in CONFIRMED with zero milestones. Never show less than the
   // state's stage, so the timeline agrees with the status badge.
-  const STATE_TO_INDEX: Record<string, number> = { BOOKED: 0, CONFIRMED: 1, AT_WAREHOUSE: 2, SAILED: 4, RELEASED: 4, DELIVERED: 6 }
+  // BUG 4: keyed on the UI-translated status the component actually receives (stateToUiStatus:
+  // RELEASED→DEPARTED, DELIVERED→ARRIVED), NOT the raw leg states — the old RELEASED/DELIVERED keys were dead
+  // and SAILED/DEPARTED/ARRIVED never matched. Indices track milestoneOrder (AT_WAREHOUSE inserted at 2).
+  const STATE_TO_INDEX: Record<string, number> = { BOOKED: 0, CONFIRMED: 1, AT_WAREHOUSE: 2, SAILED: 5, DEPARTED: 5, ARRIVED: 6 }
   currentIndex = Math.max(currentIndex, STATE_TO_INDEX[currentStatus] ?? -1)
 
   const stages = milestoneOrder.map((type, idx) => ({

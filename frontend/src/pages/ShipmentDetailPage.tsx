@@ -139,6 +139,7 @@ export default function ShipmentDetailPage() {
           eta={shipment.eta}
           ata={shipment.actualArrival}
           inDcDate={shipment.inDcDate}
+          warehouseStartDate={shipment.warehouseStartDate}
         />
       </Card>
 
