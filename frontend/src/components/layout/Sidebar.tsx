@@ -4,6 +4,7 @@ import { useAuth } from '../../hooks/use-auth'
 import { useReviewCounts } from '../../hooks/use-review-queue'
 import { useAlerts } from '../../hooks/use-alerts'
 import { useUnreadCount } from '../../hooks/use-emails'
+import { useDocumentCount } from '../../hooks/use-documents'
 import { cn } from '../../lib/utils'
 import { CobaltLogo } from '../ui/CobaltLogo'
 import {
@@ -15,9 +16,10 @@ import {
   PanelLeftOpen,
   ClipboardCheck,
   Package,
+  FileText,
 } from 'lucide-react'
 
-type BadgeKey = 'pending' | 'unreadAlerts' | 'unreadEmails'
+type BadgeKey = 'pending' | 'unreadAlerts' | 'unreadEmails' | 'documents'
 
 interface NavItem {
   to: string
@@ -32,6 +34,7 @@ const navItems: NavItem[] = [
   { to: '/', icon: LayoutDashboard, label: 'Dashboard', roles: ['COORDINATOR', 'MANAGER', 'ADMIN'], badgeKey: null },
   { to: '/shipments', icon: Ship, label: 'Shipments', roles: ['COORDINATOR', 'MANAGER', 'ADMIN'], badgeKey: null },
   { to: '/purchase-orders', icon: Package, label: 'Customer POs', roles: ['COORDINATOR', 'MANAGER', 'ADMIN'], badgeKey: null },
+  { to: '/documents', icon: FileText, label: 'Documents', roles: ['COORDINATOR', 'MANAGER', 'ADMIN'], badgeKey: 'documents' },
   { to: '/review-queue', icon: ClipboardCheck, label: 'Review Queue', roles: ['COORDINATOR', 'MANAGER', 'ADMIN'], badgeKey: 'pending' },
   { to: '/alerts', icon: AlertTriangle, label: 'Alerts', roles: ['COORDINATOR', 'MANAGER', 'ADMIN'], badgeKey: 'unreadAlerts' },
   { to: '/settings', icon: Settings, label: 'Settings', roles: ['MANAGER', 'ADMIN'], badgeKey: null },
@@ -43,6 +46,7 @@ export function Sidebar() {
   const { data: reviewCounts } = useReviewCounts()
   const { data: alertsData } = useAlerts()
   const { data: unreadData } = useUnreadCount()
+  const documentCount = useDocumentCount()
 
   const unreadAlerts = alertsData?.alerts?.filter((a) => a.status === 'ACTIVE' && !a.readAt).length ?? 0
 
@@ -50,6 +54,7 @@ export function Sidebar() {
     pending: reviewCounts?.pending ?? 0,
     unreadAlerts,
     unreadEmails: unreadData?.unread ?? 0,
+    documents: documentCount,
   }
 
   const isVisible = (roles: string[]) => !user || roles.includes(user.role)

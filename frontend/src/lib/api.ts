@@ -36,10 +36,32 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
   return (text ? JSON.parse(text) : undefined) as T
 }
 
+/** Row shape returned by GET /api/documents (the "Unlinked Documents" review inbox). */
+export interface DocumentRow {
+  id: string
+  customer: string | null
+  emailType: string | null
+  senderType: string | null
+  poNumbers: string[]
+  poCount: number
+  qty: number | null
+  qtyUnit: string | null
+  receivedAt: string | null
+}
+
 export const api = {
   get: <T>(path: string) => request<T>(path),
   post: <T>(path: string, body: unknown) => request<T>(path, { method: 'POST', body: JSON.stringify(body) }),
   put: <T>(path: string, body: unknown) => request<T>(path, { method: 'PUT', body: JSON.stringify(body) }),
   patch: <T>(path: string, body: unknown) => request<T>(path, { method: 'PATCH', body: JSON.stringify(body) }),
   delete: <T>(path: string) => request<T>(path, { method: 'DELETE' }),
+
+  // --- Unlinked Documents (orphan invoice/misc emails) ---
+  getDocuments: () =>
+    request<{ documents: DocumentRow[] }>('/documents').then((r) => r.documents),
+  linkDocument: (id: string, shipmentId: string) =>
+    request<{ ok: true }>(`/documents/${id}/link`, {
+      method: 'POST',
+      body: JSON.stringify({ shipmentId }),
+    }),
 }

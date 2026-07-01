@@ -3,7 +3,7 @@
  * pure mappers to produce the flat shapes the new UI expects. Read-only. Adds no new model concepts —
  * one UI "shipment" = one ACTIVE leg + its booking, projected flat.
  */
-import { Injectable, NotFoundException } from '@nestjs/common'
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common'
 import { ShipmentRepository } from '../db/repositories/shipment.repository'
 import { BookingRepository } from '../db/repositories/booking.repository'
 import { MastersRepository } from '../db/repositories/masters.repository'
@@ -146,6 +146,9 @@ export class PresentationService {
     const poCache = new Map<string, LinkedPoRow[]>()
     const out: ReturnType<typeof toUiShipment>[] = []
     for (const leg of legs) {
+      // Only REAL shipments belong on the tracker; DOCUMENT legs live in the Unlinked Documents view.
+      // (null-kind is treated as SHIPMENT defensively, for rows predating the split.)
+      if ((leg as { kind?: string | null }).kind === 'DOCUMENT') continue
       if (filter?.forwarderId && leg.forwarderId !== filter.forwarderId) continue
       const booking = bookingsById.get(leg.bookingId) ?? null
       if (filter?.customerId && booking?.customerId !== filter.customerId) continue
@@ -191,6 +194,40 @@ export class PresentationService {
   async shipmentHistory(id: string) {
     const rows = await this.auditRepo.listForEntity('shipment', id)
     return { history: rows.map(toUiHistoryEntry) }
+  }
+
+  // ---- unlinked documents ----
+
+  /** Orphan documents (kind='DOCUMENT', not yet linked) — the Unlinked Documents view. */
+  async documents() {
+    const rows = await this.shipmentRepo.documents()
+    return {
+      documents: rows.map((r) => ({
+        id: r.id,
+        customer: r.customerName ?? null,
+        emailType: r.emailType ?? null,
+        senderType: r.senderType ?? null,
+        poNumbers: r.poNumbers ?? [],
+        poCount: (r.poNumbers ?? []).length,
+        qty: r.qty ?? null,
+        qtyUnit: r.qtyUnit ?? null,
+        receivedAt: isoOrNull(r.receivedAt),
+      })),
+    }
+  }
+
+  /** Manually link a document onto a real shipment: fold its POs + emails over and mark it linked. */
+  async linkDocument(documentId: string, shipmentId: string): Promise<{ ok: true }> {
+    if (!shipmentId) throw new BadRequestException('shipmentId is required')
+    const [docKind, targetKind] = await Promise.all([
+      this.shipmentRepo.kindOf(documentId),
+      this.shipmentRepo.kindOf(shipmentId),
+    ])
+    if (docKind == null) throw new NotFoundException('document not found')
+    if (targetKind == null) throw new NotFoundException('shipment not found')
+    if (docKind !== 'DOCUMENT') throw new BadRequestException('source is not an unlinked document')
+    await this.shipmentRepo.linkDocument(documentId, shipmentId)
+    return { ok: true }
   }
 
   // ---- purchase orders (app-owned) ----

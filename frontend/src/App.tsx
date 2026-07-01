@@ -13,6 +13,7 @@ import SettingsPage from './pages/SettingsPage'
 import ReviewQueuePage from './pages/ReviewQueuePage'
 import PurchaseOrdersPage from './pages/PurchaseOrdersPage'
 import PurchaseOrderDetailPage from './pages/PurchaseOrderDetailPage'
+import UnlinkedDocumentsPage from './pages/UnlinkedDocumentsPage'
 import type { ReactNode } from 'react'
 
 const queryClient = new QueryClient({
@@ -83,6 +84,7 @@ function AppRoutes() {
         <Route path="/shipments/:id" element={<ShipmentDetailPage />} />
         <Route path="/purchase-orders" element={<PurchaseOrdersPage />} />
         <Route path="/purchase-orders/:id" element={<PurchaseOrderDetailPage />} />
+        <Route path="/documents" element={<UnlinkedDocumentsPage />} />
         <Route path="/inbox" element={<InboxPage />} />
         <Route path="/review-queue" element={<ReviewQueuePage />} />
         <Route path="/alerts" element={<AlertsPage />} />

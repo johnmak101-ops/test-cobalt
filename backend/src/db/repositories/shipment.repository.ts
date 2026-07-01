@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common'
-import { and, desc, eq } from 'drizzle-orm'
+import { and, desc, eq, isNull, sql } from 'drizzle-orm'
 import { alias } from 'drizzle-orm/pg-core'
 import * as schema from '@cobalt/contracts'
 import { DRIZZLE, type DrizzleDB } from '../drizzle.provider'
@@ -206,5 +206,99 @@ export class ShipmentRepository {
   async replaceParties(shipmentId: string, rows: (typeof schema.shipmentParties.$inferInsert)[]) {
     await this.db.delete(schema.shipmentParties).where(eq(schema.shipmentParties.shipmentId, shipmentId))
     if (rows.length) await this.db.insert(schema.shipmentParties).values(rows)
+  }
+
+  // --- documents (kind='DOCUMENT' orphan legs — the Unlinked Documents view) ---
+
+  /**
+   * Unlinked documents: kind='DOCUMENT' legs not yet linked onto a real shipment. Each row is enriched
+   * with the booking's customer name, its distinct email type(s), a best-effort sender type (joined from
+   * evidence.parsed_record on graph_message_id), the PO numbers it carries, and the newest received-at.
+   * Ordered newest-first (nulls last). Single query; the per-row lists are aggregated in Postgres.
+   */
+  async documents() {
+    const rows = await this.db
+      .select({
+        id: schema.shipments.id,
+        customerName: schema.customers.name,
+        qty: schema.shipments.qty,
+        qtyUnit: schema.shipments.qtyUnit,
+        emailType: sql<string | null>`(
+          select string_agg(distinct se.email_type, ', ')
+          from tracking.shipment_emails se
+          where se.shipment_id = ${schema.shipments.id} and se.email_type is not null
+        )`,
+        senderType: sql<string | null>`(
+          select pr.sender_type
+          from tracking.shipment_emails se
+          join evidence.parsed_record pr on pr.graph_message_id = se.graph_message_id
+          where se.shipment_id = ${schema.shipments.id} and pr.sender_type is not null
+          limit 1
+        )`,
+        poNumbers: sql<string[]>`coalesce((
+          select array_agg(po.po_number order by po.po_number)
+          from tracking.shipment_pos sp
+          join tracking.purchase_orders po on po.id = sp.po_id
+          where sp.shipment_id = ${schema.shipments.id}
+        ), '{}')`,
+        receivedAt: sql<Date | null>`(
+          select max(se.received_at)
+          from tracking.shipment_emails se
+          where se.shipment_id = ${schema.shipments.id}
+        )`,
+      })
+      .from(schema.shipments)
+      .leftJoin(schema.bookings, eq(schema.shipments.bookingId, schema.bookings.id))
+      .leftJoin(schema.customers, eq(schema.bookings.customerId, schema.customers.id))
+      .where(and(eq(schema.shipments.kind, 'DOCUMENT'), isNull(schema.shipments.linkedShipmentId)))
+      .orderBy(sql`(
+        select max(se.received_at)
+        from tracking.shipment_emails se
+        where se.shipment_id = ${schema.shipments.id}
+      ) desc nulls last`)
+    return rows
+  }
+
+  /** kind lookup for a leg (null when the id doesn't exist) — link-validation. */
+  async kindOf(id: string): Promise<'SHIPMENT' | 'DOCUMENT' | null> {
+    const [r] = await this.db
+      .select({ kind: schema.shipments.kind })
+      .from(schema.shipments)
+      .where(eq(schema.shipments.id, id))
+    return (r?.kind as 'SHIPMENT' | 'DOCUMENT' | undefined) ?? null
+  }
+
+  /**
+   * Link a DOCUMENT onto a target SHIPMENT in one transaction: copy its POs and source-emails onto the
+   * target (idempotent — ON CONFLICT DO NOTHING against the (shipment,po) / (shipment,graph_id) unique
+   * keys), then stamp the document's linked_shipment_id so it leaves the Unlinked Documents view.
+   */
+  async linkDocument(documentId: string, targetShipmentId: string) {
+    await this.db.transaction(async (tx) => {
+      const poRows = await tx
+        .select({ poId: schema.shipmentPos.poId, quantity: schema.shipmentPos.quantity, quantityUnit: schema.shipmentPos.quantityUnit })
+        .from(schema.shipmentPos)
+        .where(eq(schema.shipmentPos.shipmentId, documentId))
+      if (poRows.length) {
+        await tx
+          .insert(schema.shipmentPos)
+          .values(poRows.map((r) => ({ shipmentId: targetShipmentId, poId: r.poId, quantity: r.quantity, quantityUnit: r.quantityUnit })))
+          .onConflictDoNothing()
+      }
+      const emailRows = await tx
+        .select({ graphMessageId: schema.shipmentEmails.graphMessageId, emailType: schema.shipmentEmails.emailType, receivedAt: schema.shipmentEmails.receivedAt })
+        .from(schema.shipmentEmails)
+        .where(eq(schema.shipmentEmails.shipmentId, documentId))
+      if (emailRows.length) {
+        await tx
+          .insert(schema.shipmentEmails)
+          .values(emailRows.map((r) => ({ shipmentId: targetShipmentId, graphMessageId: r.graphMessageId, emailType: r.emailType, receivedAt: r.receivedAt })))
+          .onConflictDoNothing()
+      }
+      await tx
+        .update(schema.shipments)
+        .set({ linkedShipmentId: targetShipmentId, updatedAt: new Date() })
+        .where(eq(schema.shipments.id, documentId))
+    })
   }
 }

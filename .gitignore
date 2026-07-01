@@ -42,3 +42,6 @@ pave.log
 # runtime logs / scratch
 backend/_run.*.log
 tmp/
+
+# dev server logs
+frontend/_vite.*.log

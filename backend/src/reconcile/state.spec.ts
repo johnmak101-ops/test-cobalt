@@ -19,8 +19,12 @@ describe('deriveState — 6-state staircase', () => {
   it('Telex / Final B/L → RELEASED', () => {
     expect(deriveState(new Set(['Telex Release']), {})).toBe('RELEASED')
   })
-  it('in-DC date → DELIVERED (highest reached wins)', () => {
-    expect(deriveState(new Set(['SO']), { in_dc_date: '2026-03-01' })).toBe('DELIVERED')
+  it('in-DC date alone does NOT reach DELIVERED without a departure signal', () => {
+    // a delivery cannot precede departure — in_dc with no atd/Final B/L/Telex stays at the prior stage
+    expect(deriveState(new Set(['SO']), { in_dc_date: '2026-03-01' })).toBe('CONFIRMED')
+  })
+  it('in-DC date + departure (atd) → DELIVERED (highest reached wins)', () => {
+    expect(deriveState(new Set(['SO']), { in_dc_date: '2026-03-01', atd: '2026-02-20' })).toBe('DELIVERED')
   })
 })
 

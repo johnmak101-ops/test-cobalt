@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common'
 import type * as schema from '@cobalt/contracts'
 import { keysOverlap, strongKeys, normKey, str, num, date } from './match-keys'
 import { guardVendorForwarder } from './vendor-forwarder-guard'
-import { deriveState, MILESTONE_OF, normMode } from './state'
+import { deriveState, classifyKind, MILESTONE_OF, normMode } from './state'
 import { MastersRepository } from '../db/repositories/masters.repository'
 import { BookingRepository } from '../db/repositories/booking.repository'
 import { ShipmentRepository } from '../db/repositories/shipment.repository'
@@ -141,9 +141,12 @@ export class CommitterService {
 
     const emailTypes = new Set(g.emailTypes)
     const state = deriveState(emailTypes, f)
+    // SHIPMENT (real leg) vs DOCUMENT (orphan invoice/misc with no shipping identity → Unlinked Documents).
+    const kind = classifyKind(emailTypes, f)
     const legValues: Record<string, unknown> = {
       mode: normMode(g.mode),
       state,
+      kind,
       forwarderId: effForwarderId,
       forwarderRaw: str(f.forwarder_name), // raw — surfaced when forwarderId doesn't resolve
       polId,

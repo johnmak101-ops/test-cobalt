@@ -57,6 +57,19 @@ export class UiShipmentHistoryController {
   }
 }
 
+@Controller('documents')
+export class UiDocumentsController {
+  constructor(private readonly ui: PresentationService) {}
+
+  @Get() list() {
+    return this.ui.documents()
+  }
+  @Roles('EDITOR', 'ADMIN')
+  @Post(':id/link') link(@Param('id') id: string, @Body() body: { shipmentId: string }) {
+    return this.ui.linkDocument(id, body?.shipmentId)
+  }
+}
+
 @Controller('purchase-orders')
 export class UiPosController {
   constructor(private readonly ui: PresentationService) {}

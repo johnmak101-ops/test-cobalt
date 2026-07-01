@@ -20,6 +20,21 @@ export function deriveState(emailTypes: Set<string>, fields: Record<string, unkn
   return s
 }
 
+/**
+ * Split a committed leg into SHIPMENT (a real shipment with a shipping identity) vs DOCUMENT (an orphan
+ * invoice / customs / misc email with no identity — parked in "Unlinked Documents" until a human links it).
+ * DOCUMENT only when BOTH: (a) it carries none of the rotating identity numbers, AND (b) it was built from
+ * none of the lifecycle email types. So a Booking Request with no booking# yet stays SHIPMENT (it's a real
+ * booking gaining its identity later); an invoice/customs/other email with no id becomes a DOCUMENT.
+ */
+const IDENTITY_FIELDS = ['booking_no', 'so_no', 'hbl_awb_fcr_no', 'mbl', 'container_no'] as const
+const LIFECYCLE_TYPES = new Set(['Booking Request', 'SO', 'Draft B/L', 'Final B/L', 'Telex Release'])
+export function classifyKind(emailTypes: Set<string>, fields: Record<string, unknown>): 'SHIPMENT' | 'DOCUMENT' {
+  const hasIdentity = IDENTITY_FIELDS.some((k) => has(fields[k]))
+  const hasLifecycle = [...emailTypes].some((t) => LIFECYCLE_TYPES.has(t))
+  return !hasIdentity && !hasLifecycle ? 'DOCUMENT' : 'SHIPMENT'
+}
+
 /** Which milestone an email type records (null = no milestone). */
 export const MILESTONE_OF: Record<string, string> = {
   'Booking Request': 'BOOKING_SENT',
