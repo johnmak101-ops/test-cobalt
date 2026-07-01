@@ -92,6 +92,19 @@ async function main() {
       { unlocode: 'USJAX', name: 'Jacksonville', country: 'US', mode: 'sea' },
       { unlocode: 'USEWR', name: 'Newark', country: 'US', mode: 'sea' },
       { unlocode: 'USNYC', name: 'New York', country: 'US', mode: 'sea' },
+      // widened again (origin-country/route audit): common ports seen in evidence that had no master row
+      { unlocode: 'CNXMN', name: 'Xiamen', country: 'CN', mode: 'sea' },
+      { unlocode: 'CNSHK', name: 'Shekou', country: 'CN', mode: 'sea' },
+      { unlocode: 'CNCKG', name: 'Chongqing', country: 'CN', mode: 'sea' },
+      { unlocode: 'CNZSN', name: 'Zhongshan', country: 'CN', mode: 'sea' },
+      { unlocode: 'AUSYD', name: 'Sydney', country: 'AU', mode: 'sea' },
+      { unlocode: 'KRINC', name: 'Incheon', country: 'KR', mode: 'sea' },
+      { unlocode: 'CAVAN', name: 'Vancouver', country: 'CA', mode: 'sea' },
+      { unlocode: 'GBSOU', name: 'Southampton', country: 'GB', mode: 'sea' },
+      { unlocode: 'GBBHM', name: 'Birmingham', country: 'GB', mode: 'sea' },
+      { unlocode: 'ESVLC', name: 'Valencia', country: 'ES', mode: 'sea' },
+      { unlocode: 'BDDAC', name: 'Dhaka', country: 'BD', mode: 'sea' },
+      { unlocode: 'AEKLF', name: 'Khor Fakkan', country: 'AE', mode: 'sea' },
     ])
     .returning()
   const port = (code: string) => ports.find((p) => p.unlocode === code)
