@@ -30,9 +30,11 @@ const dedupeCsv = (s: string | null): string | null => {
 /** The ocean carrier SCAC is the leading 4 letters of the MASTER B/L (MEDUP5180997 -> MEDU = MSC). A
  *  deterministic backstop for when the model didn't emit scac_code; SCAC is stored as-is (no master check). */
 const scacFromMbl = (mbl: string | null): string | null => {
-  // BUG 12: require carrier-BL shape — 4 letters immediately followed by a digit (MAEU5..., MEDU8...) — so a
-  // house routing ref like 'HUN-HKG-FXT-...' doesn't coin a bogus SCAC from its leading letters.
-  const m = /^([A-Z]{4})\d/.exec((mbl ?? '').toUpperCase())
+  // Carrier-BL shape = 4 letters immediately followed by an ALPHANUMERIC (a contiguous carrier token):
+  // MEDUP5180997 -> MEDU, MAEU5123456 -> MAEU. The follow char may be a LETTER (MSC's 'MEDU'+'P...'), so it is
+  // NOT required to be a digit — that earlier over-tightening dropped valid MSC SCACs. A separator-bearing
+  // house routing ref like 'HUN-HKG-FXT-...' still yields null (only 3 letters before the '-').
+  const m = /^([A-Z]{4})[A-Z0-9]/.exec((mbl ?? '').toUpperCase())
   return m ? m[1] : null
 }
 
