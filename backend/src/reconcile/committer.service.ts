@@ -393,6 +393,16 @@ export class CommitterService {
       })
     }
     await this.shipments.replaceMilestones(shipmentId, rows)
+    // Related Emails: EVERY source email (deduped by graph id) — including unmapped "Other"/Customs emails
+    // that carry the shipment's data but map to no milestone, so they were invisible before.
+    const seenEmail = new Set<string>()
+    const emailRows: (typeof schema.shipmentEmails.$inferInsert)[] = []
+    for (const ev of g.events) {
+      if (!ev.graphId || seenEmail.has(ev.graphId)) continue
+      seenEmail.add(ev.graphId)
+      emailRows.push({ shipmentId, graphMessageId: ev.graphId, emailType: ev.emailType, receivedAt: new Date(ev.receivedAt) })
+    }
+    await this.shipments.replaceEmails(shipmentId, emailRows)
   }
 
   private writeAudit(

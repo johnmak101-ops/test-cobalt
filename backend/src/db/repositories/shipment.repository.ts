@@ -176,6 +176,12 @@ export class ShipmentRepository {
     if (rows.length) await this.db.insert(schema.shipmentMilestones).values(rows)
   }
 
+  /** Every source email that contributed to this shipment (the Related Emails list). */
+  async replaceEmails(shipmentId: string, rows: (typeof schema.shipmentEmails.$inferInsert)[]) {
+    await this.db.delete(schema.shipmentEmails).where(eq(schema.shipmentEmails.shipmentId, shipmentId))
+    if (rows.length) await this.db.insert(schema.shipmentEmails).values(rows).onConflictDoNothing()
+  }
+
   // --- shipment_identifiers (every value each identity field ever held — current first) ---
   identifiersFor(shipmentId: string) {
     return this.db

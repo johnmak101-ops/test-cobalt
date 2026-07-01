@@ -147,11 +147,11 @@ export class EmailRepository {
         subject: schema.queueMessage.subject,
         sender: schema.queueMessage.sender,
         receivedAt: schema.queueMessage.receivedAt,
-        milestoneType: schema.shipmentMilestones.milestoneType,
+        milestoneType: schema.shipmentEmails.emailType,
       })
-      .from(schema.shipmentMilestones)
-      .innerJoin(schema.queueMessage, eq(schema.shipmentMilestones.emailMessageId, schema.queueMessage.graphMessageId))
-      .where(eq(schema.shipmentMilestones.shipmentId, shipmentId))
+      .from(schema.shipmentEmails)
+      .innerJoin(schema.queueMessage, eq(schema.shipmentEmails.graphMessageId, schema.queueMessage.graphMessageId))
+      .where(eq(schema.shipmentEmails.shipmentId, shipmentId))
       .orderBy(desc(schema.queueMessage.receivedAt))
   }
 

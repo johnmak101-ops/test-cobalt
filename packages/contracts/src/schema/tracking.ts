@@ -296,6 +296,18 @@ export const shipmentMilestones = tracking.table('shipment_milestones', {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 })
 
+/** Every source email that contributed to a shipment — the "Related Emails" list. Separate from
+ *  shipment_milestones because that dedupes by milestone type and skips unmapped ("Other"/Customs) emails,
+ *  which still carry the shipment's data. */
+export const shipmentEmails = tracking.table('shipment_emails', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  shipmentId: uuid('shipment_id').notNull().references(() => shipments.id, { onDelete: 'cascade' }),
+  graphMessageId: text('graph_message_id'),
+  emailType: text('email_type'),
+  receivedAt: timestamp('received_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [unique('shipment_emails_uq').on(t.shipmentId, t.graphMessageId)])
+
 /** App settings — tracking-side tunables (e.g. the confidence threshold for the review gate).
  *  Key/value so the admin config page (and the decision router) read one row. */
 export const appSettings = tracking.table('app_settings', {
