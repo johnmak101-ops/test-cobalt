@@ -156,11 +156,14 @@ export class MastersRepository {
       }
       return tokens.map((t) => canon[t] ?? t).join('')
     }
-    const inputFold = foldLegalForm(name)
-    if (inputFold.length >= 4) {
-      const all = await this.db.select({ id: schema.forwarders.id, name: schema.forwarders.name }).from(schema.forwarders)
-      const hits = all.filter((f) => foldLegalForm(f.name) === inputFold)
-      if (hits.length === 1) return hits[0].id
+    const foldAll = await this.db.select({ id: schema.forwarders.id, name: schema.forwarders.name }).from(schema.forwarders)
+    // try the office/email-stripped form FIRST ('TradeLink Technologies Ltd (…portal, …@…)' → 'TradeLink
+    // Technologies Ltd'), then the raw — accept only when EXACTLY ONE master folds to the same canon.
+    for (const cand of [stripped, name]) {
+      const inputFold = foldLegalForm(cand)
+      if (inputFold.length < 4) continue
+      const hits = foldAll.filter((f) => foldLegalForm(f.name) === inputFold)
+      if (hits.length === 1) return hits[0]!.id
     }
     return null
   }
