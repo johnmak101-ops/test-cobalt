@@ -91,8 +91,46 @@ export class MastersRepository {
         .limit(1)
       if (na) return na.forwarderId
     }
+    // strip trailing office/email annotations ('Expeditors International (LAX)', 'Maersk … (lns.maersk.com)',
+    // '… <ops@fwd.com>') then retry the SAME normalized-exact match — the parenthetical is not part of the name.
+    const stripped = name
+      .replace(/\([^)]*\)/g, '')
+      .replace(/<[^>]*>/g, '')
+      .replace(/\s+/g, ' ')
+      .trim()
+    const strippedNorm = stripped.toUpperCase().replace(/[^A-Z0-9]/g, '')
+    if (strippedNorm.length >= 4 && strippedNorm !== norm) {
+      const [n] = await this.db
+        .select()
+        .from(schema.forwarders)
+        .where(sql`regexp_replace(upper(${schema.forwarders.name}), '[^A-Z0-9]', '', 'g') = ${strippedNorm}`)
+        .limit(1)
+      if (n) return n.id
+      const [na] = await this.db
+        .select()
+        .from(schema.forwarderAliases)
+        .where(sql`regexp_replace(upper(${schema.forwarderAliases.value}), '[^A-Z0-9]', '', 'g') = ${strippedNorm}`)
+        .limit(1)
+      if (na) return na.forwarderId
+    }
     const [a] = await this.db.select().from(schema.forwarderAliases).where(ilike(schema.forwarderAliases.value, `%${name}%`))
-    return a?.forwarderId ?? null
+    if (a) return a.forwarderId
+    // reverse-containment: a master whose normalized name is a SUBSTRING of the normalized input, so an
+    // input with an appended office/domain ('EXPEDITORS INTERNATIONAL (LAX)') still resolves. Guarded by
+    // master-name length ≥ 10 chars (avoids short generic tokens matching everything) and the LONGEST match
+    // first (prefer the specific 'MAERSK LOGISTICS & SERVICES CHINA LIMITED' over a bare 'MAERSK').
+    if (norm.length >= 10) {
+      const [rc] = await this.db
+        .select()
+        .from(schema.forwarders)
+        .where(
+          sql`length(regexp_replace(upper(${schema.forwarders.name}), '[^A-Z0-9]', '', 'g')) >= 10 AND ${norm} LIKE '%' || regexp_replace(upper(${schema.forwarders.name}), '[^A-Z0-9]', '', 'g') || '%'`,
+        )
+        .orderBy(desc(sql`length(${schema.forwarders.name})`))
+        .limit(1)
+      if (rc) return rc.id
+    }
+    return null
   }
   async portIdByCodeOrName(code: string) {
     return (await this.portByCodeOrName(code))?.id ?? null
@@ -112,7 +150,23 @@ export class MastersRepository {
         sql`length(${schema.ports.name}) >= 4 AND (${schema.ports.name} ILIKE ${`%${c}%`} OR ${c} ILIKE '%' || ${schema.ports.name} || '%')`,
       )
       .limit(1)
-    return byName ? { id: byName.id, country: byName.country } : null
+    if (byName) return { id: byName.id, country: byName.country }
+    // spelling-variant fallback: a small, deterministic alias map (no fuzzy matching — false hits on ports
+    // are worse than a miss). Uppercased + punctuation-collapsed input keys onto the canonical UN/LOCODE,
+    // then re-run the exact-unlocode lookup ('GOTEBORG'/'GOTHENBURG' → SEGOT; 'KHOR AL FAKKAN' → AEKLF).
+    const PORT_ALIASES: Record<string, string> = {
+      GOTEBORG: 'SEGOT',
+      GOTHENBURG: 'SEGOT',
+      'KHOR AL FAKKAN': 'AEKLF',
+      KHORFAKKAN: 'AEKLF',
+    }
+    const aliasKey = c.toUpperCase().replace(/[^A-Z0-9 ]/g, '').replace(/\s+/g, ' ').trim()
+    const aliasCode = PORT_ALIASES[aliasKey]
+    if (aliasCode) {
+      const [byAlias] = await this.db.select().from(schema.ports).where(eq(schema.ports.unlocode, aliasCode))
+      if (byAlias) return { id: byAlias.id, country: byAlias.country }
+    }
+    return null
   }
 
   // --- writes (Ops-maintained masters: forwarders / ports / consignees) ---

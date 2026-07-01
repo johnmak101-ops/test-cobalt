@@ -110,7 +110,15 @@ export class CommitterService {
       this.resolvePort(f.pod),
     ])
     const polId = pol?.id ?? null
-    const originCountry = pol?.country ?? null
+    // origin_country prefers the resolved port's country; but when the POL is UNSEEDED (pol is null) and the
+    // raw value is a UN/LOCODE shape (2 ISO-country letters + 3 alnum, e.g. CNPVG → CN), derive the country
+    // from its prefix. Guarded to that exact shape so a 3-letter IATA (CKG) or free text never triggers it.
+    const originCountry =
+      pol?.country ??
+      (() => {
+        const rawPol = (str(f.poi ?? (f as Record<string, unknown>).pol) ?? '').toUpperCase()
+        return /^[A-Z]{2}[A-Z0-9]{3}$/.test(rawPol) ? rawPol.slice(0, 2) : null
+      })()
 
     // Phase-4 guard: a forwarder mislabeled as the vendor must never land in the vendor slot.
     // If flagged, the vendor link is dropped, the (empty) forwarder slot is filled, and the leg
@@ -317,9 +325,31 @@ export class CommitterService {
       const v = (leg as Record<string, unknown>)[col]
       if (v != null && v !== '') current[type] = alnum(v)
     }
+    // 7b: the SAME value can arrive under several identity types (a booking number echoed as an SO number,
+    // an MBL echoed as an HBL). In the WRITTEN history keep each alnum-equal value only under its highest-
+    // priority type (booking_no > mbl > hbl_awb_fcr_no > so_no), so the identifier table isn't polluted with
+    // redundant cross-type rows. match_keys/strongKeys stay type-scoped and are untouched by this.
+    const TYPE_PRIORITY: Record<string, number> = { booking_no: 0, mbl: 1, hbl_awb_fcr_no: 2, so_no: 3 }
+    const bestTypeForValue = new Map<string, string>()
+    for (const id of g.identifiers) {
+      if (!id.value || !(id.type in COL)) continue
+      const rank = TYPE_PRIORITY[id.type]
+      if (rank === undefined) continue // container_no etc. — not cross-type deduped
+      const av = alnum(id.value)
+      const cur = bestTypeForValue.get(av)
+      if (cur === undefined || rank < (TYPE_PRIORITY[cur] ?? Infinity)) bestTypeForValue.set(av, id.type)
+    }
     const seen = new Set<string>()
     const rows = g.identifiers
       .filter((id) => id.value && id.type in COL)
+      .filter((id) => {
+        // drop a prioritizable value that is being kept under a higher-priority type
+        if (id.type in TYPE_PRIORITY) {
+          const winner = bestTypeForValue.get(alnum(id.value))
+          if (winner && winner !== id.type) return false
+        }
+        return true
+      })
       .filter((id) => {
         const k = `${id.type}:${id.value}`
         if (seen.has(k)) return false
