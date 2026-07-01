@@ -44,6 +44,9 @@ const COUNTRY_TO_ISO2: Record<string, string> = {
 export interface ReconGroup {
   fields: Record<string, unknown>
   pos: string[]
+  /** Per-PO unambiguous shipped qty, keyed by normalized po_no (normKey). Present only when the Matcher can
+   *  attribute a real qty to an individual PO; absent (or a PO omitted) when the qty is a broadcast total. */
+  poQty?: Record<string, number>
   matchKeys: Record<string, unknown>
   emailTypes: string[]
   events: { emailType: string; receivedAt: string; graphId?: string | null }[]
@@ -270,14 +273,16 @@ export class CommitterService {
       await this.writeAudit('shipment', shipmentId, 'create', null, state, g)
     }
 
-    // per-PO shipped qty is only knowable when the shipment carries ONE PO; with several POs the split is
-    // unknown, so never attribute the whole shipment total to each (that inflated every PO to the total).
-    // Keep the unit for display; qty stays null when ambiguous.
-    const perPoQty = g.pos.length === 1 ? num(f.qty) : null
-    // only default the unit to 'cartons' when there IS a qty — otherwise a phantom 'cartons' shows on the PO
-    // table while CARGO shows (pending). No qty -> unit is whatever was extracted, or null.
-    const perPoUnit = perPoQty != null ? str(f.qty_unit) ?? 'cartons' : str(f.qty_unit)
+    // per-PO shipped qty: prefer the Matcher's unambiguous per-PO qty map (keyed by normalized po_no) when it
+    // provides one for this PO; else fall back to the single-PO case (a shipment carrying ONE PO owns the whole
+    // qty). With several POs and no map entry the split is unknown, so qty stays null — never attribute the
+    // whole shipment total to each (that inflated every PO to the total).
     for (const poNo of g.pos) {
+      const mapped = num(g.poQty?.[normKey(poNo)])
+      const perPoQty = mapped ?? (g.pos.length === 1 ? num(f.qty) : null)
+      // only default the unit to 'cartons' when there IS a qty — otherwise a phantom 'cartons' shows on the PO
+      // table while CARGO shows (pending). No qty -> unit is whatever was extracted, or null.
+      const perPoUnit = perPoQty != null ? str(f.qty_unit) ?? 'cartons' : str(f.qty_unit)
       const poId = await this.bookings.upsertPo(poNo, customerId, effVendorId)
       await this.bookings.linkPo(bookingId, poId)
       await this.shipments.linkPo(shipmentId, poId, perPoQty, perPoUnit)

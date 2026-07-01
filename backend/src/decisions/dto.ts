@@ -9,6 +9,11 @@ export class CreateDecisionDto {
   @IsObject() fields!: Record<string, unknown>
 
   @IsOptional() @IsArray() @IsString({ each: true }) pos?: string[]
+
+  /** Per-PO unambiguous shipped qty, keyed by normalized po_no. Present only when a real qty can be attributed
+   *  to an individual PO; absent (or a PO omitted) when the qty is a broadcast total. Omitted by legacy callers. */
+  @IsOptional() @IsObject() poQty?: Record<string, number>
+
   @IsOptional() @IsString() mode?: string
   @IsOptional() @IsArray() @IsString({ each: true }) emailTypes?: string[]
 

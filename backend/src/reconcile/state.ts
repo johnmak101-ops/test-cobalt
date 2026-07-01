@@ -5,7 +5,11 @@ export type ShipmentState = (typeof ORDER)[number]
 
 const has = (v: unknown) => v != null && v !== ''
 
-export function deriveState(emailTypes: Set<string>, fields: Record<string, unknown>): ShipmentState {
+export function deriveState(
+  emailTypes: Set<string>,
+  fields: Record<string, unknown>,
+  now: Date = new Date(),
+): ShipmentState {
   let s: ShipmentState = 'BOOKED'
   const bump = (to: ShipmentState) => {
     if (ORDER.indexOf(to) > ORDER.indexOf(s)) s = to
@@ -14,6 +18,13 @@ export function deriveState(emailTypes: Set<string>, fields: Record<string, unkn
   // AT_WAREHOUSE = earliest of forwarder CFS / vendor warehouse confirm / Draft B/L (fallback)
   if (has(fields.warehouse_start_date) || emailTypes.has('Draft B/L')) bump('AT_WAREHOUSE')
   if (has(fields.atd)) bump('SAILED')
+  // BUG 7: an Invoice/Billing shipment carrying a cut MBL with a PAST ETD has demonstrably sailed even without
+  // an explicit ATD (invoices are issued post-departure). Tightly gated to that exact combination — NOT a broad
+  // has(mbl)->SAILED nor vessel+past-etd->SAILED, both of which false-promote drafts / booking-requests.
+  if (emailTypes.has('Invoice/Billing') && has(fields.mbl) && has(fields.etd)) {
+    const etd = new Date(String(fields.etd))
+    if (!Number.isNaN(etd.getTime()) && etd.getTime() < now.getTime()) bump('SAILED')
+  }
   if (emailTypes.has('Telex Release') || emailTypes.has('Final B/L')) bump('RELEASED')
   // A delivery cannot precede departure: only bump to DELIVERED when there is also a departure signal.
   if (has(fields.in_dc_date) && (has(fields.atd) || emailTypes.has('Final B/L') || emailTypes.has('Telex Release'))) bump('DELIVERED')
