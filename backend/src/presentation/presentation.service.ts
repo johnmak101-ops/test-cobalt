@@ -241,6 +241,8 @@ export class PresentationService {
           vendor: r.vendorName || r.vendorCode ? { id: r.vendorId ?? '', name: r.vendorName ?? '', code: r.vendorCode ?? null } : null,
           shipmentCount: r.shipmentCount,
           shippedQuantity: r.shippedQuantity,
+          shippedUnit: r.shippedUnit,
+          status: r.status,
           shipmentSummary: summariesByPo.get(r.id) ?? [],
         }),
       )

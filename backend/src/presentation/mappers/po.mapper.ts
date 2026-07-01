@@ -25,6 +25,8 @@ export interface PoMapperInput {
   vendor?: MasterRef | null
   shipmentCount?: number
   shippedQuantity?: number | null
+  shippedUnit?: string | null
+  status?: string | null
   shipmentSummary?: unknown[]
 }
 
@@ -46,6 +48,8 @@ export interface UiPurchaseOrder {
   vendor: MasterRef | null
   shipmentCount: number
   shippedQuantity: number | null
+  shippedUnit: string | null
+  status: string | null
   shipmentSummary: unknown[]
 }
 
@@ -75,6 +79,8 @@ export function toUiPurchaseOrder(input: PoMapperInput): UiPurchaseOrder {
     vendor: input.vendor ?? null,
     shipmentCount: input.shipmentCount ?? 0,
     shippedQuantity: input.shippedQuantity ?? null,
+    shippedUnit: input.shippedUnit ?? null,
+    status: input.status ?? null,
     shipmentSummary: input.shipmentSummary ?? [],
   }
 }
