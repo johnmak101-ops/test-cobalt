@@ -193,8 +193,28 @@ export default function ShipmentDetailPage() {
             <DetailRow label="Customer Code" value={shipment.customer?.code ?? null} />
             <DetailRow label="Vendor Code" value={shipment.vendor?.code ?? null} />
             <DetailRow label="PO#" value={linkedPOs.length > 0 ? linkedPOs.map(p => p.poNumber).join(', ') : '—'} />
-            <DetailRow label="Booking No." value={shipment.bookingNo} />
-            <DetailRow label="SO#" value={shipment.soNumber} />
+            <DetailRow
+              label="Booking No."
+              value={shipment.bookingNo}
+              hint={
+                shipment.bookingNo
+                  ? undefined
+                  : shipment.hblNumber || shipment.soNumber
+                    ? 'not stated in this shipment’s email(s)'
+                    : 'awaiting the forwarder booking'
+              }
+            />
+            <DetailRow
+              label="SO#"
+              value={shipment.soNumber}
+              hint={
+                shipment.soNumber
+                  ? undefined
+                  : shipment.status === 'CANCELLED'
+                    ? 'cancelled before an SO was issued'
+                    : 'assigned once the booking is confirmed'
+              }
+            />
             <DetailRow label="Item / Style No." value={shipment.itemStyleNo?.replace(/,/g, ', ') ?? null} />
             <DetailRow label="Email Date" value={formatDate(shipment.createdAt)} />
           </DetailSection>
@@ -206,9 +226,17 @@ export default function ShipmentDetailPage() {
             <DetailRow label="Gross Weight" value={shipment.grossWeight != null ? `${shipment.grossWeight} KGS` : null} />
             <DetailRow label="Measurement" value={shipment.measurement != null ? `${shipment.measurement} CBM` : null} />
             <DetailRow label="HTS Code" value={shipment.htsCode?.replace(/,/g, ', ') ?? null} />
-            <DetailRow label="Container No." value={shipment.containerNo} />
+            <DetailRow
+              label="Container No."
+              value={shipment.containerNo}
+              hint={shipment.containerNo ? undefined : 'assigned at loading (Draft/Final B/L stage)'}
+            />
             <DetailRow label="HBL / AWB / FCR No." value={shipment.hblNumber} />
-            <DetailRow label="MBL" value={shipment.mblNumber} />
+            <DetailRow
+              label="MBL"
+              value={shipment.mblNumber}
+              hint={!shipment.mblNumber && shipment.hblNumber ? 'house B/L — carrier master B/L not shared' : undefined}
+            />
             <DetailRow label="SCAC Code" value={shipment.scacCode} />
           </DetailSection>
 
@@ -347,12 +375,26 @@ function DetailSection({ title, icon, children }: { title: string; icon: React.R
   )
 }
 
-function DetailRow({ label, value }: { label: string; value: string | null | undefined }) {
+function DetailRow({
+  label,
+  value,
+  hint,
+}: {
+  label: string
+  value: string | null | undefined
+  /** shown next to "(pending)" to explain WHY a value is blank (so a gap reads as expected, not broken) */
+  hint?: string
+}) {
   return (
     <div className="grid grid-cols-[9rem_1fr] gap-x-2 items-baseline">
       <span className="text-xs text-text-muted truncate">{label}</span>
       <span className="font-mono text-sm text-text-primary break-words min-w-0">
-        {value ?? <span className="italic text-text-muted">(pending)</span>}
+        {value ?? (
+          <span className="italic text-text-muted">
+            (pending)
+            {hint && <span className="ml-1.5 font-sans text-xs not-italic text-text-muted/70">· {hint}</span>}
+          </span>
+        )}
       </span>
     </div>
   )
