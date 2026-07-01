@@ -36,7 +36,7 @@ const milestoneLabels: Record<string, string> = {
 
 export function MilestoneTimeline({
   milestones,
-  currentStatus: _currentStatus,
+  currentStatus,
   horizontal,
   etd,
   atd,
@@ -62,6 +62,11 @@ export function MilestoneTimeline({
       break
     }
   }
+  // the derived STATE implies progress even with no per-stage milestone EVENT — e.g. a shipment whose emails
+  // are all "Other" but carry an so_no sits in CONFIRMED with zero milestones. Never show less than the
+  // state's stage, so the timeline agrees with the status badge.
+  const STATE_TO_INDEX: Record<string, number> = { BOOKED: 0, CONFIRMED: 1, AT_WAREHOUSE: 2, SAILED: 4, RELEASED: 4, DELIVERED: 6 }
+  currentIndex = Math.max(currentIndex, STATE_TO_INDEX[currentStatus] ?? -1)
 
   const stages = milestoneOrder.map((type, idx) => ({
     type,

@@ -245,10 +245,13 @@ export class CommitterService {
     // unknown, so never attribute the whole shipment total to each (that inflated every PO to the total).
     // Keep the unit for display; qty stays null when ambiguous.
     const perPoQty = g.pos.length === 1 ? num(f.qty) : null
+    // only default the unit to 'cartons' when there IS a qty — otherwise a phantom 'cartons' shows on the PO
+    // table while CARGO shows (pending). No qty -> unit is whatever was extracted, or null.
+    const perPoUnit = perPoQty != null ? str(f.qty_unit) ?? 'cartons' : str(f.qty_unit)
     for (const poNo of g.pos) {
       const poId = await this.bookings.upsertPo(poNo, customerId, effVendorId)
       await this.bookings.linkPo(bookingId, poId)
-      await this.shipments.linkPo(shipmentId, poId, perPoQty, str(f.qty_unit) ?? 'cartons')
+      await this.shipments.linkPo(shipmentId, poId, perPoQty, perPoUnit)
     }
 
     await this.writeIdentifiers(shipmentId, g)
