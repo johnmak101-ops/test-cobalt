@@ -14,6 +14,7 @@ import ReviewQueuePage from './pages/ReviewQueuePage'
 import PurchaseOrdersPage from './pages/PurchaseOrdersPage'
 import PurchaseOrderDetailPage from './pages/PurchaseOrderDetailPage'
 import UnlinkedDocumentsPage from './pages/UnlinkedDocumentsPage'
+import EmailWindowPage from './pages/EmailWindowPage'
 import type { ReactNode } from 'react'
 
 const queryClient = new QueryClient({
@@ -70,6 +71,15 @@ function AppRoutes() {
           <PublicRoute>
             <LoginPage />
           </PublicRoute>
+        }
+      />
+      {/* Chrome-less pop-up window for reading a single email — auth-gated but outside the sidebar layout. */}
+      <Route
+        path="/email/:id"
+        element={
+          <ProtectedRoute>
+            <EmailWindowPage />
+          </ProtectedRoute>
         }
       />
       <Route

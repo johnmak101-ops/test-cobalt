@@ -189,6 +189,8 @@ export class EmailRepository {
         receivedAt: schema.queueMessage.receivedAt,
         bodyText: schema.queueMessage.bodyText,
         bodyHtml: schema.queueMessage.bodyHtml,
+        toRecipients: schema.queueMessage.toRecipients,
+        ccRecipients: schema.queueMessage.ccRecipients,
       })
       .from(schema.queueMessage)
       .where(eq(schema.queueMessage.id, id))

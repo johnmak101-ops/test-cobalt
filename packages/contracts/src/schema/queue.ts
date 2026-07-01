@@ -35,6 +35,8 @@ export const queueMessage = queue.table('queue_message', {
   conversationId: text('conversation_id'),
   subject: text('subject'),
   sender: text('sender'),
+  toRecipients: text('to_recipients'),
+  ccRecipients: text('cc_recipients'),
   receivedAt: timestamp('received_at', { withTimezone: true }),
   bodyText: text('body_text'),
   bodyHtml: text('body_html'),

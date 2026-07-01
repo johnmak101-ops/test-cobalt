@@ -6,7 +6,6 @@ import { Badge } from '../components/ui/Badge'
 import { Card } from '../components/ui/Card'
 import { MilestoneTimeline } from '../components/shipments/MilestoneTimeline'
 import { ShipmentHistoryTimeline } from '../components/shipments/ShipmentHistoryTimeline'
-import { EmailViewerModal, type RelatedEmail } from '../components/shipments/EmailViewerModal'
 import { AlertCard } from '../components/alerts/AlertCard'
 import { formatRelativeTime, formatDate, cn } from '../lib/utils'
 import { ArrowLeft, Mail, Clock, ClipboardList, Package, Ship, Calendar, AlertTriangle, AlertCircle, Info } from 'lucide-react'
@@ -19,7 +18,6 @@ export default function ShipmentDetailPage() {
   const { data: shipment, isLoading } = useShipment(id!)
   const { data: historyData } = useShipmentHistory(id!)
   const [activeTab, setActiveTab] = useState<'details' | 'history'>('details')
-  const [openEmail, setOpenEmail] = useState<RelatedEmail | null>(null)
 
   if (isLoading) {
     return (
@@ -301,7 +299,13 @@ export default function ShipmentDetailPage() {
                 {shipment.emails.map((email) => (
                   <div
                     key={email.id}
-                    onClick={() => setOpenEmail(email)}
+                    onClick={() =>
+                      window.open(
+                        `/email/${email.id}?type=${encodeURIComponent(email.emailType ?? '')}`,
+                        `email_${email.id}`,
+                        'popup,width=880,height=940,resizable=yes,scrollbars=yes',
+                      )
+                    }
                     className="flex cursor-pointer items-center gap-3 rounded-lg bg-surface-900 p-3 transition-colors hover:bg-surface-700"
                   >
                     <Mail size={14} className="shrink-0 text-text-muted" />
@@ -319,8 +323,6 @@ export default function ShipmentDetailPage() {
               </div>
             </Card>
           )}
-
-          <EmailViewerModal email={openEmail} onClose={() => setOpenEmail(null)} />
         </>
       ) : (
         /* History tab */

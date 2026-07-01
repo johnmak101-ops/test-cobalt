@@ -382,6 +382,8 @@ export class PresentationService {
       receivedAt: isoOrNull(row.receivedAt),
       bodyText: row.bodyText ?? null,
       bodyHtml: row.bodyHtml ?? null,
+      toRecipients: row.toRecipients ?? null,
+      ccRecipients: row.ccRecipients ?? null,
     }
   }
 

@@ -60,6 +60,8 @@ export interface EmailBody {
   receivedAt: string | null
   bodyText: string | null
   bodyHtml: string | null
+  toRecipients: string | null
+  ccRecipients: string | null
 }
 
 export function useEmailBody(emailId: string | undefined) {
