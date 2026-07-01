@@ -25,6 +25,13 @@ const dedupeCsv = (s: string | null): string | null => {
   return out.length ? out.join(',') : s
 }
 
+/** The ocean carrier SCAC is the leading 4 letters of the MASTER B/L (MEDUP5180997 -> MEDU = MSC). A
+ *  deterministic backstop for when the model didn't emit scac_code; SCAC is stored as-is (no master check). */
+const scacFromMbl = (mbl: string | null): string | null => {
+  const m = /^([A-Z]{4})/.exec((mbl ?? '').toUpperCase())
+  return m ? m[1] : null
+}
+
 /** One reconciled shipment picture, ready to commit. */
 export interface ReconGroup {
   fields: Record<string, unknown>
@@ -141,7 +148,7 @@ export class CommitterService {
       hblAwbFcrNo: str(f.hbl_awb_fcr_no),
       mbl: str(f.mbl),
       containerNo: str(f.container_no),
-      scacCode: str(f.scac_code ?? (f as Record<string, unknown>).scac), // alias: parser still emits `scac`
+      scacCode: str(f.scac_code ?? (f as Record<string, unknown>).scac) ?? scacFromMbl(str(f.mbl)), // alias `scac`; fall back to MBL prefix
       vesselName: str(f.vessel_name),
       voyageNo: str(f.voyage_no),
       flightNo: str(f.flight_no),
