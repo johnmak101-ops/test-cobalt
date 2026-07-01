@@ -83,18 +83,19 @@ export class MastersRepository {
     // ('LX PANTOS LOGISTICS (SHENZHEN) CO.,LTD.' == master 'LX PANTOS LOGISTICS (SHENZHEN) CO. LTD').
     const norm = name.toUpperCase().replace(/[^A-Z0-9]/g, '')
     if (norm.length >= 4) {
-      const [n] = await this.db
+      // BUG 6: no .orderBy means .limit(1) picked a heap-order winner — two masters that normalize to the
+      // same string (EXPEDITORS 225 vs a duplicate EXDO) could flip on VACUUM. Fetch ALL and return only
+      // when EXACTLY ONE matches, mirroring the containment stages; on >1, fall through so forwarder_raw surfaces.
+      const n = await this.db
         .select()
         .from(schema.forwarders)
         .where(sql`regexp_replace(upper(${schema.forwarders.name}), '[^A-Z0-9]', '', 'g') = ${norm}`)
-        .limit(1)
-      if (n) return n.id
-      const [na] = await this.db
+      if (n.length === 1) return n[0]!.id
+      const na = await this.db
         .select()
         .from(schema.forwarderAliases)
         .where(sql`regexp_replace(upper(${schema.forwarderAliases.value}), '[^A-Z0-9]', '', 'g') = ${norm}`)
-        .limit(1)
-      if (na) return na.forwarderId
+      if (na.length === 1) return na[0]!.forwarderId
     }
     // strip trailing office/email annotations ('Expeditors International (LAX)', 'Maersk … (lns.maersk.com)',
     // '… <ops@fwd.com>') then retry the SAME normalized-exact match — the parenthetical is not part of the name.
@@ -105,18 +106,17 @@ export class MastersRepository {
       .trim()
     const strippedNorm = stripped.toUpperCase().replace(/[^A-Z0-9]/g, '')
     if (strippedNorm.length >= 4 && strippedNorm !== norm) {
-      const [n] = await this.db
+      // BUG 6: same exactly-one guard as the un-stripped normalized stage above (was heap-order .limit(1)).
+      const n = await this.db
         .select()
         .from(schema.forwarders)
         .where(sql`regexp_replace(upper(${schema.forwarders.name}), '[^A-Z0-9]', '', 'g') = ${strippedNorm}`)
-        .limit(1)
-      if (n) return n.id
-      const [na] = await this.db
+      if (n.length === 1) return n[0]!.id
+      const na = await this.db
         .select()
         .from(schema.forwarderAliases)
         .where(sql`regexp_replace(upper(${schema.forwarderAliases.value}), '[^A-Z0-9]', '', 'g') = ${strippedNorm}`)
-        .limit(1)
-      if (na) return na.forwarderId
+      if (na.length === 1) return na[0]!.forwarderId
     }
     // same exactly-one guard on the alias '%name%' ilike — an ambiguous alias substring must not arbitrarily
     // resolve from an unordered heap scan either.

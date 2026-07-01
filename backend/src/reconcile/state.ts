@@ -56,6 +56,18 @@ export const MILESTONE_OF: Record<string, string> = {
   'Invoice/Billing': 'INVOICE_RECEIVED',
 }
 
+/**
+ * BUG 7: milestones derived from FIELD PRESENCE, not from an email type — so a leg whose deriveState reached
+ * AT_WAREHOUSE / SAILED via field values (warehouse_start_date / atd) also gets a timeline row and the
+ * timeline no longer lags the derived state. Each entry is [fieldName, milestoneType]; the milestone is dated
+ * by that field's value. AT_WAREHOUSE is a first-class MILESTONE_TYPE; SAILED has no email-type analogue, so
+ * it's a derived-only milestone (milestone_type is a free-text column — see committer.syncMilestones).
+ */
+export const DERIVED_MILESTONE_OF: Array<{ field: string; milestone: string }> = [
+  { field: 'warehouse_start_date', milestone: 'AT_WAREHOUSE' },
+  { field: 'atd', milestone: 'SAILED' },
+]
+
 /** Normalize the parser's mode label to the schema enum. */
 export function normMode(mode: string | null): string | null {
   if (!mode) return null

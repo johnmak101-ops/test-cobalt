@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common'
 import type * as schema from '@cobalt/contracts'
 import { keysOverlap, strongKeys, normKey, str, num, date } from './match-keys'
 import { guardVendorForwarder } from './vendor-forwarder-guard'
-import { deriveState, classifyKind, MILESTONE_OF, normMode } from './state'
+import { deriveState, classifyKind, MILESTONE_OF, DERIVED_MILESTONE_OF, normMode } from './state'
 import { MastersRepository } from '../db/repositories/masters.repository'
 import { BookingRepository } from '../db/repositories/booking.repository'
 import { ShipmentRepository } from '../db/repositories/shipment.repository'
@@ -209,6 +209,10 @@ export class CommitterService {
     let existing: (typeof legs)[number] | undefined
     for (const l of legs) {
       const legStrong = strongKeys(l.matchKeys as Record<string, unknown>)
+      // BUG 4: a group whose strong key states a DIFFERENT value for a type the leg already carries is a
+      // DIFFERENT shipment (e.g. the grouper split ULLA26060096 off — the 2nd ULLA must never amend the
+      // first). Such a leg is never a match here, on ANY path (strong-overlap, PO, or conversationId).
+      if (strongKeysConflict(gk, legStrong)) continue
       const bkPos = new Set((await this.bookings.poNumbersFor(l.bookingId)).map((p) => normKey(p)).filter(Boolean))
       const sharePo = groupPos.size > 0 && setsOverlap(groupPos, bkPos)
       if (gk.size > 0 && keysOverlap(legStrong, gk)) {
@@ -225,11 +229,17 @@ export class CommitterService {
     // A2: a zero-identity group (no strong key AND no PO) has no cross-run handle, so each commit would
     // insert a fresh ghost leg. Fall back to the conversationId persisted in match_keys, matching only
     // another zero-identity leg of the same thread, so a re-ingest UPDATES the provisional row.
+    // BUG 4: the fallback ALSO requires the candidate leg to carry no strong key AND the group to be
+    // identity-less — so the conversationId can never bridge two identity-conflicting legs. (When gk.size
+    // is 0 no strong key can conflict, but the leg-strong==0 guard keeps the fallback strictly zero-identity.)
     if (!existing && gk.size === 0 && groupPos.size === 0 && g.conversationId) {
       const conv = normKey(g.conversationId)
       existing = legs.find((l) => {
         const mk = (l.matchKeys ?? {}) as Record<string, unknown>
-        return strongKeys(mk).size === 0 && normKey(mk.conversation_id) === conv
+        const legStrong = strongKeys(mk)
+        if (legStrong.size !== 0) return false
+        if (strongKeysConflict(gk, legStrong)) return false
+        return normKey(mk.conversation_id) === conv
       })
     }
 
@@ -448,6 +458,23 @@ export class CommitterService {
         emailMessageId: ev.graphId ?? null, // graph id → "view original" re-fetch
       })
     }
+    // BUG 7: also emit milestones DERIVED from field presence (warehouse_start_date → AT_WAREHOUSE,
+    // atd → SAILED), dated by that field, so the timeline matches the state deriveState already reached from
+    // the same fields. Idempotent via `seen` (a field-derived type never duplicates an email-derived one of
+    // the same type). Only when the field has a parseable date.
+    for (const { field, milestone } of DERIVED_MILESTONE_OF) {
+      if (seen.has(milestone)) continue
+      const occurredAt = date(g.fields[field])
+      if (!occurredAt) continue
+      seen.add(milestone)
+      rows.push({
+        shipmentId,
+        milestoneType: milestone as (typeof schema.shipmentMilestones.$inferInsert)['milestoneType'],
+        occurredAt,
+        senderType: 'forwarder',
+        notes: 'derived', // field-derived, not email-type-mapped
+      })
+    }
     await this.shipments.replaceMilestones(shipmentId, rows)
     // Related Emails: EVERY source email (deduped by graph id) — including unmapped "Other"/Customs emails
     // that carry the shipment's data but map to no milestone, so they were invisible before.
@@ -520,5 +547,34 @@ const same = (a: unknown, b: unknown) => toStr(a) === toStr(b)
 const alnum = (v: unknown): string => String(v ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '')
 const setsOverlap = (a: Set<string>, b: Set<string>) => {
   for (const x of a) if (b.has(x)) return true
+  return false
+}
+/** BUG 4: two strong-key sets CONFLICT when they state DIFFERENT values for the SAME identity type
+ *  (e.g. booking_no:ULLA26060096 on the leg vs booking_no:ULLA26060102 on the group). A conflicting leg
+ *  is a different shipment and must never be amended — insert a new leg + route to review instead. Keys
+ *  are `type:value`; group by the type prefix and flag any type present on both sides with unequal values. */
+const strongKeysConflict = (a: Set<string>, b: Set<string>): boolean => {
+  const byType = (s: Set<string>): Map<string, Set<string>> => {
+    const m = new Map<string, Set<string>>()
+    for (const k of s) {
+      const i = k.indexOf(':')
+      if (i < 0) continue
+      const type = k.slice(0, i)
+      const val = k.slice(i + 1)
+      if (!m.has(type)) m.set(type, new Set())
+      m.get(type)!.add(val)
+    }
+    return m
+  }
+  const am = byType(a)
+  const bm = byType(b)
+  for (const [type, avals] of am) {
+    const bvals = bm.get(type)
+    if (!bvals) continue // type absent on the other side → no conflict for that type
+    // present on both sides: conflict unless they SHARE at least one value for this type
+    let shared = false
+    for (const v of avals) if (bvals.has(v)) { shared = true; break }
+    if (!shared) return true
+  }
   return false
 }
