@@ -91,7 +91,7 @@ export class PresentationService {
     leg: ShipmentLegRow & { bookingId: string; polId?: string | null; podId?: string | null },
     booking: BookingRow | null,
     maps: MasterMaps,
-    linkedPos: LinkedPoRow[],
+    linkedPos: (LinkedPoRow & { legQty?: number | null; legUnit?: string | null })[],
   ): ShipmentMapperInput {
     const customer = booking?.customerId ? maps.customers.get(booking.customerId) : undefined
     const vendor = booking?.vendorId ? maps.vendors.get(booking.vendorId) : undefined
@@ -109,8 +109,8 @@ export class PresentationService {
         id: p.id,
         poNumber: p.poNumber,
         totalQuantity: p.totalQuantity ?? null,
-        quantityUnit: p.quantityUnit ?? null,
-        quantity: null, // per-leg split (shipment_pos) is not surfaced on the flat shipment row
+        quantityUnit: p.quantityUnit ?? p.legUnit ?? leg.qtyUnit ?? null,
+        quantity: p.legQty ?? null, // per-leg shipped qty from shipment_pos (null when the split is unknown)
         vendor: p.vendorName ? { name: p.vendorName } : null,
       })),
     }
@@ -172,7 +172,11 @@ export class PresentationService {
       this.shipmentRepo.linkedPosForBooking(leg.bookingId) as Promise<LinkedPoRow[]>,
       this.emailRepo.emailsForShipment(id),
     ])
-    const base = toUiShipment(this.assembleInput(leg, booking, maps, linkedPos))
+    // per-leg shipped qty/unit lives in shipment_pos — attach it so the PO table shows Shipped/UOM
+    const legPos = await this.shipmentRepo.posFor(id)
+    const legPosMap = new Map(legPos.map((x) => [x.poId, x]))
+    const linkedPosWithLeg = linkedPos.map((p) => ({ ...p, legQty: legPosMap.get(p.id)?.quantity ?? null, legUnit: legPosMap.get(p.id)?.quantityUnit ?? null }))
+    const base = toUiShipment(this.assembleInput(leg, booking, maps, linkedPosWithLeg))
     const legAlerts = alertRows.filter((a) => a.shipmentId === id).map((a) => toUiAlert({ alert: a, shipment: null }))
     const emails = relatedEmails.map((e) => ({
       id: e.id,

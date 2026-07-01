@@ -241,10 +241,14 @@ export class CommitterService {
       await this.writeAudit('shipment', shipmentId, 'create', null, state, g)
     }
 
+    // per-PO shipped qty is only knowable when the shipment carries ONE PO; with several POs the split is
+    // unknown, so never attribute the whole shipment total to each (that inflated every PO to the total).
+    // Keep the unit for display; qty stays null when ambiguous.
+    const perPoQty = g.pos.length === 1 ? num(f.qty) : null
     for (const poNo of g.pos) {
       const poId = await this.bookings.upsertPo(poNo, customerId, effVendorId)
       await this.bookings.linkPo(bookingId, poId)
-      await this.shipments.linkPo(shipmentId, poId, num(f.qty), str(f.qty_unit) ?? 'cartons')
+      await this.shipments.linkPo(shipmentId, poId, perPoQty, str(f.qty_unit) ?? 'cartons')
     }
 
     await this.writeIdentifiers(shipmentId, g)
