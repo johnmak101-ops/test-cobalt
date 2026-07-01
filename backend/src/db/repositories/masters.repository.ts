@@ -176,6 +176,19 @@ export class MastersRepository {
       const [byIata] = await this.db.select().from(schema.ports).where(eq(schema.ports.unlocode, iataCode))
       if (byIata) return { id: byIata.id, country: byIata.country }
     }
+    // airport/port NAME fragments → UN/LOCODE. The raw is often a full facility name ('SHAHAJALAL INTL. AIR
+    // PORT' = Dhaka/BDDAC) that neither the ILIKE name match nor an exact alias key catches. Contains-match on
+    // a distinctive, long fragment so it can't false-hit another port.
+    const NAME_CONTAINS_ALIASES: Array<[string, string]> = [
+      ['SHAHAJALAL', 'BDDAC'],
+      ['SHAHJALAL', 'BDDAC'],
+    ]
+    for (const [frag, uloc] of NAME_CONTAINS_ALIASES) {
+      if (aliasKey.includes(frag)) {
+        const [byFrag] = await this.db.select().from(schema.ports).where(eq(schema.ports.unlocode, uloc))
+        if (byFrag) return { id: byFrag.id, country: byFrag.country }
+      }
+    }
     return null
   }
 
