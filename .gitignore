@@ -45,3 +45,4 @@ tmp/
 
 # dev server logs
 frontend/_vite.*.log
+.gstack/
