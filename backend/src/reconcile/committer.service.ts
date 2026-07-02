@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common'
 import type * as schema from '@cobalt/contracts'
+import type { QTY_UNIT } from '@cobalt/contracts'
 import { keysOverlap, strongKeys, normKey, str, num, date } from './match-keys'
 import { guardVendorForwarder, isPlatformNotForwarder } from './vendor-forwarder-guard'
 import { deriveState, classifyKind, MILESTONE_OF, DERIVED_MILESTONE_OF, normMode } from './state'
@@ -205,7 +206,7 @@ export class CommitterService {
       ata: date(f.ata),
       inDcDate: date(f.in_dc_date),
       qty: num(f.qty),
-      qtyUnit: str(f.qty_unit) as 'cartons' | 'pieces' | 'cbm' | null,
+      qtyUnit: str(f.qty_unit) as (typeof QTY_UNIT)[number] | null,
       grossWeight: num(f.gross_weight),
       measurement: num(f.measurement),
       htsCode: dedupeCsv(str(f.hts_code)),
