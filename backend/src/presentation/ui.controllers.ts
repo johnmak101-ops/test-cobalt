@@ -42,7 +42,8 @@ export class UiAlertRulesController {
   @Get() get() {
     return this.ui.alertRules()
   }
-  @Roles('EDITOR', 'ADMIN')
+  // Settings page is superadmin-only — so is mutating its configuration
+  @Roles('SUPERADMIN')
   @Put() save(@Body() body: { rules?: Array<Record<string, unknown>> }) {
     return this.ui.saveAlertRules(body)
   }

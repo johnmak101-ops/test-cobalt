@@ -13,6 +13,7 @@ const roleLabelMap: Record<string, string> = {
   COORDINATOR: 'Coordinator',
   MANAGER: 'Manager',
   ADMIN: 'Admin',
+  SUPERADMIN: 'Superadmin',
 }
 
 const severityDot: Record<string, string> = {

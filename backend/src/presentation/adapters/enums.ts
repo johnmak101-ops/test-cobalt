@@ -20,12 +20,13 @@ export function stateToUiStatus(state: string | null | undefined, legStatus?: st
   return (state && STATE_TO_UI_STATUS[state]) || 'BOOKED'
 }
 
-/** Backend RBAC role -> UI display label (display only; server still enforces the real 4 ranks). */
+/** Backend RBAC role -> UI display label (display only; server still enforces the real 4 ranks).
+ *  SUPERADMIN stays distinct so the UI can gate the Settings page on it. */
 const ROLE_TO_UI: Record<string, string> = {
   VIEWER: 'COORDINATOR',
   EDITOR: 'MANAGER',
   ADMIN: 'ADMIN',
-  SUPERADMIN: 'ADMIN',
+  SUPERADMIN: 'SUPERADMIN',
 }
 
 export function mapBackendRoleToUi(role: string | null | undefined): string {

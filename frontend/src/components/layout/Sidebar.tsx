@@ -30,14 +30,17 @@ interface NavItem {
   children?: NavItem[]
 }
 
+const EVERYONE = ['COORDINATOR', 'MANAGER', 'ADMIN', 'SUPERADMIN']
+
 const navItems: NavItem[] = [
-  { to: '/', icon: LayoutDashboard, label: 'Dashboard', roles: ['COORDINATOR', 'MANAGER', 'ADMIN'], badgeKey: null },
-  { to: '/shipments', icon: Ship, label: 'Shipments', roles: ['COORDINATOR', 'MANAGER', 'ADMIN'], badgeKey: null },
-  { to: '/purchase-orders', icon: Package, label: 'Customer POs', roles: ['COORDINATOR', 'MANAGER', 'ADMIN'], badgeKey: null },
-  { to: '/documents', icon: FileText, label: 'Documents', roles: ['COORDINATOR', 'MANAGER', 'ADMIN'], badgeKey: 'documents' },
-  { to: '/review-queue', icon: ClipboardCheck, label: 'Review Queue', roles: ['COORDINATOR', 'MANAGER', 'ADMIN'], badgeKey: 'pending' },
-  { to: '/alerts', icon: AlertTriangle, label: 'Alerts', roles: ['COORDINATOR', 'MANAGER', 'ADMIN'], badgeKey: 'unreadAlerts' },
-  { to: '/settings', icon: Settings, label: 'Settings', roles: ['MANAGER', 'ADMIN'], badgeKey: null },
+  { to: '/', icon: LayoutDashboard, label: 'Dashboard', roles: EVERYONE, badgeKey: null },
+  { to: '/shipments', icon: Ship, label: 'Shipments', roles: EVERYONE, badgeKey: null },
+  { to: '/purchase-orders', icon: Package, label: 'Customer POs', roles: EVERYONE, badgeKey: null },
+  { to: '/documents', icon: FileText, label: 'Documents', roles: EVERYONE, badgeKey: 'documents' },
+  { to: '/review-queue', icon: ClipboardCheck, label: 'Review Queue', roles: EVERYONE, badgeKey: 'pending' },
+  { to: '/alerts', icon: AlertTriangle, label: 'Alerts', roles: EVERYONE, badgeKey: 'unreadAlerts' },
+  // Settings is superadmin-only — every other level must not see it
+  { to: '/settings', icon: Settings, label: 'Settings', roles: ['SUPERADMIN'], badgeKey: null },
 ]
 
 export function Sidebar() {

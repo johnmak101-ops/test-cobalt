@@ -18,12 +18,13 @@ describe('stateToUiStatus — leg state -> UI status (update-summary terminology
   })
 })
 
-describe('mapBackendRoleToUi — 4 backend roles -> 3 UI labels (display only)', () => {
+describe('mapBackendRoleToUi — 4 backend roles -> 4 UI labels (display only)', () => {
   it('maps each backend role to a UI role', () => {
     expect(mapBackendRoleToUi('VIEWER')).toBe('COORDINATOR')
     expect(mapBackendRoleToUi('EDITOR')).toBe('MANAGER')
     expect(mapBackendRoleToUi('ADMIN')).toBe('ADMIN')
-    expect(mapBackendRoleToUi('SUPERADMIN')).toBe('ADMIN')
+    // SUPERADMIN keeps its own label — the UI gates the Settings page on it
+    expect(mapBackendRoleToUi('SUPERADMIN')).toBe('SUPERADMIN')
   })
 
   it('defaults null/undefined/unknown to least-privilege COORDINATOR', () => {

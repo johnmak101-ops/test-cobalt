@@ -46,6 +46,15 @@ function ProtectedRoute({ children }: { children: ReactNode }) {
   return <>{children}</>
 }
 
+/** Settings (and alert-rules config) are superadmin-only; everyone else lands back on the dashboard. */
+function SuperadminRoute({ children }: { children: ReactNode }) {
+  const { user } = useAuth()
+  if (user && user.role !== 'SUPERADMIN') {
+    return <Navigate to="/" replace />
+  }
+  return <>{children}</>
+}
+
 function PublicRoute({ children }: { children: ReactNode }) {
   const { user, loading } = useAuth()
 
@@ -101,11 +110,11 @@ function AppRoutes() {
         <Route path="/review-queue" element={<ReviewQueuePage />} />
         <Route path="/review-queue/:id" element={<ReviewShipmentPage />} />
         <Route path="/alerts" element={<AlertsPage />} />
-        <Route path="/alerts/rules" element={<AlertRulesPage />} />
-        <Route path="/settings" element={<SettingsPage />} />
-        <Route path="/settings/email" element={<SettingsPage />} />
-        <Route path="/settings/alerts" element={<SettingsPage />} />
-        <Route path="/settings/vendors" element={<SettingsPage />} />
+        <Route path="/alerts/rules" element={<SuperadminRoute><AlertRulesPage /></SuperadminRoute>} />
+        <Route path="/settings" element={<SuperadminRoute><SettingsPage /></SuperadminRoute>} />
+        <Route path="/settings/email" element={<SuperadminRoute><SettingsPage /></SuperadminRoute>} />
+        <Route path="/settings/alerts" element={<SuperadminRoute><SettingsPage /></SuperadminRoute>} />
+        <Route path="/settings/vendors" element={<SuperadminRoute><SettingsPage /></SuperadminRoute>} />
       </Route>
     </Routes>
   )

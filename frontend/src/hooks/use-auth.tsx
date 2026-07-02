@@ -6,7 +6,7 @@ interface User {
   id: string
   name: string
   email: string
-  role: 'COORDINATOR' | 'MANAGER' | 'ADMIN'
+  role: 'COORDINATOR' | 'MANAGER' | 'ADMIN' | 'SUPERADMIN'
   avatarInitials: string
 }
 
