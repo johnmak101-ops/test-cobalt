@@ -24,7 +24,7 @@ beforeAll(async () => {
   const t = await getTestDb()
   db = t.db
   const r = repos(db)
-  committer = new CommitterService(r.masters, r.booking, r.shipment, r.fieldLock, r.audit)
+  committer = new CommitterService(r.masters, r.booking, r.shipment, r.fieldLock, r.audit, r.evidence)
 })
 afterAll(closeTestDb)
 beforeEach(() => resetDb(db))
@@ -74,6 +74,75 @@ describe('CommitterService (integration, real Postgres)', () => {
     const audit = await db.select().from(schema.changeLog)
     expect(audit.length).toBeGreaterThan(0)
     expect(audit.some((a) => a.changeType === 'create' && a.sourceType === 'agent')).toBe(true)
+  })
+})
+
+describe('CommitterService — per-PO enrichment from parsed evidence (integration)', () => {
+  /** Seed one parsed_record (email × PO) with its queue_message received time. */
+  async function seedRecord(over: {
+    graphMessageId: string
+    receivedAt: string
+    poNo: string | null
+    fields: Record<string, unknown>
+    matchKeys?: Record<string, unknown>
+    recordIdx?: number
+  }) {
+    const [msg] = await db
+      .insert(schema.queueMessage)
+      .values({ graphMessageId: over.graphMessageId, receivedAt: new Date(over.receivedAt) })
+      .returning()
+    await db.insert(schema.parsedRecord).values({
+      messageId: msg.id,
+      recordIdx: over.recordIdx ?? 0,
+      poNo: over.poNo,
+      fields: over.fields,
+      matchKeys: over.matchKeys ?? {},
+    })
+  }
+
+  const poRow = async (poNumber: string) => {
+    const [po] = await db.select().from(schema.purchaseOrders).where(eq(schema.purchaseOrders.poNumber, poNumber))
+    return po
+  }
+
+  it('enriches the PO with per-PO brand/item_style_no/total_quantity(+unit) from the matching parsed_record', async () => {
+    await seedRecord({ graphMessageId: 'g-1', receivedAt: '2026-06-30T05:00:00Z', poNo: 'PO-ENR', fields: { brand: 'FENIX', item_style_no: '43079', qty: '24', qty_unit: 'cartons' } })
+    await committer.apply(group({ pos: ['PO-ENR'], matchKeys: { so_no: 'SO-ENR' } }))
+    const po = await poRow('PO-ENR')
+    expect(po.brand).toBe('FENIX')
+    expect(po.itemStyleNo).toBe('43079')
+    expect(po.totalQuantity).toBe(24)
+    expect(po.quantityUnit).toBe('cartons')
+  })
+
+  it('does NOT leak a shipment/SO-level brand (record with no PO) onto the numeric POs', async () => {
+    // The real leak: 'Barbour' is stated on an SO-level record with no PO; PO 4483233 has no brand of its own.
+    await seedRecord({ graphMessageId: 'g-so', receivedAt: '2026-06-30T05:00:00Z', poNo: null, fields: { brand: 'Barbour' }, matchKeys: { so_no: '26SZ10066152' } })
+    await seedRecord({ graphMessageId: 'g-po', receivedAt: '2026-06-30T05:01:00Z', poNo: '4483233', fields: { item_style_no: 'ABC' }, matchKeys: { customer_po: '4483233', so_no: '26SZ10066152' } })
+    await committer.apply(group({ pos: ['4483233'], matchKeys: { so_no: '26SZ10066152' } }))
+    const po = await poRow('4483233')
+    expect(po.brand).toBeNull() // never 'Barbour'
+    expect(po.itemStyleNo).toBe('ABC')
+  })
+
+  it('latest-received email wins when the same PO carries two brand labels', async () => {
+    await seedRecord({ graphMessageId: 'g-old', receivedAt: '2026-06-01T00:00:00Z', poNo: 'PO-LEAK', fields: { brand: 'Barbour' } })
+    await seedRecord({ graphMessageId: 'g-new', receivedAt: '2026-06-02T00:00:00Z', poNo: 'PO-LEAK', fields: { brand: 'FENIX' } })
+    await committer.apply(group({ pos: ['PO-LEAK'], matchKeys: { so_no: 'SO-LEAK' } }))
+    expect((await poRow('PO-LEAK')).brand).toBe('FENIX')
+  })
+
+  it('fill-if-null: a human/ERP-set PO field is never overwritten by the agent (mirrors fillBooking)', async () => {
+    await seedRecord({ graphMessageId: 'g-h', receivedAt: '2026-06-30T05:00:00Z', poNo: 'PO-HUMAN', fields: { brand: 'FENIX', item_style_no: 'S1' } })
+    await committer.apply(group({ pos: ['PO-HUMAN'], matchKeys: { so_no: 'SO-H1' } }))
+    expect((await poRow('PO-HUMAN')).brand).toBe('FENIX') // first commit enriches the empty column
+    // a human corrects the brand, then a fresh (newer) email restates the parsed brand
+    await db.update(schema.purchaseOrders).set({ brand: 'HUMAN BRAND' }).where(eq(schema.purchaseOrders.poNumber, 'PO-HUMAN'))
+    await seedRecord({ graphMessageId: 'g-h2', receivedAt: '2026-06-30T06:00:00Z', poNo: 'PO-HUMAN', fields: { brand: 'FENIX-NEW', item_style_no: 'S2' } })
+    await committer.apply(group({ pos: ['PO-HUMAN'], matchKeys: { so_no: 'SO-H2' } }))
+    const po = await poRow('PO-HUMAN')
+    expect(po.brand).toBe('HUMAN BRAND') // human value preserved (never overwritten)
+    expect(po.itemStyleNo).toBe('S1') // style was already filled on the first commit → not re-touched
   })
 })
 

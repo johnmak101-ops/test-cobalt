@@ -1,0 +1,93 @@
+import { describe, it, expect } from 'vitest'
+import { normKey } from './match-keys'
+import { resolvePoEnrichment, type PoEvidenceInput } from './po-enrichment'
+
+/** Build a parsed_record-shaped evidence row. */
+const row = (over: Partial<PoEvidenceInput> & { id: string }): PoEvidenceInput => ({
+  poNo: null,
+  matchKeys: null,
+  fields: null,
+  receivedAt: null,
+  ...over,
+})
+
+const at = (iso: string) => new Date(iso)
+
+describe('resolvePoEnrichment', () => {
+  it('resolves brand/style/qty/unit for a PO from its matching record, keyed by normalized po_no', () => {
+    const map = resolvePoEnrichment([
+      row({ id: 'a', poNo: 'FEN_RE_W_190526', receivedAt: at('2026-06-30T05:00:00Z'), fields: { brand: 'FENIX', item_style_no: '43079', qty: '24', qty_unit: 'cartons' } }),
+    ])
+    expect(map.get(normKey('FEN_RE_W_190526'))).toEqual({
+      brand: 'FENIX',
+      itemStyleNo: '43079',
+      totalQuantity: 24,
+      quantityUnit: 'cartons',
+    })
+  })
+
+  it('latest-received email wins when the SAME PO carries two brand labels (parser brand-leak)', () => {
+    // Barbour arrives earlier, FENIX later — FENIX (latest) must win, deterministically.
+    const map = resolvePoEnrichment([
+      row({ id: 'old', poNo: 'PO-1', receivedAt: at('2026-06-01T00:00:00Z'), fields: { brand: 'Barbour' } }),
+      row({ id: 'new', poNo: 'PO-1', receivedAt: at('2026-06-02T00:00:00Z'), fields: { brand: 'FENIX' } }),
+    ])
+    expect(map.get(normKey('PO-1'))?.brand).toBe('FENIX')
+  })
+
+  it('coalesces per field: takes each field from the latest record that has a non-null value', () => {
+    // latest record lacks qty; the fuller style is on an older record — brand+style come latest, qty falls back.
+    const map = resolvePoEnrichment([
+      row({ id: 'older', poNo: 'PO-2', receivedAt: at('2026-06-01T00:00:00Z'), fields: { brand: 'FENIX', item_style_no: '33058,43078', qty: '24', qty_unit: 'cartons' } }),
+      row({ id: 'latest', poNo: 'PO-2', receivedAt: at('2026-06-02T00:00:00Z'), fields: { brand: 'FENIX', item_style_no: '33058', qty: null, qty_unit: null } }),
+    ])
+    const enr = map.get(normKey('PO-2'))
+    expect(enr?.itemStyleNo).toBe('33058') // latest wins
+    expect(enr?.totalQuantity).toBe(24) // fell back to the older record that has a qty
+    expect(enr?.quantityUnit).toBe('cartons') // unit comes from the SAME record as the qty
+  })
+
+  it('coerces a formatted qty string and drops a qty_unit outside the QTY_UNIT enum', () => {
+    const map = resolvePoEnrichment([
+      row({ id: 'a', poNo: 'PO-3', receivedAt: at('2026-06-01T00:00:00Z'), fields: { qty: '1,200 CTNS', qty_unit: 'boxes' } }),
+    ])
+    expect(map.get(normKey('PO-3'))).toEqual({ brand: null, itemStyleNo: null, totalQuantity: 1200, quantityUnit: null })
+  })
+
+  it('leaves quantityUnit null when there is no qty', () => {
+    const map = resolvePoEnrichment([
+      row({ id: 'a', poNo: 'PO-4', receivedAt: at('2026-06-01T00:00:00Z'), fields: { brand: 'ACME', qty_unit: 'cartons' } }),
+    ])
+    expect(map.get(normKey('PO-4'))).toEqual({ brand: 'ACME', itemStyleNo: null, totalQuantity: null, quantityUnit: null })
+  })
+
+  it('falls back to match_keys.customer_po when po_no is null', () => {
+    const map = resolvePoEnrichment([
+      row({ id: 'a', poNo: null, matchKeys: { customer_po: 'PO-5' }, receivedAt: at('2026-06-01T00:00:00Z'), fields: { brand: 'ACME' } }),
+    ])
+    expect(map.get(normKey('PO-5'))?.brand).toBe('ACME')
+  })
+
+  it('excludes a record with a brand but NO po_no and NO customer_po (the SO-level Barbour leak)', () => {
+    // This is exactly the leak: a brand stated at the shipment level with no PO of its own must attach to NO PO.
+    const map = resolvePoEnrichment([
+      row({ id: 'so-level', poNo: null, matchKeys: { so_no: '26SZ10066152' }, receivedAt: at('2026-06-01T00:00:00Z'), fields: { brand: 'Barbour' } }),
+      row({ id: 'po-4483233', poNo: '4483233', matchKeys: { customer_po: '4483233', so_no: '26SZ10066152' }, receivedAt: at('2026-06-01T00:00:00Z'), fields: { brand: null } }),
+    ])
+    expect(map.size).toBe(1)
+    expect(map.get(normKey('4483233'))?.brand).toBeNull() // NOT 'Barbour'
+    expect([...map.values()].some((e) => e.brand === 'Barbour')).toBe(false)
+  })
+
+  it('sorts null receivedAt last and breaks ties deterministically by id', () => {
+    const map = resolvePoEnrichment([
+      row({ id: 'zzz', poNo: 'PO-6', receivedAt: null, fields: { brand: 'NO_DATE' } }),
+      row({ id: 'aaa', poNo: 'PO-6', receivedAt: at('2026-06-01T00:00:00Z'), fields: { brand: 'DATED' } }),
+    ])
+    expect(map.get(normKey('PO-6'))?.brand).toBe('DATED') // dated record beats the null-date one
+  })
+
+  it('returns an empty map for no rows', () => {
+    expect(resolvePoEnrichment([]).size).toBe(0)
+  })
+})

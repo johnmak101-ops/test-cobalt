@@ -12,7 +12,7 @@ beforeAll(async () => {
   const t = await getTestDb()
   db = t.db
   const r = repos(db)
-  const committer = new CommitterService(r.masters, r.booking, r.shipment, r.fieldLock, r.audit)
+  const committer = new CommitterService(r.masters, r.booking, r.shipment, r.fieldLock, r.audit, r.evidence)
   const settings = new SettingsService(r.settings)
   reconcile = new ReconcileService(r.evidence, committer, settings)
 })
