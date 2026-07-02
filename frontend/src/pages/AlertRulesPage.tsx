@@ -225,7 +225,7 @@ export default function AlertRulesPage() {
                   <div>
                     <label className="text-xs text-text-muted">State</label>
                     <p className="mt-1 flex h-9 items-center text-sm text-text-secondary">
-                      {STATE_LABELS[rule.state] ?? rule.state.replace(/_/g, ' ')}
+                      {rule.state ? (STATE_LABELS[rule.state] ?? rule.state.replace(/_/g, ' ')) : '—'}
                     </p>
                   </div>
                 </div>
