@@ -1,4 +1,4 @@
-import { formatDate, formatRelativeTime } from '../../lib/utils'
+import { formatDate, formatDateTime } from '../../lib/utils'
 import { cn } from '../../lib/utils'
 import type { HistoryEntry } from '../../hooks/use-shipment-history'
 import {
@@ -8,6 +8,7 @@ import {
   Settings,
   AlertTriangle,
   ArrowRight,
+  ExternalLink,
 } from 'lucide-react'
 
 const fieldLabels: Record<string, string> = {
@@ -102,11 +103,27 @@ export function ShipmentHistoryTimeline({ history }: ShipmentHistoryTimelineProp
               <div className="mt-1 flex items-center gap-2 text-[11px] text-text-muted">
                 <span>{sourceLabels[entry.sourceType] ?? entry.sourceType}</span>
                 <span>·</span>
-                <span>{formatRelativeTime(entry.changedAt)}</span>
+                <span className="font-mono">{formatDateTime(entry.changedAt)}</span>
               </div>
 
-              {entry.notes && (
-                <p className="mt-1 text-xs italic text-text-muted">{entry.notes}</p>
+              {/* The source email: subject as a clickable link → the reading-pane popup */}
+              {entry.notes && entry.sourceType === 'email' && entry.sourceId ? (
+                <button
+                  onClick={() =>
+                    window.open(
+                      `/email/${entry.sourceId}?type=`,
+                      `email_${entry.sourceId}`,
+                      'popup,width=880,height=940,resizable=yes,scrollbars=yes',
+                    )
+                  }
+                  title="Open the source email"
+                  className="mt-1 inline-flex max-w-full cursor-pointer items-center gap-1 text-left text-xs italic text-text-muted hover:text-cobalt-primary-light hover:underline"
+                >
+                  <span className="truncate">{entry.notes}</span>
+                  <ExternalLink size={10} className="shrink-0" />
+                </button>
+              ) : (
+                entry.notes && <p className="mt-1 text-xs italic text-text-muted">{entry.notes}</p>
               )}
             </div>
           </div>
