@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useParams, useNavigate, useLocation } from 'react-router-dom'
+import { useParams, useNavigate, useLocation, Link } from 'react-router-dom'
 import { useShipment } from '../hooks/use-shipments'
 import { useShipmentHistory } from '../hooks/use-shipment-history'
 import { Badge } from '../components/ui/Badge'
@@ -92,6 +92,25 @@ export default function ShipmentDetailPage() {
           <Badge variant="status" value={shipment.status} />
         </div>
       </div>
+
+      {/* Review banner — a provisional shipment is committed but unconfirmed; surface WHY + the fix path */}
+      {shipment.reviewStatus === 'provisional' && (
+        <div className="flex flex-wrap items-center gap-3 rounded-xl border border-status-warning/40 bg-status-warning/10 px-4 py-3">
+          <AlertTriangle size={16} className="shrink-0 text-status-warning" />
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-medium text-status-warning">Awaiting review — data may change</p>
+            {(shipment.reviewReasons?.length ?? 0) > 0 && (
+              <p className="mt-0.5 text-xs text-text-secondary">{shipment.reviewReasons!.join(' · ')}</p>
+            )}
+          </div>
+          <Link
+            to={`/review-queue/${shipment.id}`}
+            className="shrink-0 rounded-lg bg-status-warning/20 px-3 py-1.5 text-xs font-medium text-status-warning hover:bg-status-warning/30"
+          >
+            Review & approve →
+          </Link>
+        </div>
+      )}
 
       {/* Alert banner */}
       {activeAlerts.length > 0 && (

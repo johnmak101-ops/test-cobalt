@@ -5,7 +5,7 @@ import { cn } from '../lib/utils'
 import { formatDate } from '../lib/utils'
 import { poProgress, furthestStatusLabel, type PoShipmentLink } from '../lib/po-progress'
 import { toast } from '../components/ui/Toast'
-import { Package, Search, RefreshCw, Download, Calendar } from 'lucide-react'
+import { Package, Search, RefreshCw, Download, Calendar, AlertTriangle } from 'lucide-react'
 import { Pagination, usePagination, PageSizeSelect } from '../components/ui/Pagination'
 import { useQueryClient } from '@tanstack/react-query'
 
@@ -431,8 +431,15 @@ UOM
                         )}
                       </td>
                       <td className="px-4 py-3">
-                        <span className="inline-flex h-6 min-w-[24px] items-center justify-center rounded-full bg-surface-600 px-2 font-mono text-xs text-text-secondary">
-                          {po.shipmentCount ?? 0}
+                        <span className="inline-flex items-center gap-1.5">
+                          <span className="inline-flex h-6 min-w-[24px] items-center justify-center rounded-full bg-surface-600 px-2 font-mono text-xs text-text-secondary">
+                            {po.shipmentCount ?? 0}
+                          </span>
+                          {po.shipmentSummary?.some((s) => s.reviewStatus === 'provisional') && (
+                            <span title="Linked shipment awaiting review" className="inline-flex shrink-0">
+                              <AlertTriangle size={13} className="text-status-warning" />
+                            </span>
+                          )}
                         </span>
                       </td>
                     </tr>

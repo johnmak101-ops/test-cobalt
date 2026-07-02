@@ -27,6 +27,8 @@ export interface PurchaseOrder {
     scacCode: string | null
     vesselName: string | null
     status: string
+    /** 'provisional' when the leg awaits human review — the list surfaces a warning */
+    reviewStatus?: string | null
     /** per-shipment split from shipment_pos — feeds lifecycle-weighted progress (absent on older backends) */
     linkedQuantity?: number | null
   }>
@@ -37,6 +39,7 @@ export interface PurchaseOrderDetail extends PurchaseOrder {
     id: string
     poNumbers: string
     status: string
+    reviewStatus?: string | null
     route: string | null
     etd: string | null
     eta: string | null

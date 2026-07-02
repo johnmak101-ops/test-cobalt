@@ -115,7 +115,14 @@ export function ShipmentTable({ shipments }: ShipmentTableProps) {
                     </td>
                     <td className="px-4 py-3 text-sm text-text-secondary">{s.route ?? '—'}</td>
                     <td className="px-4 py-3">
-                      <Badge variant="status" value={s.status} />
+                      <span className="inline-flex items-center gap-1.5">
+                        <Badge variant="status" value={s.status} />
+                        {s.reviewStatus === 'provisional' && (
+                          <span title="Awaiting review" className="inline-flex shrink-0">
+                            <AlertTriangle size={13} className="text-status-warning" />
+                          </span>
+                        )}
+                      </span>
                     </td>
                     <td className="px-4 py-3 text-sm text-text-secondary">{formatShortDate(s.etd)}</td>
                     <td className="px-4 py-3 text-sm text-text-secondary">{formatShortDate(s.eta)}</td>

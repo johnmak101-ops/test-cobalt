@@ -4,7 +4,8 @@ import { Card } from '../components/ui/Card'
 import { Badge } from '../components/ui/Badge'
 import { cn, formatShortDate, parsePONumbers } from '../lib/utils'
 import { poProgress, progressLabel } from '../lib/po-progress'
-import { ArrowLeft, Package, Ship } from 'lucide-react'
+import { ArrowLeft, AlertTriangle, Package, Ship } from 'lucide-react'
+import { Link } from 'react-router-dom'
 
 export default function PurchaseOrderDetailPage() {
   const { id } = useParams<{ id: string }>()
@@ -143,6 +144,17 @@ export default function PurchaseOrderDetailPage() {
         </Card>
       )}
 
+      {/* Review warning — quantities/dates above may still change while linked shipments await review */}
+      {(po.linkedShipments?.some((s) => s.reviewStatus === 'provisional') ?? false) && (
+        <div className="flex items-center gap-3 rounded-xl border border-status-warning/40 bg-status-warning/10 px-4 py-3">
+          <AlertTriangle size={16} className="shrink-0 text-status-warning" />
+          <p className="text-sm text-status-warning">
+            {po.linkedShipments!.filter((s) => s.reviewStatus === 'provisional').length} linked shipment(s)
+            awaiting review — figures on this PO may still change.
+          </p>
+        </div>
+      )}
+
       {/* Linked shipments */}
       <div>
         <h3 className="mb-3 text-sm font-semibold text-text-primary">
@@ -193,7 +205,19 @@ UOM
                       {parsePONumbers(shipment.poNumbers).join(', ')}
                     </td>
                     <td className="px-4 py-3">
-                      <Badge variant="status" value={shipment.status} />
+                      <span className="inline-flex items-center gap-1.5">
+                        <Badge variant="status" value={shipment.status} />
+                        {shipment.reviewStatus === 'provisional' && (
+                          <Link
+                            to={`/review-queue/${shipment.id}`}
+                            onClick={(e) => e.stopPropagation()}
+                            title="Awaiting review — open the review page"
+                            className="inline-flex shrink-0"
+                          >
+                            <AlertTriangle size={13} className="text-status-warning" />
+                          </Link>
+                        )}
+                      </span>
                     </td>
                     <td className="px-4 py-3 text-sm text-text-secondary">
                       {shipment.route ?? '—'}

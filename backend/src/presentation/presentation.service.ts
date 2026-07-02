@@ -348,6 +348,7 @@ export class PresentationService {
     bookingNo: string | null
     status: string | null
     legStatus?: string | null
+    reviewStatus?: string | null
     linkedQuantity?: number | null
     containerNo: string | null
     hbl: string | null
@@ -367,6 +368,7 @@ export class PresentationService {
       scacCode: s.scacCode ?? null,
       vesselName: s.vesselName ?? null,
       status: stateToUiStatus(s.status, s.legStatus),
+      reviewStatus: s.reviewStatus ?? null,
       linkedQuantity: s.linkedQuantity ?? null,
     }
   }
@@ -424,14 +426,15 @@ export class PresentationService {
       shipmentSummary: links.map((l) =>
         this.toPoShipmentRow({
           shipmentId: l.shipmentId, bookingNo: l.bookingNo, status: l.status, legStatus: l.legStatus,
-          linkedQuantity: l.linkedQuantity, containerNo: l.containerNo,
+          reviewStatus: l.reviewStatus, linkedQuantity: l.linkedQuantity, containerNo: l.containerNo,
           hbl: l.hbl, mbl: l.mbl, scacCode: l.scacCode, vesselName: l.vesselName, polCode: l.polCode, podCode: l.podCode,
         }),
       ),
       linkedShipments: links.map((l) => ({
         shipment: {
           leg: {
-            id: l.shipmentId, state: l.status, legStatus: l.legStatus, bookingNo: l.bookingNo, soNo: l.so, hblAwbFcrNo: l.hbl,
+            id: l.shipmentId, state: l.status, legStatus: l.legStatus, reviewStatus: l.reviewStatus,
+            bookingNo: l.bookingNo, soNo: l.so, hblAwbFcrNo: l.hbl,
             etd: l.etd, eta: l.eta, containerNo: l.containerNo, mbl: l.mbl, scacCode: l.scacCode, vesselName: l.vesselName,
           } as unknown as ShipmentLegRow,
           booking: null,
