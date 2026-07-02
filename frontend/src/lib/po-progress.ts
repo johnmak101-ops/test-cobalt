@@ -6,6 +6,8 @@
  * Status accepts both vocabularies the API emits: raw leg states (RELEASED/DELIVERED, e.g.
  * the PO list's `status`) and the UI staircase (DEPARTED/ARRIVED, e.g. linked-shipment rows).
  */
+import { statusLabels } from '../components/ui/Badge'
+
 export const SHIPMENT_STATUS_PCT: Record<string, number> = {
   BOOKED: 15,
   CONFIRMED: 30,
@@ -17,8 +19,12 @@ export const SHIPMENT_STATUS_PCT: Record<string, number> = {
   ARRIVED: 100,
 }
 
-/** SAILED and beyond — the goods are physically on the move. */
-const SHIPPED_FLOOR_PCT = SHIPMENT_STATUS_PCT.SAILED
+/**
+ * DEPARTED (raw RELEASED, badge "Departure") and beyond — the goods physically left. In this app's
+ * ladder, SAILED means "Final BOL issued" (a DOCUMENT stage, badge label "Final BOL"), so quantity on
+ * a SAILED shipment is still booked, not shipped — "shipped" must align with the shipment status.
+ */
+const SHIPPED_FLOOR_PCT = SHIPMENT_STATUS_PCT.DEPARTED
 
 export interface PoShipmentLink {
   status?: string | null
@@ -66,15 +72,20 @@ export function poProgress(
   return { pct: Math.max(...active.map((l) => statusPct(l.status))), bookedQuantity, shippedQuantity }
 }
 
+/** Raw leg states → the UI staircase tokens the badge vocabulary is keyed on. */
+const UI_STATUS: Record<string, string> = { RELEASED: 'DEPARTED', DELIVERED: 'ARRIVED' }
+
 /**
- * The furthest shipment's lifecycle word ("booked", "at warehouse", "departed") — what the LIST
- * page shows. Users scan status on the main page and click into the detail for quantities.
+ * The furthest shipment's status in the SAME vocabulary the status badges use ("Final BOL",
+ * "Departure") — what the LIST page shows. Users scan status on the main page and click into
+ * the detail for quantities.
  */
 export function furthestStatusLabel(links: PoShipmentLink[]): string {
   const active = links.filter((l) => l.status !== 'CANCELLED')
-  if (active.length === 0) return links.length > 0 ? 'cancelled' : '—'
+  if (active.length === 0) return links.length > 0 ? statusLabels.CANCELLED! : '—'
   const furthest = active.reduce((a, b) => (statusPct(b.status) > statusPct(a.status) ? b : a))
-  return String(furthest.status ?? 'BOOKED').replace(/_/g, ' ').toLowerCase()
+  const token = String(furthest.status ?? 'BOOKED')
+  return statusLabels[UI_STATUS[token] ?? token] ?? token.replace(/_/g, ' ').toLowerCase()
 }
 
 /**

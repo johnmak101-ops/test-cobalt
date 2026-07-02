@@ -36,7 +36,8 @@ const emailTypeLabels: Record<string, string> = {
   OTHER: 'UNCLASSIFIED',
 }
 
-const statusLabels: Record<string, string> = {
+/** The ONE status→label vocabulary (document-stage terminology) — badges, PO progress labels, exports. */
+export const statusLabels: Record<string, string> = {
   BOOKED: 'Booking Request',
   CONFIRMED: 'SO Received',
   AT_WAREHOUSE: 'Draft BOL',

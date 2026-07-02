@@ -16,6 +16,13 @@ describe('poProgress — lifecycle-weighted PO fulfillment', () => {
     expect(p.shippedQuantity).toBe(20)
   })
 
+  it('SAILED means "Final BOL" (a document stage) — quantity is still BOOKED, not shipped', () => {
+    const p = poProgress(20, [{ status: 'SAILED', linkedQuantity: 20 }])
+    expect(p.bookedQuantity).toBe(20)
+    expect(p.shippedQuantity).toBe(0)
+    expect(p.pct).toBe(65)
+  })
+
   it('weights mixed lifecycle states by linked quantity', () => {
     const p = poProgress(20, [
       { status: 'ARRIVED', linkedQuantity: 10 },
@@ -36,11 +43,11 @@ describe('poProgress — lifecycle-weighted PO fulfillment', () => {
     expect(p.pct).toBe(100)
   })
 
-  it('SAILED counts as shipped (goods on the move)', () => {
-    const p = poProgress(4, [{ status: 'SAILED', linkedQuantity: 4 }])
+  it('DEPARTED ("Departure") counts as shipped — the goods physically left', () => {
+    const p = poProgress(4, [{ status: 'DEPARTED', linkedQuantity: 4 }])
     expect(p.shippedQuantity).toBe(4)
     expect(p.bookedQuantity).toBe(0)
-    expect(p.pct).toBe(65)
+    expect(p.pct).toBe(85)
   })
 
   it('accepts both vocabularies: raw leg states and UI staircase', () => {
@@ -106,12 +113,13 @@ describe('progressLabel — plain language, never a percentage', () => {
   })
 
   it('uses the allocated quantity as denominator when the PO total is unknown', () => {
-    expect(progressLabel(null, [{ status: 'SAILED', linkedQuantity: 4 }])).toBe('4/4 shipped')
+    expect(progressLabel(null, [{ status: 'DEPARTED', linkedQuantity: 4 }])).toBe('4/4 shipped')
+    expect(progressLabel(null, [{ status: 'SAILED', linkedQuantity: 4 }])).toBe('0/4 shipped') // Final BOL ≠ shipped
   })
 
-  it('falls back to the furthest lifecycle word when no quantities exist', () => {
-    expect(progressLabel(100, [{ status: 'BOOKED' }, { status: 'AT_WAREHOUSE' }])).toBe('at warehouse')
-    expect(progressLabel(null, [{ status: 'DEPARTED' }])).toBe('departed')
+  it('falls back to the furthest badge label when no quantities exist', () => {
+    expect(progressLabel(100, [{ status: 'BOOKED' }, { status: 'AT_WAREHOUSE' }])).toBe('Draft BOL')
+    expect(progressLabel(null, [{ status: 'DEPARTED' }])).toBe('Departure')
   })
 
   it('says cancelled when every shipment is cancelled, and — with no shipments', () => {
@@ -120,14 +128,17 @@ describe('progressLabel — plain language, never a percentage', () => {
   })
 })
 
-describe('furthestStatusLabel — the list page shows the lifecycle word only', () => {
-  it('returns the furthest shipment state, prettified', () => {
-    expect(furthestStatusLabel([{ status: 'BOOKED', linkedQuantity: 2 }])).toBe('booked')
-    expect(furthestStatusLabel([{ status: 'BOOKED' }, { status: 'AT_WAREHOUSE' }])).toBe('at warehouse')
-    expect(furthestStatusLabel([{ status: 'DEPARTED' }])).toBe('departed')
+describe('furthestStatusLabel — the list speaks the BADGE vocabulary (document stages)', () => {
+  it('returns the furthest shipment status with the badge label', () => {
+    expect(furthestStatusLabel([{ status: 'BOOKED', linkedQuantity: 2 }])).toBe('Booking Request')
+    expect(furthestStatusLabel([{ status: 'BOOKED' }, { status: 'AT_WAREHOUSE' }])).toBe('Draft BOL')
+    expect(furthestStatusLabel([{ status: 'SAILED' }])).toBe('Final BOL')
+    expect(furthestStatusLabel([{ status: 'DEPARTED' }])).toBe('Departure')
+    expect(furthestStatusLabel([{ status: 'RELEASED' }])).toBe('Departure') // raw synonym
+    expect(furthestStatusLabel([{ status: 'ARRIVED' }])).toBe('Delivered')
   })
   it('handles cancelled-only and empty', () => {
-    expect(furthestStatusLabel([{ status: 'CANCELLED' }])).toBe('cancelled')
+    expect(furthestStatusLabel([{ status: 'CANCELLED' }])).toBe('Cancelled')
     expect(furthestStatusLabel([])).toBe('—')
   })
 })
