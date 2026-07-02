@@ -72,6 +72,23 @@ export function useEmailBody(emailId: string | undefined) {
   })
 }
 
+export interface ThreadMessage {
+  id: string
+  subject: string
+  sender: string
+  receivedAt: string | null
+  attachmentCount: number
+}
+
+/** All ingested messages in the same conversation (incl. this one), oldest first, with attachment counts. */
+export function useEmailThread(emailId: string | undefined) {
+  return useQuery<{ messages: ThreadMessage[] }>({
+    queryKey: ['email-thread', emailId],
+    queryFn: () => api.get(`/emails/${emailId}/thread`),
+    enabled: !!emailId,
+  })
+}
+
 export function useUnreadCount() {
   return useQuery<{ unread: number }>({
     queryKey: ['emails', 'unread-count'],

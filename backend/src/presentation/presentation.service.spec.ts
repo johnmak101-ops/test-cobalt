@@ -74,8 +74,10 @@ const build = () => {
     ingestState: async () => null,
     emailsForShipment: async () => [],
   }
+  const evidenceRepo = { forMessages: async () => [], allWithMessage: async () => [] }
   return new PresentationService(
     shipmentRepo as any, bookingRepo as any, mastersRepo as any, alertRepo as any, auditRepo as any, emailRepo as any,
+    evidenceRepo as any,
   )
 }
 

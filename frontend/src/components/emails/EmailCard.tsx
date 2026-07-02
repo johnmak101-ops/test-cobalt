@@ -5,6 +5,7 @@ import { ChevronDown, ChevronUp, Link as LinkIcon, AlertTriangle, Paperclip, Fil
 import { useState, useEffect } from 'react'
 import type { ShippingEmail } from '../../hooks/use-emails'
 import { useEmailAttachments, useMarkEmailRead } from '../../hooks/use-emails'
+import { downloadAttachment } from '../../lib/api'
 
 function formatFileSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`
@@ -45,8 +46,19 @@ export function EmailCard({ email }: EmailCardProps) {
     }
   }
 
+  const openEmailWindow = () => {
+    window.open(
+      `/email/${email.id}?type=${encodeURIComponent(email.emailType ?? '')}`,
+      `email_${email.id}`,
+      'popup,width=880,height=940,resizable=yes,scrollbars=yes',
+    )
+  }
+
   return (
-    <div className="rounded-xl border border-border bg-surface-800 p-4">
+    <div
+      onClick={openEmailWindow}
+      className="cursor-pointer rounded-xl border border-border bg-surface-800 p-4 transition-colors hover:bg-surface-700"
+    >
       {/* Header */}
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
@@ -70,7 +82,10 @@ export function EmailCard({ email }: EmailCardProps) {
       {extracted && (
         <div className="mt-3">
           <button
-            onClick={() => setExpanded(!expanded)}
+            onClick={(e) => {
+              e.stopPropagation()
+              setExpanded(!expanded)
+            }}
             className="flex items-center gap-1.5 text-xs font-medium text-cobalt-primary-light"
           >
             AI EXTRACTED
@@ -98,6 +113,7 @@ export function EmailCard({ email }: EmailCardProps) {
                 {email.shipmentId && (
                   <Link
                     to={`/shipments/${email.shipmentId}`}
+                    onClick={(e) => e.stopPropagation()}
                     className="inline-flex items-center gap-1 text-xs font-medium text-cobalt-primary-light hover:underline"
                   >
                     <LinkIcon size={12} />
@@ -132,30 +148,30 @@ export function EmailCard({ email }: EmailCardProps) {
                 >
                   <div className="flex items-center gap-2 min-w-0">
                     <Icon size={14} className="shrink-0 text-cobalt-primary-light" />
-                    <a
-                      href={`/api/attachments/${att.id}/download`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      onClick={(e) => e.stopPropagation()}
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        void downloadAttachment(att.id, att.filename)
+                      }}
                       className="truncate text-xs text-text-primary hover:text-cobalt-primary-light hover:underline cursor-pointer"
-                      title={`Open ${att.filename}`}
+                      title={`Download ${att.filename}`}
                     >
                       {att.filename}
-                    </a>
+                    </button>
                     <span className="shrink-0 text-[10px] text-text-muted">
                       {formatFileSize(att.sizeBytes)}
                     </span>
                   </div>
-                  <a
-                    href={`/api/attachments/${att.id}/download`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    onClick={(e) => e.stopPropagation()}
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      void downloadAttachment(att.id, att.filename)
+                    }}
                     className="shrink-0 rounded p-1 text-text-muted hover:bg-surface-700 hover:text-cobalt-primary-light"
                     title={`Download ${att.filename}`}
                   >
                     <Download size={13} />
-                  </a>
+                  </button>
                 </div>
               )
             })}

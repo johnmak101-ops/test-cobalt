@@ -10,6 +10,8 @@ import { MastersRepository } from '../db/repositories/masters.repository'
 import { AlertRepository } from '../db/repositories/alert.repository'
 import { AuditRepository } from '../db/repositories/audit.repository'
 import { EmailRepository } from '../db/repositories/email.repository'
+import { EvidenceRepository } from '../db/repositories/evidence.repository'
+import { emailFieldTimeline, dedupeAgainstAudit } from './adapters/email-timeline'
 import { toUiShipment, type ShipmentMapperInput, type ShipmentLegRow } from './mappers/shipment.mapper'
 import { toUiAlert } from './mappers/alert.mapper'
 import { toUiAlertRule } from './mappers/alert-rule.mapper'
@@ -67,6 +69,7 @@ export class PresentationService {
     private readonly alertRepo: AlertRepository,
     private readonly auditRepo: AuditRepository,
     private readonly emailRepo: EmailRepository,
+    private readonly evidenceRepo: EvidenceRepository,
   ) {}
 
   // ---- shared assembly ----
@@ -191,9 +194,49 @@ export class PresentationService {
     return { ...base, milestones, emails, alerts: legAlerts }
   }
 
+  /**
+   * Change History = real audit rows (creates, review corrections, manual edits, live-mode amends)
+   * MERGED with a per-email field replay reconstructed from parsed evidence. Batch commits collapse a
+   * whole thread into one create, so without the replay a shipment built from 8 emails shows a single
+   * entry. Synthesized entries are deduped against audit rows (live-mode amends record the same change).
+   */
   async shipmentHistory(id: string) {
-    const rows = await this.auditRepo.listForEntity('shipment', id)
-    return { history: rows.map(toUiHistoryEntry) }
+    const [rows, related] = await Promise.all([
+      this.auditRepo.listForEntity('shipment', id),
+      this.emailRepo.emailsForShipment(id),
+    ])
+    const evidence = related.length
+      ? await this.evidenceRepo.forMessages(related.map((r) => r.id))
+      : []
+    const emailEntries = dedupeAgainstAudit(
+      emailFieldTimeline(
+        evidence.map((e) => ({
+          messageId: e.messageId,
+          subject: e.subject ?? null,
+          sender: e.sender ?? null,
+          receivedAt: e.receivedAt,
+          fields: (e.fields as Record<string, unknown>) ?? null,
+        })),
+      ),
+      rows.map((r) => ({ field: r.field, newValue: r.newValue })),
+    ).map((c, i) => ({
+      id: `email-${c.messageId}-${c.field}-${i}`,
+      shipmentId: id,
+      field: c.field,
+      oldValue: c.oldValue,
+      newValue: c.newValue,
+      sourceType: 'email',
+      sourceId: c.messageId,
+      changedBy: null,
+      changedAt: c.changedAt,
+      isDelay: false,
+      notes: c.subject ? `${c.subject}`.slice(0, 140) : null,
+    }))
+    const audit = rows.map(toUiHistoryEntry)
+    const history = [...audit, ...emailEntries].sort((a, b) =>
+      (b.changedAt ?? '') < (a.changedAt ?? '') ? -1 : 1,
+    )
+    return { history }
   }
 
   // ---- review queue (provisional shipments) ----
@@ -299,10 +342,13 @@ export class PresentationService {
   // ---- purchase orders (app-owned) ----
 
   // PO → one linked-shipment row, in the shape the PO list/detail search over (container/SCAC/booking#/vessel).
+  // linkedQuantity + cancelled-aware status feed the UI's lifecycle-weighted PO progress.
   private toPoShipmentRow(s: {
     shipmentId: string
     bookingNo: string | null
     status: string | null
+    legStatus?: string | null
+    linkedQuantity?: number | null
     containerNo: string | null
     hbl: string | null
     mbl: string | null
@@ -320,7 +366,8 @@ export class PresentationService {
       mblNumber: s.mbl ?? null,
       scacCode: s.scacCode ?? null,
       vesselName: s.vesselName ?? null,
-      status: stateToUiStatus(s.status),
+      status: stateToUiStatus(s.status, s.legStatus),
+      linkedQuantity: s.linkedQuantity ?? null,
     }
   }
 
@@ -369,18 +416,22 @@ export class PresentationService {
       customer: po.customerName || po.customerCode ? { id: po.customerId ?? '', name: po.customerName ?? '', code: po.customerCode ?? null } : null,
       vendor: po.vendorName || po.vendorCode ? { id: po.vendorId ?? '', name: po.vendorName ?? '', code: po.vendorCode ?? null } : null,
       shipmentCount: links.length,
-      // null (unknown) when no linked shipment carries a quantity — a false "0 shipped" is misleading
-      shippedQuantity: links.some((l) => l.linkedQuantity != null) ? links.reduce((s, l) => s + (l.linkedQuantity ?? 0), 0) : null,
+      // null (unknown) when no linked shipment carries a quantity — a false "0 shipped" is misleading.
+      // Cancelled legs don't count toward the quantity on shipments.
+      shippedQuantity: links.some((l) => l.legStatus !== 'CANCELLED' && l.linkedQuantity != null)
+        ? links.reduce((s, l) => (l.legStatus !== 'CANCELLED' ? s + (l.linkedQuantity ?? 0) : s), 0)
+        : null,
       shipmentSummary: links.map((l) =>
         this.toPoShipmentRow({
-          shipmentId: l.shipmentId, bookingNo: l.bookingNo, status: l.status, containerNo: l.containerNo,
+          shipmentId: l.shipmentId, bookingNo: l.bookingNo, status: l.status, legStatus: l.legStatus,
+          linkedQuantity: l.linkedQuantity, containerNo: l.containerNo,
           hbl: l.hbl, mbl: l.mbl, scacCode: l.scacCode, vesselName: l.vesselName, polCode: l.polCode, podCode: l.podCode,
         }),
       ),
       linkedShipments: links.map((l) => ({
         shipment: {
           leg: {
-            id: l.shipmentId, state: l.status, bookingNo: l.bookingNo, soNo: l.so, hblAwbFcrNo: l.hbl,
+            id: l.shipmentId, state: l.status, legStatus: l.legStatus, bookingNo: l.bookingNo, soNo: l.so, hblAwbFcrNo: l.hbl,
             etd: l.etd, eta: l.eta, containerNo: l.containerNo, mbl: l.mbl, scacCode: l.scacCode, vesselName: l.vesselName,
           } as unknown as ShipmentLegRow,
           booking: null,
@@ -450,6 +501,20 @@ export class PresentationService {
       bodyHtml: row.bodyHtml ?? null,
       toRecipients: row.toRecipients ?? null,
       ccRecipients: row.ccRecipients ?? null,
+    }
+  }
+
+  /** The email's conversation siblings with per-message attachment counts (the window's thread panel). */
+  async emailThread(id: string) {
+    const rows = await this.emailRepo.thread(id)
+    return {
+      messages: rows.map((r) => ({
+        id: r.id,
+        subject: r.subject ?? '',
+        sender: r.sender ?? '',
+        receivedAt: isoOrNull(r.receivedAt),
+        attachmentCount: r.attachmentCount ?? 0,
+      })),
     }
   }
 

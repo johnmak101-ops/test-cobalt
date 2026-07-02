@@ -7,7 +7,7 @@ import { Card } from '../components/ui/Card'
 import { MilestoneTimeline } from '../components/shipments/MilestoneTimeline'
 import { ShipmentHistoryTimeline } from '../components/shipments/ShipmentHistoryTimeline'
 import { AlertCard } from '../components/alerts/AlertCard'
-import { formatRelativeTime, formatDate, cn } from '../lib/utils'
+import { formatRelativeTime, formatDate, formatDateMaybeTime, cn } from '../lib/utils'
 import { ArrowLeft, Mail, Clock, ClipboardList, Package, Ship, Calendar, AlertTriangle, AlertCircle, Info } from 'lucide-react'
 
 export default function ShipmentDetailPage() {
@@ -36,6 +36,14 @@ export default function ShipmentDetailPage() {
   }
 
   const linkedPOs = shipment.linkedPOs ?? []
+  // Date of the most recent related email — the old "Email Date" showed the DB row's createdAt,
+  // which is ingest time (e.g. a reparse date), not when any email actually arrived.
+  const lastEmailAt =
+    (shipment.emails ?? [])
+      .map((e) => e.receivedAt)
+      .filter(Boolean)
+      .sort()
+      .at(-1) ?? null
   // Title from MEANINGFUL identifiers — booking no / SO no (then a PO), never the opaque UUID.
   const titleIds = [
     shipment.bookingNo && { label: 'BK', value: shipment.bookingNo },
@@ -159,7 +167,7 @@ export default function ShipmentDetailPage() {
                 <tr className="border-b border-border bg-surface-900/50">
                   <th className="px-3 py-2 text-left text-[11px] font-medium text-text-muted">Customer PO#</th>
                   <th className="px-3 py-2 text-left text-[11px] font-medium text-text-muted">Vendor</th>
-                  <th className="px-3 py-2 text-right text-[11px] font-medium text-text-muted">Shipped</th>
+                  <th className="px-3 py-2 text-right text-[11px] font-medium text-text-muted">Qty</th>
                   <th className="px-3 py-2 text-right text-[11px] font-medium text-text-muted">Total</th>
                   <th className="px-3 py-2 text-left text-[11px] font-medium text-text-muted">UOM</th>
                 </tr>
@@ -216,7 +224,11 @@ export default function ShipmentDetailPage() {
               }
             />
             <DetailRow label="Item / Style No." value={shipment.itemStyleNo?.replace(/,/g, ', ') ?? null} />
-            <DetailRow label="Email Date" value={formatDate(shipment.createdAt)} />
+            <DetailRow
+              label="Last Email"
+              value={lastEmailAt ? formatDate(lastEmailAt) : null}
+              hint={lastEmailAt ? undefined : 'no related emails'}
+            />
           </DetailSection>
 
           {/* Section 2: Cargo & Logistics */}
@@ -253,15 +265,15 @@ export default function ShipmentDetailPage() {
 
           {/* Section 4: Key Dates */}
           <DetailSection title="Key Dates" icon={<Calendar size={14} className="text-text-muted" />}>
-            <DetailRow label="Cargo Ready Date" value={formatDate(shipment.crd)} />
-            <DetailRow label="WH Start Date" value={formatDate(shipment.warehouseStartDate)} />
-            <DetailRow label="WH End Date" value={formatDate(shipment.warehouseEndDate)} />
-            <DetailRow label="CFS Cut-off" value={formatDate(shipment.cfsCutoff)} />
-            <DetailRow label="ETD" value={formatDate(shipment.etd)} />
-            <DetailRow label="ATD" value={formatDate(shipment.actualDeparture)} />
-            <DetailRow label="ETA" value={formatDate(shipment.eta)} />
-            <DetailRow label="ATA" value={formatDate(shipment.actualArrival)} />
-            <DetailRow label="In DC Date" value={formatDate(shipment.inDcDate)} />
+            <DetailRow label="Cargo Ready Date" value={formatDateMaybeTime(shipment.crd)} />
+            <DetailRow label="WH Start Date" value={formatDateMaybeTime(shipment.warehouseStartDate)} />
+            <DetailRow label="WH End Date" value={formatDateMaybeTime(shipment.warehouseEndDate)} />
+            <DetailRow label="CFS Cut-off" value={formatDateMaybeTime(shipment.cfsCutoff)} />
+            <DetailRow label="ETD" value={formatDateMaybeTime(shipment.etd)} />
+            <DetailRow label="ATD" value={formatDateMaybeTime(shipment.actualDeparture)} />
+            <DetailRow label="ETA" value={formatDateMaybeTime(shipment.eta)} />
+            <DetailRow label="ATA" value={formatDateMaybeTime(shipment.actualArrival)} />
+            <DetailRow label="In DC Date" value={formatDateMaybeTime(shipment.inDcDate)} />
           </DetailSection>
         </div>
       </Card>

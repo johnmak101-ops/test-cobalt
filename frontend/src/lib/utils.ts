@@ -33,6 +33,26 @@ export function formatShortDate(date: Date | string | number | null | undefined)
   return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
 }
 
+/** Date + wall-clock time — thread emails often land hours apart on the same day. */
+export function formatDateTime(date: Date | string | number | null | undefined): string {
+  if (!date) return 'TBD'
+  const d = new Date(date)
+  const day = d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+  const time = d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
+  return `${day} ${time}`
+}
+
+/**
+ * Date, plus the wall-clock time WHEN one was actually stated ("截仓时间 6.29 15:00" → "29 Jun 2026 15:00").
+ * Cut-off style deadlines carry operationally-critical times; plain dates (midnight local) stay date-only.
+ */
+export function formatDateMaybeTime(date: Date | string | number | null | undefined): string {
+  if (!date) return 'TBD'
+  const d = new Date(date)
+  if (d.getHours() === 0 && d.getMinutes() === 0) return formatDate(d)
+  return formatDateTime(d)
+}
+
 export function parsePONumbers(json: string): string[] {
   try {
     return JSON.parse(json)

@@ -1,5 +1,6 @@
-import { Paperclip, FileText } from 'lucide-react'
+import { Paperclip, FileText, Download } from 'lucide-react'
 import { useEmailBody, useEmailAttachments } from '../../hooks/use-emails'
+import { downloadAttachment } from '../../lib/api'
 import { Badge } from '../ui/Badge'
 
 export interface RelatedEmail {
@@ -147,14 +148,17 @@ export function EmailAttachments({
       </p>
       <div className="flex flex-wrap gap-2">
         {attachments.map((a) => (
-          <div
+          <button
             key={a.id}
-            className="flex items-center gap-2 rounded-lg border border-border bg-surface-700 px-3 py-1.5 text-xs text-text-secondary"
+            onClick={() => void downloadAttachment(a.id, a.filename)}
+            title={`Download ${a.filename}`}
+            className="group flex cursor-pointer items-center gap-2 rounded-lg border border-border bg-surface-700 px-3 py-1.5 text-xs text-text-secondary transition-colors hover:border-cobalt-primary hover:text-text-primary"
           >
             <FileText size={13} className="shrink-0 text-text-muted" />
             <span className="max-w-[220px] truncate">{a.filename}</span>
             {a.sizeBytes ? <span className="text-text-muted">{Math.round(a.sizeBytes / 1024)} KB</span> : null}
-          </div>
+            <Download size={12} className="shrink-0 text-text-muted group-hover:text-cobalt-primary-light" />
+          </button>
         ))}
       </div>
     </div>

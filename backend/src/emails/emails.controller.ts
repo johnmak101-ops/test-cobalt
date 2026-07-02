@@ -1,4 +1,5 @@
-import { Controller, Get, Query } from '@nestjs/common'
+import { Controller, Get, NotFoundException, Param, Query, Res } from '@nestjs/common'
+import type { Response } from 'express'
 import { EmailsService } from './emails.service'
 
 @Controller('emails')
@@ -20,5 +21,18 @@ export class EmailsController {
    */
   @Get('attachments') attachments(@Query('messageId') messageId?: string) {
     return this.emails.getAttachments(messageId ?? '')
+  }
+
+  /**
+   * GET /api/emails/attachments/:id/download — stream ONE attachment's original file
+   * (office rawBytes / image / pdf / text-native) with a save-as filename.
+   */
+  @Get('attachments/:id/download')
+  async download(@Param('id') id: string, @Res() res: Response) {
+    const file = await this.emails.getAttachmentOriginal(id)
+    if (!file) throw new NotFoundException('attachment original not available')
+    res.setHeader('Content-Type', file.mime)
+    res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(file.filename)}`)
+    res.send(file.body)
   }
 }

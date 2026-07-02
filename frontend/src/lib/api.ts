@@ -36,6 +36,31 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
   return (text ? JSON.parse(text) : undefined) as T
 }
 
+/**
+ * Download ONE email attachment through the authenticated API. A bare `<a href>` can't be relied on
+ * here (Bearer token isn't sent on plain navigation), so fetch the bytes and hand the browser a blob.
+ */
+export async function downloadAttachment(attachmentId: string, filename: string): Promise<void> {
+  let token: string | null = null
+  try {
+    token = localStorage.getItem('cobalt_token')
+  } catch {
+    /* ignore */
+  }
+  const res = await fetch(`${API_BASE}/emails/attachments/${encodeURIComponent(attachmentId)}/download`, {
+    credentials: 'include',
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  })
+  if (!res.ok) throw new Error(`download failed (${res.status})`)
+  const blob = await res.blob()
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
 /** Row shape returned by GET /api/documents (the "Unlinked Documents" review inbox). */
 export interface DocumentRow {
   id: string

@@ -105,6 +105,9 @@ export class UiEmailsController {
   @Get(':id/body') body(@Param('id') id: string) {
     return this.ui.emailBody(id)
   }
+  @Get(':id/thread') thread(@Param('id') id: string) {
+    return this.ui.emailThread(id)
+  }
   @Patch(':id/read') markRead(@Param('id') id: string, @CurrentUser() user: { id: string }) {
     return this.ui.emailMarkRead(id, user.id)
   }

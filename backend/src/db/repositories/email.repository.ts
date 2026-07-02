@@ -39,6 +39,27 @@ export class EmailRepository {
    * `textContent` (the parsed html/csv) is only a fallback for text-native attachments — never the
    * thing we hand a human to verify an office doc. Raw bytes may be purged later (Option-A retention).
    */
+  /** One attachment's rows (per normalized part) by queue_attachment id — the download endpoint's source. */
+  attachmentById(attachmentId: string) {
+    return this.db
+      .select({
+        attachmentId: schema.queueAttachment.id,
+        filename: schema.queueAttachment.filename,
+        sourceKind: schema.queueAttachment.sourceKind,
+        sizeBytes: schema.queueAttachment.sizeBytes,
+        declaredMime: schema.queueAttachment.declaredMime,
+        rawBytes: schema.queueAttachment.rawBytes,
+        kind: schema.queueNormalized.kind,
+        mime: schema.queueNormalized.mime,
+        label: schema.queueNormalized.label,
+        textContent: schema.queueNormalized.textContent,
+        imageBytes: schema.queueNormalized.imageBytes,
+      })
+      .from(schema.queueAttachment)
+      .leftJoin(schema.queueNormalized, eq(schema.queueNormalized.attachmentId, schema.queueAttachment.id))
+      .where(eq(schema.queueAttachment.id, attachmentId))
+  }
+
   async attachmentsFor(graphMessageId: string) {
     const msg = await this.db
       .select({ id: schema.queueMessage.id })
@@ -196,5 +217,34 @@ export class EmailRepository {
       .where(eq(schema.queueMessage.id, id))
       .limit(1)
     return row ?? null
+  }
+
+  /**
+   * Every ingested message in the SAME conversation as `id` (including itself), oldest first, with
+   * attachment counts — the email window's thread panel, so a reviewer can see which email in the
+   * chain a file actually arrived on (a forwarded MIME lumps prior files onto the latest message).
+   */
+  async thread(id: string) {
+    const [row] = await this.db
+      .select({ conversationId: schema.queueMessage.conversationId })
+      .from(schema.queueMessage)
+      .where(eq(schema.queueMessage.id, id))
+      .limit(1)
+    const conversationId = row?.conversationId
+    if (!conversationId) return []
+
+    return this.db
+      .select({
+        id: schema.queueMessage.id,
+        subject: schema.queueMessage.subject,
+        sender: schema.queueMessage.sender,
+        receivedAt: schema.queueMessage.receivedAt,
+        attachmentCount: sql<number>`count(${schema.queueAttachment.id})::int`,
+      })
+      .from(schema.queueMessage)
+      .leftJoin(schema.queueAttachment, eq(schema.queueAttachment.messageId, schema.queueMessage.id))
+      .where(eq(schema.queueMessage.conversationId, conversationId))
+      .groupBy(schema.queueMessage.id)
+      .orderBy(schema.queueMessage.receivedAt)
   }
 }

@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common'
-import { eq } from 'drizzle-orm'
+import { eq, inArray } from 'drizzle-orm'
 import * as schema from '@cobalt/contracts'
 import { DRIZZLE, type DrizzleDB } from '../drizzle.provider'
 
@@ -18,6 +18,22 @@ export interface EvidenceRow {
 @Injectable()
 export class EvidenceRepository {
   constructor(@Inject(DRIZZLE) private readonly db: DrizzleDB) {}
+
+  /** Parsed records of specific emails (queue_message ids) — the Change History's per-email replay source. */
+  forMessages(messageIds: string[]) {
+    if (!messageIds.length) return Promise.resolve([])
+    return this.db
+      .select({
+        messageId: schema.parsedRecord.messageId,
+        subject: schema.queueMessage.subject,
+        sender: schema.queueMessage.sender,
+        receivedAt: schema.queueMessage.receivedAt,
+        fields: schema.parsedRecord.fields,
+      })
+      .from(schema.parsedRecord)
+      .innerJoin(schema.queueMessage, eq(schema.parsedRecord.messageId, schema.queueMessage.id))
+      .where(inArray(schema.parsedRecord.messageId, messageIds))
+  }
 
   allWithMessage(): Promise<EvidenceRow[]> {
     return this.db

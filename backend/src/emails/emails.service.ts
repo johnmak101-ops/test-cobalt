@@ -141,6 +141,36 @@ export class EmailsService {
       return { available: false, attachments: [] }
     }
   }
+
+  /**
+   * ONE attachment's original bytes for the download endpoint, resolved the same way getAttachments
+   * inlines them: office rawBytes → passthrough image/pdf bytes → the text content as a file.
+   * Null when the id is unknown or the original was purged with no text surviving.
+   */
+  async getAttachmentOriginal(
+    attachmentId: string,
+  ): Promise<{ filename: string; mime: string; body: Buffer } | null> {
+    if (!attachmentId) return null
+    const rows = await this.emails.attachmentById(attachmentId)
+    const first = rows[0]
+    if (!first) return null
+    const filename = leafName(first.filename)
+
+    if (first.rawBytes) {
+      return { filename, mime: first.declaredMime ?? 'application/octet-stream', body: first.rawBytes }
+    }
+    const passthrough = rows.find((r) => r.imageBytes)
+    if (passthrough?.imageBytes) {
+      return {
+        filename,
+        mime: passthrough.mime ?? first.declaredMime ?? 'application/octet-stream',
+        body: passthrough.imageBytes,
+      }
+    }
+    const text = rows.map((r) => r.textContent).filter(Boolean).join('\n\n')
+    if (text) return { filename, mime: 'text/plain; charset=utf-8', body: Buffer.from(text, 'utf8') }
+    return null
+  }
 }
 
 /** The real filename to save as — strip the `parent!/` container prefix and any path segments. */
