@@ -18,6 +18,12 @@ const leg = (over: Partial<ShipmentLegRow> = {}): ShipmentLegRow => ({
   voyageNo: 'V42',
   scacCode: 'MAEU',
   originCountry: null,
+  polRaw: null,
+  podRaw: null,
+  forwarderRaw: null,
+  grossWeight: null,
+  measurement: null,
+  htsCode: null,
   cargoReadyDate: new Date('2026-02-01T00:00:00.000Z'),
   cfsCutoff: new Date('2026-02-03T00:00:00.000Z'),
   etd: new Date('2026-02-05T00:00:00.000Z'),
@@ -66,6 +72,23 @@ describe('toUiShipment — flat active-leg projection', () => {
     expect(toUiShipment(fullInput()).status).toBe('SAILED')
     expect(toUiShipment({ ...fullInput(), leg: leg({ state: 'RELEASED' }) }).status).toBe('DEPARTED')
     expect(toUiShipment(fullInput()).riskLevel).toBe('ON_TRACK')
+  })
+
+  it('AIR legs route by IATA airport code; sea legs keep the UN/LOCODE', () => {
+    const air = toUiShipment({
+      ...fullInput(),
+      leg: leg({ mode: 'AIR' }),
+      polPort: { unlocode: 'CNCAN', country: 'CN', iata: 'CAN' },
+      podPort: { unlocode: 'NLAMS', country: 'NL', iata: 'AMS' },
+    })
+    expect(air.route).toBe('CAN→AMS')
+    const sea = toUiShipment({
+      ...fullInput(),
+      leg: leg({ mode: 'SEA_LCL' }),
+      polPort: { unlocode: 'KHPNH', country: 'KH', iata: 'PNH' },
+      podPort: { unlocode: 'USLAX', country: 'US', iata: 'LAX' },
+    })
+    expect(sea.route).toBe('KHPNH→USLAX')
   })
 
   it('falls back to warehouse end date for CFS cut-off (parser vocab equates them); explicit value wins', () => {

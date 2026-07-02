@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { deriveRoute, deriveOriginCountry, poNumbersJson, isoOrNull } from './derive'
+import { deriveRoute, portLabel, deriveOriginCountry, poNumbersJson, isoOrNull } from './derive'
 
 describe('deriveRoute — POL/POD -> "POL→POD" string', () => {
   it('joins both ends with an arrow', () => {
@@ -14,6 +14,31 @@ describe('deriveRoute — POL/POD -> "POL→POD" string', () => {
   it('returns null when neither end is known', () => {
     expect(deriveRoute(null, null)).toBeNull()
     expect(deriveRoute(undefined, undefined)).toBeNull()
+  })
+})
+
+describe('portLabel — AIR legs display IATA airport codes, sea legs UN/LOCODE', () => {
+  it('an AIR leg shows the IATA code (CNCAN → CAN)', () => {
+    expect(portLabel('AIR', 'CNCAN', 'CAN')).toBe('CAN')
+    expect(portLabel('AIR', 'NLAMS', 'AMS')).toBe('AMS')
+  })
+
+  it('sea modes keep the UN/LOCODE even when the port has an IATA code', () => {
+    expect(portLabel('SEA', 'KHPNH', 'PNH')).toBe('KHPNH')
+    expect(portLabel('SEA_LCL', 'USLAX', 'LAX')).toBe('USLAX')
+    expect(portLabel(null, 'CNYTN', null)).toBe('CNYTN')
+  })
+
+  it('an AIR leg without a known IATA code falls back to the UN/LOCODE', () => {
+    expect(portLabel('AIR', 'CNYTN', null)).toBe('CNYTN')
+  })
+
+  it('propagates missing codes as null', () => {
+    expect(portLabel('AIR', null, null)).toBeNull()
+  })
+
+  it('composes with deriveRoute for the air route John flagged', () => {
+    expect(deriveRoute(portLabel('AIR', 'CNCAN', 'CAN'), portLabel('AIR', 'NLAMS', 'AMS'))).toBe('CAN→AMS')
   })
 })
 

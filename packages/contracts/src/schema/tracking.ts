@@ -1,4 +1,4 @@
-import { pgSchema, uuid, text, timestamp, boolean, integer, doublePrecision, jsonb, unique } from 'drizzle-orm/pg-core'
+import { pgSchema, uuid, text, timestamp, boolean, integer, doublePrecision, jsonb, unique, index } from 'drizzle-orm/pg-core'
 import {
   SHIPMENT_STATE, LEG_STATUS, SHIPMENT_MODE, RISK_LEVEL, REVIEW_STATUS, BOOKING_STATUS, QTY_UNIT,
   VENDOR_TYPE, FORWARDER_ALIAS_TYPE, PORT_MODE, USER_ROLE, MILESTONE_TYPE, WAREHOUSE_SIGNAL, FIELD_LOCK_ENTITY,
@@ -67,8 +67,11 @@ export const ports = tracking.table('ports', {
   name: text('name').notNull(),
   country: text('country'),
   mode: text('mode', { enum: PORT_MODE }).notNull().default('sea'),
+  // IATA airport code (CNCAN → CAN) when the location has airport function — AIR legs display this.
+  // Sourced from the UNECE UN/LOCODE list (IATA column override, else the 3-letter location part).
+  iata: text('iata'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-})
+}, (t) => [index('ports_iata_idx').on(t.iata)])
 
 /**
  * Master RESOLUTION facts — the deterministic rules the parser's validator enforces, expressed as

@@ -4,7 +4,7 @@
  * the input; this only reshapes. The production PO→Booking→Shipment model is never exposed.
  */
 import { stateToUiStatus } from '../adapters/enums'
-import { deriveRoute, deriveOriginCountry, poNumbersJson, isoOrNull } from '../adapters/derive'
+import { deriveRoute, portLabel, deriveOriginCountry, poNumbersJson, isoOrNull } from '../adapters/derive'
 
 export interface MasterRef {
   id: string
@@ -19,6 +19,7 @@ export interface ShipmentLegRow {
   forwarderId: string | null
   state: string | null
   legStatus?: string | null
+  mode?: string | null
   riskLevel: string | null
   bookingNo: string | null
   soNo: string | null
@@ -61,8 +62,8 @@ export interface ShipmentMapperInput {
   customer?: MasterRef | null
   vendor?: MasterRef | null
   forwarder?: MasterRef | null
-  polPort?: { unlocode?: string | null; country?: string | null } | null
-  podPort?: { unlocode?: string | null; country?: string | null } | null
+  polPort?: { unlocode?: string | null; country?: string | null; iata?: string | null } | null
+  podPort?: { unlocode?: string | null; country?: string | null; iata?: string | null } | null
   poNumbers?: Array<string | null | undefined>
   linkedPOs?: unknown[]
 }
@@ -122,7 +123,10 @@ export function toUiShipment(input: ShipmentMapperInput): UiShipment {
     customerId: booking?.customerId ?? null,
     vendorId: booking?.vendorId ?? null,
     forwarderId: leg.forwarderId ?? null,
-    route: deriveRoute(input.polPort?.unlocode ?? leg.polRaw, input.podPort?.unlocode ?? leg.podRaw),
+    route: deriveRoute(
+      portLabel(leg.mode, input.polPort?.unlocode, input.polPort?.iata) ?? leg.polRaw,
+      portLabel(leg.mode, input.podPort?.unlocode, input.podPort?.iata) ?? leg.podRaw,
+    ),
     originCountry: leg.originCountry ?? deriveOriginCountry(input.polPort),
     status: stateToUiStatus(leg.state, leg.legStatus),
     cancelled: leg.legStatus === 'CANCELLED',

@@ -18,11 +18,11 @@ import { toUiAlertRule } from './mappers/alert-rule.mapper'
 import { toUiHistoryEntry } from './mappers/history.mapper'
 import { toUiPurchaseOrder, toUiPurchaseOrderDetail } from './mappers/po.mapper'
 import { toUiEmail } from './mappers/email.mapper'
-import { deriveRoute, poNumbersJson, isoOrNull } from './adapters/derive'
+import { deriveRoute, portLabel, poNumbersJson, isoOrNull } from './adapters/derive'
 import { stateToUiStatus } from './adapters/enums'
 
 type Ref = { id: string; code?: string | null; name: string }
-type PortRow = { id: string; unlocode?: string | null; country?: string | null }
+type PortRow = { id: string; unlocode?: string | null; country?: string | null; iata?: string | null }
 type BookingRow = { id: string; customerId: string | null; vendorId: string | null }
 type LinkedPoRow = { id: string; poNumber: string; totalQuantity: number | null; quantityUnit: string | null; vendorName: string | null }
 
@@ -132,7 +132,7 @@ export class PresentationService {
     return {
       id: leg.id,
       poNumbers: poNumbersJson(poNumbers),
-      route: deriveRoute(pol?.unlocode, pod?.unlocode),
+      route: deriveRoute(portLabel(leg.mode, pol?.unlocode, pol?.iata), portLabel(leg.mode, pod?.unlocode, pod?.iata)),
       customer: customer ? { name: customer.name } : null,
     }
   }
@@ -266,7 +266,10 @@ export class PresentationService {
         // strings (not objects) — the review-queue table renders these directly; an object here crashes React
         customer: r.customerName ?? null,
         forwarder: r.forwarderName ?? r.forwarderRaw ?? null,
-        route: deriveRoute(r.polCode ?? r.polRaw, r.podCode ?? r.podRaw),
+        route: deriveRoute(
+          portLabel(r.mode, r.polCode, r.polIata) ?? r.polRaw,
+          portLabel(r.mode, r.podCode, r.podIata) ?? r.podRaw,
+        ),
         state: r.state,
         status: stateToUiStatus(r.state, r.legStatus),
         reviewReasons: r.reviewReasons ?? [],
@@ -366,13 +369,16 @@ export class PresentationService {
     mbl: string | null
     scacCode: string | null
     vesselName: string | null
+    mode?: string | null
     polCode: string | null
     podCode: string | null
+    polIata?: string | null
+    podIata?: string | null
   }) {
     return {
       id: s.shipmentId,
       bookingNo: s.bookingNo ?? null,
-      route: deriveRoute(s.polCode ?? undefined, s.podCode ?? undefined),
+      route: deriveRoute(portLabel(s.mode, s.polCode, s.polIata), portLabel(s.mode, s.podCode, s.podIata)),
       containerNo: s.containerNo ?? null,
       hblNumber: s.hbl ?? null,
       mblNumber: s.mbl ?? null,
@@ -438,19 +444,20 @@ export class PresentationService {
         this.toPoShipmentRow({
           shipmentId: l.shipmentId, bookingNo: l.bookingNo, status: l.status, legStatus: l.legStatus,
           reviewStatus: l.reviewStatus, linkedQuantity: l.linkedQuantity, containerNo: l.containerNo,
-          hbl: l.hbl, mbl: l.mbl, scacCode: l.scacCode, vesselName: l.vesselName, polCode: l.polCode, podCode: l.podCode,
+          hbl: l.hbl, mbl: l.mbl, scacCode: l.scacCode, vesselName: l.vesselName,
+          mode: l.mode, polCode: l.polCode, podCode: l.podCode, polIata: l.polIata, podIata: l.podIata,
         }),
       ),
       linkedShipments: links.map((l) => ({
         shipment: {
           leg: {
             id: l.shipmentId, state: l.status, legStatus: l.legStatus, reviewStatus: l.reviewStatus,
-            bookingNo: l.bookingNo, soNo: l.so, hblAwbFcrNo: l.hbl,
+            bookingNo: l.bookingNo, soNo: l.so, hblAwbFcrNo: l.hbl, mode: l.mode,
             etd: l.etd, eta: l.eta, containerNo: l.containerNo, mbl: l.mbl, scacCode: l.scacCode, vesselName: l.vesselName,
           } as unknown as ShipmentLegRow,
           booking: null,
-          polPort: l.polCode ? { unlocode: l.polCode } : null,
-          podPort: l.podCode ? { unlocode: l.podCode } : null,
+          polPort: l.polCode ? { unlocode: l.polCode, iata: l.polIata } : null,
+          podPort: l.podCode ? { unlocode: l.podCode, iata: l.podIata } : null,
           poNumbers: [po.poNumber],
         } as ShipmentMapperInput,
         linkedQuantity: l.linkedQuantity,

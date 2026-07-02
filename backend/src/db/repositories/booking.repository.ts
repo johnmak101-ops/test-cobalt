@@ -169,8 +169,11 @@ export class BookingRepository {
         so: schema.shipments.soNo,
         etd: schema.shipments.etd,
         eta: schema.shipments.eta,
+        mode: schema.shipments.mode,
         polCode: pol.unlocode,
         podCode: pod.unlocode,
+        polIata: pol.iata,
+        podIata: pod.iata,
         linkedAt: schema.shipmentPos.createdAt,
         containerNo: schema.shipments.containerNo,
         mbl: schema.shipments.mbl,
@@ -204,8 +207,11 @@ export class BookingRepository {
         mbl: schema.shipments.mbl,
         scacCode: schema.shipments.scacCode,
         vesselName: schema.shipments.vesselName,
+        mode: schema.shipments.mode,
         polCode: pol.unlocode,
         podCode: pod.unlocode,
+        polIata: pol.iata,
+        podIata: pod.iata,
       })
       .from(schema.shipmentPos)
       .innerJoin(schema.shipments, eq(schema.shipmentPos.shipmentId, schema.shipments.id))

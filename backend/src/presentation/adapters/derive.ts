@@ -12,6 +12,18 @@ export function deriveRoute(
   return pol || pod || null
 }
 
+/** The port code a leg should DISPLAY: AIR legs show the IATA airport code (CNCAN → CAN, the code
+ *  air waybills and flight schedules use); sea legs keep the UN/LOCODE. Falls back to the
+ *  UN/LOCODE when the airport's IATA code is unknown. */
+export function portLabel(
+  mode: string | null | undefined,
+  unlocode: string | null | undefined,
+  iata: string | null | undefined,
+): string | null {
+  if (mode === 'AIR' && iata) return iata
+  return unlocode ?? null
+}
+
 /** Origin country (ISO) read off the POL port; null when unknown (Phase 1 — display only). */
 export function deriveOriginCountry(
   polPort: { country?: string | null } | null | undefined,

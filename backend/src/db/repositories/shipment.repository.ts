@@ -56,8 +56,11 @@ export class ShipmentRepository {
         forwarderId: schema.forwarders.id,
         forwarderName: schema.forwarders.name,
         forwarderRaw: schema.shipments.forwarderRaw,
+        mode: schema.shipments.mode,
         polCode: pol.unlocode,
         podCode: pod.unlocode,
+        polIata: pol.iata,
+        podIata: pod.iata,
         polRaw: schema.shipments.polRaw,
         podRaw: schema.shipments.podRaw,
         poCount: sql<number>`(
@@ -144,6 +147,8 @@ export class ShipmentRepository {
         forwarderRaw: schema.shipments.forwarderRaw,
         polCode: pol.unlocode,
         podCode: pod.unlocode,
+        polIata: pol.iata,
+        podIata: pod.iata,
         polRaw: schema.shipments.polRaw,
         podRaw: schema.shipments.podRaw,
       })
@@ -190,6 +195,8 @@ export class ShipmentRepository {
         forwarderRaw: schema.shipments.forwarderRaw,
         polCode: pol.unlocode,
         podCode: pod.unlocode,
+        polIata: pol.iata,
+        podIata: pod.iata,
         polRaw: schema.shipments.polRaw,
         podRaw: schema.shipments.podRaw,
       })

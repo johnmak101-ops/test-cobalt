@@ -239,19 +239,31 @@ export class MastersRepository {
     return (await this.portByCodeOrName(code))?.id ?? null
   }
   /** Resolve a POL/POD string to a port (id + country, for denormalizing origin_country at commit).
-   *  Exact UN/LOCODE first; then a BIDIRECTIONAL name match (the port name appears in the free-text,
-   *  e.g. "QINGDAO, CHINA" → Qingdao, OR the input appears in the name) guarded by name length ≥ 4. */
+   *  Exact UN/LOCODE first; then exact IATA for bare 3-char airport codes (PVG, CAN); then a
+   *  BIDIRECTIONAL name match (the port name appears in the free-text, e.g. "QINGDAO, CHINA" →
+   *  Qingdao, OR the input appears in the name) guarded by name length ≥ 4 — shortest name wins so
+   *  "SHANGHAI" resolves to the city/port entry, not "Shanghai Railway Station". */
   async portByCodeOrName(code: string): Promise<{ id: string; country: string | null } | null> {
     const c = code.trim()
     if (!c) return null
     const [byCode] = await this.db.select().from(schema.ports).where(eq(schema.ports.unlocode, c.toUpperCase()))
     if (byCode) return { id: byCode.id, country: byCode.country }
+    if (/^[A-Za-z]{3}$/.test(c)) {
+      const [byIata] = await this.db
+        .select()
+        .from(schema.ports)
+        .where(eq(schema.ports.iata, c.toUpperCase()))
+        .orderBy(sql`length(${schema.ports.name})`)
+        .limit(1)
+      if (byIata) return { id: byIata.id, country: byIata.country }
+    }
     const [byName] = await this.db
       .select()
       .from(schema.ports)
       .where(
         sql`length(${schema.ports.name}) >= 4 AND (${schema.ports.name} ILIKE ${`%${c}%`} OR ${c} ILIKE '%' || ${schema.ports.name} || '%')`,
       )
+      .orderBy(sql`length(${schema.ports.name})`, schema.ports.name)
       .limit(1)
     if (byName) return { id: byName.id, country: byName.country }
     // spelling-variant fallback: a small, deterministic alias map (no fuzzy matching — false hits on ports

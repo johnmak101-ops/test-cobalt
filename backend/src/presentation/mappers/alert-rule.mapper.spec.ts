@@ -9,6 +9,7 @@ const rule = (over: Partial<AlertRuleRow> = {}): AlertRuleRow => ({
   triggerType: 'days_after',
   triggerReference: 'booking_request',
   thresholdHours: 48,
+  countryThresholds: null,
   severity: 'WARNING',
   enabled: true,
   locked: false,

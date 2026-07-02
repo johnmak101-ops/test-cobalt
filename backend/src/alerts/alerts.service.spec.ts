@@ -48,7 +48,7 @@ describe('AlertsService read / unread', () => {
     const svc = new AlertsService(
       fakeRepo({
         async setReadAt() {
-          return null
+          return null as never
         },
       }),
     )
