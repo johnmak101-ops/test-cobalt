@@ -13,14 +13,19 @@ import { Badge } from '../components/ui/Badge'
 import { Pagination, usePagination, PageSizeSelect } from '../components/ui/Pagination'
 import { formatRelativeTime } from '../lib/utils'
 import { toast } from '../components/ui/Toast'
+import { humanizeReason } from '../lib/review-reasons'
 import { useState } from 'react'
 
-/** Small chip explaining WHY a provisional shipment is held for review. */
+/** Small chip explaining WHY a provisional shipment is held for review — plain ops language,
+ *  raw audit string kept as the hover tooltip. */
 function ReasonChip({ reason }: { reason: string }) {
   return (
-    <span className="inline-flex items-center gap-1 rounded-md bg-status-warning/15 px-1.5 py-0.5 text-[10px] font-medium text-status-warning">
+    <span
+      title={reason}
+      className="inline-flex items-center gap-1 rounded-md bg-status-warning/15 px-1.5 py-0.5 text-[10px] font-medium text-status-warning"
+    >
       <AlertTriangle size={9} className="shrink-0" />
-      {reason}
+      {humanizeReason(reason)}
     </span>
   )
 }

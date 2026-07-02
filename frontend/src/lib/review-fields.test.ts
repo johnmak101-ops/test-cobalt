@@ -4,6 +4,8 @@ import {
   buildCorrections,
   conflictColumns,
   toInputValue,
+  parseStyleEntries,
+  serializeStyleEntries,
 } from './review-fields'
 
 describe('EDITABLE_FIELDS', () => {
@@ -75,5 +77,36 @@ describe('toInputValue — shipment value → input value', () => {
   })
   it('stringifies numbers', () => {
     expect(toInputValue(7.5, 'number')).toBe('7.5')
+  })
+})
+
+describe('style entries table — parse/serialize round trip', () => {
+  it('splits PO/style pairs and bare styles into rows', () => {
+    expect(parseStyleEntries('4483262/LKN18360L15, LKN1794, 655000/564399')).toEqual([
+      { po: '4483262', style: 'LKN18360L15' },
+      { po: '', style: 'LKN1794' },
+      { po: '655000', style: '564399' },
+    ])
+  })
+
+  it('serializes rows back, dropping empties', () => {
+    expect(
+      serializeStyleEntries([
+        { po: '4483262', style: 'LKN18360L15' },
+        { po: '', style: 'LKN1794' },
+        { po: '', style: '' },
+        { po: '655025', style: '' },
+      ]),
+    ).toBe('4483262/LKN18360L15, LKN1794, 655025')
+  })
+
+  it('round-trips a real list unchanged', () => {
+    const s = '56571/SS26SW022, 56572/SS26SW023'
+    expect(serializeStyleEntries(parseStyleEntries(s))).toBe(s)
+  })
+
+  it('handles null/empty', () => {
+    expect(parseStyleEntries(null)).toEqual([])
+    expect(serializeStyleEntries([])).toBe('')
   })
 })

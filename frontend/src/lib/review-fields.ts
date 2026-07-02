@@ -73,6 +73,37 @@ export function buildCorrections(
   return out
 }
 
+/** One row of the Items/Styles table editor. Entries are 'PO/STYLE' pairs or bare style codes. */
+export interface StyleEntry {
+  po: string
+  style: string
+}
+
+/** '4483262/LKN18360L15, LKN1794' → [{po:'4483262', style:'LKN18360L15'}, {po:'', style:'LKN1794'}] */
+export function parseStyleEntries(value: string | null | undefined): StyleEntry[] {
+  if (!value) return []
+  return String(value)
+    .split(/[,;，]+/)
+    .map((e) => e.trim())
+    .filter(Boolean)
+    .map((entry) => {
+      const slash = entry.indexOf('/')
+      if (slash > 0 && slash < entry.length - 1) {
+        return { po: entry.slice(0, slash).trim(), style: entry.slice(slash + 1).trim() }
+      }
+      return { po: '', style: entry }
+    })
+}
+
+/** Inverse of parseStyleEntries — empty rows dropped, 'po/style' or bare style, comma-joined. */
+export function serializeStyleEntries(rows: StyleEntry[]): string {
+  return rows
+    .map((r) => ({ po: r.po.trim(), style: r.style.trim() }))
+    .filter((r) => r.po || r.style)
+    .map((r) => (r.po ? `${r.po}/${r.style || ''}`.replace(/\/$/, '') : r.style))
+    .join(', ')
+}
+
 const COLUMN_SET = new Set(EDITABLE_FIELDS.map((f) => f.column))
 const snakeToCamel = (s: string) => s.replace(/_([a-z0-9])/g, (_, c: string) => c.toUpperCase())
 

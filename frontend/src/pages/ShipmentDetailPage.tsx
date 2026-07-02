@@ -8,6 +8,7 @@ import { MilestoneTimeline } from '../components/shipments/MilestoneTimeline'
 import { ShipmentHistoryTimeline } from '../components/shipments/ShipmentHistoryTimeline'
 import { AlertCard } from '../components/alerts/AlertCard'
 import { formatDate, formatDateTime, formatDateMaybeTime, cn } from '../lib/utils'
+import { humanizeReason } from '../lib/review-reasons'
 import { ArrowLeft, Mail, Clock, ClipboardList, Package, Ship, Calendar, AlertTriangle, AlertCircle, Info } from 'lucide-react'
 
 export default function ShipmentDetailPage() {
@@ -100,7 +101,9 @@ export default function ShipmentDetailPage() {
           <div className="min-w-0 flex-1">
             <p className="text-sm font-medium text-status-warning">Awaiting review — data may change</p>
             {(shipment.reviewReasons?.length ?? 0) > 0 && (
-              <p className="mt-0.5 text-xs text-text-secondary">{shipment.reviewReasons!.join(' · ')}</p>
+              <p className="mt-0.5 text-xs text-text-secondary" title={shipment.reviewReasons!.join(' · ')}>
+                {shipment.reviewReasons!.map(humanizeReason).join(' · ')}
+              </p>
             )}
           </div>
           <Link

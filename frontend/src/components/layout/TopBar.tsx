@@ -7,6 +7,7 @@ import { useEmails } from '../../hooks/use-emails'
 import { useAuth } from '../../hooks/use-auth'
 import { useUIStore } from '../../store'
 import { cn, formatRelativeTime } from '../../lib/utils'
+import { humanizeReason } from '../../lib/review-reasons'
 
 const roleLabelMap: Record<string, string> = {
   COORDINATOR: 'Coordinator',
@@ -238,7 +239,7 @@ export function TopBar() {
                             <p className="mt-0.5 text-[10px] text-text-muted">
                               {item.bookingNo ?? item.soNo ?? '—'} · {formatRelativeTime(item.createdAt)}
                               {item.reviewReasons.length > 0 && (
-                                <> · {item.reviewReasons[0]}</>
+                                <> · {humanizeReason(item.reviewReasons[0]!)}</>
                               )}
                             </p>
                           </div>
