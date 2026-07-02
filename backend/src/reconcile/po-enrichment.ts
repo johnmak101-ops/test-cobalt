@@ -16,6 +16,8 @@ export interface PoEvidenceInput {
   matchKeys: Record<string, unknown> | null
   fields: Record<string, unknown> | null
   receivedAt: Date | null
+  /** queue_message id — broadcast detection groups records by their source email */
+  messageId?: string | null
 }
 
 const validUnit = (v: unknown): PoEnrichment['quantityUnit'] => {
@@ -44,6 +46,34 @@ export function resolvePoEnrichment(rows: PoEvidenceInput[]): Map<string, PoEnri
     ;(byPo.get(key) ?? byPo.set(key, []).get(key)!).push(r)
   }
 
+  // BROADCAST GUARD: an email whose per-PO records all state ONE identical qty across ≥3 distinct
+  // POs is broadcasting the SHIPMENT total (a 收仓数据 email states one 168-carton total for 20
+  // POs) — never a per-PO fact. Those records contribute NO qty (brand/style still count).
+  // The uniformity condition is what separates it from a REAL per-PO column: a 进仓单 table where
+  // qty 2 repeats on many POs alongside 18s and 1s is mixed-value → all its quantities are real.
+  const broadcastQty = new Set<string>() // `${messageId}|${qty}`
+  {
+    const perMsg = new Map<string, Map<number, Set<string>>>() // msg → qty → distinct po keys
+    for (const r of rows) {
+      const key = poKeyOf(r)
+      const msg = r.messageId
+      if (!key || !msg) continue
+      const q = num(r.fields?.qty)
+      if (q == null) continue
+      const qmap = perMsg.get(msg) ?? perMsg.set(msg, new Map()).get(msg)!
+      const pos = qmap.get(q) ?? qmap.set(q, new Set()).get(q)!
+      pos.add(key)
+    }
+    for (const [msg, qmap] of perMsg) {
+      if (qmap.size !== 1) continue // mixed per-PO values = a real per-PO column, never a broadcast
+      for (const [q, pos] of qmap) if (pos.size >= 3) broadcastQty.add(`${msg}|${q}`)
+    }
+  }
+  const qtyIsBroadcast = (r: PoEvidenceInput): boolean => {
+    const q = num(r.fields?.qty)
+    return q != null && !!r.messageId && broadcastQty.has(`${r.messageId}|${q}`)
+  }
+
   const out = new Map<string, PoEnrichment>()
   for (const [key, group] of byPo) {
     // latest received first; null receivedAt sorts last; id breaks ties deterministically.
@@ -59,7 +89,7 @@ export function resolvePoEnrichment(rows: PoEvidenceInput[]): Map<string, PoEnri
       const f = r.fields ?? {}
       if (enr.brand == null) enr.brand = str(f.brand)
       if (enr.itemStyleNo == null) enr.itemStyleNo = str(f.item_style_no)
-      if (enr.totalQuantity == null) {
+      if (enr.totalQuantity == null && !qtyIsBroadcast(r)) {
         const q = num(f.qty)
         if (q != null) {
           enr.totalQuantity = q

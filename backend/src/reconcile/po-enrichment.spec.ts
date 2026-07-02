@@ -91,3 +91,57 @@ describe('resolvePoEnrichment', () => {
     expect(resolvePoEnrichment([]).size).toBe(0)
   })
 })
+
+describe('resolvePoEnrichment — shipment-total broadcast guard (the 168×20 bug)', () => {
+  const bcast = (id: string, po: string, qty: string, msg = 'msg-1') =>
+    row({ id, poNo: po, messageId: msg, receivedAt: at('2026-06-30T05:00:00Z'), fields: { qty, qty_unit: 'cartons', brand: 'Barbour' } })
+
+  it('one identical qty on ≥3 POs within ONE email is the SHIPMENT total — no PO gets it', () => {
+    const map = resolvePoEnrichment([bcast('a', 'PO-A', '168'), bcast('b', 'PO-B', '168'), bcast('c', 'PO-C', '168')])
+    for (const po of ['PO-A', 'PO-B', 'PO-C']) {
+      expect(map.get(normKey(po))?.totalQuantity).toBeNull()
+      expect(map.get(normKey(po))?.quantityUnit).toBeNull()
+      expect(map.get(normKey(po))?.brand).toBe('Barbour') // brand/style enrichment unaffected
+    }
+  })
+
+  it('distinct per-PO quantities in one email are REAL and kept (the 进仓单 column case)', () => {
+    const map = resolvePoEnrichment([bcast('a', 'PO-A', '2'), bcast('b', 'PO-B', '18'), bcast('c', 'PO-C', '1')])
+    expect(map.get(normKey('PO-A'))?.totalQuantity).toBe(2)
+    expect(map.get(normKey('PO-B'))?.totalQuantity).toBe(18)
+    expect(map.get(normKey('PO-C'))?.totalQuantity).toBe(1)
+  })
+
+  it('two POs sharing a qty stays below the broadcast threshold', () => {
+    const map = resolvePoEnrichment([bcast('a', 'PO-A', '24'), bcast('b', 'PO-B', '24')])
+    expect(map.get(normKey('PO-A'))?.totalQuantity).toBe(24)
+    expect(map.get(normKey('PO-B'))?.totalQuantity).toBe(24)
+  })
+
+  it('a MIXED-value email keeps a qty even when it repeats on ≥3 POs (the 64833 进仓单 false positive)', () => {
+    // 30-PO warehouse table: many POs at 2 cartons, some at 18, one at 1 — repetition of "2" is real.
+    const map = resolvePoEnrichment([
+      bcast('a', 'PO-A', '2'),
+      bcast('b', 'PO-B', '2'),
+      bcast('c', 'PO-C', '2'),
+      bcast('d', 'PO-D', '18'),
+      bcast('e', 'PO-E', '1'),
+    ])
+    expect(map.get(normKey('PO-A'))?.totalQuantity).toBe(2)
+    expect(map.get(normKey('PO-B'))?.totalQuantity).toBe(2)
+    expect(map.get(normKey('PO-C'))?.totalQuantity).toBe(2)
+    expect(map.get(normKey('PO-D'))?.totalQuantity).toBe(18)
+    expect(map.get(normKey('PO-E'))?.totalQuantity).toBe(1)
+  })
+
+  it('a broadcast in one email never blocks a REAL qty from another email for the same PO', () => {
+    const map = resolvePoEnrichment([
+      bcast('a', 'PO-A', '168'),
+      bcast('b', 'PO-B', '168'),
+      bcast('c', 'PO-C', '168'),
+      row({ id: 'real', poNo: 'PO-A', messageId: 'msg-2', receivedAt: at('2026-06-29T00:00:00Z'), fields: { qty: '24', qty_unit: 'cartons' } }),
+    ])
+    expect(map.get(normKey('PO-A'))?.totalQuantity).toBe(24) // falls through to the per-PO statement
+    expect(map.get(normKey('PO-B'))?.totalQuantity).toBeNull()
+  })
+})

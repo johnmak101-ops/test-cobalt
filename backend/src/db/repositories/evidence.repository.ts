@@ -5,6 +5,7 @@ import { DRIZZLE, type DrizzleDB } from '../drizzle.provider'
 
 export interface EvidenceRow {
   id: string
+  messageId: string | null
   fields: Record<string, unknown> | null
   matchKeys: Record<string, unknown> | null
   emailType: string | null
@@ -39,6 +40,7 @@ export class EvidenceRepository {
     return this.db
       .select({
         id: schema.parsedRecord.id,
+        messageId: schema.parsedRecord.messageId,
         fields: schema.parsedRecord.fields,
         matchKeys: schema.parsedRecord.matchKeys,
         emailType: schema.parsedRecord.emailType,
