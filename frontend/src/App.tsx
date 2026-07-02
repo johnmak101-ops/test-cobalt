@@ -110,7 +110,9 @@ function AppRoutes() {
         <Route path="/review-queue" element={<ReviewQueuePage />} />
         <Route path="/review-queue/:id" element={<ReviewShipmentPage />} />
         <Route path="/alerts" element={<AlertsPage />} />
-        <Route path="/alerts/rules" element={<SuperadminRoute><AlertRulesPage /></SuperadminRoute>} />
+        {/* Alert rules are viewable by everyone (GET /alert-rules is open); saving stays superadmin-only,
+            enforced by the backend PUT guard AND the read-only UI in AlertRulesPage. */}
+        <Route path="/alerts/rules" element={<AlertRulesPage />} />
         <Route path="/settings" element={<SuperadminRoute><SettingsPage /></SuperadminRoute>} />
         <Route path="/settings/email" element={<SuperadminRoute><SettingsPage /></SuperadminRoute>} />
         <Route path="/settings/alerts" element={<SuperadminRoute><SettingsPage /></SuperadminRoute>} />

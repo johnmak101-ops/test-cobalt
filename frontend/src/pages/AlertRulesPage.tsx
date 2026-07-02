@@ -3,8 +3,9 @@ import { api } from '../lib/api'
 import { Card } from '../components/ui/Card'
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useAuth } from '../hooks/use-auth'
 import { cn } from '../lib/utils'
-import { ArrowLeft } from 'lucide-react'
+import { ArrowLeft, Lock } from 'lucide-react'
 
 interface AlertRule {
   id: string
@@ -46,6 +47,9 @@ const SEVERITY_COLORS: Record<string, string> = {
 
 export default function AlertRulesPage() {
   const navigate = useNavigate()
+  const { user } = useAuth()
+  // Everyone can VIEW the rules (GET is open); only a superadmin can edit/save them (backend PUT guard).
+  const canEdit = user?.role === 'SUPERADMIN'
   const { data, isLoading } = useQuery<{ rules: AlertRule[] }>({
     queryKey: ['alertRules'],
     queryFn: () => api.get('/alert-rules'),
@@ -88,6 +92,7 @@ export default function AlertRulesPage() {
   })
 
   const updateRule = (id: string, field: string, value: number | string | boolean) => {
+    if (!canEdit) return
     setLocalRules((prev) =>
       prev.map((r) => (r.id === id ? { ...r, [field]: value } : r))
     )
@@ -95,6 +100,7 @@ export default function AlertRulesPage() {
   }
 
   const updateCountryThreshold = (ruleId: string, countryCode: string, days: number | '') => {
+    if (!canEdit) return
     setLocalRules((prev) =>
       prev.map((r) => {
         if (r.id !== ruleId) return r
@@ -124,10 +130,18 @@ export default function AlertRulesPage() {
           <div>
             <h1 className="text-xl font-semibold text-text-primary">Alert Rules</h1>
             <p className="mt-0.5 text-sm text-text-secondary">
-              Configure when alerts are triggered for each shipment state
+              {canEdit
+                ? 'Configure when alerts are triggered for each shipment state'
+                : 'How alerts are triggered for each shipment state'}
             </p>
           </div>
         </div>
+        {!canEdit && (
+          <span className="inline-flex items-center gap-1.5 rounded-lg bg-surface-700 px-3 py-1.5 text-xs font-medium text-text-muted">
+            <Lock size={13} />
+            View only · a superadmin can edit
+          </span>
+        )}
       </div>
 
       {/* Rules */}
@@ -156,11 +170,11 @@ export default function AlertRulesPage() {
                   </div>
                   <button
                     onClick={() => !rule.locked && updateRule(rule.id, 'enabled', !rule.enabled)}
-                    disabled={rule.locked}
+                    disabled={rule.locked || !canEdit}
                     className={cn(
                       'relative h-6 w-11 shrink-0 rounded-full transition-colors',
                       rule.enabled ? 'bg-cobalt-primary' : 'bg-surface-600',
-                      rule.locked && 'cursor-not-allowed opacity-50'
+                      (rule.locked || !canEdit) && 'cursor-not-allowed opacity-50'
                     )}
                   >
                     <span
@@ -188,7 +202,7 @@ export default function AlertRulesPage() {
                         !rule.locked &&
                         updateRule(rule.id, 'thresholdDays', parseInt(e.target.value) || 0)
                       }
-                      disabled={rule.locked}
+                      disabled={rule.locked || !canEdit}
                       className="mt-1 h-9 w-20 rounded-lg border border-border bg-surface-700 px-3 text-sm text-text-primary disabled:cursor-not-allowed disabled:opacity-50"
                     />
                   </div>
@@ -199,7 +213,7 @@ export default function AlertRulesPage() {
                       onChange={(e) =>
                         !rule.locked && updateRule(rule.id, 'severity', e.target.value)
                       }
-                      disabled={rule.locked}
+                      disabled={rule.locked || !canEdit}
                       className="mt-1 h-9 rounded-lg border border-border bg-surface-700 px-3 text-sm text-text-primary disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       <option value="CRITICAL">Critical</option>
@@ -245,7 +259,8 @@ export default function AlertRulesPage() {
                                 }
                               }}
                               placeholder={String(rule.thresholdDays)}
-                              className="h-7 w-14 rounded border border-border bg-surface-700 px-2 text-xs text-text-primary placeholder:text-text-muted/40"
+                              disabled={!canEdit}
+                              className="h-7 w-14 rounded border border-border bg-surface-700 px-2 text-xs text-text-primary placeholder:text-text-muted/40 disabled:cursor-not-allowed disabled:opacity-50"
                             />
                             <span className="text-[11px] text-text-muted">days</span>
                           </div>
@@ -258,7 +273,8 @@ export default function AlertRulesPage() {
             ))}
           </div>
 
-          {/* Actions */}
+          {/* Actions — superadmin only (backend rejects a non-superadmin PUT anyway) */}
+          {canEdit && (
           <div className="flex items-center justify-end gap-3 pt-2">
             <button
               onClick={() => {
@@ -289,6 +305,7 @@ export default function AlertRulesPage() {
               {saveRules.isPending ? 'Saving...' : 'Save Changes'}
             </button>
           </div>
+          )}
         </>
       )}
     </div>
