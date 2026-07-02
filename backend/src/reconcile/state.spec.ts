@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { deriveState, normMode, MILESTONE_OF } from './state'
+import { deriveState, normMode, MILESTONE_OF, classifyKind } from './state'
 
 describe('deriveState — 6-state staircase', () => {
   it('defaults to BOOKED', () => {
@@ -39,6 +39,31 @@ describe('normMode', () => {
     expect(normMode('air cargo')).toBe('AIR')
     expect(normMode('rail')).toBeNull()
     expect(normMode(null)).toBeNull()
+  })
+})
+
+describe('classifyKind — SHIPMENT vs DOCUMENT', () => {
+  const invoice = new Set(['Invoice/Billing'])
+  it('bare orphan (no id, no lifecycle doc) → DOCUMENT', () => {
+    expect(classifyKind(new Set(['Other']), {})).toBe('DOCUMENT')
+  })
+  it('CVP invoice-only with only an order-reference so_no → DOCUMENT', () => {
+    // the screenshot case: all emails Invoice/Billing, so_no set, no booking/BL/container
+    expect(classifyKind(invoice, { so_no: 'CMS364079' })).toBe('DOCUMENT')
+  })
+  it('invoice-only BUT carrying a real booking#/BL/container → SHIPMENT (a booked move the invoice reports)', () => {
+    expect(classifyKind(invoice, { so_no: 'CMS364079', booking_no: 'BX845666' })).toBe('SHIPMENT')
+    expect(classifyKind(invoice, { hbl_awb_fcr_no: 'Z13764183' })).toBe('SHIPMENT')
+    expect(classifyKind(invoice, { container_no: 'WHSU0570946' })).toBe('SHIPMENT')
+  })
+  it('an SO document (lifecycle type) with an so_no stays SHIPMENT', () => {
+    expect(classifyKind(new Set(['SO']), { so_no: 'CMS364079' })).toBe('SHIPMENT')
+  })
+  it("a non-invoice 'Other' leg with an so_no stays SHIPMENT (rule is CVP-invoice-only)", () => {
+    expect(classifyKind(new Set(['Other']), { so_no: 'CMS364079' })).toBe('SHIPMENT')
+  })
+  it('a Booking Request with no booking# yet stays SHIPMENT (gains identity later)', () => {
+    expect(classifyKind(new Set(['Booking Request']), {})).toBe('SHIPMENT')
   })
 })
 

@@ -33,17 +33,27 @@ export function deriveState(
 
 /**
  * Split a committed leg into SHIPMENT (a real shipment with a shipping identity) vs DOCUMENT (an orphan
- * invoice / customs / misc email with no identity — parked in "Unlinked Documents" until a human links it).
- * DOCUMENT only when BOTH: (a) it carries none of the rotating identity numbers, AND (b) it was built from
- * none of the lifecycle email types. So a Booking Request with no booking# yet stays SHIPMENT (it's a real
- * booking gaining its identity later); an invoice/customs/other email with no id becomes a DOCUMENT.
+ * invoice / customs / misc email — parked in "Unlinked Documents" until a human links it to its shipment).
+ * A leg is a DOCUMENT when EITHER:
+ *   (a) it carries none of the rotating identity numbers AND was built from no lifecycle email type — a bare
+ *       orphan (invoice/customs/other with no id). A Booking Request with no booking# yet stays SHIPMENT.
+ *   (b) it was built ENTIRELY from CVP Invoice/Billing (vendor-invoice) notifications AND carries no
+ *       booking#/BL/MBL/container — only an order-reference so_no. An SO on a vendor invoice is an ORDER
+ *       reference, not proof of a booked move, so such a leg is an invoice record, not a shipment. (A genuine
+ *       SO *document* is a lifecycle type → hasLifecycle, so it is unaffected.)
  */
 const IDENTITY_FIELDS = ['booking_no', 'so_no', 'hbl_awb_fcr_no', 'mbl', 'container_no'] as const
+/** Identities that PROVE a booked move — so_no EXCLUDED (an invoice's SO is an order ref, see (b)). */
+const SHIPMENT_IDENTITY = ['booking_no', 'hbl_awb_fcr_no', 'mbl', 'container_no'] as const
 const LIFECYCLE_TYPES = new Set(['Booking Request', 'SO', 'Draft B/L', 'Final B/L', 'Telex Release'])
 export function classifyKind(emailTypes: Set<string>, fields: Record<string, unknown>): 'SHIPMENT' | 'DOCUMENT' {
   const hasIdentity = IDENTITY_FIELDS.some((k) => has(fields[k]))
   const hasLifecycle = [...emailTypes].some((t) => LIFECYCLE_TYPES.has(t))
-  return !hasIdentity && !hasLifecycle ? 'DOCUMENT' : 'SHIPMENT'
+  if (!hasIdentity && !hasLifecycle) return 'DOCUMENT' // (a) bare orphan
+  const invoiceOnly = emailTypes.size > 0 && [...emailTypes].every((t) => t === 'Invoice/Billing')
+  const hasShipmentIdentity = SHIPMENT_IDENTITY.some((k) => has(fields[k]))
+  if (invoiceOnly && !hasShipmentIdentity) return 'DOCUMENT' // (b) CVP invoice-only, SO-ref only
+  return 'SHIPMENT'
 }
 
 /** Which milestone an email type records (null = no milestone). */
