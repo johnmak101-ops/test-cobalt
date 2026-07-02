@@ -10,6 +10,30 @@ const row = (over: Partial<EmailEvidenceRow>): EmailEvidenceRow => ({
   ...over,
 })
 
+describe('emailFieldTimeline — multi-booking emails only speak through THIS shipment\'s records', () => {
+  it('ignores sibling bookings\' records (the BX808346/BX829735 flip-flop)', () => {
+    // One email fans into 8 per-booking records; only the BX829735 one belongs to this shipment.
+    const t = emailFieldTimeline(
+      [
+        row({ messageId: 'm1', receivedAt: new Date('2026-06-30T04:23:00Z'), fields: { booking_no: 'BX808346', cargo_ready_date: '2026-07-08' } }),
+        row({ messageId: 'm1', receivedAt: new Date('2026-06-30T04:23:00Z'), fields: { booking_no: 'BX829735', so_no: 'S3Y0380824', cargo_ready_date: '2026-07-08' } }),
+        row({ messageId: 'm2', receivedAt: new Date('2026-06-30T05:51:00Z'), fields: { booking_no: 'BX829735' } }),
+      ],
+      { bookingNo: 'BX829735' },
+    )
+    const bookings = t.filter((e) => e.field === 'bookingNo')
+    expect(bookings).toHaveLength(1) // introduced once — never flips to the sibling BX808346
+    expect(bookings[0]).toMatchObject({ newValue: 'BX829735' })
+    // the shared delivery-date revision still lands, via the relevant record
+    expect(t.find((e) => e.field === 'cargoReadyDate')).toMatchObject({ newValue: '2026-07-08' })
+  })
+
+  it('without shipment ids, behaves as before (all records speak)', () => {
+    const t = emailFieldTimeline([row({ fields: { booking_no: 'BX1' } })])
+    expect(t.find((e) => e.field === 'bookingNo')).toMatchObject({ newValue: 'BX1' })
+  })
+})
+
 describe('emailFieldTimeline — replay per-email parsed evidence into field changes', () => {
   it('emits one entry per field an email INTRODUCES, and one per later CHANGE', () => {
     const t = emailFieldTimeline([

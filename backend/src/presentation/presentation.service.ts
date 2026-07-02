@@ -201,9 +201,10 @@ export class PresentationService {
    * entry. Synthesized entries are deduped against audit rows (live-mode amends record the same change).
    */
   async shipmentHistory(id: string) {
-    const [rows, related] = await Promise.all([
+    const [rows, related, leg] = await Promise.all([
       this.auditRepo.listForEntity('shipment', id),
       this.emailRepo.emailsForShipment(id),
+      this.shipmentRepo.findById(id),
     ])
     const evidence = related.length
       ? await this.evidenceRepo.forMessages(related.map((r) => r.id))
@@ -217,6 +218,16 @@ export class PresentationService {
           receivedAt: e.receivedAt,
           fields: (e.fields as Record<string, unknown>) ?? null,
         })),
+        // a multi-booking email's sibling records must not speak for THIS shipment
+        leg
+          ? {
+              bookingNo: (leg as { bookingNo?: string | null }).bookingNo,
+              soNo: (leg as { soNo?: string | null }).soNo,
+              hblAwbFcrNo: (leg as { hblAwbFcrNo?: string | null }).hblAwbFcrNo,
+              mbl: (leg as { mbl?: string | null }).mbl,
+              containerNo: (leg as { containerNo?: string | null }).containerNo,
+            }
+          : undefined,
       ),
       rows.map((r) => ({ field: r.field, newValue: r.newValue })),
     ).map((c, i) => ({

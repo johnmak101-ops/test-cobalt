@@ -74,10 +74,42 @@ const iso = (d: Dateish): string | null => {
   return Number.isNaN(dt.getTime()) ? null : dt.toISOString()
 }
 
-export function emailFieldTimeline(rows: EmailEvidenceRow[]): EmailFieldChange[] {
-  // one "statement" per email: first non-null value per tracked field across its records
+/** The shipment's own identity — records naming a DIFFERENT value for any of these are siblings
+ *  (a multi-booking email fans into per-booking records; only ours speaks for this shipment). */
+export interface ShipmentIdentity {
+  bookingNo?: string | null
+  soNo?: string | null
+  hblAwbFcrNo?: string | null
+  mbl?: string | null
+  containerNo?: string | null
+}
+
+const ID_FIELDS: ReadonlyArray<readonly [string, keyof ShipmentIdentity]> = [
+  ['booking_no', 'bookingNo'],
+  ['so_no', 'soNo'],
+  ['hbl_awb_fcr_no', 'hblAwbFcrNo'],
+  ['mbl', 'mbl'],
+  ['container_no', 'containerNo'],
+]
+
+const norm = (v: unknown): string => String(v ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '')
+
+function conflictsWithShipment(r: EmailEvidenceRow, ids?: ShipmentIdentity): boolean {
+  if (!ids) return false
+  for (const [parserField, key] of ID_FIELDS) {
+    const rv = norm(str(r.fields?.[parserField]))
+    const sv = norm(ids[key])
+    if (rv && sv && rv !== sv) return true
+  }
+  return false
+}
+
+export function emailFieldTimeline(rows: EmailEvidenceRow[], shipmentIds?: ShipmentIdentity): EmailFieldChange[] {
+  // one "statement" per email: first non-null value per tracked field across the records that
+  // actually belong to THIS shipment (sibling bookings' records on a fan-out email are excluded)
   const emails = new Map<string, { subject: string | null; sender: string | null; receivedAt: Dateish; stated: Map<string, string> }>()
   for (const r of rows) {
+    if (conflictsWithShipment(r, shipmentIds)) continue
     const e = emails.get(r.messageId) ?? { subject: r.subject, sender: r.sender, receivedAt: r.receivedAt, stated: new Map() }
     for (const [parserField, column] of TRACKED) {
       if (e.stated.has(column)) continue
