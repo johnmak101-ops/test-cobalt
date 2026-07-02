@@ -32,7 +32,7 @@ http://localhost:5173/shipments/2ca9331c-6fd7-411d-a754-3bb524e94450
 ## 2. United Legwear ⭐ — on the water 🟧 *Sailed + Draft B/L*
 http://localhost:5173/shipments/cd5b8ca0-826a-415c-8cdd-eabd8851c1ab
 - **Shekou/Shenzhen (CNSZX) → Felixstowe, UK (GBFXT)** · SEA-LCL · **ShipAir Express** · vessel **EVER AEON** · container **EISU8344532** · HBL **HBLSEC-45301**.
-- Consignee **United Legwear & Apparel UK** · booking **SESZX/0865/26/RZ** · 3 POs.
+- Consignee **United Legwear & Apparel UK** · booking **SESZX/0865/26/RZ** · Customer PO **178742**.
 - **The flagship lifecycle view.** Milestone timeline reads **At Warehouse → Sailed → Draft B/L → Invoice** — four stages, built from a Draft-B/L email (ShipAir) and a vendor invoice, *both* referencing "ULUK". Open **Change History** to show each field traced back to the email that set it.
 
 ## 3. NEW LOBSTER — released 🟩 *Final B/L*
@@ -66,6 +66,7 @@ http://localhost:5173/shipments/f6f9699f-f1c4-4483-96f6-494abc91d43b
 "Consignees, forwarders and document numbers come through as real values; roughly half of shipments auto-post, and the rest are held for a quick human check — nothing is silently guessed."
 
 ## Notes
+- **Fact-checked against the source emails (2026-07-03):** booking, forwarder, route, key dates and party names verified correct on all four. Two PO-column mis-reads were cleaned for the demo — United Legwear now shows only the real Cust. PO `178742` (two item-numbers removed); NEW LOBSTER's PO lived on the B/L, so its Customer-PO list is empty (a Torque job-ID was removed). ALO's New York/JFK gateway confirmed from the MAWB routing.
 - These IDs are current for the freshly-rebuilt dataset (2026-07-03). Most shipments in this sample are mid-lifecycle (booked → sailed); NEW LOBSTER is the one that has reached Final B/L.
 - CVP vendor-invoice-only "shipments" now live under **Documents**, not the Shipments tracker.
 - Local links (this laptop). From another machine, swap `localhost` for its IP.
