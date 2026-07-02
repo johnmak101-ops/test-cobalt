@@ -44,12 +44,16 @@ export function formatDateTime(date: Date | string | number | null | undefined):
 
 /**
  * Date, plus the wall-clock time WHEN one was actually stated ("截仓时间 6.29 15:00" → "29 Jun 2026 15:00").
- * Cut-off style deadlines carry operationally-critical times; plain dates (midnight local) stay date-only.
+ * Cut-off style deadlines carry operationally-critical times; plain dates stay date-only.
+ * Date-only means midnight in EITHER frame: parser dates without a time ("2026-06-28") parse as
+ * UTC midnight, which is 08:00 local — that 08:00 was never stated, so it must not render.
  */
 export function formatDateMaybeTime(date: Date | string | number | null | undefined): string {
   if (!date) return 'TBD'
   const d = new Date(date)
-  if (d.getHours() === 0 && d.getMinutes() === 0) return formatDate(d)
+  const localMidnight = d.getHours() === 0 && d.getMinutes() === 0
+  const utcMidnight = d.getUTCHours() === 0 && d.getUTCMinutes() === 0
+  if (localMidnight || utcMidnight) return formatDate(d)
   return formatDateTime(d)
 }
 

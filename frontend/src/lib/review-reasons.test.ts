@@ -17,6 +17,19 @@ describe('humanizeReason — engineering audit strings → ops language', () => 
     )
   })
 
+  it("never shows db field names — John's exact case plus the long-tail fields", () => {
+    expect(humanizeReason('backend conflict on qty, item_style_no, gross_weight, measurement')).toBe(
+      'Emails disagree about: Qty, Item/Style, Gross Weight, Measurement — check the highlighted fields below',
+    )
+    const out = humanizeReason(
+      'backend conflict on customer_po, customer_code, vendor_code, forwarder_name, pol, pod, flight_no, mawb, scac_code, hts_code, in_dc_date',
+    )
+    expect(out).not.toMatch(/_/)
+    expect(out).toContain('PO#')
+    expect(out).toContain('Port of Loading')
+    expect(out).toContain('SCAC')
+  })
+
   it('explains conflict counts, PO moves and mode changes', () => {
     expect(humanizeReason('3 unresolved field conflict(s)')).toMatch(/3 field\(s\) received different values/)
     expect(humanizeReason('a PO on this email currently belongs to a different shipment — moving/splitting a PO needs review')).toMatch(

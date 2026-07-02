@@ -4,6 +4,8 @@
  * the tooltip — it's the audit trail and what my soul-improvement loops grep for.
  */
 
+/** Every field name the matcher's review gate can put in a "backend conflict on ..." reason
+ *  (= FIELD_CLASS keys in the queue repo) → the label users see on screen. */
 const FIELD_WORDS: Record<string, string> = {
   qty: 'Qty',
   qty_unit: 'UOM',
@@ -19,11 +21,24 @@ const FIELD_WORDS: Record<string, string> = {
   container_no: 'Container No.',
   vessel_name: 'Vessel',
   voyage_no: 'Voyage',
+  flight_no: 'Flight No.',
+  mawb: 'MAWB',
+  scac_code: 'SCAC',
+  brand: 'Brand',
+  hts_code: 'HTS Code',
+  customer_po: 'PO#',
+  customer_code: 'Customer',
+  vendor_code: 'Vendor',
+  forwarder_name: 'Forwarder',
+  pol: 'Port of Loading',
+  pod: 'Port of Discharge',
   etd: 'ETD',
   eta: 'ETA',
   atd: 'ATD',
   ata: 'ATA',
   cargo_ready_date: 'Cargo Ready Date',
+  cfs_cutoff: 'CFS Cut-off',
+  in_dc_date: 'In DC Date',
   warehouse_start_date: 'WH Start',
   warehouse_end_date: 'WH End',
 }
