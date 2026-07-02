@@ -23,6 +23,10 @@ export class AlertRepository {
     const inserted = await this.db.insert(schema.alertInstances).values(values).onConflictDoNothing().returning()
     return inserted.length > 0
   }
+  /** Idempotently register a rule row — built-in checks need a rule id to hang their alerts on. */
+  async ensureRule(values: typeof schema.alertRules.$inferInsert): Promise<void> {
+    await this.db.insert(schema.alertRules).values(values).onConflictDoNothing()
+  }
   async setStatus(id: string, status: string, extra: Record<string, unknown>) {
     const [row] = await this.db
       .update(schema.alertInstances)

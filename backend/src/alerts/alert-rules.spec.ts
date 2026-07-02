@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { isFiring, resolveThresholdHours, type Rule, type LegFacts } from './alert-rules'
+import { isFiring, resolveThresholdHours, crdRevisionNotReflected, type Rule, type LegFacts } from './alert-rules'
 
 const facts = (over: Partial<LegFacts> = {}): LegFacts => ({
   state: 'CONFIRMED',
@@ -116,5 +116,57 @@ describe('isFiring — country-aware A1, anchored on scheduled ETD (Phase 3)', (
 
   it('does not fire before ETD is known (anchor missing)', () => {
     expect(isFiring(a1(), facts({ etd: null, originCountry: 'CN' }), D('2026-02-10T00:00:00Z'))).toBe(false)
+  })
+})
+
+describe('crdRevisionNotReflected (A7) — requested revision vs latest booking doc', () => {
+  const D = (s: string) => new Date(s)
+
+  it('fires on the WISEN shape: revision to Jul 8 requested, newer platform doc still shows Jun 29', () => {
+    const finding = crdRevisionNotReflected(
+      [
+        { receivedAt: D('2026-06-30T04:23:00Z'), crd: '2026-07-08' }, // the multi-booking revision request
+        { receivedAt: D('2026-06-30T05:51:00Z'), crd: '2026-06-29' }, // newer Expeditors notification, unrevised
+      ],
+      D('2026-06-29T00:00:00Z'),
+    )
+    expect(finding).not.toBeNull()
+    expect(finding!.requested.toISOString().slice(0, 10)).toBe('2026-07-08')
+  })
+
+  it('stays silent once the newest document reflects the revision', () => {
+    const finding = crdRevisionNotReflected(
+      [
+        { receivedAt: D('2026-06-30T04:23:00Z'), crd: '2026-07-08' },
+        { receivedAt: D('2026-06-30T05:43:00Z'), crd: '2026-07-08' }, // platform revised (BX808346 V8)
+      ],
+      D('2026-07-08T00:00:00Z'),
+    )
+    expect(finding).toBeNull()
+  })
+
+  it('never flags a legitimate pull-forward (the later date is old and obsolete)', () => {
+    const finding = crdRevisionNotReflected(
+      [
+        { receivedAt: D('2026-06-20T00:00:00Z'), crd: '2026-06-29' }, // original schedule, 10 days old
+        { receivedAt: D('2026-06-30T00:00:00Z'), crd: '2026-06-25' }, // deliberately pulled forward
+      ],
+      D('2026-06-25T00:00:00Z'),
+    )
+    expect(finding).toBeNull()
+  })
+
+  it('needs at least two statements and a tracked value', () => {
+    expect(crdRevisionNotReflected([{ receivedAt: D('2026-06-30T00:00:00Z'), crd: '2026-07-08' }], D('2026-06-29T00:00:00Z'))).toBeNull()
+    expect(crdRevisionNotReflected([], D('2026-06-29T00:00:00Z'))).toBeNull()
+    expect(
+      crdRevisionNotReflected(
+        [
+          { receivedAt: D('2026-06-30T04:23:00Z'), crd: '2026-07-08' },
+          { receivedAt: D('2026-06-30T05:51:00Z'), crd: '2026-06-29' },
+        ],
+        null,
+      ),
+    ).toBeNull()
   })
 })

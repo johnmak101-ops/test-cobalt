@@ -87,3 +87,49 @@ export function isFiring(rule: Rule, f: LegFacts, now: Date): boolean {
   if (watchMet(rule.watchFor, f)) return false // the awaited thing arrived → no alert
   return now.getTime() > deadline(rule, ref, f.originCountry).getTime()
 }
+
+// ---- A7 (built-in): requested cargo-ready revision not reflected ----
+
+export interface CrdStatement {
+  receivedAt: Date | null
+  crd: Date | string | null
+}
+
+export interface CrdRevisionFinding {
+  requested: Date
+  current: Date
+}
+
+const dayOf = (d: Date): string => d.toISOString().slice(0, 10)
+
+/**
+ * "Please revise the delivery date of these 8 bookings to July 08th" — an email asks for a LATER
+ * cargo-ready date, but a NEWER booking document still shows the earlier one (the platform hasn't
+ * been revised). Date fields merge latest-received-wins, so the tracker honestly shows the old date —
+ * this check surfaces the gap instead of silently living with it.
+ *
+ * Fires when the latest-dated request (max CRD value) is later than BOTH the newest statement's CRD
+ * and the tracked value, AND the request is recent relative to the newest statement (windowHours) —
+ * an old obsolete later-date never flags a legitimate schedule pull-forward.
+ */
+export function crdRevisionNotReflected(
+  statements: CrdStatement[],
+  trackedCrd: Date | null,
+  windowHours = 72,
+): CrdRevisionFinding | null {
+  if (!trackedCrd) return null
+  const dated = statements
+    .map((s) => ({
+      at: s.receivedAt ? s.receivedAt.getTime() : 0,
+      crd: s.crd instanceof Date ? s.crd : s.crd ? new Date(s.crd) : null,
+    }))
+    .filter((s): s is { at: number; crd: Date } => !!s.crd && !Number.isNaN(s.crd.getTime()))
+  if (dated.length < 2) return null
+
+  const newest = dated.reduce((a, b) => (b.at > a.at ? b : a))
+  const requested = dated.reduce((a, b) => (dayOf(b.crd) > dayOf(a.crd) ? b : a))
+  if (dayOf(requested.crd) <= dayOf(newest.crd)) return null // newest doc already reflects (or exceeds) it
+  if (dayOf(requested.crd) <= dayOf(trackedCrd)) return null
+  if (requested.at < newest.at - windowHours * 3_600_000) return null // stale later-date = obsolete, not a request
+  return { requested: requested.crd, current: trackedCrd }
+}
