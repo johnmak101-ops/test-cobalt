@@ -239,15 +239,23 @@ export class MastersRepository {
     return (await this.portByCodeOrName(code))?.id ?? null
   }
   /** Resolve a POL/POD string to a port (id + country, for denormalizing origin_country at commit).
-   *  Exact UN/LOCODE first; then exact IATA for bare 3-char airport codes (PVG, CAN); then a
-   *  BIDIRECTIONAL name match (the port name appears in the free-text, e.g. "QINGDAO, CHINA" →
-   *  Qingdao, OR the input appears in the name) guarded by name length ≥ 4 — shortest name wins so
-   *  "SHANGHAI" resolves to the city/port entry, not "Shanghai Railway Station". */
+   *  Order: exact UN/LOCODE → exact IATA (bare 3-char PVG/CAN) → CURATED aliases (spelling / IATA /
+   *  name-fragment, high-confidence, exact-keyed) → FORWARD fuzzy name match (last resort). Curated
+   *  aliases run BEFORE the fuzzy match so a spelling variant ('Chittagong', stored as 'Chattogram')
+   *  can't fall through to a loose substring hit. */
   async portByCodeOrName(code: string): Promise<{ id: string; country: string | null } | null> {
     const c = code.trim()
     if (!c) return null
     const [byCode] = await this.db.select().from(schema.ports).where(eq(schema.ports.unlocode, c.toUpperCase()))
     if (byCode) return { id: byCode.id, country: byCode.country }
+    // Common shipping abbreviations whose literal IATA collides with an OBSCURE port — pin them before
+    // the IATA lookup ('HCM' = Ho Chi Minh/VNSGN, a top-5 Asian port; its literal IATA 'HCM' belongs to
+    // a tiny Somali entry). Keyed exact, deterministic.
+    const ABBREV_OVERRIDE: Record<string, string> = { HCM: 'VNSGN' }
+    if (ABBREV_OVERRIDE[c.toUpperCase()]) {
+      const [a] = await this.db.select().from(schema.ports).where(eq(schema.ports.unlocode, ABBREV_OVERRIDE[c.toUpperCase()]!))
+      if (a) return { id: a.id, country: a.country }
+    }
     if (/^[A-Za-z]{3}$/.test(c)) {
       const [byIata] = await this.db
         .select()
@@ -257,54 +265,69 @@ export class MastersRepository {
         .limit(1)
       if (byIata) return { id: byIata.id, country: byIata.country }
     }
-    const [byName] = await this.db
-      .select()
-      .from(schema.ports)
-      .where(
-        sql`length(${schema.ports.name}) >= 4 AND (${schema.ports.name} ILIKE ${`%${c}%`} OR ${c} ILIKE '%' || ${schema.ports.name} || '%')`,
-      )
-      .orderBy(sql`length(${schema.ports.name})`, schema.ports.name)
-      .limit(1)
-    if (byName) return { id: byName.id, country: byName.country }
-    // spelling-variant fallback: a small, deterministic alias map (no fuzzy matching — false hits on ports
-    // are worse than a miss). Uppercased + punctuation-collapsed input keys onto the canonical UN/LOCODE,
-    // then re-run the exact-unlocode lookup ('GOTEBORG'/'GOTHENBURG' → SEGOT; 'KHOR AL FAKKAN' → AEKLF).
+
+    // CURATED ALIASES (exact-keyed, high-confidence) — checked BEFORE the fuzzy match so a known
+    // spelling variant wins. aliasKey = uppercased, punctuation-collapsed input.
+    const aliasKey = c.toUpperCase().replace(/[^A-Z0-9 ]/g, '').replace(/\s+/g, ' ').trim()
+    // spelling variants → canonical UN/LOCODE ('GOTEBORG'/'GOTHENBURG' → SEGOT).
     const PORT_ALIASES: Record<string, string> = {
       GOTEBORG: 'SEGOT',
       GOTHENBURG: 'SEGOT',
       KHORFAKKAN: 'AEKLF',
     }
-    const aliasKey = c.toUpperCase().replace(/[^A-Z0-9 ]/g, '').replace(/\s+/g, ' ').trim()
-    const aliasCode = PORT_ALIASES[aliasKey]
-    if (aliasCode) {
-      const [byAlias] = await this.db.select().from(schema.ports).where(eq(schema.ports.unlocode, aliasCode))
-      if (byAlias) return { id: byAlias.id, country: byAlias.country }
+    if (PORT_ALIASES[aliasKey]) {
+      const [a] = await this.db.select().from(schema.ports).where(eq(schema.ports.unlocode, PORT_ALIASES[aliasKey]!))
+      if (a) return { id: a.id, country: a.country }
     }
-    // curated IATA (airport) code → UN/LOCODE aliases, so a bare air code like 'CKG' resolves to the seeded
-    // 'CNCKG'/Chongqing entry. Deterministic, no fuzzy — re-runs the exact-unlocode lookup on the mapped code.
-    const IATA_TO_UNLOCODE: Record<string, string> = {
-      CKG: 'CNCKG',
-      PNH: 'KHPNH',
+    // bare IATA (airport) code → UN/LOCODE ('CKG' → CNCKG/Chongqing). Deterministic, no fuzzy.
+    const IATA_TO_UNLOCODE: Record<string, string> = { CKG: 'CNCKG', PNH: 'KHPNH' }
+    if (IATA_TO_UNLOCODE[aliasKey]) {
+      const [a] = await this.db.select().from(schema.ports).where(eq(schema.ports.unlocode, IATA_TO_UNLOCODE[aliasKey]!))
+      if (a) return { id: a.id, country: a.country }
     }
-    const iataCode = IATA_TO_UNLOCODE[aliasKey]
-    if (iataCode) {
-      const [byIata] = await this.db.select().from(schema.ports).where(eq(schema.ports.unlocode, iataCode))
-      if (byIata) return { id: byIata.id, country: byIata.country }
-    }
-    // airport/port NAME fragments → UN/LOCODE. The raw is often a full facility name ('SHAHAJALAL INTL. AIR
-    // PORT' = Dhaka/BDDAC) that neither the ILIKE name match nor an exact alias key catches. Contains-match on
-    // a distinctive, long fragment so it can't false-hit another port.
+    // full-facility-name fragments → UN/LOCODE ('SHAHAJALAL INTL. AIR PORT' = Dhaka/BDDAC). Contains-match
+    // on a distinctive, long fragment so it can't false-hit another port.
     const NAME_CONTAINS_ALIASES: Array<[string, string]> = [
       ['SHAHAJALAL', 'BDDAC'],
       ['SHAHJALAL', 'BDDAC'],
       ['KHOR AL FAKKAN', 'AEKLF'],
       ['KHOR FAKKAN', 'AEKLF'],
+      // Chittagong (traditional spelling) — master stores the modern 'Chattogram' (BDCGP). Substring
+      // so decorated raws resolve too: 'CHITTAGONG, BANGLADESH', 'CGP (Golden Depot / Chittagong)'.
+      ['CHITTAGONG', 'BDCGP'],
+      ['CHATTOGRAM', 'BDCGP'],
     ]
     for (const [frag, uloc] of NAME_CONTAINS_ALIASES) {
       if (aliasKey.includes(frag)) {
-        const [byFrag] = await this.db.select().from(schema.ports).where(eq(schema.ports.unlocode, uloc))
-        if (byFrag) return { id: byFrag.id, country: byFrag.country }
+        const [a] = await this.db.select().from(schema.ports).where(eq(schema.ports.unlocode, uloc))
+        if (a) return { id: a.id, country: a.country }
       }
+    }
+
+    // FUZZY NAME MATCH (last resort) — FORWARD ONLY: the port's official name must CONTAIN the input,
+    // or contain the input's leading token ('QINGDAO, CHINA' → 'Qingdao'). We do NOT reverse-match
+    // (input contains name): a short port name buried mid-word would hijack the input — 'Tago' (JPTAO)
+    // inside 'Chit·tago·ng', or 'China' (JPCHI) inside 'QINGDAO, CHINA'. And we only fuzzy-match inputs
+    // ≥4 chars: a 3-char token is a code/IATA (handled above) or junk, and forward-matching it lets IT
+    // hijack a longer name ('EHU' ⊂ 'L·ehu·'). Forward-full beats leading-token; shortest official name
+    // wins ('SHANGHAI' → 'Shanghai', not 'Shanghai Railway Station').
+    if (c.length >= 4) {
+      const head = c.split(',')[0]!.trim()
+      const useHead = head.length >= 4 && head.toUpperCase() !== c.toUpperCase()
+      const nameWhere = useHead
+        ? sql`length(${schema.ports.name}) >= 4 AND (${schema.ports.name} ILIKE ${`%${c}%`} OR ${schema.ports.name} ILIKE ${`%${head}%`})`
+        : sql`length(${schema.ports.name}) >= 4 AND ${schema.ports.name} ILIKE ${`%${c}%`}`
+      const [byName] = await this.db
+        .select()
+        .from(schema.ports)
+        .where(nameWhere)
+        .orderBy(
+          sql`(CASE WHEN ${schema.ports.name} ILIKE ${`%${c}%`} THEN 0 ELSE 1 END)`,
+          sql`length(${schema.ports.name})`,
+          schema.ports.name,
+        )
+        .limit(1)
+      if (byName) return { id: byName.id, country: byName.country }
     }
     return null
   }
