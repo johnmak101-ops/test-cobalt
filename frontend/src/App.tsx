@@ -11,6 +11,7 @@ import AlertsPage from './pages/AlertsPage'
 import AlertRulesPage from './pages/AlertRulesPage'
 import SettingsPage from './pages/SettingsPage'
 import ReviewQueuePage from './pages/ReviewQueuePage'
+import ReviewShipmentPage from './pages/ReviewShipmentPage'
 import PurchaseOrdersPage from './pages/PurchaseOrdersPage'
 import PurchaseOrderDetailPage from './pages/PurchaseOrderDetailPage'
 import UnlinkedDocumentsPage from './pages/UnlinkedDocumentsPage'
@@ -97,6 +98,7 @@ function AppRoutes() {
         <Route path="/documents" element={<UnlinkedDocumentsPage />} />
         <Route path="/inbox" element={<InboxPage />} />
         <Route path="/review-queue" element={<ReviewQueuePage />} />
+        <Route path="/review-queue/:id" element={<ReviewShipmentPage />} />
         <Route path="/alerts" element={<AlertsPage />} />
         <Route path="/alerts/rules" element={<AlertRulesPage />} />
         <Route path="/settings" element={<SettingsPage />} />

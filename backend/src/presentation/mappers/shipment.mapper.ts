@@ -49,6 +49,8 @@ export interface ShipmentLegRow {
   inDcDate: Dateish
   qty: number | null
   qtyUnit: string | null
+  reviewStatus?: string | null
+  reviewReasons?: string[] | null
   createdAt: Dateish
   updatedAt: Dateish
 }
@@ -76,6 +78,8 @@ export interface UiShipment {
   status: string
   cancelled: boolean
   riskLevel: string | null
+  reviewStatus: string | null
+  reviewReasons: string[]
   bookingNo: string | null
   soNumber: string | null
   itemStyleNo: string | null
@@ -123,6 +127,8 @@ export function toUiShipment(input: ShipmentMapperInput): UiShipment {
     status: stateToUiStatus(leg.state, leg.legStatus),
     cancelled: leg.legStatus === 'CANCELLED',
     riskLevel: leg.riskLevel ?? null,
+    reviewStatus: leg.reviewStatus ?? null,
+    reviewReasons: leg.reviewReasons ?? [],
     bookingNo: leg.bookingNo ?? null,
     soNumber: leg.soNo ?? null,
     itemStyleNo: leg.itemStyleNo ?? null,
@@ -132,7 +138,10 @@ export function toUiShipment(input: ShipmentMapperInput): UiShipment {
     mblNumber: leg.mbl ?? null,
     scacCode: leg.scacCode ?? null,
     crd: isoOrNull(leg.cargoReadyDate),
-    cfsCutoff: isoOrNull(leg.cfsCutoff),
+    // The parser vocabulary equates "CFS cut-off/截仓时间" with warehouse_end_date (soul field 12) and
+    // never emits a separate cfs_cutoff — so the column only fills from a human edit. Fall back to the
+    // warehouse end date for display; an explicit cfs_cutoff (human-entered) still wins.
+    cfsCutoff: isoOrNull(leg.cfsCutoff) ?? isoOrNull(leg.warehouseEndDate),
     etd: isoOrNull(leg.etd),
     eta: isoOrNull(leg.eta),
     actualDeparture: isoOrNull(leg.atd),

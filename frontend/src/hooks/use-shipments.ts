@@ -22,6 +22,8 @@ export interface Shipment {
   originCountry: string | null
   status: string
   riskLevel: string
+  reviewStatus?: string | null
+  reviewReasons?: string[]
   bookingNo: string | null
   soNumber: string | null
   itemStyleNo: string | null

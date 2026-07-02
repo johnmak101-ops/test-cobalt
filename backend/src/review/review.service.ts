@@ -9,14 +9,16 @@ const DATE_FIELDS = new Set([
   'cargoReadyDate', 'cfsCutoff', 'warehouseStartDate', 'warehouseEndDate', 'etd', 'atd', 'eta', 'ata', 'inDcDate',
 ])
 
-/** Coerce a human-entered value to the shipment column's type (dates → Date, qty → number). */
+const NUMERIC_FIELDS = new Set(['qty', 'grossWeight', 'measurement'])
+
+/** Coerce a human-entered value to the shipment column's type (dates → Date, numerics → number). */
 function coerce(field: string, value: unknown): unknown {
   if (value == null || value === '') return null
   if (DATE_FIELDS.has(field)) {
     const d = new Date(String(value))
     return Number.isNaN(d.getTime()) ? null : d
   }
-  if (field === 'qty') {
+  if (NUMERIC_FIELDS.has(field)) {
     const n = Number(value)
     return Number.isFinite(n) ? n : null
   }
@@ -50,15 +52,15 @@ export class ReviewService {
     )
   }
 
-  /** Accept a provisional shipment as-is. */
-  async confirm(shipmentId: string, actorId: string) {
+  /** Accept a provisional shipment as-is. An optional reviewer note is audited (soul feedback). */
+  async confirm(shipmentId: string, actorId: string, note?: string) {
     const leg = await this.shipments.findById(shipmentId)
     if (!leg) throw new NotFoundException(`shipment ${shipmentId} not found`)
     await this.shipments.updateLeg(shipmentId, { reviewStatus: 'confirmed', reviewedBy: actorId, reviewedAt: new Date() })
     await this.audit.write({
       entityType: 'shipment', entityId: shipmentId, field: null,
       oldValue: leg.reviewStatus, newValue: 'confirmed', changeType: 'update',
-      sourceType: 'manual', actorUserId: actorId, note: 'review: confirmed as-is',
+      sourceType: 'manual', actorUserId: actorId, note: note?.trim() || 'review: confirmed as-is',
     })
     return { shipmentId, reviewStatus: 'confirmed' }
   }

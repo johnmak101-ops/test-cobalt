@@ -1,6 +1,6 @@
 import { Body, Controller, Get, Param, Post } from '@nestjs/common'
 import { ReviewService } from './review.service'
-import { CorrectDto } from './dto'
+import { ConfirmDto, CorrectDto } from './dto'
 import { Roles, CurrentUser } from '../auth/decorators'
 import type { AuthUser } from '../auth/auth.service'
 
@@ -14,8 +14,8 @@ export class ReviewController {
     return this.review.queue()
   }
 
-  @Post(':id/confirm') confirm(@Param('id') id: string, @CurrentUser() actor: AuthUser) {
-    return this.review.confirm(id, actor.id)
+  @Post(':id/confirm') confirm(@Param('id') id: string, @Body() dto: ConfirmDto, @CurrentUser() actor: AuthUser) {
+    return this.review.confirm(id, actor.id, dto?.note)
   }
 
   @Post(':id/correct') correct(@Param('id') id: string, @Body() dto: CorrectDto, @CurrentUser() actor: AuthUser) {

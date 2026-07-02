@@ -68,6 +68,21 @@ describe('toUiShipment — flat active-leg projection', () => {
     expect(toUiShipment(fullInput()).riskLevel).toBe('ON_TRACK')
   })
 
+  it('falls back to warehouse end date for CFS cut-off (parser vocab equates them); explicit value wins', () => {
+    // no cfs_cutoff column value → display the warehouse end date (soul field 12: CFS cut-off ≡ 截仓时间)
+    const fallback = toUiShipment({
+      ...fullInput(),
+      leg: leg({ cfsCutoff: null, warehouseEndDate: new Date('2026-06-30T00:00:00.000Z') }),
+    })
+    expect(fallback.cfsCutoff).toBe('2026-06-30T00:00:00.000Z')
+    // an explicit (human-entered) cfs_cutoff still wins
+    expect(toUiShipment(fullInput()).cfsCutoff).toBe('2026-02-03T00:00:00.000Z')
+    // neither present → null, not a fabricated date
+    expect(
+      toUiShipment({ ...fullInput(), leg: leg({ cfsCutoff: null, warehouseEndDate: null }) }).cfsCutoff,
+    ).toBeNull()
+  })
+
   it('pulls customer/vendor from the parent booking and nests the master refs', () => {
     const s = toUiShipment(fullInput())
     expect(s.customerId).toBe('cust-1')

@@ -40,18 +40,49 @@ export function useReviewCounts() {
   })
 }
 
-/** Approve (confirm) a provisional shipment — promotes it out of the review queue. */
-export function useConfirmShipment() {
+function useInvalidateReview() {
   const queryClient = useQueryClient()
+  return () => {
+    queryClient.invalidateQueries({ queryKey: ['review-queue'] })
+    queryClient.invalidateQueries({ queryKey: ['review-counts'] })
+    queryClient.invalidateQueries({ queryKey: ['shipments'] })
+    queryClient.invalidateQueries({ queryKey: ['shipment'] })
+    queryClient.invalidateQueries({ queryKey: ['dashboard'] })
+  }
+}
+
+/**
+ * Approve (confirm) a provisional shipment as-is — promotes it out of the review queue.
+ * Goes through /api/review (audited + reviewedBy); an optional reviewer note lands in the
+ * audit trail for agent-soul feedback.
+ */
+export function useConfirmShipment() {
+  const invalidate = useInvalidateReview()
 
   return useMutation({
-    mutationFn: (shipmentId: string) => api.post(`/shipments/${shipmentId}/confirm`, {}),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['review-queue'] })
-      queryClient.invalidateQueries({ queryKey: ['review-counts'] })
-      queryClient.invalidateQueries({ queryKey: ['shipments'] })
-      queryClient.invalidateQueries({ queryKey: ['shipment'] })
-      queryClient.invalidateQueries({ queryKey: ['dashboard'] })
-    },
+    mutationFn: ({ shipmentId, note }: { shipmentId: string; note?: string }) =>
+      api.post(`/review/${shipmentId}/confirm`, note?.trim() ? { note: note.trim() } : {}),
+    onSuccess: invalidate,
+  })
+}
+
+/**
+ * Correct fields on a provisional shipment and approve it. Each edited field is locked
+ * (human-wins — the agent can never overwrite it) and audited with the reviewer's reason.
+ */
+export function useCorrectShipment() {
+  const invalidate = useInvalidateReview()
+
+  return useMutation({
+    mutationFn: ({
+      shipmentId,
+      fields,
+      reason,
+    }: {
+      shipmentId: string
+      fields: Record<string, unknown>
+      reason?: string
+    }) => api.post(`/review/${shipmentId}/correct`, { fields, ...(reason?.trim() ? { reason: reason.trim() } : {}) }),
+    onSuccess: invalidate,
   })
 }

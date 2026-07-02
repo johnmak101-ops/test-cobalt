@@ -5,3 +5,8 @@ export class CorrectDto {
   @IsObject() fields!: Record<string, unknown>
   @IsOptional() @IsString() reason?: string
 }
+
+/** Approve-as-is, optionally with a reviewer note (audited — harvested for agent-soul feedback). */
+export class ConfirmDto {
+  @IsOptional() @IsString() note?: string
+}

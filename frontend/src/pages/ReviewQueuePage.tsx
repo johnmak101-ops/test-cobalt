@@ -40,9 +40,12 @@ export default function ReviewQueuePage() {
 
   const handleApprove = (id: string) => {
     setConfirmingId(id)
-    confirmMutation.mutate(id, {
-      onSettled: () => setConfirmingId(null),
-    })
+    confirmMutation.mutate(
+      { shipmentId: id },
+      {
+        onSettled: () => setConfirmingId(null),
+      },
+    )
   }
 
   const handlePageSizeChange = (size: number) => {
@@ -104,7 +107,7 @@ export default function ReviewQueuePage() {
                     return (
                       <tr
                         key={s.id}
-                        onClick={() => navigate(`/shipments/${s.id}`)}
+                        onClick={() => navigate(`/review-queue/${s.id}`)}
                         className="cursor-pointer border-b border-border last:border-0 transition-colors hover:bg-surface-700/50"
                       >
                         {/* Customer */}
