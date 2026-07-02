@@ -42,10 +42,16 @@ export const EDITABLE_FIELDS: EditableField[] = [
   { section: 'Key Dates', label: 'In DC Date', uiKey: 'inDcDate', column: 'inDcDate', type: 'date' },
 ]
 
-/** Shipment value → what the <input> shows. Dates render as yyyy-MM-dd, null as ''. */
+/** Shipment value → what the <input> shows. Dates render as LOCAL datetime-local ("2026-06-29T15:00")
+ *  so editing a timed cut-off (截仓时间 15:00) never silently drops the time; null renders ''. */
 export function toInputValue(value: unknown, type: FieldType): string {
   if (value == null) return ''
-  if (type === 'date') return String(value).slice(0, 10)
+  if (type === 'date') {
+    const d = value instanceof Date ? value : new Date(String(value))
+    if (Number.isNaN(d.getTime())) return String(value).slice(0, 16)
+    const pad = (n: number) => String(n).padStart(2, '0')
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+  }
   return String(value)
 }
 

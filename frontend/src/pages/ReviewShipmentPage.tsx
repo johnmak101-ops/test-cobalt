@@ -152,7 +152,7 @@ export default function ReviewShipmentPage() {
                     {changed && <span className="text-cobalt-primary-light">· edited</span>}
                   </span>
                   <input
-                    type={f.type === 'number' ? 'number' : f.type}
+                    type={f.type === 'number' ? 'number' : f.type === 'date' ? 'datetime-local' : 'text'}
                     value={valueOf(f)}
                     onChange={(e) => setEdits((prev) => ({ ...prev, [f.uiKey]: e.target.value }))}
                     className={cn(

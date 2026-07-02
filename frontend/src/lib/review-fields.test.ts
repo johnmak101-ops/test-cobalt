@@ -18,31 +18,34 @@ describe('EDITABLE_FIELDS', () => {
 })
 
 describe('buildCorrections — dirty-diff keyed by leg column', () => {
+  // constructed in LOCAL time on purpose — datetime-local inputs are local wall-clock
   const original = {
     bookingNo: 'BX123',
     quantityShipped: 5,
     grossWeight: 7,
-    etd: '2026-07-10T00:00:00.000Z',
+    etd: new Date(2026, 6, 10, 0, 0),
     consigneeName: null,
   }
 
   it('returns only changed fields, keyed by column name', () => {
-    const edited = { bookingNo: 'BX123', quantityShipped: '8', grossWeight: '7', etd: '2026-07-10', consigneeName: '' }
+    const edited = { bookingNo: 'BX123', quantityShipped: '8', grossWeight: '7', etd: '2026-07-10T00:00', consigneeName: '' }
     expect(buildCorrections(original, edited)).toEqual({ qty: '8' })
   })
 
   it('treats clearing a value as a change to empty (backend coerces to null)', () => {
-    const edited = { bookingNo: '', quantityShipped: '5', grossWeight: '7', etd: '2026-07-10', consigneeName: '' }
+    const edited = { bookingNo: '', quantityShipped: '5', grossWeight: '7', etd: '2026-07-10T00:00', consigneeName: '' }
     expect(buildCorrections(original, edited)).toEqual({ bookingNo: '' })
   })
 
-  it('date compares on the yyyy-MM-dd part, not the ISO timestamp', () => {
-    const edited = { bookingNo: 'BX123', quantityShipped: '5', grossWeight: '7', etd: '2026-07-12', consigneeName: '' }
-    expect(buildCorrections(original, edited)).toEqual({ etd: '2026-07-12' })
+  it('a date change is detected, and a TIME-only change counts too (cut-off times matter)', () => {
+    const edited = { bookingNo: 'BX123', quantityShipped: '5', grossWeight: '7', etd: '2026-07-12T00:00', consigneeName: '' }
+    expect(buildCorrections(original, edited)).toEqual({ etd: '2026-07-12T00:00' })
+    const timeOnly = { bookingNo: 'BX123', quantityShipped: '5', grossWeight: '7', etd: '2026-07-10T15:00', consigneeName: '' }
+    expect(buildCorrections(original, timeOnly)).toEqual({ etd: '2026-07-10T15:00' })
   })
 
   it('returns {} when nothing changed', () => {
-    const edited = { bookingNo: 'BX123', quantityShipped: '5', grossWeight: '7', etd: '2026-07-10', consigneeName: '' }
+    const edited = { bookingNo: 'BX123', quantityShipped: '5', grossWeight: '7', etd: '2026-07-10T00:00', consigneeName: '' }
     expect(buildCorrections(original, edited)).toEqual({})
   })
 })
@@ -62,8 +65,9 @@ describe('conflictColumns — parse "why review?" reasons into column names', ()
 })
 
 describe('toInputValue — shipment value → input value', () => {
-  it('slices ISO dates to yyyy-MM-dd for date inputs', () => {
-    expect(toInputValue('2026-07-10T00:00:00.000Z', 'date')).toBe('2026-07-10')
+  it('renders dates as LOCAL datetime-local so a stated cut-off time survives editing', () => {
+    expect(toInputValue(new Date(2026, 5, 29, 15, 0), 'date')).toBe('2026-06-29T15:00')
+    expect(toInputValue(new Date(2026, 6, 10, 0, 0), 'date')).toBe('2026-07-10T00:00')
   })
   it('renders null as empty string', () => {
     expect(toInputValue(null, 'text')).toBe('')
