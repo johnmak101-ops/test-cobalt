@@ -7,7 +7,7 @@ import { Card } from '../components/ui/Card'
 import { MilestoneTimeline } from '../components/shipments/MilestoneTimeline'
 import { ShipmentHistoryTimeline } from '../components/shipments/ShipmentHistoryTimeline'
 import { AlertCard } from '../components/alerts/AlertCard'
-import { formatRelativeTime, formatDate, formatDateMaybeTime, cn } from '../lib/utils'
+import { formatRelativeTime, formatDate, formatDateTime, formatDateMaybeTime, cn } from '../lib/utils'
 import { ArrowLeft, Mail, Clock, ClipboardList, Package, Ship, Calendar, AlertTriangle, AlertCircle, Info } from 'lucide-react'
 
 export default function ShipmentDetailPage() {
@@ -371,7 +371,7 @@ export default function ShipmentDetailPage() {
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm text-text-primary">{email.subject}</p>
                       <p className="text-xs text-text-muted">
-                        {email.sender} · {formatRelativeTime(email.receivedAt)}
+                        {email.sender} · <span className="font-mono">{formatDateTime(email.receivedAt)}</span>
                       </p>
                     </div>
                     {email.emailType && (

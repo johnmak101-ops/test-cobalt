@@ -4,7 +4,7 @@ import { useShipment } from '../hooks/use-shipments'
 import { useConfirmShipment, useCorrectShipment } from '../hooks/use-review-queue'
 import { Card } from '../components/ui/Card'
 import { Badge } from '../components/ui/Badge'
-import { cn, formatRelativeTime, parsePONumbers } from '../lib/utils'
+import { cn, formatDateTime, parsePONumbers } from '../lib/utils'
 import {
   EDITABLE_FIELDS,
   buildCorrections,
@@ -208,7 +208,7 @@ export default function ReviewShipmentPage() {
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm text-text-primary">{email.subject}</p>
                   <p className="text-xs text-text-muted">
-                    {email.sender} · {formatRelativeTime(email.receivedAt)}
+                    {email.sender} · <span className="font-mono">{formatDateTime(email.receivedAt)}</span>
                   </p>
                 </div>
                 {email.emailType && <Badge variant="emailType" value={email.emailType} />}
