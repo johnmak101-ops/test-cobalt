@@ -46,27 +46,39 @@ export function resolvePoEnrichment(rows: PoEvidenceInput[]): Map<string, PoEnri
     ;(byPo.get(key) ?? byPo.set(key, []).get(key)!).push(r)
   }
 
-  // BROADCAST GUARD: an email whose per-PO records all state ONE identical qty across ≥3 distinct
-  // POs is broadcasting the SHIPMENT total (a 收仓数据 email states one 168-carton total for 20
-  // POs) — never a per-PO fact. Those records contribute NO qty (brand/style still count).
-  // The uniformity condition is what separates it from a REAL per-PO column: a 进仓单 table where
-  // qty 2 repeats on many POs alongside 18s and 1s is mixed-value → all its quantities are real.
+  // BROADCAST GUARD: per-PO records stating ONE identical qty across ≥3 distinct POs are
+  // broadcasting a TOTAL, never a per-PO fact — checked at two scopes:
+  //   • whole email (a 收仓数据 email states one 168-carton total for 20 POs), and
+  //   • per booking within the email (a multi-booking table stamps each booking's carton
+  //     SUBTOTAL on its POs — ten 123229 POs all "59" beside two 123088 POs all "17" reads
+  //     as "mixed" email-wide, but each booking group is uniform).
+  // Those records contribute NO qty (brand/style still count). The uniformity-within-scope
+  // condition is what separates it from a REAL per-PO column: a 进仓单 table where qty 2
+  // repeats on many POs alongside 18s and 1s is mixed-value → all its quantities are real.
   const broadcastQty = new Set<string>() // `${messageId}|${qty}`
   {
-    const perMsg = new Map<string, Map<number, Set<string>>>() // msg → qty → distinct po keys
+    const perScope = new Map<string, { msg: string; qmap: Map<number, Set<string>> }>()
     for (const r of rows) {
       const key = poKeyOf(r)
       const msg = r.messageId
       if (!key || !msg) continue
       const q = num(r.fields?.qty)
       if (q == null) continue
-      const qmap = perMsg.get(msg) ?? perMsg.set(msg, new Map()).get(msg)!
-      const pos = qmap.get(q) ?? qmap.set(q, new Set()).get(q)!
-      pos.add(key)
+      const booking = normKey(r.fields?.booking_no)
+      for (const scope of [msg, `${msg}#${booking}`]) {
+        const s = perScope.get(scope) ?? perScope.set(scope, { msg, qmap: new Map() }).get(scope)!
+        const pos = s.qmap.get(q) ?? s.qmap.set(q, new Set()).get(q)!
+        pos.add(key)
+      }
     }
-    for (const [msg, qmap] of perMsg) {
-      if (qmap.size !== 1) continue // mixed per-PO values = a real per-PO column, never a broadcast
-      for (const [q, pos] of qmap) if (pos.size >= 3) broadcastQty.add(`${msg}|${q}`)
+    for (const { msg, qmap } of perScope.values()) {
+      // A broadcast value is a TOTAL, so it is ≥ every other value in its scope. A genuinely
+      // repeated per-PO count sits BELOW its scope's max (进仓单: 2 repeats beside 18s) and one
+      // stray record from another order (76×12 beside a 17) must not disguise the total as "mixed".
+      const max = Math.max(...qmap.keys())
+      for (const [q, pos] of qmap) {
+        if (pos.size >= 3 && q === max) broadcastQty.add(`${msg}|${q}`)
+      }
     }
   }
   const qtyIsBroadcast = (r: PoEvidenceInput): boolean => {

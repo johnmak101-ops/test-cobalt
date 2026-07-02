@@ -144,4 +144,45 @@ describe('resolvePoEnrichment — shipment-total broadcast guard (the 168×20 bu
     expect(map.get(normKey('PO-A'))?.totalQuantity).toBe(24) // falls through to the per-PO statement
     expect(map.get(normKey('PO-B'))?.totalQuantity).toBeNull()
   })
+
+  const bkRow = (id: string, po: string, qty: string, booking: string) =>
+    row({ id, poNo: po, messageId: 'msg-1', receivedAt: at('2026-07-02T05:00:00Z'), fields: { qty, qty_unit: 'cartons', booking_no: booking } })
+
+  it('a MULTI-booking email stamping each booking subtotal per PO is a broadcast per booking (the 123229 59×10 bug)', () => {
+    // booking 123229: ten POs all "59" (its subtotal); booking 123088: two POs all "17".
+    // Per-email uniformity sees two values (= "mixed") — the per-booking check must catch the 59s.
+    const rows = [
+      ...['PO-1', 'PO-2', 'PO-3', 'PO-4', 'PO-5', 'PO-6', 'PO-7', 'PO-8', 'PO-9', 'PO-10'].map((po, i) =>
+        bkRow(`a${i}`, po, '59', '123229')),
+      bkRow('b1', 'PO-11', '17', '123088'),
+      bkRow('b2', 'PO-12', '17', '123088'),
+    ]
+    const map = resolvePoEnrichment(rows)
+    for (let i = 1; i <= 10; i++) expect(map.get(normKey(`PO-${i}`))?.totalQuantity).toBeNull()
+    // the two-PO booking stays below the ≥3 threshold — conservative, kept
+    expect(map.get(normKey('PO-11'))?.totalQuantity).toBe(17)
+  })
+
+  it('a mixed-value table within ONE booking keeps its repeated quantities (per-booking 进仓单 regression)', () => {
+    const map = resolvePoEnrichment([
+      bkRow('a', 'PO-A', '2', 'BK-1'),
+      bkRow('b', 'PO-B', '2', 'BK-1'),
+      bkRow('c', 'PO-C', '2', 'BK-1'),
+      bkRow('d', 'PO-D', '18', 'BK-1'),
+    ])
+    expect(map.get(normKey('PO-A'))?.totalQuantity).toBe(2) // 2 < 18: repeated but NOT the max → real
+    expect(map.get(normKey('PO-D'))?.totalQuantity).toBe(18)
+  })
+
+  it('a stray smaller record from another order does NOT rescue a grand-total broadcast (the 76×12+17 invoice)', () => {
+    // twelve POs all stamped with the email GRAND total 76; one unrelated FENIX record at 17.
+    // 76 repeats on ≥3 POs AND is the scope maximum → broadcast; the stray 17 stays real.
+    const rows = [
+      ...Array.from({ length: 12 }, (_, i) => bcast(`g${i}`, `GPO-${i}`, '76')),
+      bcast('stray', 'FNX-SS26-S0044-01', '17'),
+    ]
+    const map = resolvePoEnrichment(rows)
+    for (let i = 0; i < 12; i++) expect(map.get(normKey(`GPO-${i}`))?.totalQuantity).toBeNull()
+    expect(map.get(normKey('FNX-SS26-S0044-01'))?.totalQuantity).toBe(17)
+  })
 })
