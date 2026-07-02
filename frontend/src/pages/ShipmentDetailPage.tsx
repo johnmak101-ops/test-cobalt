@@ -7,7 +7,7 @@ import { Card } from '../components/ui/Card'
 import { MilestoneTimeline } from '../components/shipments/MilestoneTimeline'
 import { ShipmentHistoryTimeline } from '../components/shipments/ShipmentHistoryTimeline'
 import { AlertCard } from '../components/alerts/AlertCard'
-import { formatRelativeTime, formatDate, formatDateTime, formatDateMaybeTime, cn } from '../lib/utils'
+import { formatDate, formatDateTime, formatDateMaybeTime, cn } from '../lib/utils'
 import { ArrowLeft, Mail, Clock, ClipboardList, Package, Ship, Calendar, AlertTriangle, AlertCircle, Info } from 'lucide-react'
 
 export default function ShipmentDetailPage() {
