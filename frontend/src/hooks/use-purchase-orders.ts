@@ -27,6 +27,8 @@ export interface PurchaseOrder {
     scacCode: string | null
     vesselName: string | null
     status: string
+    /** per-shipment split from shipment_pos — feeds lifecycle-weighted progress (absent on older backends) */
+    linkedQuantity?: number | null
   }>
 }
 

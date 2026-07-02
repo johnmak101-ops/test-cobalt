@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { usePurchaseOrders } from '../hooks/use-purchase-orders'
 import { cn } from '../lib/utils'
 import { formatDate } from '../lib/utils'
+import { poProgress, progressLabel, type PoShipmentLink } from '../lib/po-progress'
 import { Package, Search, RefreshCw, Download, Calendar } from 'lucide-react'
 import { Pagination, usePagination, PageSizeSelect } from '../components/ui/Pagination'
 import { useQueryClient } from '@tanstack/react-query'
@@ -92,6 +93,19 @@ export default function PurchaseOrdersPage() {
       const api = (await import('../lib/api')).api
       const detailRows: string[][] = []
 
+      // Same lifecycle-weighted progress as the table — prefer per-link detail, fall back to the summary.
+      const progressCell = (po: (typeof sorted)[number], links?: PoShipmentLink[]) => {
+        const ls = links?.length
+          ? links
+          : po.shipmentSummary?.length
+            ? po.shipmentSummary
+            : po.status
+              ? [{ status: po.status }]
+              : []
+        if (ls.length === 0 && !po.totalQuantity) return ''
+        return progressLabel(po.totalQuantity, ls)
+      }
+
       for (const po of sorted) {
         try {
           const detail: any = await api.get(`/purchase-orders/${po.id}`)
@@ -106,7 +120,7 @@ export default function PurchaseOrdersPage() {
               String(po.totalQuantity ?? ''),
               po.quantityUnit ?? '',
               String(po.shippedQuantity ?? ''),
-              po.totalQuantity ? String(Math.min((po.shippedQuantity ?? 0) / po.totalQuantity * 100, 100).toFixed(0) + '%') : '',
+              progressCell(po),
               formatDate(po.createdAt),
               // Shipment fields (empty)
               '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '',
@@ -121,7 +135,7 @@ export default function PurchaseOrdersPage() {
                 String(po.totalQuantity ?? ''),
                 po.quantityUnit ?? '',
                 String(po.shippedQuantity ?? ''),
-                po.totalQuantity ? String(Math.min((po.shippedQuantity ?? 0) / po.totalQuantity * 100, 100).toFixed(0) + '%') : '',
+                progressCell(po, shipments),
                 formatDate(po.createdAt),
                 // Shipment detail fields
                 s.bookingNo ?? '',
@@ -165,7 +179,7 @@ export default function PurchaseOrdersPage() {
             String(po.totalQuantity ?? ''),
             po.quantityUnit ?? '',
             String(po.shippedQuantity ?? ''),
-            po.totalQuantity ? String(Math.min((po.shippedQuantity ?? 0) / po.totalQuantity * 100, 100).toFixed(0) + '%') : '',
+            progressCell(po),
             formatDate(po.createdAt),
             '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '',
           ])
@@ -179,7 +193,7 @@ export default function PurchaseOrdersPage() {
         'Vendor',
         'Total Qty',
         'UOM',
-        'Shipped Qty',
+        'Qty On Shipments',
         'Progress',
         'PO Created Date',
         // Shipment detail fields
@@ -351,14 +365,14 @@ UOM
               </thead>
               <tbody>
                 {pageItems.map((po) => {
-                  // No ERP order qty here, so Progress reflects the furthest shipment lifecycle state.
-                  const STATE_PCT: Record<string, number> = { BOOKED: 15, CONFIRMED: 30, AT_WAREHOUSE: 45, SAILED: 65, RELEASED: 85, DELIVERED: 100 }
-                  const progress =
-                    po.totalQuantity && po.shippedQuantity
-                      ? Math.min((po.shippedQuantity / po.totalQuantity) * 100, 100)
-                      : po.status
-                        ? STATE_PCT[po.status] ?? 0
-                        : 0
+                  // Progress aligns with shipment lifecycle: qty-weighted over the linked shipments'
+                  // states when the per-shipment split is known, else the furthest shipment's state.
+                  const links: PoShipmentLink[] = po.shipmentSummary?.length
+                    ? po.shipmentSummary
+                    : po.status
+                      ? [{ status: po.status }]
+                      : []
+                  const progress = poProgress(po.totalQuantity, links).pct
 
                   return (
                     <tr
@@ -398,7 +412,7 @@ UOM
                               />
                             </div>
                             <span className="font-mono text-xs text-text-muted capitalize">
-                              {po.totalQuantity ? `${progress.toFixed(0)}%` : (po.status ?? '').replace(/_/g, ' ').toLowerCase()}
+                              {progressLabel(po.totalQuantity, links)}
                             </span>
                           </div>
                         ) : (

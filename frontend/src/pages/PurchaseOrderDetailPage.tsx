@@ -3,6 +3,7 @@ import { usePurchaseOrder } from '../hooks/use-purchase-orders'
 import { Card } from '../components/ui/Card'
 import { Badge } from '../components/ui/Badge'
 import { cn, formatShortDate, parsePONumbers } from '../lib/utils'
+import { poProgress, progressLabel } from '../lib/po-progress'
 import { ArrowLeft, Package, Ship } from 'lucide-react'
 
 export default function PurchaseOrderDetailPage() {
@@ -28,10 +29,15 @@ export default function PurchaseOrderDetailPage() {
     )
   }
 
-  const progress =
-    po.totalQuantity && po.shippedQuantity
-      ? Math.min((po.shippedQuantity / po.totalQuantity) * 100, 100)
-      : 0
+  // Progress aligns with the linked shipments' lifecycle — booked-but-not-sailed is not "fulfilled".
+  const { pct: progress, bookedQuantity, shippedQuantity } = poProgress(
+    po.totalQuantity,
+    po.linkedShipments ?? [],
+  )
+  const unassigned =
+    po.totalQuantity != null
+      ? Math.max(po.totalQuantity - (bookedQuantity ?? 0) - (shippedQuantity ?? 0), 0)
+      : null
 
   return (
     <div className="space-y-6">
@@ -64,7 +70,7 @@ export default function PurchaseOrderDetailPage() {
       {/* Summary card */}
       <Card>
         <h4 className="mb-4 text-sm font-semibold text-text-primary">Shipment Progress</h4>
-        <div className="grid grid-cols-2 gap-x-8 gap-y-4 sm:grid-cols-5">
+        <div className="grid grid-cols-2 gap-x-8 gap-y-4 sm:grid-cols-6">
           <div>
             <span className="text-xs text-text-muted">Total Quantity</span>
             <p className="mt-0.5 font-mono text-lg font-semibold text-text-primary">
@@ -78,17 +84,21 @@ export default function PurchaseOrderDetailPage() {
             </p>
           </div>
           <div>
-            <span className="text-xs text-text-muted">Shipped</span>
-            <p className="mt-0.5 font-mono text-lg font-semibold text-cobalt-primary">
-              {po.shippedQuantity != null ? po.shippedQuantity : '—'}
+            <span className="text-xs text-text-muted">Booked</span>
+            <p className="mt-0.5 font-mono text-lg font-semibold text-status-warning">
+              {bookedQuantity != null ? bookedQuantity : '—'}
             </p>
           </div>
           <div>
-            <span className="text-xs text-text-muted">Remaining</span>
+            <span className="text-xs text-text-muted">Shipped</span>
+            <p className="mt-0.5 font-mono text-lg font-semibold text-cobalt-primary">
+              {shippedQuantity != null ? shippedQuantity : '—'}
+            </p>
+          </div>
+          <div>
+            <span className="text-xs text-text-muted">Unassigned</span>
             <p className="mt-0.5 font-mono text-lg font-semibold text-text-secondary">
-              {po.totalQuantity != null
-                ? Math.max(po.totalQuantity - (po.shippedQuantity ?? 0), 0)
-                : '—'}
+              {unassigned != null ? unassigned : '—'}
             </p>
           </div>
           <div>
@@ -104,7 +114,9 @@ export default function PurchaseOrderDetailPage() {
           <div className="mt-4">
             <div className="mb-1 flex items-center justify-between text-xs text-text-muted">
               <span>Fulfillment Progress</span>
-              <span className="font-mono">{progress.toFixed(0)}%</span>
+              <span className="font-mono capitalize">
+                {progressLabel(po.totalQuantity, po.linkedShipments ?? [])}
+              </span>
             </div>
             <div className="h-3 w-full overflow-hidden rounded-full bg-surface-600">
               <div

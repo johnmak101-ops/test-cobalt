@@ -4,6 +4,9 @@ import { alias } from 'drizzle-orm/pg-core'
 import * as schema from '@cobalt/contracts'
 import { DRIZZLE, type DrizzleDB } from '../drizzle.provider'
 
+/** The subset of PO columns enriched from parsed evidence at commit (types derived from the schema). */
+type PoEnrichInput = Partial<Pick<typeof schema.purchaseOrders.$inferInsert, 'brand' | 'itemStyleNo' | 'totalQuantity' | 'quantityUnit'>>
+
 /** Data access for the Booking aggregate: bookings, booking_pos, purchase_orders. */
 @Injectable()
 export class BookingRepository {
@@ -159,6 +162,7 @@ export class BookingRepository {
         shipmentId: schema.shipmentPos.shipmentId,
         linkedQuantity: schema.shipmentPos.quantity,
         status: schema.shipments.state,
+        legStatus: schema.shipments.legStatus,
         bookingNo: schema.shipments.bookingNo,
         hbl: schema.shipments.hblAwbFcrNo,
         so: schema.shipments.soNo,
@@ -189,8 +193,10 @@ export class BookingRepository {
       .select({
         poId: schema.shipmentPos.poId,
         shipmentId: schema.shipmentPos.shipmentId,
+        linkedQuantity: schema.shipmentPos.quantity,
         bookingNo: schema.shipments.bookingNo,
         status: schema.shipments.state,
+        legStatus: schema.shipments.legStatus,
         containerNo: schema.shipments.containerNo,
         hbl: schema.shipments.hblAwbFcrNo,
         mbl: schema.shipments.mbl,
@@ -205,10 +211,38 @@ export class BookingRepository {
       .leftJoin(pod, eq(schema.shipments.podId, pod.id))
   }
 
-  async upsertPo(poNumber: string, customerId: string | null, vendorId: string | null) {
+  /**
+   * Find-or-create a PO by its (unique) number. Optionally enrich brand / item_style_no / total_quantity(+unit)
+   * from the parsed evidence — set on INSERT, and FILL-IF-NULL on an existing row (only empty columns are
+   * written, so a human/ERP-set value is never overwritten). This mirrors fillBooking's human-wins semantics;
+   * the deterministic per-PO source + latest-received tie-break live upstream in resolvePoEnrichment.
+   */
+  async upsertPo(poNumber: string, customerId: string | null, vendorId: string | null, enrich?: PoEnrichInput) {
     const [existing] = await this.db.select().from(schema.purchaseOrders).where(eq(schema.purchaseOrders.poNumber, poNumber))
-    if (existing) return existing.id
-    const [created] = await this.db.insert(schema.purchaseOrders).values({ poNumber, customerId, vendorId }).returning()
+    if (existing) {
+      if (enrich) {
+        const patch: PoEnrichInput = {}
+        if (existing.brand == null && enrich.brand != null) patch.brand = enrich.brand
+        if (existing.itemStyleNo == null && enrich.itemStyleNo != null) patch.itemStyleNo = enrich.itemStyleNo
+        if (existing.totalQuantity == null && enrich.totalQuantity != null) patch.totalQuantity = enrich.totalQuantity
+        if (existing.quantityUnit == null && enrich.quantityUnit != null) patch.quantityUnit = enrich.quantityUnit
+        if (Object.keys(patch).length)
+          await this.db.update(schema.purchaseOrders).set({ ...patch, updatedAt: new Date() }).where(eq(schema.purchaseOrders.id, existing.id))
+      }
+      return existing.id
+    }
+    const [created] = await this.db
+      .insert(schema.purchaseOrders)
+      .values({
+        poNumber,
+        customerId,
+        vendorId,
+        brand: enrich?.brand ?? null,
+        itemStyleNo: enrich?.itemStyleNo ?? null,
+        totalQuantity: enrich?.totalQuantity ?? null,
+        quantityUnit: enrich?.quantityUnit ?? null,
+      })
+      .returning()
     return created.id
   }
 
