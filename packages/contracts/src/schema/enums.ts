@@ -27,8 +27,8 @@ export const SHIPMENT_PARTY_ROLE = ['bill_to', 'importer_of_record', 'booking_en
 export const BOOKING_STATUS = ['ACTIVE', 'CLOSED', 'CANCELLED'] as const
 
 // ---- Shared ----
-// honest unit vocabulary — a stated '20PAC' is packages, never relabeled cartons
-export const QTY_UNIT = ['cartons', 'pieces', 'cbm', 'packages', 'pallets', 'units'] as const
+// honest unit vocabulary — a stated '20PAC' is packages, never relabeled cartons; 'containers' for FCL
+export const QTY_UNIT = ['cartons', 'pieces', 'cbm', 'packages', 'pallets', 'units', 'containers'] as const
 export const VENDOR_TYPE = ['factory', 'subcontractor', 'agent'] as const
 export const FORWARDER_ALIAS_TYPE = ['name', 'domain', 'chinese_name'] as const
 /** master_resolution — the resolution facts the validator enforces, curated from human corrections.
