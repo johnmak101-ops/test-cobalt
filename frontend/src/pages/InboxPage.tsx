@@ -4,6 +4,7 @@ import { Search, RefreshCw } from 'lucide-react'
 import { useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { Pagination, usePagination, PageSizeSelect } from '../components/ui/Pagination'
+import { toast } from '../components/ui/Toast'
 
 export default function InboxPage() {
   const { data, isLoading } = useEmails()
@@ -41,7 +42,10 @@ export default function InboxPage() {
         <h1 className="text-lg font-semibold text-text-primary">Shipping Inbox</h1>
         <div className="flex items-center gap-2">
           <button
-            onClick={() => qc.invalidateQueries({ queryKey: ['emails'] })}
+            onClick={async () => {
+              await qc.invalidateQueries({ queryKey: ['emails'] })
+              toast('Inbox refreshed')
+            }}
             className="inline-flex items-center gap-1.5 rounded-lg bg-surface-700 px-3 py-1.5 text-xs font-medium text-text-secondary hover:bg-surface-600 hover:text-text-primary"
           >
             <RefreshCw size={14} />

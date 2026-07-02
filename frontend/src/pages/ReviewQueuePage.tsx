@@ -12,6 +12,7 @@ import { useReviewQueue, useConfirmShipment, type ReviewShipment } from '../hook
 import { Badge } from '../components/ui/Badge'
 import { Pagination, usePagination, PageSizeSelect } from '../components/ui/Pagination'
 import { formatRelativeTime } from '../lib/utils'
+import { toast } from '../components/ui/Toast'
 import { useState } from 'react'
 
 /** Small chip explaining WHY a provisional shipment is held for review. */
@@ -65,9 +66,12 @@ export default function ReviewQueuePage() {
         </div>
         <div className="flex items-center gap-2">
           <button
-            onClick={() => {
-              qc.invalidateQueries({ queryKey: ['review-queue'] })
-              qc.invalidateQueries({ queryKey: ['review-counts'] })
+            onClick={async () => {
+              await Promise.all([
+                qc.invalidateQueries({ queryKey: ['review-queue'] }),
+                qc.invalidateQueries({ queryKey: ['review-counts'] }),
+              ])
+              toast('Review queue refreshed')
             }}
             className="inline-flex items-center gap-1.5 rounded-lg bg-surface-700 px-3 py-1.5 text-xs font-medium text-text-secondary hover:bg-surface-600 hover:text-text-primary"
           >

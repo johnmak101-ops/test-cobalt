@@ -16,6 +16,7 @@ import PurchaseOrdersPage from './pages/PurchaseOrdersPage'
 import PurchaseOrderDetailPage from './pages/PurchaseOrderDetailPage'
 import UnlinkedDocumentsPage from './pages/UnlinkedDocumentsPage'
 import EmailWindowPage from './pages/EmailWindowPage'
+import { Toaster } from './components/ui/Toast'
 import type { ReactNode } from 'react'
 
 const queryClient = new QueryClient({
@@ -116,6 +117,7 @@ function App() {
       <BrowserRouter>
         <AuthProvider>
           <AppRoutes />
+          <Toaster />
         </AuthProvider>
       </BrowserRouter>
     </QueryClientProvider>

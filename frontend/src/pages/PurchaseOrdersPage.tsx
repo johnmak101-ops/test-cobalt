@@ -3,7 +3,8 @@ import { useNavigate } from 'react-router-dom'
 import { usePurchaseOrders } from '../hooks/use-purchase-orders'
 import { cn } from '../lib/utils'
 import { formatDate } from '../lib/utils'
-import { poProgress, progressLabel, type PoShipmentLink } from '../lib/po-progress'
+import { poProgress, furthestStatusLabel, type PoShipmentLink } from '../lib/po-progress'
+import { toast } from '../components/ui/Toast'
 import { Package, Search, RefreshCw, Download, Calendar } from 'lucide-react'
 import { Pagination, usePagination, PageSizeSelect } from '../components/ui/Pagination'
 import { useQueryClient } from '@tanstack/react-query'
@@ -103,7 +104,13 @@ export default function PurchaseOrdersPage() {
               ? [{ status: po.status }]
               : []
         if (ls.length === 0 && !po.totalQuantity) return ''
-        return progressLabel(po.totalQuantity, ls)
+        return furthestStatusLabel(ls)
+      }
+
+      // "CNSZX→GBFXT" → two filterable cells (arrows defeat spreadsheet filters)
+      const splitRoute = (r?: string | null): [string, string] => {
+        const [pol = '', pod = ''] = (r ?? '').split('→')
+        return [pol.trim(), pod.trim()]
       }
 
       for (const po of sorted) {
@@ -123,7 +130,7 @@ export default function PurchaseOrdersPage() {
               progressCell(po),
               formatDate(po.createdAt),
               // Shipment fields (empty)
-              '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '',
+              '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '',
             ])
           } else {
             // One row per shipment with full shipment detail
@@ -143,7 +150,7 @@ export default function PurchaseOrdersPage() {
                 s.itemStyleNo ?? '',
                 s.status ?? '',
                 s.riskLevel ?? '',
-                s.route ?? '',
+                ...splitRoute(s.route),
                 String(s.quantityShipped ?? ''),
                 s.quantityUnit ?? '',
                 String(s.linkedQuantity ?? ''),
@@ -181,7 +188,7 @@ export default function PurchaseOrdersPage() {
             String(po.shippedQuantity ?? ''),
             progressCell(po),
             formatDate(po.createdAt),
-            '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '',
+            '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '',
           ])
         }
       }
@@ -202,15 +209,16 @@ export default function PurchaseOrdersPage() {
         'Item/Style No',
         'Shipment Status',
         'Risk Level',
-        'Route',
+        'POL',
+        'POD',
         'Qty Shipped',
         'Shipment UOM',
         'Linked Qty',
+        'Customer (Shipment)',
+        'Vendor (Shipment)',
+        'Forwarder',
         'Consignee Name',
         'Consignee Address',
-        'Forwarder',
-        'Customer',
-        'Vendor',
         'Container No',
         'HBL/AWB/FCR No',
         'MBL No',
@@ -258,7 +266,10 @@ export default function PurchaseOrdersPage() {
         </div>
         <div className="flex items-center gap-2">
           <button
-            onClick={() => qc.invalidateQueries({ queryKey: ['purchase-orders'] })}
+            onClick={async () => {
+              await qc.invalidateQueries({ queryKey: ['purchase-orders'] })
+              toast('Customer POs refreshed')
+            }}
             className="inline-flex items-center gap-1.5 rounded-lg bg-surface-700 px-3 py-1.5 text-xs font-medium text-text-secondary hover:bg-surface-600 hover:text-text-primary"
           >
             <RefreshCw size={14} />
@@ -412,7 +423,7 @@ UOM
                               />
                             </div>
                             <span className="font-mono text-xs text-text-muted capitalize">
-                              {progressLabel(po.totalQuantity, links)}
+                              {furthestStatusLabel(links)}
                             </span>
                           </div>
                         ) : (

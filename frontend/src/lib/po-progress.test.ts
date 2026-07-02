@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { poProgress, progressLabel } from './po-progress'
+import { poProgress, progressLabel, furthestStatusLabel } from './po-progress'
 
 describe('poProgress — lifecycle-weighted PO fulfillment', () => {
   it('fully-booked PO on a BOOKED shipment is 15%, not 100% (the misleading-progress bug)', () => {
@@ -117,5 +117,17 @@ describe('progressLabel — plain language, never a percentage', () => {
   it('says cancelled when every shipment is cancelled, and — with no shipments', () => {
     expect(progressLabel(2, [{ status: 'CANCELLED', linkedQuantity: 2 }])).toBe('cancelled')
     expect(progressLabel(2, [])).toBe('—')
+  })
+})
+
+describe('furthestStatusLabel — the list page shows the lifecycle word only', () => {
+  it('returns the furthest shipment state, prettified', () => {
+    expect(furthestStatusLabel([{ status: 'BOOKED', linkedQuantity: 2 }])).toBe('booked')
+    expect(furthestStatusLabel([{ status: 'BOOKED' }, { status: 'AT_WAREHOUSE' }])).toBe('at warehouse')
+    expect(furthestStatusLabel([{ status: 'DEPARTED' }])).toBe('departed')
+  })
+  it('handles cancelled-only and empty', () => {
+    expect(furthestStatusLabel([{ status: 'CANCELLED' }])).toBe('cancelled')
+    expect(furthestStatusLabel([])).toBe('—')
   })
 })

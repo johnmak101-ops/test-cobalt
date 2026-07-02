@@ -67,8 +67,20 @@ export function poProgress(
 }
 
 /**
+ * The furthest shipment's lifecycle word ("booked", "at warehouse", "departed") — what the LIST
+ * page shows. Users scan status on the main page and click into the detail for quantities.
+ */
+export function furthestStatusLabel(links: PoShipmentLink[]): string {
+  const active = links.filter((l) => l.status !== 'CANCELLED')
+  if (active.length === 0) return links.length > 0 ? 'cancelled' : '—'
+  const furthest = active.reduce((a, b) => (statusPct(b.status) > statusPct(a.status) ? b : a))
+  return String(furthest.status ?? 'BOOKED').replace(/_/g, ' ').toLowerCase()
+}
+
+/**
  * Human-readable progress text — never a percentage (reviewers don't know what "15%" means).
  * With quantities: "0/2 shipped". Without: the furthest shipment's lifecycle word ("at warehouse").
+ * Used on the DETAIL page; the list shows furthestStatusLabel only.
  */
 export function progressLabel(
   totalQuantity: number | null | undefined,
@@ -84,6 +96,5 @@ export function progressLabel(
     return `${p.shippedQuantity}/${denom} shipped`
   }
 
-  const furthest = active.reduce((a, b) => (statusPct(b.status) > statusPct(a.status) ? b : a))
-  return String(furthest.status ?? 'BOOKED').replace(/_/g, ' ').toLowerCase()
+  return furthestStatusLabel(links)
 }
