@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Search, Bell, Sun, Moon, LogOut, ChevronDown, AlertTriangle, Mail, ClipboardCheck, ChevronRight } from 'lucide-react'
+import { Bell, Sun, Moon, LogOut, ChevronDown, AlertTriangle, Mail, ClipboardCheck, ChevronRight } from 'lucide-react'
 import { useAlerts, useMarkAlertRead } from '../../hooks/use-alerts'
 import { useReviewQueue, useReviewCounts } from '../../hooks/use-review-queue'
 import { useEmails } from '../../hooks/use-emails'
@@ -76,20 +76,7 @@ export function TopBar() {
   }, [menuOpen, notiOpen])
 
   return (
-    <header className="flex h-14 shrink-0 items-center justify-between border-b border-border bg-surface-900 px-6">
-      {/* Search */}
-      <div className="relative w-80">
-        <Search
-          size={16}
-          className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted"
-        />
-        <input
-          type="text"
-          placeholder="Search PO#, customer, HBL..."
-          className="h-9 w-full rounded-lg border border-border bg-surface-700 pl-9 pr-4 text-sm text-text-primary placeholder:text-text-muted focus:border-cobalt-primary focus:outline-none"
-        />
-      </div>
-
+    <header className="flex h-14 shrink-0 items-center justify-end border-b border-border bg-surface-900 px-6">
       {/* Right side */}
       <div className="flex items-center gap-2">
         {/* Theme toggle */}
