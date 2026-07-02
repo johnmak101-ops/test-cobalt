@@ -42,8 +42,9 @@ export class UiAlertRulesController {
   @Get() get() {
     return this.ui.alertRules()
   }
-  // Settings page is superadmin-only — so is mutating its configuration
-  @Roles('SUPERADMIN')
+  // DEMO 2026-07-03 (TEMPORARY): alert-rule saving opened to all authenticated users for the demo.
+  // REVERT after the demo by restoring `@Roles('SUPERADMIN')` below (paired with AlertRulesPage `canEdit`).
+  // @Roles('SUPERADMIN')
   @Put() save(@Body() body: { rules?: Array<Record<string, unknown>> }) {
     return this.ui.saveAlertRules(body)
   }

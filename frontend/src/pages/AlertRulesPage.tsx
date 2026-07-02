@@ -48,8 +48,9 @@ const SEVERITY_COLORS: Record<string, string> = {
 export default function AlertRulesPage() {
   const navigate = useNavigate()
   const { user } = useAuth()
-  // Everyone can VIEW the rules (GET is open); only a superadmin can edit/save them (backend PUT guard).
-  const canEdit = user?.role === 'SUPERADMIN'
+  // DEMO 2026-07-03 (TEMPORARY): all authenticated users may edit alert rules for the demo.
+  // REVERT after the demo to: `user?.role === 'SUPERADMIN'` (paired with the backend PUT guard in ui.controllers.ts).
+  const canEdit = !!user
   const { data, isLoading } = useQuery<{ rules: AlertRule[] }>({
     queryKey: ['alertRules'],
     queryFn: () => api.get('/alert-rules'),
