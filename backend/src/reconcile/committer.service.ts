@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common'
 import type * as schema from '@cobalt/contracts'
 import { keysOverlap, strongKeys, normKey, str, num, date } from './match-keys'
-import { guardVendorForwarder } from './vendor-forwarder-guard'
+import { guardVendorForwarder, isPlatformNotForwarder } from './vendor-forwarder-guard'
 import { deriveState, classifyKind, MILESTONE_OF, DERIVED_MILESTONE_OF, normMode } from './state'
 import { MastersRepository } from '../db/repositories/masters.repository'
 import { BookingRepository } from '../db/repositories/booking.repository'
@@ -122,6 +122,11 @@ export class CommitterService {
   async apply(g: ReconGroup): Promise<CommitResult> {
     const f = g.fields
     const gk = strongKeys(g.matchKeys)
+
+    // A notification platform (TradeLinkOne CVP portal) is never the forwarder — scrub before resolution
+    // so its synced forwarder master row (code 603) can't link. Parser-side validate 4c is the first line;
+    // this covers evidence parsed before that rule (and any other producer).
+    if (isPlatformNotForwarder(str(f.forwarder_name))) f.forwarder_name = null
 
     const [customerId, vendorId, forwarderId, pol, podId] = await Promise.all([
       this.resolveCustomer(f.customer_code),

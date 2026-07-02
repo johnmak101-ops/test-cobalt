@@ -1,5 +1,18 @@
 import { describe, it, expect } from 'vitest'
-import { guardVendorForwarder, type GuardInput } from './vendor-forwarder-guard'
+import { guardVendorForwarder, isPlatformNotForwarder, type GuardInput } from './vendor-forwarder-guard'
+
+describe('isPlatformNotForwarder — CVP portal is never the forwarder', () => {
+  it('matches the TradeLink platform in every observed spelling', () => {
+    expect(isPlatformNotForwarder('TRADELINK TECHNOLOGIES LIMITED')).toBe(true)
+    expect(isPlatformNotForwarder('TradeLink Technologies Ltd (TradeLinkOne portal)')).toBe(true)
+    expect(isPlatformNotForwarder('TradeLink Technologies Ltd (notify.noreply3@tradelinkone.com)')).toBe(true)
+  })
+  it('never matches real forwarders or empties', () => {
+    expect(isPlatformNotForwarder('MAERSK LOGISTICS & SERVICES CHINA LIMITED')).toBe(false)
+    expect(isPlatformNotForwarder('EXPEDITORS INTERNATIONAL')).toBe(false)
+    expect(isPlatformNotForwarder(null)).toBe(false)
+  })
+})
 
 const base = (over: Partial<GuardInput> = {}): GuardInput => ({
   vendorCode: 'ROKNFT',

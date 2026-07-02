@@ -28,6 +28,15 @@ export interface GuardResult {
   reasons: string[]
 }
 
+/** Notification/e-invoicing platforms whose identity is NEVER the freight forwarder — the CVP portal's
+ *  sender leaks into parsed forwarder_name, and a synced forwarder master row (TRADELINK, code 603)
+ *  makes it resolve and link. Defense in depth behind the parser-side scrub (validate rule 4c). */
+const PLATFORM_NOT_FORWARDER: RegExp[] = [/TRADE\s*LINK\s*(TECHNOLOGIES|ONE)/i, /TRADELINKONE\.COM/i]
+
+export function isPlatformNotForwarder(name: string | null | undefined): boolean {
+  return !!name && PLATFORM_NOT_FORWARDER.some((re) => re.test(name))
+}
+
 export function guardVendorForwarder(input: GuardInput): GuardResult {
   const { vendorCode, vendorId, forwarderId, forwarderIdForVendorCode, approvedKeys } = input
   const unchanged: GuardResult = { vendorId, forwarderId, misclassified: false, reasons: [] }
