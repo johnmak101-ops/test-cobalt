@@ -1,7 +1,8 @@
-import { Controller, Get, Param, Post, Query } from '@nestjs/common'
+import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common'
 import { ShipmentsService } from './shipments.service'
 import { PresentationService } from '../presentation/presentation.service'
-import { Roles } from '../auth/decorators'
+import { Roles, CurrentUser } from '../auth/decorators'
+import type { AuthUser } from '../auth/auth.service'
 
 const STRONG_KEYS = ['so_no', 'booking_no', 'hbl_awb_fcr_no', 'mbl', 'container_no']
 
@@ -45,5 +46,17 @@ export class ShipmentsController {
   @Roles('EDITOR', 'ADMIN')
   @Post(':id/confirm') confirm(@Param('id') id: string) {
     return this.ui.confirmShipment(id)
+  }
+
+  /**
+   * PATCH /api/shipments/:id — human edit of shipment fields from the detail page. No @Roles: every
+   * authenticated user may fill gaps the parser missed. Each edit locks the field (human-wins) + audits.
+   */
+  @Patch(':id') edit(
+    @Param('id') id: string,
+    @Body() body: { fields?: Record<string, unknown> },
+    @CurrentUser() actor: AuthUser,
+  ) {
+    return this.shipments.editFields(id, body?.fields ?? {}, actor?.id ?? null)
   }
 }

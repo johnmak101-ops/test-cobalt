@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../lib/api'
 
 export interface LinkedPO {
@@ -109,5 +109,19 @@ export function useShipment(id: string) {
     queryKey: ['shipment', id],
     queryFn: () => api.get(`/shipments/${id}`),
     enabled: !!id,
+  })
+}
+
+/** Human edit of shipment fields (detail page). Body is a { dbField: value } map; the backend locks +
+ *  audits each change so the parser can never overwrite it. Refetches the detail + history on success. */
+export function useUpdateShipment(id: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (fields: Record<string, unknown>) => api.patch(`/shipments/${id}`, { fields }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['shipment', id] })
+      qc.invalidateQueries({ queryKey: ['shipment-history', id] })
+      qc.invalidateQueries({ queryKey: ['shipments'] })
+    },
   })
 }

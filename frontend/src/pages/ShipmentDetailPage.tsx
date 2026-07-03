@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useParams, useNavigate, useLocation, Link } from 'react-router-dom'
-import { useShipment } from '../hooks/use-shipments'
+import { useShipment, useUpdateShipment, type ShipmentDetail } from '../hooks/use-shipments'
 import { useShipmentHistory } from '../hooks/use-shipment-history'
 import { Badge } from '../components/ui/Badge'
 import { Card } from '../components/ui/Card'
@@ -9,7 +9,55 @@ import { ShipmentHistoryTimeline } from '../components/shipments/ShipmentHistory
 import { AlertCard } from '../components/alerts/AlertCard'
 import { formatDate, formatDateTime, formatDateMaybeTime, cn } from '../lib/utils'
 import { humanizeReason } from '../lib/review-reasons'
-import { ArrowLeft, Mail, Clock, ClipboardList, Package, Ship, Calendar, AlertTriangle, AlertCircle, Info } from 'lucide-react'
+import { toast } from '../components/ui/Toast'
+import { ArrowLeft, Mail, Clock, ClipboardList, Package, Ship, Calendar, AlertTriangle, AlertCircle, Info, Pencil, Check, X } from 'lucide-react'
+
+// The human-editable leg fields, grouped like the read-only card. `db` = the backend column the PATCH writes
+// (+ locks + audits); `get` reads the current value off the loaded shipment (whose UI names differ from db).
+// Customer / forwarder / route / origin are intentionally excluded — they resolve against master data.
+type EditType = 'text' | 'number' | 'date'
+interface EditField { db: string; label: string; type: EditType; get: (s: ShipmentDetail) => unknown }
+const EDIT_SECTIONS: { title: string; fields: EditField[] }[] = [
+  { title: 'Order Info', fields: [
+    { db: 'bookingNo', label: 'Booking No.', type: 'text', get: (s) => s.bookingNo },
+    { db: 'soNo', label: 'SO#', type: 'text', get: (s) => s.soNumber },
+    { db: 'itemStyleNo', label: 'Item / Style No.', type: 'text', get: (s) => s.itemStyleNo },
+  ] },
+  { title: 'Cargo & Logistics', fields: [
+    { db: 'qty', label: 'Qty', type: 'number', get: (s) => s.quantityShipped },
+    { db: 'qtyUnit', label: 'UOM', type: 'text', get: (s) => s.quantityUnit },
+    { db: 'grossWeight', label: 'Gross Weight (KGS)', type: 'number', get: (s) => s.grossWeight },
+    { db: 'measurement', label: 'Measurement (CBM)', type: 'number', get: (s) => s.measurement },
+    { db: 'htsCode', label: 'HTS Code', type: 'text', get: (s) => s.htsCode },
+    { db: 'containerNo', label: 'Container No.', type: 'text', get: (s) => s.containerNo },
+    { db: 'hblAwbFcrNo', label: 'HBL / AWB / FCR No.', type: 'text', get: (s) => s.hblNumber },
+    { db: 'mbl', label: 'MBL', type: 'text', get: (s) => s.mblNumber },
+    { db: 'scacCode', label: 'SCAC Code', type: 'text', get: (s) => s.scacCode },
+  ] },
+  { title: 'Shipping', fields: [
+    { db: 'consigneeName', label: 'Consignee Name', type: 'text', get: (s) => s.consigneeName },
+    { db: 'consigneeAddress', label: 'Consignee Address', type: 'text', get: (s) => s.consigneeAddress },
+    { db: 'vesselName', label: 'Vessel', type: 'text', get: (s) => s.vesselName },
+    { db: 'voyageNo', label: 'Voyage', type: 'text', get: (s) => s.voyageNumber },
+  ] },
+  { title: 'Key Dates', fields: [
+    { db: 'cargoReadyDate', label: 'Cargo Ready Date', type: 'date', get: (s) => s.crd },
+    { db: 'warehouseStartDate', label: 'WH Start Date', type: 'date', get: (s) => s.warehouseStartDate },
+    { db: 'warehouseEndDate', label: 'WH End Date', type: 'date', get: (s) => s.warehouseEndDate },
+    { db: 'cfsCutoff', label: 'CFS Cut-off', type: 'date', get: (s) => s.cfsCutoff },
+    { db: 'etd', label: 'ETD', type: 'date', get: (s) => s.etd },
+    { db: 'atd', label: 'ATD', type: 'date', get: (s) => s.actualDeparture },
+    { db: 'eta', label: 'ETA', type: 'date', get: (s) => s.eta },
+    { db: 'ata', label: 'ATA', type: 'date', get: (s) => s.actualArrival },
+    { db: 'inDcDate', label: 'In DC Date', type: 'date', get: (s) => s.inDcDate },
+  ] },
+]
+/** A stored value → the string an <input> expects (date → YYYY-MM-DD). */
+function toInputValue(v: unknown, type: EditType): string {
+  if (v == null || v === '') return ''
+  if (type === 'date') { const d = new Date(String(v)); return Number.isNaN(d.getTime()) ? '' : d.toISOString().slice(0, 10) }
+  return String(v)
+}
 
 export default function ShipmentDetailPage() {
   const { id } = useParams<{ id: string }>()
@@ -19,6 +67,9 @@ export default function ShipmentDetailPage() {
   const { data: shipment, isLoading } = useShipment(id!)
   const { data: historyData } = useShipmentHistory(id!)
   const [activeTab, setActiveTab] = useState<'details' | 'history'>('details')
+  const update = useUpdateShipment(id!)
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState<Record<string, string>>({})
 
   if (isLoading) {
     return (
@@ -56,6 +107,30 @@ export default function ShipmentDetailPage() {
   const warningCount = activeAlerts.filter((a) => a.severity === 'WARNING').length
   const infoCount = activeAlerts.filter((a) => a.severity === 'INFO').length
   const topSeverity = criticalCount > 0 ? 'CRITICAL' : warningCount > 0 ? 'WARNING' : 'INFO'
+
+  const startEdit = () => {
+    const d: Record<string, string> = {}
+    for (const sec of EDIT_SECTIONS) for (const f of sec.fields) d[f.db] = toInputValue(f.get(shipment), f.type)
+    setDraft(d)
+    setEditing(true)
+  }
+  const saveEdit = () => {
+    const changed: Record<string, unknown> = {}
+    for (const sec of EDIT_SECTIONS) for (const f of sec.fields) {
+      const orig = toInputValue(f.get(shipment), f.type)
+      const next = draft[f.db] ?? ''
+      if (next !== orig) changed[f.db] = next === '' ? null : next
+    }
+    if (Object.keys(changed).length === 0) { setEditing(false); return }
+    update.mutate(changed, {
+      onSuccess: (r) => {
+        setEditing(false)
+        const n = (r as { edited?: string[] } | undefined)?.edited?.length ?? Object.keys(changed).length
+        toast(`Saved ${n} field(s)`)
+      },
+      onError: () => toast('Save failed — please retry'),
+    })
+  }
 
   return (
     <div className="space-y-6">
@@ -214,9 +289,58 @@ export default function ShipmentDetailPage() {
         </Card>
       )}
 
-      {/* Order Details (full width) */}
+      {/* Order Details (full width) — read-only by default; Edit opens an inline form (human edits win) */}
       <Card>
-        <h4 className="mb-4 text-sm font-semibold text-text-primary">Order Details</h4>
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <h4 className="text-sm font-semibold text-text-primary">Order Details</h4>
+          {editing ? (
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setEditing(false)}
+                disabled={update.isPending}
+                className="inline-flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-medium text-text-secondary hover:bg-surface-700 hover:text-text-primary disabled:opacity-50"
+              >
+                <X size={13} /> Cancel
+              </button>
+              <button
+                onClick={saveEdit}
+                disabled={update.isPending}
+                className="inline-flex items-center gap-1 rounded-lg bg-cobalt-primary px-3 py-1.5 text-xs font-medium text-white hover:bg-cobalt-primary-light disabled:opacity-50"
+              >
+                <Check size={13} /> {update.isPending ? 'Saving…' : 'Save'}
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={startEdit}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-surface-700 px-3 py-1.5 text-xs font-medium text-text-secondary hover:bg-surface-600 hover:text-text-primary"
+            >
+              <Pencil size={13} /> Edit
+            </button>
+          )}
+        </div>
+        {editing ? (
+          <>
+            <p className="mb-4 text-xs text-text-muted">Fill anything the AI missed. Your edits are kept and won’t be overwritten by future emails, and every change is logged in Change History.</p>
+            <div className="grid grid-cols-1 gap-x-8 gap-y-6 md:grid-cols-2">
+              {EDIT_SECTIONS.map((sec) => (
+                <DetailSection key={sec.title} title={sec.title} icon={<ClipboardList size={14} className="text-text-muted" />}>
+                  {sec.fields.map((f) => (
+                    <div key={f.db} className="grid grid-cols-[9rem_1fr] items-center gap-x-2">
+                      <label className="truncate text-xs text-text-muted">{f.label}</label>
+                      <input
+                        type={f.type}
+                        value={draft[f.db] ?? ''}
+                        onChange={(e) => setDraft((d) => ({ ...d, [f.db]: e.target.value }))}
+                        className="h-8 w-full rounded-md border border-border bg-surface-700 px-2 text-sm text-text-primary focus:border-cobalt-primary focus:outline-none"
+                      />
+                    </div>
+                  ))}
+                </DetailSection>
+              ))}
+            </div>
+          </>
+        ) : (
         <div className="grid grid-cols-1 gap-x-8 gap-y-6 md:grid-cols-2">
           {/* Section 1: Order Info */}
           <DetailSection title="Order Info" icon={<ClipboardList size={14} className="text-text-muted" />}>
@@ -298,6 +422,7 @@ export default function ShipmentDetailPage() {
             <DetailRow label="In DC Date" value={formatDateMaybeTime(shipment.inDcDate)} />
           </DetailSection>
         </div>
+        )}
       </Card>
 
       {/* Tab switcher: Alerts/Emails vs History */}

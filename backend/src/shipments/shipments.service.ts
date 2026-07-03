@@ -2,8 +2,27 @@ import { Injectable, NotFoundException } from '@nestjs/common'
 import { ShipmentRepository } from '../db/repositories/shipment.repository'
 import { BookingRepository } from '../db/repositories/booking.repository'
 import { FieldLockRepository } from '../db/repositories/field-lock.repository'
+import { AuditRepository } from '../db/repositories/audit.repository'
 import { strongKeys, keysOverlap, normKey, str } from '../reconcile/match-keys'
 import { deriveRoute } from '../presentation/adapters/derive'
+
+// Human-editable leg columns (DB names). Excludes computed/master-resolved fields (customer/forwarder/route/
+// ports) which need lookups, and identity plumbing. Same coercion the review flow uses.
+const DATE_FIELDS = new Set(['cargoReadyDate', 'cfsCutoff', 'warehouseStartDate', 'warehouseEndDate', 'etd', 'atd', 'eta', 'ata', 'inDcDate'])
+const NUMERIC_FIELDS = new Set(['qty', 'grossWeight', 'measurement'])
+const EDITABLE_FIELDS = new Set([
+  'bookingNo', 'soNo', 'hblAwbFcrNo', 'mbl', 'containerNo', 'scacCode',
+  'qty', 'qtyUnit', 'grossWeight', 'measurement', 'itemStyleNo', 'htsCode',
+  'consigneeName', 'consigneeAddress', 'vesselName', 'voyageNo',
+  ...DATE_FIELDS,
+])
+function coerceField(field: string, value: unknown): unknown {
+  if (value == null || value === '') return null
+  if (DATE_FIELDS.has(field)) { const d = new Date(String(value)); return Number.isNaN(d.getTime()) ? null : d }
+  if (NUMERIC_FIELDS.has(field)) { const n = Number(value); return Number.isFinite(n) ? n : null }
+  return String(value)
+}
+const asStr = (v: unknown): string | null => (v == null ? null : v instanceof Date ? v.toISOString() : String(v))
 
 @Injectable()
 export class ShipmentsService {
@@ -11,7 +30,35 @@ export class ShipmentsService {
     private readonly shipments: ShipmentRepository,
     private readonly bookings: BookingRepository,
     private readonly fieldLocks: FieldLockRepository,
+    private readonly audit: AuditRepository,
   ) {}
+
+  /**
+   * Human edit of shipment fields from the detail page. Each edited field is written, LOCKED (human-wins,
+   * so the parser/committer can never overwrite it), and audited to Change History — the same guarantees the
+   * review flow gives, but for any shipment and without changing its review status. Unknown/non-editable
+   * fields are ignored (whitelist). `actorId` is the acting user for the lock + audit trail.
+   */
+  async editFields(id: string, fields: Record<string, unknown>, actorId: string | null) {
+    const leg = await this.shipments.findById(id)
+    if (!leg) throw new NotFoundException(`shipment ${id} not found`)
+    const current = leg as Record<string, unknown>
+    const edited: string[] = []
+    for (const [field, raw] of Object.entries(fields ?? {})) {
+      if (!EDITABLE_FIELDS.has(field)) continue
+      const value = coerceField(field, raw)
+      if (asStr(current[field]) === asStr(value)) continue // no-op edit — skip lock/audit noise
+      await this.shipments.updateLeg(id, { [field]: value })
+      await this.fieldLocks.lock('shipment', id, field, asStr(value), actorId)
+      await this.audit.write({
+        entityType: 'shipment', entityId: id, field,
+        oldValue: asStr(current[field]), newValue: asStr(value), changeType: 'update',
+        sourceType: 'manual', actorUserId: actorId, note: 'edited on shipment detail',
+      })
+      edited.push(field)
+    }
+    return { id, edited }
+  }
 
   /** A single leg, enriched like the tracker list (customer / forwarder / route / linked POs) + timeline. */
   async getOne(id: string) {
