@@ -1,0 +1,38 @@
+# ShipTrack — self-contained stack: Postgres + the app image (backend serves API + SPA on :3000).
+#   docker compose up --build       # build the image + run everything
+#   open http://localhost:3000       # login admin@cobalt.hk / cobalt
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: cobalt
+    ports:
+      - "${DB_PORT:-5433}:5432" # host 5433 -> avoids clashing with a local Postgres on 5432
+    volumes:
+      - shiptrack_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d cobalt"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  app:
+    build: .
+    image: shiptrack:latest
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://postgres:postgres@db:5432/cobalt
+      PORT: "3000"
+      STATIC_ROOT: /app/frontend/dist
+      # first boot: create the schema + load demo data. Set both to "0" after the volume is seeded.
+      RUN_MIGRATIONS: "1"
+      SEED_ON_START: "1"
+    ports:
+      - "${APP_PORT:-3000}:3000"
+
+volumes:
+  shiptrack_pgdata:

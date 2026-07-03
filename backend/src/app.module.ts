@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common'
 import { ConfigModule } from '@nestjs/config'
+import { ServeStaticModule } from '@nestjs/serve-static'
 import { DrizzleModule } from './db/drizzle.module'
 import { HealthModule } from './health/health.module'
 import { MastersModule } from './masters/masters.module'
@@ -21,6 +22,12 @@ import { UsersModule } from './users/users.module'
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
+    // Single-image deploy (Docker): when STATIC_ROOT points at the built SPA, the backend also serves it,
+    // so one container answers both the UI (/) and the API (/api). Unset in local dev (Vite serves the UI),
+    // so this is a no-op there. The API keeps its /api prefix; /api/* is excluded from static fallback.
+    ...(process.env.STATIC_ROOT
+      ? [ServeStaticModule.forRoot({ rootPath: process.env.STATIC_ROOT, exclude: ['/api/(.*)'] })]
+      : []),
     DrizzleModule,
     RepositoriesModule,
     PresentationModule,
