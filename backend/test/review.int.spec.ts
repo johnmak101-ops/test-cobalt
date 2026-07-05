@@ -3,6 +3,7 @@ import { eq } from 'drizzle-orm'
 import * as schema from '@cobalt/contracts'
 import { getTestDb, resetDb, closeTestDb, repos, type TestDB } from './setup-db'
 import { ReviewService } from '../src/review/review.service'
+import { QueueLearningClient } from '../src/review/queue-learning.client'
 import { SettingsService } from '../src/settings/settings.service'
 
 let db: TestDB
@@ -14,7 +15,7 @@ beforeAll(async () => {
   const t = await getTestDb()
   db = t.db
   const r = repos(db)
-  review = new ReviewService(r.shipment, r.booking, r.fieldLock, r.audit)
+  review = new ReviewService(r.shipment, r.booking, r.fieldLock, r.audit, new QueueLearningClient())
   settings = new SettingsService(r.settings)
 })
 afterAll(closeTestDb)

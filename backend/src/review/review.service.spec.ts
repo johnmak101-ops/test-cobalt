@@ -4,6 +4,7 @@ import type { ShipmentRepository } from '../db/repositories/shipment.repository'
 import type { BookingRepository } from '../db/repositories/booking.repository'
 import type { FieldLockRepository } from '../db/repositories/field-lock.repository'
 import type { AuditRepository } from '../db/repositories/audit.repository'
+import type { QueueLearningClient } from './queue-learning.client'
 
 const leg = { id: 'leg-1', reviewStatus: 'provisional', grossWeight: 5, etd: null }
 
@@ -11,17 +12,20 @@ function makeService() {
   const shipments = {
     findById: vi.fn(async () => ({ ...leg })),
     updateLeg: vi.fn(async () => undefined),
+    sourceGraphIdFor: vi.fn(async () => 'graph-1'),
   }
   const bookings = {}
   const locks = { lock: vi.fn(async () => undefined) }
   const audit = { write: vi.fn(async () => undefined) }
+  const queueLearning = { postCorrection: vi.fn(async () => undefined) }
   const svc = new ReviewService(
     shipments as unknown as ShipmentRepository,
     bookings as unknown as BookingRepository,
     locks as unknown as FieldLockRepository,
     audit as unknown as AuditRepository,
+    queueLearning as unknown as QueueLearningClient,
   )
-  return { svc, shipments, locks, audit }
+  return { svc, shipments, locks, audit, queueLearning }
 }
 
 describe('ReviewService.confirm — reviewer note lands in the audit trail', () => {
@@ -65,5 +69,13 @@ describe('ReviewService.correct — coercion + human-wins locks', () => {
     expect(audit.write).toHaveBeenCalledWith(
       expect.objectContaining({ field: 'etd', note: 'ETD was the CFS date', sourceType: 'manual' }),
     )
+  })
+
+  it('pushes each corrected field to the queue learning feed (old→new, keyed by the source email)', async () => {
+    const { svc, queueLearning } = makeService()
+    await svc.correct('leg-1', { fields: { etd: '2026-07-12' }, reason: 'ETD was the CFS date' }, 'user-1')
+    expect(queueLearning.postCorrection).toHaveBeenCalledWith(expect.objectContaining({
+      messageId: 'graph-1', field: 'etd', agentSaid: null, humanCorrected: '2026-07-12T00:00:00.000Z', note: 'ETD was the CFS date',
+    }))
   })
 })
