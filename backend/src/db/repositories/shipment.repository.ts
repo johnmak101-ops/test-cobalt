@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common'
-import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm'
+import { and, desc, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm'
 import { alias } from 'drizzle-orm/pg-core'
 import * as schema from '@cobalt/contracts'
 import { DRIZZLE, type DrizzleDB } from '../drizzle.provider'
@@ -254,6 +254,18 @@ export class ShipmentRepository {
   async replaceEmails(shipmentId: string, rows: (typeof schema.shipmentEmails.$inferInsert)[]) {
     await this.db.delete(schema.shipmentEmails).where(eq(schema.shipmentEmails.shipmentId, shipmentId))
     if (rows.length) await this.db.insert(schema.shipmentEmails).values(rows).onConflictDoNothing()
+  }
+
+  /** The graph message id of the most recent source email for this shipment — used to attribute a review
+   *  correction back to its parsed record in the queue learning feed. Null when no source email is linked. */
+  async sourceGraphIdFor(shipmentId: string): Promise<string | null> {
+    const rows = await this.db
+      .select({ g: schema.shipmentEmails.graphMessageId })
+      .from(schema.shipmentEmails)
+      .where(and(eq(schema.shipmentEmails.shipmentId, shipmentId), isNotNull(schema.shipmentEmails.graphMessageId)))
+      .orderBy(desc(schema.shipmentEmails.receivedAt))
+      .limit(1)
+    return rows[0]?.g ?? null
   }
 
   // --- shipment_identifiers (every value each identity field ever held — current first) ---

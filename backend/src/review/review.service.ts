@@ -3,6 +3,7 @@ import { ShipmentRepository } from '../db/repositories/shipment.repository'
 import { BookingRepository } from '../db/repositories/booking.repository'
 import { FieldLockRepository } from '../db/repositories/field-lock.repository'
 import { AuditRepository } from '../db/repositories/audit.repository'
+import { QueueLearningClient } from './queue-learning.client'
 import type { CorrectDto } from './dto'
 
 const DATE_FIELDS = new Set([
@@ -38,6 +39,7 @@ export class ReviewService {
     private readonly bookings: BookingRepository,
     private readonly fieldLocks: FieldLockRepository,
     private readonly audit: AuditRepository,
+    private readonly queueLearning: QueueLearningClient,
   ) {}
 
   /** Provisional shipments awaiting review, lowest confidence first, with booking context. */
@@ -71,6 +73,10 @@ export class ReviewService {
     if (!leg) throw new NotFoundException(`shipment ${shipmentId} not found`)
     const current = leg as Record<string, unknown>
     const corrected: string[] = []
+    // Attribute the corrections to a source email (graph id → the queue resolves it to the parsed record);
+    // fall back to the shipment id so the correction is still captured when no source email is linked.
+    const messageId = (await this.shipments.sourceGraphIdFor(shipmentId)) ?? shipmentId
+    const forwarder = ((leg as Record<string, unknown>).forwarderRaw as string | null) ?? null
 
     for (const [field, raw] of Object.entries(dto.fields ?? {})) {
       const value = coerce(field, raw)
@@ -82,6 +88,10 @@ export class ReviewService {
         sourceType: 'manual', actorUserId: actorId, note: dto.reason ?? 'review: corrected',
       })
       corrected.push(field)
+      // Feed the correction to the queue learning loop (best-effort; never breaks the review save).
+      await this.queueLearning.postCorrection({
+        messageId, field, agentSaid: toStr(current[field]), humanCorrected: toStr(value), forwarder, note: dto.reason ?? null,
+      })
     }
 
     await this.shipments.updateLeg(shipmentId, { reviewStatus: 'confirmed', reviewedBy: actorId, reviewedAt: new Date() })
