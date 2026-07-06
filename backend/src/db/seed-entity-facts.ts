@@ -30,18 +30,47 @@ const ROLES: [string, string][] = [['AEOW', 'bill_to'], ['BLUI', 'importer_of_re
 /** alias/duplicate code → canonical survivor (folded before merge) */
 const CANONICAL: [string, string][] = [['COLEB', 'COLE']]
 
+// --- Curated resolution facts, ex-hardcoded in the cobalt-queue parser SEED (master.ts). These were
+// live in the tracking DB only, so a `cobalt_test`/`cobalt` reset lost them; seed them here so they
+// survive. Shapes verified against the consumers: vendor_alias (name→code) drives vendor resolution;
+// customer_vendor / consignee_for_customer match MastersService.curate()'s kinds (lhs=customer_code).
+/** raw vendor name → canonical vendor_code */
+const VENDOR_ALIASES: [string, string][] = [
+  ['ROSE KNIT', 'ROKNFT'], ['ROSEKNIT', 'ROKNFT'],
+  ["JI'AN HONGWEI", 'MACFUN'], ['JIAN HONGWEI', 'MACFUN'], ['MACAU FUNG TAI', 'MACFUN'],
+  ['ELEGANT SMART', 'ELSMCO'], ['ELEGANTSMART', 'ELSMCO'],
+]
+/** customer_code → its manufacturing vendor_code */
+const CUSTOMER_VENDOR: [string, string][] = [
+  ['DOCC', 'ROKNFT'], ['WYSE', 'MACFUN'], ['ELGC', 'ELSMCO'],
+]
+/** customer_code → its canonical consignee name */
+const CONSIGNEE_FOR_CUSTOMER: [string, string][] = [
+  ['DOCC', 'DOCLASSE CO., LTD'], ['WYSE', 'WYSE LONDON'], ['ELGC', 'STRAUSS OPERATIONS GMBH+CO.KG'],
+]
+
 async function main() {
   const pool = new Pool({ connectionString: DATABASE_URL })
   const db = drizzle(pool, { schema })
-  const rows = [
+  const entityRows = [
     ...GROUPS.map(([lhs, rhs]) => ({ kind: 'customer_group' as const, lhs, rhs })),
     ...ROLES.map(([lhs, rhs]) => ({ kind: 'customer_role' as const, lhs, rhs })),
     ...CANONICAL.map(([lhs, rhs]) => ({ kind: 'customer_canonical' as const, lhs, rhs })),
   ].map((r) => ({ ...r, status: 'approved' as const, source: 'seed' as const, reason: 'co-valid entity model seed' }))
 
+  const curatedRows = [
+    ...VENDOR_ALIASES.map(([lhs, rhs]) => ({ kind: 'vendor_alias' as const, lhs, rhs })),
+    ...CUSTOMER_VENDOR.map(([lhs, rhs]) => ({ kind: 'customer_vendor' as const, lhs, rhs })),
+    ...CONSIGNEE_FOR_CUSTOMER.map(([lhs, rhs]) => ({ kind: 'consignee_for_customer' as const, lhs, rhs })),
+  ].map((r) => ({ ...r, status: 'approved' as const, source: 'seed' as const, reason: 'curated resolution fact (ex-hardcoded parser master)' }))
+
+  const rows = [...entityRows, ...curatedRows]
   await db.insert(schema.masterResolution).values(rows).onConflictDoNothing()
   // eslint-disable-next-line no-console
-  console.log(`entity-relationship facts seeded (idempotent): ${GROUPS.length} group + ${ROLES.length} role + ${CANONICAL.length} canonical`)
+  console.log(
+    `master_resolution seeded (idempotent): ${GROUPS.length} group + ${ROLES.length} role + ${CANONICAL.length} canonical` +
+      ` + ${VENDOR_ALIASES.length} vendor_alias + ${CUSTOMER_VENDOR.length} customer_vendor + ${CONSIGNEE_FOR_CUSTOMER.length} consignee_for_customer`,
+  )
   await pool.end()
 }
 

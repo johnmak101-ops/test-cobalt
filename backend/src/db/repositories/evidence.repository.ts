@@ -13,6 +13,7 @@ export interface EvidenceRow {
   mode: string | null
   receivedAt: Date | null
   conversationId: string | null
+  sender: string | null
 }
 
 /** Read access to the evidence contract (parsed_record joined with its queue_message). */
@@ -48,8 +49,21 @@ export class EvidenceRepository {
         mode: schema.parsedRecord.mode,
         receivedAt: schema.queueMessage.receivedAt,
         conversationId: schema.queueMessage.conversationId,
+        sender: schema.queueMessage.sender,
       })
       .from(schema.parsedRecord)
       .innerJoin(schema.queueMessage, eq(schema.parsedRecord.messageId, schema.queueMessage.id))
+  }
+
+  /** Senders of the given source emails, keyed by graph_message_id — used to detect a leg built entirely
+   *  from the CVP notification platform (classifyKind rule (c)) on the agent/decisions path, where the DTO
+   *  carries no sender. Best-effort: a 2-VM split where queue_message isn't co-located returns fewer rows,
+   *  which the caller treats as "not provably platform-only" (never a false demote). */
+  sendersByGraphIds(graphMessageIds: string[]): Promise<{ graphMessageId: string | null; sender: string | null }[]> {
+    if (!graphMessageIds.length) return Promise.resolve([])
+    return this.db
+      .select({ graphMessageId: schema.queueMessage.graphMessageId, sender: schema.queueMessage.sender })
+      .from(schema.queueMessage)
+      .where(inArray(schema.queueMessage.graphMessageId, graphMessageIds))
   }
 }

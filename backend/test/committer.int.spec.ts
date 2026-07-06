@@ -220,3 +220,88 @@ describe('CommitterService — co-valid customer parties (integration)', () => {
     expect(parties).toHaveLength(0)
   })
 })
+
+describe('CommitterService — empty-cargo review flag (integration)', () => {
+  const reasons = (leg: { reviewReasons?: string[] | null }) => leg.reviewReasons ?? []
+  const hasCargoFlag = (leg: { reviewReasons?: string[] | null }) => reasons(leg).some((r) => /missing cargo detail/i.test(r))
+
+  it('a real booked leg that names a cargo UNIT but has no qty/weight/volume is routed to review', async () => {
+    // exactly the S2600240871A case: qty_unit='cartons' survived the reply body, but the numbers lived in
+    // the booking attachment that was never ingested → qty/gross_weight/measurement all null
+    const res = await committer.apply(group({
+      matchKeys: { booking_no: 'BKCARGO1' },
+      pos: ['PO-CARGO1'],
+      fields: { booking_no: 'BKCARGO1', qty_unit: 'cartons' },
+    }))
+    const [leg] = await db.select().from(schema.shipments).where(eq(schema.shipments.id, res.shipmentId))
+    expect(leg.reviewStatus).toBe('provisional')
+    expect(hasCargoFlag(leg)).toBe(true)
+  })
+
+  it('a leg WITH cargo numbers is NOT flagged for missing cargo', async () => {
+    const res = await committer.apply(group({
+      matchKeys: { booking_no: 'BKCARGO2' },
+      pos: ['PO-CARGO2'],
+      fields: { booking_no: 'BKCARGO2', qty: 100, qty_unit: 'cartons' },
+    }))
+    const [leg] = await db.select().from(schema.shipments).where(eq(schema.shipments.id, res.shipmentId))
+    expect(hasCargoFlag(leg)).toBe(false)
+  })
+
+  it('a nascent booking with NO cargo unit at all is NOT flagged (avoids over-flagging normal early bookings)', async () => {
+    const res = await committer.apply(group({
+      matchKeys: { booking_no: 'BKCARGO3' },
+      pos: ['PO-CARGO3'],
+      fields: { booking_no: 'BKCARGO3' },
+    }))
+    const [leg] = await db.select().from(schema.shipments).where(eq(schema.shipments.id, res.shipmentId))
+    expect(hasCargoFlag(leg)).toBe(false)
+  })
+})
+
+describe('CommitterService — CVP notification-platform legs → DOCUMENT (integration)', () => {
+  /** Seed a queue_message (the source email) with a graph id + sender, so the committer can resolve
+   *  whether the leg was built entirely from the notification platform on the agent path. */
+  async function seedEmail(graphMessageId: string, sender: string) {
+    await db
+      .insert(schema.queueMessage)
+      .values({ graphMessageId, sender, receivedAt: new Date('2026-07-01T08:22:00Z') })
+  }
+
+  const cvpGroup = (over: Partial<ReconGroup> = {}): ReconGroup =>
+    group({
+      fields: { booking_no: 'FENLPO003034A' }, // the portal's LPO ref leaked into booking_no — its only "identity"
+      matchKeys: { booking_no: 'FENLPO003034A' },
+      emailTypes: ['Other'],
+      events: [{ emailType: 'Other', receivedAt: '2026-07-01T08:22:00Z', graphId: 'cvp-1' }],
+      pos: ['120003616'],
+      ...over,
+    })
+
+  it("agent path: a leg built entirely from the CVP platform's emails commits as kind=DOCUMENT", async () => {
+    await seedEmail('cvp-1', 'notify.noreply2@tradelinkone.com')
+    const res = await committer.apply(cvpGroup()) // fromPlatform unset → committer resolves it from the sender
+    const [leg] = await db.select().from(schema.shipments).where(eq(schema.shipments.id, res.shipmentId))
+    expect(leg.kind).toBe('DOCUMENT')
+  })
+
+  it('the SAME leg from a real forwarder sender stays kind=SHIPMENT (booking# is a booked move)', async () => {
+    await seedEmail('cvp-1', 'ops@realforwarder.com')
+    const res = await committer.apply(cvpGroup())
+    const [leg] = await db.select().from(schema.shipments).where(eq(schema.shipments.id, res.shipmentId))
+    expect(leg.kind).toBe('SHIPMENT')
+  })
+
+  it('a platform leg that also carries a real MBL stays kind=SHIPMENT (a booked move the notice reports)', async () => {
+    await seedEmail('cvp-1', 'notify.noreply2@tradelinkone.com')
+    const res = await committer.apply(cvpGroup({ fields: { booking_no: 'FENLPO003034A', mbl: 'WHLC12345' } }))
+    const [leg] = await db.select().from(schema.shipments).where(eq(schema.shipments.id, res.shipmentId))
+    expect(leg.kind).toBe('SHIPMENT')
+  })
+
+  it('rebuild path: an explicit fromPlatform=true demotes without needing to resolve senders', async () => {
+    const res = await committer.apply(cvpGroup({ fromPlatform: true, events: [{ emailType: 'Other', receivedAt: '2026-07-01T08:22:00Z' }] }))
+    const [leg] = await db.select().from(schema.shipments).where(eq(schema.shipments.id, res.shipmentId))
+    expect(leg.kind).toBe('DOCUMENT')
+  })
+})

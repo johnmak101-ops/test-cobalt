@@ -257,8 +257,8 @@ export default function PurchaseOrdersPage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="min-w-0">
           <h1 className="text-xl font-semibold text-text-primary">Customer Purchase Orders</h1>
           <p className="mt-1 text-sm text-text-secondary">
             Track customer POs across multiple partial shipments
@@ -291,13 +291,13 @@ export default function PurchaseOrdersPage() {
             className="h-9 w-full rounded-lg border border-border bg-surface-800 pl-9 pr-3 text-sm text-text-primary placeholder:text-text-muted"
           />
         </div>
-        <div className="flex items-center gap-1.5">
+        <div className="flex flex-wrap items-center gap-1.5">
           <Calendar size={14} className="text-text-muted" />
           <input
             type="date"
             value={dateFrom}
             onChange={(e) => { setDateFrom(e.target.value); setPage(1) }}
-            className="h-9 rounded-lg border border-border bg-surface-800 px-2 text-sm text-text-primary"
+            className="h-9 w-full rounded-lg border border-border bg-surface-800 px-2 text-sm text-text-primary sm:w-auto"
             placeholder="From"
           />
           <span className="text-text-muted text-xs">—</span>
@@ -305,7 +305,7 @@ export default function PurchaseOrdersPage() {
             type="date"
             value={dateTo}
             onChange={(e) => { setDateTo(e.target.value); setPage(1) }}
-            className="h-9 rounded-lg border border-border bg-surface-800 px-2 text-sm text-text-primary"
+            className="h-9 w-full rounded-lg border border-border bg-surface-800 px-2 text-sm text-text-primary sm:w-auto"
             placeholder="To"
           />
           {(dateFrom || dateTo) && (

@@ -120,8 +120,8 @@ export default function AlertRulesPage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-3">
           <button
             onClick={() => navigate('/alerts')}
             className="rounded-lg p-1.5 text-text-muted hover:bg-surface-700 hover:text-text-primary"
@@ -138,7 +138,7 @@ export default function AlertRulesPage() {
           </div>
         </div>
         {!canEdit && (
-          <span className="inline-flex items-center gap-1.5 rounded-lg bg-surface-700 px-3 py-1.5 text-xs font-medium text-text-muted">
+          <span className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-surface-700 px-3 py-1.5 text-xs font-medium text-text-muted">
             <Lock size={13} />
             View only · a superadmin can edit
           </span>
@@ -157,7 +157,7 @@ export default function AlertRulesPage() {
               <Card key={rule.id}>
                 {/* Top row: name, severity badge, enabled toggle */}
                 <div className="flex items-center justify-between gap-4">
-                  <div className="flex items-center gap-2.5">
+                  <div className="flex min-w-0 flex-wrap items-center gap-2.5">
                     <span className="font-mono text-xs text-text-muted">{rule.id}</span>
                     <h4 className="text-sm font-semibold text-text-primary">{rule.name}</h4>
                     {rule.locked && (

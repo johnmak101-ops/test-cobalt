@@ -56,8 +56,8 @@ export default function DashboardPage() {
       {/* Alerts Requiring Attention */}
       {data?.recentAlerts && data.recentAlerts.length > 0 && (
         <div className="space-y-3">
-          <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-text-primary">
+          <div className="flex items-center justify-between gap-2">
+            <h2 className="min-w-0 truncate text-sm font-semibold text-text-primary">
               Alerts Requiring Attention
             </h2>
             <button

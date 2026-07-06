@@ -84,14 +84,14 @@ export default function UnlinkedDocumentsPage() {
 
   return (
     <div className="space-y-5">
-      <div className="flex items-center justify-between">
-        <div>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
           <h1 className="text-lg font-semibold text-text-primary">Unlinked Documents</h1>
           <p className="mt-0.5 text-xs text-text-muted">
             Orphan invoice &amp; misc emails with no shipment identity — link each to a shipment.
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <button
             onClick={() => qc.invalidateQueries({ queryKey: ['documents'] })}
             className="inline-flex items-center gap-1.5 rounded-lg bg-surface-700 px-3 py-1.5 text-xs font-medium text-text-secondary hover:bg-surface-600 hover:text-text-primary"

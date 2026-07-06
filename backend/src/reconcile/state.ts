@@ -41,18 +41,33 @@ export function deriveState(
  *       booking#/BL/MBL/container — only an order-reference so_no. An SO on a vendor invoice is an ORDER
  *       reference, not proof of a booked move, so such a leg is an invoice record, not a shipment. (A genuine
  *       SO *document* is a lifecycle type → hasLifecycle, so it is unaffected.)
+ *   (c) it was built ENTIRELY from the CVP/TradeLinkOne notification platform (every source email sent by
+ *       the portal — opts.fromPlatform), carries no lifecycle email, AND carries no real CARRIER identity
+ *       (BL/MBL/container). Such a leg is a vendor/PO notification (e.g. a "Vendor Delivery Date – Past due"
+ *       alert); the portal leaks its own LPO reference into booking_no, so booking_no here is an order ref,
+ *       not a booked move. Field shape alone can't catch this — an invoice carrying a genuine booking# IS a
+ *       shipment (see (b)/tests) — so the discriminator is the platform sender. A platform e-invoice that
+ *       reports a real BL/MBL/container still falls through to SHIPMENT.
  */
 const IDENTITY_FIELDS = ['booking_no', 'so_no', 'hbl_awb_fcr_no', 'mbl', 'container_no'] as const
 /** Identities that PROVE a booked move — so_no EXCLUDED (an invoice's SO is an order ref, see (b)). */
 const SHIPMENT_IDENTITY = ['booking_no', 'hbl_awb_fcr_no', 'mbl', 'container_no'] as const
+/** Carrier-issued identities — booking_no EXCLUDED (the portal leaks an LPO into it, see (c)). */
+const CARRIER_IDENTITY = ['hbl_awb_fcr_no', 'mbl', 'container_no'] as const
 const LIFECYCLE_TYPES = new Set(['Booking Request', 'SO', 'Draft B/L', 'Final B/L', 'Telex Release'])
-export function classifyKind(emailTypes: Set<string>, fields: Record<string, unknown>): 'SHIPMENT' | 'DOCUMENT' {
+export function classifyKind(
+  emailTypes: Set<string>,
+  fields: Record<string, unknown>,
+  opts: { fromPlatform?: boolean } = {},
+): 'SHIPMENT' | 'DOCUMENT' {
   const hasIdentity = IDENTITY_FIELDS.some((k) => has(fields[k]))
   const hasLifecycle = [...emailTypes].some((t) => LIFECYCLE_TYPES.has(t))
   if (!hasIdentity && !hasLifecycle) return 'DOCUMENT' // (a) bare orphan
   const invoiceOnly = emailTypes.size > 0 && [...emailTypes].every((t) => t === 'Invoice/Billing')
   const hasShipmentIdentity = SHIPMENT_IDENTITY.some((k) => has(fields[k]))
   if (invoiceOnly && !hasShipmentIdentity) return 'DOCUMENT' // (b) CVP invoice-only, SO-ref only
+  const hasCarrierIdentity = CARRIER_IDENTITY.some((k) => has(fields[k]))
+  if (opts.fromPlatform && !hasLifecycle && !hasCarrierIdentity) return 'DOCUMENT' // (c) CVP platform-only notification
   return 'SHIPMENT'
 }
 

@@ -114,3 +114,22 @@ body {
 .font-mono {
   font-family: var(--font-mono);
 }
+
+/* Gentle "breathing" pulse for the in-progress milestone node (a shipment that has departed but
+   not yet arrived). Scale + fade in/out — reads as "live / in transit", unlike a spinner which
+   reads as "loading". Respects reduced-motion. */
+@keyframes breathe {
+  0%, 100% { transform: scale(0.82); opacity: 0.6; }
+  50% { transform: scale(1.15); opacity: 1; }
+}
+
+.animate-breathe {
+  animation: breathe 2s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-breathe {
+    animation: none;
+    opacity: 1;
+  }
+}

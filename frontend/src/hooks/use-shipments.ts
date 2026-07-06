@@ -7,6 +7,9 @@ export interface LinkedPO {
   quantity: number | null
   totalQuantity: number | null
   quantityUnit: string | null
+  // Set when the shipped Qty is inconsistent with the ERP order (exceeds the total, or a different unit).
+  qtyIssue?: 'exceeds_total' | 'unit_mismatch' | null
+  qtyIssueDetail?: string | null
   notes?: string | null
   vendor?: { id: string; name: string; code: string } | null
   customer?: { id: string; name: string; code: string } | null
@@ -18,6 +21,7 @@ export interface Shipment {
   customerId: string | null
   vendorId: string | null
   forwarderId: string | null
+  mode: string | null
   route: string | null
   originCountry: string | null
   status: string
@@ -58,7 +62,15 @@ export interface Shipment {
   linkedPOs: LinkedPO[]
 }
 
+/** One contested identity field: ≥2 co-current values across emails, with the doc/email that stated each. */
+export interface FieldConflict {
+  column: string
+  label: string
+  values: Array<{ value: string; docType: string | null; sourceEmailId: string | null }>
+}
+
 export interface ShipmentDetail extends Shipment {
+  fieldConflicts?: FieldConflict[]
   milestones: Array<{
     id: string
     milestoneType: string
@@ -112,12 +124,37 @@ export function useShipment(id: string) {
   })
 }
 
+/** A human-entered new shipment (the pipeline never saw the booking). All fields optional; at least one
+ *  identity (booking/SO/HBL/MBL/container) OR a PO is required. Camel-cased keys match the backend DTO. */
+export interface CreateShipmentInput {
+  bookingNo?: string; soNo?: string; hblAwbFcrNo?: string; mbl?: string; containerNo?: string
+  customerCode?: string; forwarderName?: string; pol?: string; pod?: string; mode?: string
+  qty?: string; qtyUnit?: string; grossWeight?: string; measurement?: string
+  itemStyleNo?: string; consigneeName?: string; cargoReadyDate?: string; etd?: string
+  pos?: string[]; note?: string
+}
+
+/** Create a manual shipment (POST /api/shipments). It is minted through the committer, so a later agent
+ *  email upserts into it (no duplicate) and the human's fields are locked. Lands in the Review queue. */
+export function useCreateShipment() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (body: CreateShipmentInput) =>
+      api.post<{ id: string; jobNo: string; state: string }>('/shipments', body),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['shipments'] })
+      qc.invalidateQueries({ queryKey: ['review-queue'] })
+    },
+  })
+}
+
 /** Human edit of shipment fields (detail page). Body is a { dbField: value } map; the backend locks +
  *  audits each change so the parser can never overwrite it. Refetches the detail + history on success. */
 export function useUpdateShipment(id: string) {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (fields: Record<string, unknown>) => api.patch(`/shipments/${id}`, { fields }),
+    mutationFn: ({ fields, note }: { fields: Record<string, unknown>; note: string }) =>
+      api.patch(`/shipments/${id}`, { fields, note }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['shipment', id] })
       qc.invalidateQueries({ queryKey: ['shipment-history', id] })

@@ -1,5 +1,5 @@
 import { cn, formatDate } from '../../lib/utils'
-import { Check } from 'lucide-react'
+import { Check, Ship, Plane } from 'lucide-react'
 
 interface Milestone {
   id: string
@@ -12,6 +12,9 @@ interface MilestoneTimelineProps {
   milestones: Milestone[]
   currentStatus: string
   horizontal?: boolean
+  // Transport mode (SEA*/AIR) — picks the in-progress icon (a breathing ship vs plane). Null → a
+  // mode-agnostic breathing dot.
+  mode?: string | null
   // DEPARTED/ARRIVED have no milestone EVENT — the backend tracks them as the shipment's atd/ata
   // (actual) and etd/eta (estimated) dates. Pass them so those stages reflect reality instead of
   // always falling through to "Awaiting".
@@ -44,6 +47,7 @@ export function MilestoneTimeline({
   milestones,
   currentStatus,
   horizontal,
+  mode,
   etd,
   atd,
   eta,
@@ -52,6 +56,18 @@ export function MilestoneTimeline({
   warehouseStartDate,
 }: MilestoneTimelineProps) {
   const milestoneMap = new Map(milestones.map((m) => [m.milestoneType, m]))
+
+  // The in-progress stage's icon: a gently BREATHING transport icon chosen by mode (ship at sea, plane
+  // in the air) — reads as "live / in transit", not "loading" like a spinner. Unknown mode → a plain
+  // breathing dot. Colour comes from the node's text-status-warning; the dot sets its own amber fill.
+  const upperMode = (mode ?? '').toUpperCase()
+  const transitIcon = upperMode.startsWith('SEA') ? (
+    <Ship size={15} className="animate-breathe" />
+  ) : upperMode === 'AIR' ? (
+    <Plane size={15} className="animate-breathe" />
+  ) : (
+    <span className="h-2.5 w-2.5 rounded-full bg-status-warning animate-breathe" />
+  )
 
   // The ACTUAL date a stage occurred: a milestone EVENT for the document stages, or the shipment's own
   // atd/ata scalar for DEPARTED/ARRIVED (tracked as dates, not events). DEPARTED also falls back to a
@@ -90,13 +106,18 @@ export function MilestoneTimeline({
   const STATE_TO_INDEX: Record<string, number> = { BOOKED: 0, CONFIRMED: 1, AT_WAREHOUSE: 2, SAILED: 5, DEPARTED: 5, ARRIVED: 6 }
   currentIndex = Math.max(currentIndex, STATE_TO_INDEX[currentStatus] ?? -1)
 
+  const lastIndex = milestoneOrder.length - 1
   const stages = milestoneOrder.map((type, idx) => ({
     type,
     idx,
     label: milestoneLabels[type] ?? type,
     done: idx <= currentIndex, // monotonic: passed once a later stage is reached
+    // The furthest-reached stage is IN PROGRESS (e.g. sailed but not yet arrived) — the shipment is
+    // currently on this leg, not finished with it. Not applied to the terminal stage (DELIVERED): once
+    // delivered, everything is truly done, so it shows a completed tick rather than a spinner.
+    isCurrent: idx === currentIndex && idx < lastIndex,
     isNext: idx === currentIndex + 1,
-    isLast: idx === milestoneOrder.length - 1,
+    isLast: idx === lastIndex,
     date: actualDate(type),
     est: estDate(type),
   }))
@@ -118,24 +139,36 @@ export function MilestoneTimeline({
               <div
                 className={cn(
                   'z-10 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border-2',
-                  s.done
-                    ? 'border-cobalt-primary bg-cobalt-primary text-white'
-                    : s.isNext
-                      ? 'border-cobalt-primary bg-transparent'
-                      : 'border-border bg-transparent'
+                  s.isCurrent
+                    ? 'border-status-warning bg-status-warning/20 text-status-warning'
+                    : s.done
+                      ? 'border-cobalt-primary bg-cobalt-primary text-white'
+                      : s.isNext
+                        ? 'border-cobalt-primary bg-transparent'
+                        : 'border-border bg-transparent'
                 )}
               >
-                {s.done && <Check size={14} />}
+                {s.isCurrent ? transitIcon : s.done && <Check size={14} />}
               </div>
               <div className="mt-1.5 text-center">
-                <p className={cn('text-xs font-medium leading-tight', s.done ? 'text-text-primary' : 'text-text-muted')}>
+                <p
+                  className={cn(
+                    'text-xs font-medium leading-tight',
+                    s.isCurrent ? 'text-status-warning' : s.done ? 'text-text-primary' : 'text-text-muted',
+                  )}
+                >
                   {s.label}
                 </p>
                 {dateLine(s, 'text-[11px]')}
               </div>
             </div>
             {!s.isLast && (
-              <div className={cn('-mx-1 h-0.5 flex-1 self-center', s.idx < currentIndex ? 'bg-cobalt-primary' : 'bg-border')} />
+              <div
+                className={cn(
+                  '-mx-1 h-0.5 flex-1 self-center',
+                  s.idx < currentIndex ? 'bg-cobalt-primary' : s.isCurrent ? 'bg-status-warning' : 'bg-border',
+                )}
+              />
             )}
           </div>
         ))}
@@ -151,19 +184,35 @@ export function MilestoneTimeline({
             <div
               className={cn(
                 'flex h-7 w-7 shrink-0 items-center justify-center rounded-full border-2',
-                s.done
-                  ? 'border-cobalt-primary bg-cobalt-primary text-white'
-                  : s.isNext
-                    ? 'border-cobalt-primary bg-transparent'
-                    : 'border-border bg-transparent'
+                s.isCurrent
+                  ? 'border-status-warning bg-status-warning/20 text-status-warning'
+                  : s.done
+                    ? 'border-cobalt-primary bg-cobalt-primary text-white'
+                    : s.isNext
+                      ? 'border-cobalt-primary bg-transparent'
+                      : 'border-border bg-transparent'
               )}
             >
-              {s.done && <Check size={14} />}
+              {s.isCurrent ? transitIcon : s.done && <Check size={14} />}
             </div>
-            {!s.isLast && <div className={cn('min-h-8 w-0.5 flex-1', s.idx < currentIndex ? 'bg-cobalt-primary' : 'bg-border')} />}
+            {!s.isLast && (
+              <div
+                className={cn(
+                  'min-h-8 w-0.5 flex-1',
+                  s.idx < currentIndex ? 'bg-cobalt-primary' : s.isCurrent ? 'bg-status-warning' : 'bg-border',
+                )}
+              />
+            )}
           </div>
           <div className="pb-6 pt-0.5">
-            <p className={cn('text-sm font-medium', s.done ? 'text-text-primary' : 'text-text-muted')}>{s.label}</p>
+            <p
+              className={cn(
+                'text-sm font-medium',
+                s.isCurrent ? 'text-status-warning' : s.done ? 'text-text-primary' : 'text-text-muted',
+              )}
+            >
+              {s.label}
+            </p>
             {dateLine(s, 'text-xs')}
           </div>
         </div>

@@ -1,10 +1,57 @@
-import { Injectable, NotFoundException } from '@nestjs/common'
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common'
 import { ShipmentRepository } from '../db/repositories/shipment.repository'
 import { BookingRepository } from '../db/repositories/booking.repository'
 import { FieldLockRepository } from '../db/repositories/field-lock.repository'
 import { AuditRepository } from '../db/repositories/audit.repository'
+import { CommitterService, type ReconGroup } from '../reconcile/committer.service'
 import { strongKeys, keysOverlap, normKey, str } from '../reconcile/match-keys'
 import { deriveRoute } from '../presentation/adapters/derive'
+
+/** A human-entered new-shipment form. Every field optional; at least one identity OR a PO is required. */
+export interface ManualShipmentInput {
+  bookingNo?: string; soNo?: string; hblAwbFcrNo?: string; mbl?: string; containerNo?: string; scacCode?: string
+  customerCode?: string; vendorCode?: string; forwarderName?: string; pol?: string; pod?: string; mode?: string
+  qty?: number | string; qtyUnit?: string; grossWeight?: number | string; measurement?: number | string
+  itemStyleNo?: string; htsCode?: string; consigneeName?: string; consigneeAddress?: string
+  vesselName?: string; voyageNo?: string
+  cargoReadyDate?: string; warehouseStartDate?: string; warehouseEndDate?: string
+  etd?: string; atd?: string; eta?: string; ata?: string; inDcDate?: string
+  pos?: string[]; note?: string
+}
+
+/** dto key → committer parser field → leg column (null = master-resolved, so committed but not lock-per-column). */
+const CREATE_FIELD_MAP: { dto: keyof ManualShipmentInput; parser: string; leg: string | null }[] = [
+  { dto: 'bookingNo', parser: 'booking_no', leg: 'bookingNo' },
+  { dto: 'soNo', parser: 'so_no', leg: 'soNo' },
+  { dto: 'hblAwbFcrNo', parser: 'hbl_awb_fcr_no', leg: 'hblAwbFcrNo' },
+  { dto: 'mbl', parser: 'mbl', leg: 'mbl' },
+  { dto: 'containerNo', parser: 'container_no', leg: 'containerNo' },
+  { dto: 'scacCode', parser: 'scac_code', leg: 'scacCode' },
+  { dto: 'customerCode', parser: 'customer_code', leg: null },
+  { dto: 'vendorCode', parser: 'vendor_code', leg: null },
+  { dto: 'forwarderName', parser: 'forwarder_name', leg: null },
+  { dto: 'pol', parser: 'pol', leg: null },
+  { dto: 'pod', parser: 'pod', leg: null },
+  { dto: 'qty', parser: 'qty', leg: 'qty' },
+  { dto: 'qtyUnit', parser: 'qty_unit', leg: 'qtyUnit' },
+  { dto: 'grossWeight', parser: 'gross_weight', leg: 'grossWeight' },
+  { dto: 'measurement', parser: 'measurement', leg: 'measurement' },
+  { dto: 'itemStyleNo', parser: 'item_style_no', leg: 'itemStyleNo' },
+  { dto: 'htsCode', parser: 'hts_code', leg: 'htsCode' },
+  { dto: 'consigneeName', parser: 'consignee_name', leg: 'consigneeName' },
+  { dto: 'consigneeAddress', parser: 'consignee_address', leg: 'consigneeAddress' },
+  { dto: 'vesselName', parser: 'vessel_name', leg: 'vesselName' },
+  { dto: 'voyageNo', parser: 'voyage_no', leg: 'voyageNo' },
+  { dto: 'cargoReadyDate', parser: 'cargo_ready_date', leg: 'cargoReadyDate' },
+  { dto: 'warehouseStartDate', parser: 'warehouse_start_date', leg: 'warehouseStartDate' },
+  { dto: 'warehouseEndDate', parser: 'warehouse_end_date', leg: 'warehouseEndDate' },
+  { dto: 'etd', parser: 'etd', leg: 'etd' },
+  { dto: 'atd', parser: 'atd', leg: 'atd' },
+  { dto: 'eta', parser: 'eta', leg: 'eta' },
+  { dto: 'ata', parser: 'ata', leg: 'ata' },
+  { dto: 'inDcDate', parser: 'in_dc_date', leg: 'inDcDate' },
+]
+const STRONG_DTO = new Set(['bookingNo', 'soNo', 'hblAwbFcrNo', 'mbl', 'containerNo'])
 
 // Human-editable leg columns (DB names). Excludes computed/master-resolved fields (customer/forwarder/route/
 // ports) which need lookups, and identity plumbing. Same coercion the review flow uses.
@@ -31,7 +78,65 @@ export class ShipmentsService {
     private readonly bookings: BookingRepository,
     private readonly fieldLocks: FieldLockRepository,
     private readonly audit: AuditRepository,
+    private readonly committer: CommitterService,
   ) {}
+
+  /**
+   * Create a shipment a human entered by hand (the pipeline never saw it — e.g. the original booking email
+   * / attachment was never ingested). It is minted THROUGH the deterministic committer so it gains match-keys
+   * (a later agent email upserts into it by booking/SO/HBL/… instead of spawning a duplicate), audit, and the
+   * same shape as pipeline legs. Every field the human actually supplied is then LOCKED (human-wins), so the
+   * agent later FILLS gaps but never overwrites a human value. Lands `provisional` → the Review queue.
+   */
+  async createManual(input: ManualShipmentInput, actorId: string | null) {
+    const d = input as Record<string, unknown>
+    const val = (k: string): unknown => {
+      const v = d[k]
+      return v == null || v === '' ? null : v
+    }
+
+    const matchKeys: Record<string, unknown> = {}
+    const fields: Record<string, unknown> = {}
+    for (const m of CREATE_FIELD_MAP) {
+      const v = val(m.dto)
+      if (v == null) continue
+      fields[m.parser] = v
+      if (STRONG_DTO.has(m.dto)) matchKeys[m.parser] = String(v)
+    }
+    const pos = Array.isArray(d.pos) ? (d.pos as unknown[]).map((p) => String(p).trim()).filter(Boolean) : []
+    if (!Object.keys(matchKeys).length && !pos.length) {
+      throw new BadRequestException('a manual shipment needs at least one identity (booking / SO / HBL / MBL / container) or a PO')
+    }
+
+    const group: ReconGroup = {
+      fields,
+      pos,
+      matchKeys,
+      emailTypes: [],
+      events: [],
+      mode: (val('mode') as string | null) ?? null,
+      conversationId: null,
+      conflicts: [],
+      evidenceIds: [],
+      reviewStatus: 'provisional',
+      fromPlatform: false,
+    }
+    const res = await this.committer.apply(group)
+
+    // human-wins: lock each field the human actually supplied (agent may fill NULLs later, never overwrite)
+    const leg = (await this.shipments.findById(res.shipmentId)) as Record<string, unknown> | null
+    for (const m of CREATE_FIELD_MAP) {
+      if (m.leg && val(m.dto) != null && leg && leg[m.leg] != null) {
+        await this.fieldLocks.lock('shipment', res.shipmentId, m.leg, asStr(leg[m.leg]), actorId)
+      }
+    }
+    await this.audit.write({
+      entityType: 'shipment', entityId: res.shipmentId, field: 'created', oldValue: null, newValue: 'manual',
+      changeType: 'create', sourceType: 'manual', actorUserId: actorId,
+      note: String(d.note ?? '').trim() || 'shipment manually created',
+    })
+    return { id: res.shipmentId, jobNo: res.jobNo, state: res.state, action: res.action }
+  }
 
   /**
    * Human edit of shipment fields from the detail page. Each edited field is written, LOCKED (human-wins,
@@ -39,10 +144,14 @@ export class ShipmentsService {
    * review flow gives, but for any shipment and without changing its review status. Unknown/non-editable
    * fields are ignored (whitelist). `actorId` is the acting user for the lock + audit trail.
    */
-  async editFields(id: string, fields: Record<string, unknown>, actorId: string | null) {
+  async editFields(id: string, fields: Record<string, unknown>, actorId: string | null, note?: string | null) {
     const leg = await this.shipments.findById(id)
     if (!leg) throw new NotFoundException(`shipment ${id} not found`)
     const current = leg as Record<string, unknown>
+    // The human's note is REQUIRED by the edit UI and harvested for agent-soul iteration — persist it on
+    // every audited change so each correction carries the "why". Falls back to the generic marker only for
+    // legacy/no-note callers (the UI blocks a note-less save).
+    const feedback = (note ?? '').trim() || 'edited on shipment detail'
     const edited: string[] = []
     for (const [field, raw] of Object.entries(fields ?? {})) {
       if (!EDITABLE_FIELDS.has(field)) continue
@@ -53,7 +162,7 @@ export class ShipmentsService {
       await this.audit.write({
         entityType: 'shipment', entityId: id, field,
         oldValue: asStr(current[field]), newValue: asStr(value), changeType: 'update',
-        sourceType: 'manual', actorUserId: actorId, note: 'edited on shipment detail',
+        sourceType: 'manual', actorUserId: actorId, note: feedback,
       })
       edited.push(field)
     }

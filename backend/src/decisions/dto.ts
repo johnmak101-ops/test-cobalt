@@ -73,6 +73,11 @@ export class CreateDecisionDto {
   /** Why the gate withheld auto-apply (empty when autoApply) — surfaced in the review queue ahead of raw conflicts. */
   @IsOptional() @IsArray() @IsString({ each: true }) reviewReasons?: string[]
 
+  /** True when EVERY source email came from the CVP/TradeLinkOne notification platform — the leg is a
+   *  vendor/PO notification, not a booked move (routed to Documents, classifyKind rule (c)). Omitted by
+   *  legacy callers → the committer resolves it from the source emails' senders (defense in depth). */
+  @IsOptional() @IsBoolean() fromPlatform?: boolean
+
   /** Pointers back to the source emails (Graph is the permanent source of truth for "view original"). */
   @IsOptional() @IsArray() evidenceRefs?: { graphId?: string; graphMessageId?: string; sourceFile?: string; receivedAt?: string; emailType?: string }[]
 

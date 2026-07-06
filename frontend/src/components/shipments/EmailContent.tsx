@@ -75,7 +75,7 @@ export function EmailHeader({
   const cc = ccRecipients?.trim() || null
 
   return (
-    <div className="flex items-center gap-3 border-b border-border px-6 py-3">
+    <div className="flex items-center gap-3 border-b border-border px-4 py-3 sm:px-6">
       <div
         className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-sm font-semibold text-white"
         style={{ backgroundColor: avatarColor(email.sender || 'x') }}
@@ -93,7 +93,7 @@ export function EmailHeader({
         {cc && <div className="truncate text-xs text-text-muted">Cc: {cc}</div>}
       </div>
       <div className="flex shrink-0 flex-col items-end gap-1.5">
-        <span className="whitespace-nowrap text-xs text-text-muted">{fullDate(email.receivedAt)}</span>
+        <span className="whitespace-normal text-right text-xs text-text-muted sm:whitespace-nowrap">{fullDate(email.receivedAt)}</span>
         {email.emailType && <Badge variant="emailType" value={email.emailType} />}
       </div>
     </div>

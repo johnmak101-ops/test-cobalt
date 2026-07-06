@@ -74,6 +74,7 @@ export interface UiShipment {
   customerId: string | null
   vendorId: string | null
   forwarderId: string | null
+  mode: string | null
   route: string | null
   originCountry: string | null
   status: string
@@ -123,6 +124,7 @@ export function toUiShipment(input: ShipmentMapperInput): UiShipment {
     customerId: booking?.customerId ?? null,
     vendorId: booking?.vendorId ?? null,
     forwarderId: leg.forwarderId ?? null,
+    mode: leg.mode ?? null,
     route: deriveRoute(
       portLabel(leg.mode, input.polPort?.unlocode, input.polPort?.iata) ?? leg.polRaw,
       portLabel(leg.mode, input.podPort?.unlocode, input.podPort?.iata) ?? leg.podRaw,

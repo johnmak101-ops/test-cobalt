@@ -157,14 +157,23 @@ export const bookings = tracking.table('bookings', {
   notes: text('notes'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
-})
+}, (t) => [
+  // FK columns joined to masters when assembling shipment rows + used as list filters. (job_no's
+  // unique already indexes the natural key.)
+  index('bookings_customer_id_idx').on(t.customerId),
+  index('bookings_vendor_id_idx').on(t.vendorId),
+  index('bookings_forwarder_id_idx').on(t.forwarderId),
+])
 
 export const bookingPos = tracking.table('booking_pos', {
   id: uuid('id').primaryKey().defaultRandom(),
   bookingId: uuid('booking_id').notNull().references(() => bookings.id, { onDelete: 'cascade' }),
   poId: uuid('po_id').notNull().references(() => purchaseOrders.id),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-}, (t) => [unique('booking_pos_uq').on(t.bookingId, t.poId)])
+}, (t) => [
+  unique('booking_pos_uq').on(t.bookingId, t.poId),
+  index('booking_pos_po_id_idx').on(t.poId), // booking_id is covered by the unique's leading col
+])
 
 /** Shipment leg — VOLATILE child. State + all mutable execution fields live here. */
 export const shipments = tracking.table('shipments', {
@@ -234,7 +243,20 @@ export const shipments = tracking.table('shipments', {
   matchKeys: jsonb('match_keys').$type<Record<string, unknown>>(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
-}, (t) => [unique('shipments_booking_leg_uq').on(t.bookingId, t.legNo)])
+}, (t) => [
+  unique('shipments_booking_leg_uq').on(t.bookingId, t.legNo),
+  // The tracker/list/dashboard endpoints filter active legs and sort by recency; without an
+  // index every request full-scans + sorts the shipments table (which grows unbounded).
+  index('shipments_leg_status_updated_idx').on(t.legStatus, t.updatedAt),
+  index('shipments_kind_idx').on(t.kind), // SHIPMENT vs DOCUMENT (Unlinked Documents) split
+  index('shipments_review_status_idx').on(t.reviewStatus), // review queue / provisional filter
+  index('shipments_state_idx').on(t.state), // dashboard state filters
+  index('shipments_risk_level_idx').on(t.riskLevel), // dashboard "at risk" filter
+  // FK columns — Postgres does not auto-index them. Hot join paths: legs-per-booking and the
+  // presentation layer's per-booking PO enrichment.
+  index('shipments_booking_id_idx').on(t.bookingId),
+  index('shipments_forwarder_id_idx').on(t.forwarderId),
+])
 
 /** Partial-shipment split: which PO (and how much) rides on this leg. */
 export const shipmentPos = tracking.table('shipment_pos', {
@@ -244,7 +266,10 @@ export const shipmentPos = tracking.table('shipment_pos', {
   quantity: doublePrecision('quantity'),
   quantityUnit: text('quantity_unit', { enum: QTY_UNIT }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-}, (t) => [unique('shipment_pos_uq').on(t.shipmentId, t.poId)])
+}, (t) => [
+  unique('shipment_pos_uq').on(t.shipmentId, t.poId),
+  index('shipment_pos_po_id_idx').on(t.poId), // shipment_id is covered by the unique's leading col
+])
 
 /**
  * Identifier history + CO-CURRENT set — every value a shipment ever carried for each rotating identity
@@ -302,7 +327,7 @@ export const shipmentMilestones = tracking.table('shipment_milestones', {
   emailMessageId: text('email_message_id'), // graph id, for "view original"
   notes: text('notes'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-})
+}, (t) => [index('shipment_milestones_shipment_id_idx').on(t.shipmentId)]) // load milestones per shipment
 
 /** Every source email that contributed to a shipment — the "Related Emails" list. Separate from
  *  shipment_milestones because that dedupes by milestone type and skips unmapped ("Other"/Customs) emails,
@@ -314,7 +339,10 @@ export const shipmentEmails = tracking.table('shipment_emails', {
   emailType: text('email_type'),
   receivedAt: timestamp('received_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-}, (t) => [unique('shipment_emails_uq').on(t.shipmentId, t.graphMessageId)])
+}, (t) => [
+  unique('shipment_emails_uq').on(t.shipmentId, t.graphMessageId),
+  index('shipment_emails_graph_message_id_idx').on(t.graphMessageId), // "which shipments cite this email"
+])
 
 /** App settings — tracking-side tunables (e.g. the confidence threshold for the review gate).
  *  Key/value so the admin config page (and the decision router) read one row. */
@@ -368,7 +396,11 @@ export const reviewEmail = tracking.table('review_email', {
   reviewNotes: text('review_notes'), // the human's note on their decision
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
-})
+}, (t) => [
+  index('review_email_review_status_idx').on(t.reviewStatus), // the review-queue list filter
+  index('review_email_shipment_id_idx').on(t.shipmentId), // FK: the shipment's review row(s)
+  index('review_email_message_id_idx').on(t.messageId), // logical FK lookup by queue message
+])
 
 /** Inbox read-state (app-owned; queue.queue_message lives in the ingestion system). Global read-state,
  *  one row per message; the mark-read action upserts here. */

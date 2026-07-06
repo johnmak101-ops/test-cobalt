@@ -38,6 +38,12 @@ describe('humanizeReason — engineering audit strings → ops language', () => 
     expect(humanizeReason('mode change SEA → AIR')).toMatch(/Transport mode changed SEA → AIR/)
   })
 
+  it('explains a booked shipment with missing cargo (attachment likely not ingested)', () => {
+    expect(
+      humanizeReason('booked shipment missing cargo detail (qty/weight/volume) — source attachment likely not ingested'),
+    ).toMatch(/Cargo quantity \/ weight \/ volume is missing/)
+  })
+
   it('falls back to the raw string for unknown reasons', () => {
     expect(humanizeReason('some brand new reason')).toBe('some brand new reason')
   })

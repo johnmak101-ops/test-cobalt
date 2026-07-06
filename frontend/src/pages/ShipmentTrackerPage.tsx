@@ -2,8 +2,10 @@ import { useState } from 'react'
 import { useShipments } from '../hooks/use-shipments'
 import { ShipmentTable } from '../components/shipments/ShipmentTable'
 import { ShipmentFilters } from '../components/shipments/ShipmentFilters'
+import { NewShipmentModal } from '../components/shipments/NewShipmentModal'
 import { Pagination, usePagination, PageSizeSelect } from '../components/ui/Pagination'
-import { Search, RefreshCw } from 'lucide-react'
+import { toast } from '../components/ui/Toast'
+import { Search, RefreshCw, Plus } from 'lucide-react'
 import { useQueryClient } from '@tanstack/react-query'
 
 export default function ShipmentTrackerPage() {
@@ -11,6 +13,7 @@ export default function ShipmentTrackerPage() {
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
   const [perPage, setPerPage] = useState(25)
+  const [showNew, setShowNew] = useState(false)
   const { data, isLoading } = useShipments({ status: statusFilter })
   const qc = useQueryClient()
 
@@ -63,11 +66,21 @@ export default function ShipmentTrackerPage() {
 
   return (
     <div className="space-y-5">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-lg font-semibold text-text-primary">Shipment Tracker</h1>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <button
-            onClick={() => qc.invalidateQueries({ queryKey: ['shipments'] })}
+            onClick={() => setShowNew(true)}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-cobalt-primary px-3 py-1.5 text-xs font-medium text-white hover:bg-cobalt-primary-light"
+          >
+            <Plus size={14} />
+            New shipment
+          </button>
+          <button
+            onClick={async () => {
+              await qc.invalidateQueries({ queryKey: ['shipments'] })
+              toast('Shipments refreshed')
+            }}
             className="inline-flex items-center gap-1.5 rounded-lg bg-surface-700 px-3 py-1.5 text-xs font-medium text-text-secondary hover:bg-surface-600 hover:text-text-primary"
           >
             <RefreshCw size={14} />
@@ -76,6 +89,8 @@ export default function ShipmentTrackerPage() {
           <PageSizeSelect value={perPage} onChange={handlePageSizeChange} />
         </div>
       </div>
+
+      {showNew && <NewShipmentModal onClose={() => setShowNew(false)} />}
 
       {/* Search */}
       <div className="relative">

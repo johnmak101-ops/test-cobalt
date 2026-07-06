@@ -5,6 +5,7 @@ import { strongKeys, mergeKeys, normKey } from './match-keys'
 import { CommitterService, type ReconGroup, type CommitResult } from './committer.service'
 import { EvidenceRepository, type EvidenceRow } from '../db/repositories/evidence.repository'
 import { SettingsService } from '../settings/settings.service'
+import { isNotificationPlatformSender } from './vendor-forwarder-guard'
 
 @Injectable()
 export class ReconcileService {
@@ -38,6 +39,8 @@ export class ReconcileService {
         matchKeys,
         emailTypes: [...new Set(grp.map((r) => r.emailType).filter((t): t is string => !!t))],
         events: grp.map((r) => ({ emailType: r.emailType ?? 'Other', receivedAt: iso(r.receivedAt) })),
+        // every source email sent by the notification platform → a vendor/PO notification, not a shipment (rule c)
+        fromPlatform: grp.length > 0 && grp.every((r) => isNotificationPlatformSender(r.sender)),
         mode: grp.map((r) => r.mode).find((m): m is string => !!m) ?? null,
         conversationId: grp[0].conversationId,
         evidenceIds: grp.map((r) => r.id),

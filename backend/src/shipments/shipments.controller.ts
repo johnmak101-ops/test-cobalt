@@ -1,5 +1,5 @@
 import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common'
-import { ShipmentsService } from './shipments.service'
+import { ShipmentsService, type ManualShipmentInput } from './shipments.service'
 import { PresentationService } from '../presentation/presentation.service'
 import { Roles, CurrentUser } from '../auth/decorators'
 import type { AuthUser } from '../auth/auth.service'
@@ -42,6 +42,16 @@ export class ShipmentsController {
     return this.ui.shipment(id)
   }
 
+  /**
+   * POST /api/shipments — human-created shipment (the pipeline never saw the booking). Minted through the
+   * committer so a later agent email upserts into it (no duplicate) and human-entered fields are locked.
+   * Lands provisional → the Review queue. Requires at least one identity or a PO.
+   */
+  @Roles('EDITOR', 'ADMIN')
+  @Post() create(@Body() body: ManualShipmentInput, @CurrentUser() actor: AuthUser) {
+    return this.shipments.createManual(body ?? {}, actor?.id ?? null)
+  }
+
   /** POST /api/shipments/:id/confirm — human "approve": mark a provisional shipment confirmed. */
   @Roles('EDITOR', 'ADMIN')
   @Post(':id/confirm') confirm(@Param('id') id: string) {
@@ -54,9 +64,9 @@ export class ShipmentsController {
    */
   @Patch(':id') edit(
     @Param('id') id: string,
-    @Body() body: { fields?: Record<string, unknown> },
+    @Body() body: { fields?: Record<string, unknown>; note?: string },
     @CurrentUser() actor: AuthUser,
   ) {
-    return this.shipments.editFields(id, body?.fields ?? {}, actor?.id ?? null)
+    return this.shipments.editFields(id, body?.fields ?? {}, actor?.id ?? null, body?.note ?? null)
   }
 }

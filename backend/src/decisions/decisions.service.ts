@@ -71,6 +71,8 @@ export class DecisionsService {
       mode: dto.mode ?? null,
       conversationId: dto.conversationId ?? null,
       cancelled: dto.cancelled ?? false,
+      fromPlatform: dto.fromPlatform, // undefined → committer resolves from source-email senders
+
       conflicts: dto.conflicts ?? [],
       identifiers: dto.identifiers ?? [],
       entities: dto.entities ?? [],

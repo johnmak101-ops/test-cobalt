@@ -62,14 +62,14 @@ export default function ReviewQueuePage() {
   return (
     <div className="space-y-5">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
           <h1 className="text-lg font-semibold text-text-primary">Review Queue</h1>
           <p className="mt-0.5 text-xs text-text-muted">
             Provisional shipments awaiting confirmation — resolve the flagged reasons, then approve.
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <button
             onClick={async () => {
               await Promise.all([

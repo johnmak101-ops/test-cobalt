@@ -1,5 +1,6 @@
 import { formatDate, formatDateTime } from '../../lib/utils'
 import { cn } from '../../lib/utils'
+import { fieldLabel } from '../../lib/field-labels'
 import type { HistoryEntry } from '../../hooks/use-shipment-history'
 import {
   Clock,
@@ -10,18 +11,6 @@ import {
   ArrowRight,
   ExternalLink,
 } from 'lucide-react'
-
-const fieldLabels: Record<string, string> = {
-  etd: 'ETD',
-  eta: 'ETA',
-  vessel_name: 'Vessel',
-  status: 'Status',
-  cfs_cutoff: 'CFS Cutoff',
-  hbl_number: 'HBL#',
-  voyage_number: 'Voyage#',
-  quantity_shipped: 'Qty Shipped',
-  risk_level: 'Risk Level',
-}
 
 const sourceIcons = {
   email: Mail,
@@ -79,7 +68,7 @@ export function ShipmentHistoryTimeline({ history }: ShipmentHistoryTimelineProp
             <div className="min-w-0 flex-1 pt-0.5">
               <div className="flex items-center gap-2">
                 <span className="text-sm font-medium text-text-primary">
-                  {fieldLabels[entry.field] ?? entry.field}
+                  {fieldLabel(entry.field)}
                 </span>
                 {entry.isDelay && (
                   <span className="rounded bg-status-critical/15 px-1.5 py-0.5 text-[10px] font-semibold text-status-critical">
@@ -133,11 +122,16 @@ export function ShipmentHistoryTimeline({ history }: ShipmentHistoryTimelineProp
   )
 }
 
+// Leg-column date fields (camelCase, the vocabulary the backend history emits) + legacy snake keys.
+const DATE_FIELDS = new Set([
+  'etd', 'atd', 'eta', 'ata', 'cargoReadyDate', 'warehouseStartDate', 'warehouseEndDate',
+  'cfsCutoff', 'inDcDate', 'cfs_cutoff',
+])
+
 function formatFieldValue(field: string, value: string | null): string {
   if (!value) return '(empty)'
 
-  // Date fields
-  if (['etd', 'eta', 'cfs_cutoff'].includes(field)) {
+  if (DATE_FIELDS.has(field)) {
     try {
       return formatDate(value)
     } catch {
@@ -145,8 +139,8 @@ function formatFieldValue(field: string, value: string | null): string {
     }
   }
 
-  // Status: make readable
-  if (field === 'status' || field === 'risk_level') {
+  // Status / state / risk: underscores → spaces for readability (AT_WAREHOUSE → AT WAREHOUSE)
+  if (field === 'status' || field === 'state' || field === 'reviewStatus' || field === 'risk_level') {
     return value.replace(/_/g, ' ')
   }
 
