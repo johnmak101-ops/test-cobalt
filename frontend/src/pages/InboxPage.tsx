@@ -192,7 +192,7 @@ export default function InboxPage() {
   return (
     <div className="flex h-full flex-col">
       {/* Header */}
-      <div className="mb-4 flex shrink-0 items-center justify-between">
+      <div className="mb-4 flex shrink-0 flex-wrap items-center justify-between gap-2">
         <h1 className="text-lg font-semibold text-text-primary">Shipping Inbox</h1>
         <div className="flex items-center gap-2">
           <button

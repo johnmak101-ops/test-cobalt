@@ -1,6 +1,6 @@
 import { Fragment, useMemo, useState } from 'react'
 import { useNavigate, useParams, Link } from 'react-router-dom'
-import { useShipment } from '../hooks/use-shipments'
+import { useShipment, type FieldConflict } from '../hooks/use-shipments'
 import { useShipmentHistory, type HistoryEntry } from '../hooks/use-shipment-history'
 import { useConfirmShipment, useCorrectShipment } from '../hooks/use-review-queue'
 import { Card } from '../components/ui/Card'
@@ -51,14 +51,57 @@ const normField = (f: string | null | undefined) => {
   return AUDIT_ALIASES[n] ?? n
 }
 
-/** Per contested field: what each email said, in time order — the cross-check trail. */
-function ConflictEvidence({ conflicts, history }: { conflicts: Set<string>; history: HistoryEntry[] }) {
+/** One line in the evidence card: a competing value + where it came from. */
+interface EvidenceEntry {
+  key: string
+  value: string
+  source: string | null // doc type ("Invoice/Billing") or "manual edit" / "system"
+  sourceEmailId: string | null // graph id → open the email
+  when: string | null
+}
+
+/**
+ * Per contested field: what each email said — the cross-check trail. Primary source is the
+ * backend-computed fieldConflicts (the ≥2 co-current identity values, with their doc type), which works
+ * even when the gate's reason is a bare count. Falls back to the audit history for any conflicted field
+ * not covered there (e.g. a "backend conflict on gross_weight" naming a non-identity field).
+ */
+function ConflictEvidence({
+  conflicts,
+  fieldConflicts,
+  history,
+}: {
+  conflicts: Set<string>
+  fieldConflicts: FieldConflict[]
+  history: HistoryEntry[]
+}) {
   const byColumn = [...conflicts]
-    .map((column) => ({
-      column,
-      label: EDITABLE_FIELDS.find((f) => f.column === column)?.label ?? column,
-      entries: history.filter((h) => normField(h.field) === normField(column)),
-    }))
+    .map((column) => {
+      const fc = fieldConflicts.find((c) => c.column === column)
+      if (fc) {
+        return {
+          column,
+          label: fc.label,
+          entries: fc.values.map((v, i): EvidenceEntry => ({
+            key: `${column}-${i}`,
+            value: v.value,
+            source: v.docType,
+            sourceEmailId: v.sourceEmailId,
+            when: null,
+          })),
+        }
+      }
+      const entries = history
+        .filter((h) => normField(h.field) === normField(column))
+        .map((e): EvidenceEntry => ({
+          key: e.id,
+          value: e.newValue ?? '(cleared)',
+          source: e.sourceType === 'email' ? e.notes ?? 'source email' : e.sourceType === 'manual' ? 'manual edit' : 'system',
+          sourceEmailId: e.sourceType === 'email' ? e.sourceId : null,
+          when: e.changedAt,
+        }))
+      return { column, label: EDITABLE_FIELDS.find((f) => f.column === column)?.label ?? column, entries }
+    })
     .filter((g) => g.entries.length > 0)
   if (byColumn.length === 0) return null
 
@@ -69,8 +112,8 @@ function ConflictEvidence({ conflicts, history }: { conflicts: Set<string>; hist
         Conflicting values — what each email said
       </h4>
       <p className="mb-4 text-xs text-text-muted">
-        Click an email to open it and cross-check, then correct the field below (or approve as-is
-        if the latest value is right).
+        These fields got different values from different emails. Open a source to cross-check, then
+        correct the field below (or approve as-is if the value shown is right).
       </p>
       <div className="space-y-4">
         {byColumn.map((g) => (
@@ -78,22 +121,22 @@ function ConflictEvidence({ conflicts, history }: { conflicts: Set<string>; hist
             <p className="mb-1.5 text-xs font-medium text-status-warning">{g.label}</p>
             <div className="space-y-1">
               {g.entries.map((e) => (
-                <div key={e.id} className="flex flex-wrap items-center gap-x-3 gap-y-0.5 rounded-lg bg-surface-900 px-3 py-2">
-                  <span className="font-mono text-sm text-text-primary">{e.newValue ?? '(cleared)'}</span>
-                  {e.sourceType === 'email' && e.sourceId ? (
+                <div key={e.key} className="flex flex-wrap items-center gap-x-3 gap-y-0.5 rounded-lg bg-surface-900 px-3 py-2">
+                  <span className="break-all font-mono text-sm text-text-primary">{e.value || '(blank)'}</span>
+                  {e.sourceEmailId ? (
                     <button
-                      onClick={() => openEmailPopup(e.sourceId!)}
+                      onClick={() => openEmailPopup(e.sourceEmailId!)}
                       title="Open the source email"
                       className="inline-flex min-w-0 max-w-full items-center gap-1 text-left text-xs text-text-muted hover:text-cobalt-primary-light hover:underline"
                     >
                       <Mail size={11} className="shrink-0" />
-                      <span className="truncate">{e.notes ?? 'source email'}</span>
+                      <span className="truncate">{e.source ?? 'source email'}</span>
                       <ExternalLink size={10} className="shrink-0" />
                     </button>
                   ) : (
-                    <span className="text-xs text-text-muted">{e.sourceType === 'manual' ? 'manual edit' : 'system'}</span>
+                    e.source && <span className="text-xs text-text-muted">{e.source}</span>
                   )}
-                  <span className="ml-auto font-mono text-[11px] text-text-muted">{formatDateTime(e.changedAt)}</span>
+                  {e.when && <span className="ml-auto font-mono text-[11px] text-text-muted">{formatDateTime(e.when)}</span>}
                 </div>
               ))}
             </div>
@@ -121,9 +164,16 @@ export default function ReviewShipmentPage() {
   const [styleRows, setStyleRows] = useState<StyleEntry[] | null>(null)
   const [note, setNote] = useState('')
 
+  // Contested fields come from two sources: reason strings that NAME fields ("backend conflict on qty,…")
+  // and — when the reason is a bare count ("N unresolved field conflict(s)") — the backend-computed
+  // fieldConflicts (identity types with ≥2 co-current values). Union both so the field highlights either way.
   const conflicts = useMemo(
-    () => new Set(conflictColumns(shipment?.reviewReasons ?? [])),
-    [shipment?.reviewReasons],
+    () =>
+      new Set([
+        ...conflictColumns(shipment?.reviewReasons ?? []),
+        ...(shipment?.fieldConflicts ?? []).map((c) => c.column),
+      ]),
+    [shipment?.reviewReasons, shipment?.fieldConflicts],
   )
 
   if (isLoading) {
@@ -173,9 +223,11 @@ export default function ReviewShipmentPage() {
     confirmMutation.mutate({ shipmentId: id, note }, { onSuccess: done })
   }
 
+  // A note is mandatory when saving corrections — it's the feedback harvested for agent-soul iteration.
+  const correctBlocked = dirtyCount > 0 && !note.trim()
   const handleCorrectAndApprove = () => {
-    if (!id || dirtyCount === 0) return
-    correctMutation.mutate({ shipmentId: id, fields: dirty, reason: note }, { onSuccess: done })
+    if (!id || dirtyCount === 0 || !note.trim()) return
+    correctMutation.mutate({ shipmentId: id, fields: dirty, reason: note.trim() }, { onSuccess: done })
   }
 
   const poList = parsePONumbers(shipment.poNumbers)
@@ -195,8 +247,8 @@ export default function ReviewShipmentPage() {
         </button>
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
-            <div className="flex items-center gap-3">
-              <h1 className="font-mono text-xl font-semibold text-text-primary">{title}</h1>
+            <div className="flex min-w-0 items-center gap-3">
+              <h1 className="truncate font-mono text-xl font-semibold text-text-primary">{title}</h1>
               <Badge variant="status" value={shipment.status} />
             </div>
             <p className="mt-1 text-sm text-text-secondary">
@@ -230,7 +282,11 @@ export default function ReviewShipmentPage() {
       </div>
 
       {/* Which fields conflict, what each email said, and where to cross-check */}
-      <ConflictEvidence conflicts={conflicts} history={historyData?.history ?? []} />
+      <ConflictEvidence
+        conflicts={conflicts}
+        fieldConflicts={shipment.fieldConflicts ?? []}
+        history={historyData?.history ?? []}
+      />
 
       {/* Editable field sections (Items/Styles table follows Order Info) */}
       {SECTIONS.map((section) => (
@@ -270,7 +326,7 @@ export default function ReviewShipmentPage() {
         </Card>
         {section === 'Order Info' && (
       <Card className={cn(conflicts.has('itemStyleNo') && 'border-status-warning/60')}>
-        <div className="mb-3 flex items-center justify-between">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
           <h4
             className={cn(
               'flex items-center gap-1.5 text-sm font-semibold',
@@ -292,6 +348,7 @@ export default function ReviewShipmentPage() {
         {rows.length === 0 ? (
           <p className="text-xs text-text-muted">No items/styles recorded — add a row to enter them.</p>
         ) : (
+          <div className="overflow-x-auto">
           <table className="w-full max-w-2xl text-sm">
             <thead>
               <tr className="text-left text-xs text-text-muted">
@@ -336,6 +393,7 @@ export default function ReviewShipmentPage() {
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </Card>
         )}
@@ -347,6 +405,7 @@ export default function ReviewShipmentPage() {
         <h4 className="mb-1 flex items-center gap-2 text-sm font-semibold text-text-primary">
           <NotebookPen size={14} className="text-text-muted" />
           Notes for the agent
+          {dirtyCount > 0 && <span className="text-xs font-normal text-status-warning">· required to save corrections</span>}
         </h4>
         <p className="mb-3 text-xs text-text-muted">
           What did the agent get wrong, and how should it decide next time? Saved to the audit
@@ -357,8 +416,16 @@ export default function ReviewShipmentPage() {
           onChange={(e) => setNote(e.target.value)}
           rows={3}
           placeholder="e.g. qty came from the wrong 进仓单 column — use the CTNS column, not the pieces column"
-          className="w-full rounded-lg border border-border bg-surface-900 p-3 text-sm text-text-primary placeholder:text-text-muted"
+          className={cn(
+            'w-full rounded-lg border bg-surface-900 p-3 text-sm text-text-primary placeholder:text-text-muted',
+            correctBlocked ? 'border-status-warning/60' : 'border-border',
+          )}
         />
+        {correctBlocked && (
+          <p className="mt-1.5 text-xs text-status-warning">
+            Add a note to save your {dirtyCount} correction{dirtyCount !== 1 ? 's' : ''}.
+          </p>
+        )}
       </Card>
 
       {/* Related emails (evidence) */}
@@ -393,7 +460,7 @@ export default function ReviewShipmentPage() {
       )}
 
       {/* Actions */}
-      <div className="sticky bottom-4 flex items-center justify-end gap-2 rounded-xl border border-border bg-surface-800/95 p-3 shadow-lg backdrop-blur">
+      <div className="sticky bottom-4 flex flex-wrap items-center justify-end gap-2 rounded-xl border border-border bg-surface-800/95 p-3 shadow-lg backdrop-blur">
         {dirtyCount > 0 && (
           <span className="mr-auto text-xs text-text-muted">
             {dirtyCount} field{dirtyCount !== 1 ? 's' : ''} edited — corrections lock the field so
@@ -411,7 +478,8 @@ export default function ReviewShipmentPage() {
         </button>
         <button
           onClick={handleCorrectAndApprove}
-          disabled={busy || dirtyCount === 0}
+          disabled={busy || dirtyCount === 0 || correctBlocked}
+          title={correctBlocked ? 'Add a note for the agent before saving corrections' : undefined}
           className="inline-flex items-center gap-1.5 rounded-lg bg-cobalt-primary px-3 py-2 text-xs font-medium text-white transition-colors hover:bg-cobalt-primary-light disabled:cursor-not-allowed disabled:opacity-50"
         >
           {correctMutation.isPending ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />}

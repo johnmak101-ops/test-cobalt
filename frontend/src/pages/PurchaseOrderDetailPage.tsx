@@ -51,9 +51,9 @@ export default function PurchaseOrderDetailPage() {
           <ArrowLeft size={14} />
           {fromShipment ? 'Back to Shipment' : 'Back to Customer POs'}
         </button>
-        <div className="flex items-start justify-between">
-          <div>
-            <h1 className="font-mono text-xl font-semibold text-text-primary">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0">
+            <h1 className="break-words font-mono text-xl font-semibold text-text-primary">
               {po.poNumber}
             </h1>
             <p className="mt-1 text-sm text-text-secondary">
@@ -61,7 +61,7 @@ export default function PurchaseOrderDetailPage() {
               {po.vendor && ` · Vendor: ${po.vendor.name}`}
             </p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex shrink-0 items-center gap-2">
             <Package size={16} className="text-cobalt-primary" />
             <span className="text-sm font-medium text-text-primary">Customer Purchase Order</span>
           </div>
@@ -168,6 +168,7 @@ export default function PurchaseOrderDetailPage() {
           </div>
         ) : (
           <div className="overflow-hidden rounded-xl border border-border bg-surface-800">
+            <div className="overflow-x-auto">
             <table className="w-full">
               <thead>
                 <tr className="border-b border-border bg-surface-900/50">
@@ -238,6 +239,7 @@ UOM
                 ))}
               </tbody>
             </table>
+            </div>
           </div>
         )}
       </div>

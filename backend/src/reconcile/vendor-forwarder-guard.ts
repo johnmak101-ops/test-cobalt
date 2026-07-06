@@ -37,6 +37,14 @@ export function isPlatformNotForwarder(name: string | null | undefined): boolean
   return !!name && PLATFORM_NOT_FORWARDER.some((re) => re.test(name))
 }
 
+/** True when a raw email SENDER address belongs to the CVP/TradeLinkOne notification platform (e.g.
+ *  notify.noreply2@tradelinkone.com). The portal only emits vendor/PO notifications, never a booked
+ *  freight move — a leg built ENTIRELY from such senders is a Document, not a shipment (classifyKind
+ *  rule (c)). Reuses the same platform patterns as the forwarder scrub. */
+export function isNotificationPlatformSender(sender: string | null | undefined): boolean {
+  return isPlatformNotForwarder(sender)
+}
+
 export function guardVendorForwarder(input: GuardInput): GuardResult {
   const { vendorCode, vendorId, forwarderId, forwarderIdForVendorCode, approvedKeys } = input
   const unchanged: GuardResult = { vendorId, forwarderId, misclassified: false, reasons: [] }

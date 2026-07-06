@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common'
 import type * as schema from '@cobalt/contracts'
 import type { QTY_UNIT } from '@cobalt/contracts'
 import { keysOverlap, strongKeys, normKey, str, num, date } from './match-keys'
-import { guardVendorForwarder, isPlatformNotForwarder } from './vendor-forwarder-guard'
+import { guardVendorForwarder, isPlatformNotForwarder, isNotificationPlatformSender } from './vendor-forwarder-guard'
 import { deriveState, classifyKind, MILESTONE_OF, DERIVED_MILESTONE_OF, normMode } from './state'
 import { MastersRepository } from '../db/repositories/masters.repository'
 import { BookingRepository } from '../db/repositories/booking.repository'
@@ -11,6 +11,7 @@ import { FieldLockRepository } from '../db/repositories/field-lock.repository'
 import { AuditRepository } from '../db/repositories/audit.repository'
 import { EvidenceRepository } from '../db/repositories/evidence.repository'
 import { resolvePoEnrichment } from './po-enrichment'
+import { poQtyIssue, describePoQtyIssue } from './po-qty-consistency'
 
 /** Dedupe a comma-joined list (order-preserving, case-insensitive) — style/HTS lists pile up across the
  *  multiple PO sheets + B/L rider, so the same value repeats. Applied at commit so it holds without a reparse. */
@@ -62,6 +63,10 @@ export interface ReconGroup {
   /** The booking was cancelled — the committed leg's leg_status becomes 'CANCELLED' instead of 'ACTIVE'.
    *  Undefined/false on the legacy path → leg stays 'ACTIVE' (unchanged). */
   cancelled?: boolean
+  /** True when EVERY source email was sent by the CVP/TradeLinkOne notification platform — the leg is a
+   *  vendor/PO notification, not a booked move (drives classifyKind rule (c)). Set on the rebuild path
+   *  (senders known); undefined on the agent path, where the committer resolves it from the source emails. */
+  fromPlatform?: boolean
   conflicts: string[]
   evidenceIds: string[]
   /** Critic's per-shipment confidence (0-100) and the resulting review gate. Undefined on the
@@ -175,7 +180,10 @@ export class CommitterService {
     // leg keeps the existing 'ACTIVE' default. This is a lifecycle flag, not a lockable field.
     const legStatus: 'ACTIVE' | 'CANCELLED' = g.cancelled ? 'CANCELLED' : 'ACTIVE'
     // SHIPMENT (real leg) vs DOCUMENT (orphan invoice/misc with no shipping identity → Unlinked Documents).
-    const kind = classifyKind(emailTypes, f)
+    // fromPlatform: the rebuild path pre-computes it (senders in hand); on the agent path the DTO carries no
+    // sender, so resolve it here from the source emails' graph ids (defense in depth — see classifyKind (c)).
+    const fromPlatform = g.fromPlatform ?? (await this.allSourceEmailsFromPlatform(g))
+    const kind = classifyKind(emailTypes, f, { fromPlatform })
     const legValues: Record<string, unknown> = {
       mode: normMode(g.mode),
       state,
@@ -314,15 +322,48 @@ export class CommitterService {
     // provides one for this PO; else fall back to the single-PO case (a shipment carrying ONE PO owns the whole
     // qty). With several POs and no map entry the split is unknown, so qty stays null — never attribute the
     // whole shipment total to each (that inflated every PO to the total).
+    // Deterministic PO-qty guard: the ERP order is authoritative, so a per-PO shipped qty that EXCEEDS the
+    // ordered total, or uses a DIFFERENT unit, is a bad attribution (a broadcast total / wrong unit). Collect
+    // any such inconsistency and route the shipment to review below — the qty is kept (not dropped), never
+    // silently accepted as fact.
+    const poQtyIssues: string[] = []
     for (const poNo of g.pos) {
       const mapped = num(g.poQty?.[normKey(poNo)])
       const perPoQty = mapped ?? (g.pos.length === 1 ? num(f.qty) : null)
       // only default the unit to 'cartons' when there IS a qty — otherwise a phantom 'cartons' shows on the PO
       // table while CARGO shows (pending). No qty -> unit is whatever was extracted, or null.
       const perPoUnit = perPoQty != null ? str(f.qty_unit) ?? 'cartons' : str(f.qty_unit)
-      const poId = await this.bookings.upsertPo(poNo, customerId, effVendorId, poEnrichment?.get(normKey(poNo)))
+      const enr = poEnrichment?.get(normKey(poNo))
+      const qctx = { legQty: perPoQty, legUnit: perPoUnit, poTotal: enr?.totalQuantity ?? null, poUnit: enr?.quantityUnit ?? null }
+      const issue = poQtyIssue(qctx)
+      if (issue) poQtyIssues.push(`PO ${poNo}: ${describePoQtyIssue(issue, qctx)}`)
+      const poId = await this.bookings.upsertPo(poNo, customerId, effVendorId, enr)
       await this.bookings.linkPo(bookingId, poId)
       await this.shipments.linkPo(shipmentId, poId, perPoQty, perPoUnit)
+    }
+    // Data-completeness escalations route the shipment to human review. Additive: only ever escalate to
+    // provisional + append (deduped) reasons — data is kept, never dropped; the reviewer resolves it.
+    //  (i)  per-PO shipped qty contradicts the ERP order (poQtyIssues, above).
+    //  (ii) EMPTY CARGO — a real booked leg NAMES a cargo unit but carries no qty/gross weight/volume. That
+    //       almost always means the booking form / original email (which held the numbers) was never
+    //       ingested (e.g. only "RE:" replies captured — see S2600240871A). Gated on qtyUnit-present so a
+    //       nascent booking that simply hasn't stated cargo yet (no unit either) is NOT flagged.
+    const committed = await this.shipments.findById(shipmentId)
+    const c = committed as Record<string, unknown> | null
+    const isRealLeg = gk.size > 0 || g.pos.length > 0
+    const cargoUnitButNoNumbers =
+      c != null && c.qtyUnit != null && c.qty == null && c.grossWeight == null && c.measurement == null
+    const cargoMissing = isRealLeg && cargoUnitButNoNumbers
+    const dataIssues = [
+      ...poQtyIssues,
+      ...(cargoMissing ? ['booked shipment missing cargo detail (qty/weight/volume) — source attachment likely not ingested'] : []),
+    ]
+    if (dataIssues.length) {
+      const priorReasons = (c?.reviewReasons as string[] | null) ?? []
+      const mergedReasons = [...new Set([...priorReasons, ...dataIssues])]
+      await this.shipments.updateLeg(shipmentId, { reviewStatus: 'provisional', reviewReasons: mergedReasons })
+      if (poQtyIssues.length) await this.writeAudit('shipment', shipmentId, 'update', null, poQtyIssues.join('; '), g, 'po_qty_conflict')
+      if (cargoMissing) await this.writeAudit('shipment', shipmentId, 'update', null, 'missing cargo qty/weight/volume', g, 'cargo_missing')
     }
 
     await this.writeIdentifiers(shipmentId, g)
@@ -579,6 +620,17 @@ export class CommitterService {
   }
   private async nextJobNo(): Promise<string> {
     return `JOB-2026-${String(await this.bookings.nextJobSeq()).padStart(4, '0')}`
+  }
+
+  /** Agent-path resolution of ReconGroup.fromPlatform: true only when EVERY source email of the leg resolves
+   *  to a CVP/TradeLinkOne platform sender. Requires all graph ids to resolve (an unresolved sender — e.g. a
+   *  2-VM split where queue_message isn't local — yields false, so we never falsely demote a real shipment). */
+  private async allSourceEmailsFromPlatform(g: ReconGroup): Promise<boolean> {
+    const graphIds = g.events.map((e) => e.graphId).filter((x): x is string => !!x)
+    if (!graphIds.length) return false
+    const rows = await this.evidence.sendersByGraphIds(graphIds)
+    const senderOf = new Map(rows.map((r) => [r.graphMessageId, r.sender]))
+    return graphIds.every((id) => isNotificationPlatformSender(senderOf.get(id) ?? null))
   }
 }
 

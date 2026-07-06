@@ -90,6 +90,11 @@ const TRANSLATIONS: Translation[] = [
     text: () => 'Some attachments (images/scanned PDFs) have not been read yet — data may be incomplete',
   },
   {
+    match: /missing cargo detail/i,
+    text: () =>
+      'Cargo quantity / weight / volume is missing — the booking attachment was likely never captured. Add the figures below, or fetch the original booking email.',
+  },
+  {
     match: /new shipment for an unknown \/ unresolved customer/i,
     text: () => 'Customer not recognised in master data — confirm who this shipment belongs to',
   },

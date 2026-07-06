@@ -5,6 +5,10 @@ type Theme = 'dark' | 'light'
 interface UIState {
   sidebarCollapsed: boolean
   toggleSidebar: () => void
+  mobileNavOpen: boolean
+  openMobileNav: () => void
+  closeMobileNav: () => void
+  toggleMobileNav: () => void
   theme: Theme
   setTheme: (theme: Theme) => void
   toggleTheme: () => void
@@ -32,6 +36,10 @@ applyTheme(initialTheme)
 export const useUIStore = create<UIState>((set) => ({
   sidebarCollapsed: false,
   toggleSidebar: () => set((s) => ({ sidebarCollapsed: !s.sidebarCollapsed })),
+  mobileNavOpen: false,
+  openMobileNav: () => set({ mobileNavOpen: true }),
+  closeMobileNav: () => set({ mobileNavOpen: false }),
+  toggleMobileNav: () => set((s) => ({ mobileNavOpen: !s.mobileNavOpen })),
   theme: initialTheme,
   setTheme: (theme) => {
     applyTheme(theme)

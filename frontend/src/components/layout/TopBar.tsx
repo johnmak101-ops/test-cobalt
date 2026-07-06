@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Bell, Sun, Moon, LogOut, ChevronDown, AlertTriangle, Mail, ClipboardCheck, ChevronRight } from 'lucide-react'
+import { Bell, Sun, Moon, LogOut, ChevronDown, AlertTriangle, Mail, ClipboardCheck, ChevronRight, Menu } from 'lucide-react'
 import { useAlerts, useMarkAlertRead } from '../../hooks/use-alerts'
 import { useReviewQueue, useReviewCounts } from '../../hooks/use-review-queue'
 import { useEmails } from '../../hooks/use-emails'
@@ -32,7 +32,7 @@ export function TopBar() {
   const { data: reviewCounts } = useReviewCounts()
   const { data: emailsData } = useEmails()
   const { user, logout } = useAuth()
-  const { theme, toggleTheme } = useUIStore()
+  const { theme, toggleTheme, openMobileNav, mobileNavOpen } = useUIStore()
   const [menuOpen, setMenuOpen] = useState(false)
   const [notiOpen, setNotiOpen] = useState(false)
   const [notiTab, setNotiTab] = useState<NotiTab>('alerts')
@@ -76,7 +76,18 @@ export function TopBar() {
   }, [menuOpen, notiOpen])
 
   return (
-    <header className="flex h-14 shrink-0 items-center justify-end border-b border-border bg-surface-900 px-6">
+    <header className="flex h-14 shrink-0 items-center justify-between border-b border-border bg-surface-900 px-4 sm:px-6">
+      {/* Left: hamburger opens the nav drawer (mobile/tablet only). */}
+      <button
+        onClick={openMobileNav}
+        aria-label="Open navigation menu"
+        aria-controls="app-sidebar"
+        aria-expanded={mobileNavOpen}
+        className="rounded-lg p-2 text-text-secondary hover:bg-surface-700 hover:text-text-primary lg:hidden"
+      >
+        <Menu size={18} />
+      </button>
+
       {/* Right side */}
       <div className="flex items-center gap-2">
         {/* Theme toggle */}
@@ -107,7 +118,7 @@ export function TopBar() {
 
           {/* Notification dropdown */}
           {notiOpen && (
-            <div className="absolute right-0 top-full z-50 mt-1 w-96 rounded-xl border border-border bg-surface-800 shadow-lg">
+            <div className="absolute right-0 top-full z-50 mt-1 w-96 max-w-[calc(100vw-1rem)] rounded-xl border border-border bg-surface-800 shadow-lg">
               {/* Tab bar */}
               <div className="flex border-b border-border">
                 {([

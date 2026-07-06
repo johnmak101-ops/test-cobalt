@@ -65,6 +65,24 @@ describe('classifyKind — SHIPMENT vs DOCUMENT', () => {
   it('a Booking Request with no booking# yet stays SHIPMENT (gains identity later)', () => {
     expect(classifyKind(new Set(['Booking Request']), {})).toBe('SHIPMENT')
   })
+
+  // Rule (c): a leg built ENTIRELY from the CVP/TradeLinkOne notification platform (all source emails
+  // sent by the portal) is a vendor/PO notification, not a booked move — the portal leaks its own
+  // LPO reference into booking_no. Demote to DOCUMENT UNLESS a real carrier identity or a lifecycle
+  // email proves an actual shipment. Field shape alone can't tell it apart (see the invoice+booking#
+  // case above), so the discriminator is fromPlatform. The screenshot case: FENLPO003034A.
+  it('platform-only "Other" alert whose only identity is a portal booking# → DOCUMENT', () => {
+    expect(classifyKind(new Set(['Other']), { booking_no: 'FENLPO003034A' }, { fromPlatform: true })).toBe('DOCUMENT')
+  })
+  it('the SAME leg NOT flagged from the platform stays SHIPMENT (a real booking# is a booked move)', () => {
+    expect(classifyKind(new Set(['Other']), { booking_no: 'FENLPO003034A' })).toBe('SHIPMENT')
+  })
+  it('platform-only BUT carrying a real carrier id (MBL/BL/container) stays SHIPMENT', () => {
+    expect(classifyKind(new Set(['Invoice/Billing']), { booking_no: 'X', mbl: 'WHLC123' }, { fromPlatform: true })).toBe('SHIPMENT')
+  })
+  it('platform-flagged BUT with a lifecycle email stays SHIPMENT', () => {
+    expect(classifyKind(new Set(['Booking Request']), { booking_no: 'X' }, { fromPlatform: true })).toBe('SHIPMENT')
+  })
 })
 
 describe('MILESTONE_OF', () => {

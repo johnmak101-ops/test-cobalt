@@ -132,9 +132,9 @@ function AlertRulesSettings() {
         {localRules.map((rule) => (
           <Card key={rule.id}>
             <div className="flex items-center justify-between gap-4">
-              <div className="flex items-center gap-2">
+              <div className="flex min-w-0 items-center gap-2">
                 <span className="font-mono text-xs text-text-muted">{rule.id}</span>
-                <h4 className="text-sm font-semibold text-text-primary">{rule.name}</h4>
+                <h4 className="truncate text-sm font-semibold text-text-primary">{rule.name}</h4>
                 {rule.locked && (
                   <span className="rounded bg-status-critical/15 px-1.5 py-0.5 text-[10px] font-semibold text-status-critical">
                     LOCKED
@@ -314,7 +314,7 @@ function VendorsSettings() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h2 className="text-base font-semibold text-text-primary">Vendors / Factories</h2>
           <p className="text-sm text-text-secondary">
@@ -322,7 +322,7 @@ function VendorsSettings() {
             this app resolves them or flags unknowns for review.
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex shrink-0 gap-2">
           <button
             disabled
             title="Vendors are maintained in the Cobalt Mesh API — read-only here"
@@ -444,23 +444,23 @@ function VendorsSettings() {
         <div className="space-y-2">
           {vendors.map((vendor) => (
             <Card key={vendor.id}>
-              <div className="flex items-center justify-between">
-                <div>
+              <div className="flex items-center justify-between gap-2">
+                <div className="min-w-0">
                   <div className="flex items-center gap-2">
-                    <h4 className="text-sm font-semibold text-text-primary">{vendor.name}</h4>
+                    <h4 className="truncate text-sm font-semibold text-text-primary">{vendor.name}</h4>
                     <span className="rounded bg-surface-600 px-1.5 py-0.5 text-[10px] font-semibold text-text-muted">
                       {vendor.type.toUpperCase()}
                     </span>
                   </div>
-                  <div className="mt-1 flex items-center gap-3 text-xs text-text-muted">
+                  <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-text-muted">
                     {vendor.location && <span>{vendor.location}</span>}
-                    {vendor.contactEmail && <span>{vendor.contactEmail}</span>}
-                    {vendor.contactPhone && <span>{vendor.contactPhone}</span>}
+                    {vendor.contactEmail && <span className="break-all">{vendor.contactEmail}</span>}
+                    {vendor.contactPhone && <span className="break-all">{vendor.contactPhone}</span>}
                   </div>
                 </div>
                 <button
                   onClick={() => deleteVendor.mutate(vendor.id)}
-                  className="rounded-lg p-1.5 text-text-muted hover:bg-status-critical/10 hover:text-status-critical"
+                  className="shrink-0 rounded-lg p-1.5 text-text-muted hover:bg-status-critical/10 hover:text-status-critical"
                 >
                   <Trash2 size={14} />
                 </button>
@@ -667,7 +667,7 @@ function EmailIntegrationSettings() {
       </Card>
 
       {/* Actions */}
-      <div className="flex items-center gap-3">
+      <div className="flex flex-wrap items-center gap-3">
         <button
           onClick={handleTest}
           disabled={testConnection.isPending || (!tenantId && !config)}
@@ -827,9 +827,9 @@ export default function SettingsPage() {
   const isEmailSettings = location.pathname.includes('/settings/email')
 
   return (
-    <div className="flex gap-6">
+    <div className="flex flex-col gap-6 lg:flex-row">
       {/* Settings Nav */}
-      <nav className="w-48 shrink-0 space-y-1">
+      <nav className="w-full space-y-1 lg:w-48 lg:shrink-0">
         {[
           { to: '/settings', label: 'General', end: true },
           { to: '/settings/email', label: 'Email Integration', end: false },

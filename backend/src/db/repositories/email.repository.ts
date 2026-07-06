@@ -165,6 +165,7 @@ export class EmailRepository {
     return this.db
       .select({
         id: schema.queueMessage.id,
+        graphMessageId: schema.queueMessage.graphMessageId,
         subject: schema.queueMessage.subject,
         sender: schema.queueMessage.sender,
         receivedAt: schema.queueMessage.receivedAt,

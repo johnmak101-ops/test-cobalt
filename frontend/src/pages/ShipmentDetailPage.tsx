@@ -10,7 +10,7 @@ import { AlertCard } from '../components/alerts/AlertCard'
 import { formatDate, formatDateTime, formatDateMaybeTime, cn } from '../lib/utils'
 import { humanizeReason } from '../lib/review-reasons'
 import { toast } from '../components/ui/Toast'
-import { ArrowLeft, Mail, Clock, ClipboardList, Package, Ship, Calendar, AlertTriangle, AlertCircle, Info, Pencil, Check, X } from 'lucide-react'
+import { ArrowLeft, Mail, Clock, ClipboardList, Package, Ship, Calendar, AlertTriangle, AlertCircle, Info, Pencil, Check, X, NotebookPen } from 'lucide-react'
 
 // The human-editable leg fields, grouped like the read-only card. `db` = the backend column the PATCH writes
 // (+ locks + audits); `get` reads the current value off the loaded shipment (whose UI names differ from db).
@@ -70,6 +70,7 @@ export default function ShipmentDetailPage() {
   const update = useUpdateShipment(id!)
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState<Record<string, string>>({})
+  const [note, setNote] = useState('')
 
   if (isLoading) {
     return (
@@ -112,25 +113,41 @@ export default function ShipmentDetailPage() {
     const d: Record<string, string> = {}
     for (const sec of EDIT_SECTIONS) for (const f of sec.fields) d[f.db] = toInputValue(f.get(shipment), f.type)
     setDraft(d)
+    setNote('')
     setEditing(true)
   }
-  const saveEdit = () => {
+  const cancelEdit = () => {
+    setEditing(false)
+    setNote('')
+  }
+  // draft vs the saved shipment — computed on every render so the Save gate reacts to edits live.
+  const computeChanged = (): Record<string, unknown> => {
     const changed: Record<string, unknown> = {}
     for (const sec of EDIT_SECTIONS) for (const f of sec.fields) {
       const orig = toInputValue(f.get(shipment), f.type)
       const next = draft[f.db] ?? ''
       if (next !== orig) changed[f.db] = next === '' ? null : next
     }
-    if (Object.keys(changed).length === 0) { setEditing(false); return }
-    update.mutate(changed, {
+    return changed
+  }
+  const saveEdit = () => {
+    const changed = computeChanged()
+    if (Object.keys(changed).length === 0) { cancelEdit(); return } // nothing changed → no note needed
+    if (!note.trim()) return // a note is required for real edits (the Save button is also disabled)
+    update.mutate({ fields: changed, note: note.trim() }, {
       onSuccess: (r) => {
         setEditing(false)
+        setNote('')
         const n = (r as { edited?: string[] } | undefined)?.edited?.length ?? Object.keys(changed).length
         toast(`Saved ${n} field(s)`)
       },
       onError: () => toast('Save failed — please retry'),
     })
   }
+
+  // A note is mandatory whenever there are real edits — Save stays blocked until it's written.
+  const editedCount = editing ? Object.keys(computeChanged()).length : 0
+  const saveBlocked = editedCount > 0 && !note.trim()
 
   return (
     <div className="space-y-6">
@@ -144,9 +161,9 @@ export default function ShipmentDetailPage() {
           <ArrowLeft size={14} />
           {fromAlerts ? 'Back to Alerts' : 'Back to Shipments'}
         </button>
-        <div className="flex items-start justify-between">
-          <div>
-            <h1 className="font-mono text-xl font-semibold text-text-primary">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <h1 className="font-mono text-xl font-semibold text-text-primary break-words">
               {titleIds.length > 0 ? (
                 titleIds.map((x, i) => (
                   <span key={x.label + x.value}>
@@ -237,6 +254,7 @@ export default function ShipmentDetailPage() {
           milestones={shipment.milestones ?? []}
           currentStatus={shipment.status}
           horizontal
+          mode={shipment.mode}
           etd={shipment.etd}
           atd={shipment.actualDeparture}
           eta={shipment.eta}
@@ -258,8 +276,8 @@ export default function ShipmentDetailPage() {
               </span>
             </h4>
           </div>
-          <div className="overflow-hidden rounded-lg border border-border">
-            <table className="w-full">
+          <div className="overflow-x-auto overflow-y-hidden rounded-lg border border-border">
+            <table className="w-full min-w-[32rem]">
               <thead>
                 <tr className="border-b border-border bg-surface-900/50">
                   <th className="px-3 py-2 text-left text-[11px] font-medium text-text-muted">Customer PO#</th>
@@ -278,7 +296,19 @@ export default function ShipmentDetailPage() {
                   >
                     <td className="px-3 py-2 font-mono text-sm text-cobalt-primary-light">{po.poNumber}</td>
                     <td className="px-3 py-2 text-sm text-text-secondary">{po.vendor?.name ?? '—'}</td>
-                    <td className="px-3 py-2 text-right font-mono text-sm text-text-primary">{po.quantity ?? '—'}</td>
+                    <td className="px-3 py-2 text-right font-mono text-sm">
+                      {po.qtyIssue ? (
+                        <span
+                          className="inline-flex items-center gap-1 text-status-warning"
+                          title={po.qtyIssueDetail ?? 'inconsistent with the purchase order'}
+                        >
+                          <AlertTriangle size={11} className="shrink-0" />
+                          {po.quantity ?? '—'}
+                        </span>
+                      ) : (
+                        <span className="text-text-primary">{po.quantity ?? '—'}</span>
+                      )}
+                    </td>
                     <td className="px-3 py-2 text-right font-mono text-sm text-text-muted">{po.totalQuantity ?? '—'}</td>
                     <td className="px-3 py-2 text-xs text-text-muted">{po.quantityUnit ?? ''}</td>
                   </tr>
@@ -296,7 +326,7 @@ export default function ShipmentDetailPage() {
           {editing ? (
             <div className="flex items-center gap-2">
               <button
-                onClick={() => setEditing(false)}
+                onClick={cancelEdit}
                 disabled={update.isPending}
                 className="inline-flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-medium text-text-secondary hover:bg-surface-700 hover:text-text-primary disabled:opacity-50"
               >
@@ -304,8 +334,9 @@ export default function ShipmentDetailPage() {
               </button>
               <button
                 onClick={saveEdit}
-                disabled={update.isPending}
-                className="inline-flex items-center gap-1 rounded-lg bg-cobalt-primary px-3 py-1.5 text-xs font-medium text-white hover:bg-cobalt-primary-light disabled:opacity-50"
+                disabled={update.isPending || saveBlocked}
+                title={saveBlocked ? 'Add a note for the agent before saving' : undefined}
+                className="inline-flex items-center gap-1 rounded-lg bg-cobalt-primary px-3 py-1.5 text-xs font-medium text-white hover:bg-cobalt-primary-light disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <Check size={13} /> {update.isPending ? 'Saving…' : 'Save'}
               </button>
@@ -326,7 +357,7 @@ export default function ShipmentDetailPage() {
               {EDIT_SECTIONS.map((sec) => (
                 <DetailSection key={sec.title} title={sec.title} icon={<ClipboardList size={14} className="text-text-muted" />}>
                   {sec.fields.map((f) => (
-                    <div key={f.db} className="grid grid-cols-[9rem_1fr] items-center gap-x-2">
+                    <div key={f.db} className="grid grid-cols-[7rem_1fr] sm:grid-cols-[9rem_1fr] items-center gap-x-2">
                       <label className="truncate text-xs text-text-muted">{f.label}</label>
                       <input
                         type={f.type}
@@ -338,6 +369,33 @@ export default function ShipmentDetailPage() {
                   ))}
                 </DetailSection>
               ))}
+            </div>
+            {/* Required feedback for agent-soul iteration — a save with real edits is blocked without it. */}
+            <div className="mt-6 border-t border-border pt-4">
+              <label className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-text-primary">
+                <NotebookPen size={13} className="text-text-muted" />
+                Note for the agent
+                {editedCount > 0 && <span className="text-status-warning">· required</span>}
+              </label>
+              <p className="mb-2 text-xs text-text-muted">
+                What did the AI get wrong, and how should it decide next time? Saved to Change History with
+                your edit and used to improve extraction.
+              </p>
+              <textarea
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+                rows={2}
+                placeholder="e.g. Booking No. came off the SO line — use the CW# on the booking confirmation, not the invoice"
+                className={cn(
+                  'w-full rounded-md border bg-surface-700 p-2 text-sm text-text-primary placeholder:text-text-muted focus:outline-none',
+                  saveBlocked ? 'border-status-warning/60 focus:border-status-warning' : 'border-border focus:border-cobalt-primary',
+                )}
+              />
+              {saveBlocked && (
+                <p className="mt-1 text-xs text-status-warning">
+                  Add a note to save your {editedCount} edit{editedCount !== 1 ? 's' : ''}.
+                </p>
+              )}
             </div>
           </>
         ) : (
@@ -545,7 +603,7 @@ function DetailRow({
   hint?: string
 }) {
   return (
-    <div className="grid grid-cols-[9rem_1fr] gap-x-2 items-baseline">
+    <div className="grid grid-cols-[7rem_1fr] sm:grid-cols-[9rem_1fr] gap-x-2 items-baseline">
       <span className="text-xs text-text-muted truncate">{label}</span>
       <span className="font-mono text-sm text-text-primary break-words min-w-0">
         {value ?? (

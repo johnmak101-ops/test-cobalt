@@ -19,6 +19,8 @@ import { toUiHistoryEntry } from './mappers/history.mapper'
 import { toUiPurchaseOrder, toUiPurchaseOrderDetail } from './mappers/po.mapper'
 import { toUiEmail } from './mappers/email.mapper'
 import { deriveRoute, portLabel, poNumbersJson, isoOrNull } from './adapters/derive'
+import { computeFieldConflicts } from './field-conflicts'
+import { poQtyIssue, describePoQtyIssue } from '../reconcile/po-qty-consistency'
 import { stateToUiStatus } from './adapters/enums'
 
 type Ref = { id: string; code?: string | null; name: string }
@@ -108,14 +110,23 @@ export class PresentationService {
       polPort: leg.polId ? maps.ports.get(leg.polId) ?? null : null,
       podPort: leg.podId ? maps.ports.get(leg.podId) ?? null : null,
       poNumbers: linkedPos.map((p) => p.poNumber),
-      linkedPOs: linkedPos.map((p) => ({
-        id: p.id,
-        poNumber: p.poNumber,
-        totalQuantity: p.totalQuantity ?? null,
-        quantityUnit: p.quantityUnit ?? p.legUnit ?? leg.qtyUnit ?? null,
-        quantity: p.legQty ?? null, // per-leg shipped qty from shipment_pos (null when the split is unknown)
-        vendor: p.vendorName ? { name: p.vendorName } : null,
-      })),
+      linkedPOs: linkedPos.map((p) => {
+        const quantity = p.legQty ?? null // per-leg shipped qty from shipment_pos (null when the split is unknown)
+        // Compare the attributed shipped qty against the ERP order (total + unit) — flag an impossible
+        // over-attribution (shipped > ordered) or a unit mismatch so the UI can surface it.
+        const ctx = { legQty: quantity, legUnit: p.legUnit ?? null, poTotal: p.totalQuantity ?? null, poUnit: p.quantityUnit ?? null }
+        const issue = poQtyIssue(ctx)
+        return {
+          id: p.id,
+          poNumber: p.poNumber,
+          totalQuantity: p.totalQuantity ?? null,
+          quantityUnit: p.quantityUnit ?? p.legUnit ?? leg.qtyUnit ?? null,
+          quantity,
+          qtyIssue: issue,
+          qtyIssueDetail: issue ? describePoQtyIssue(issue, ctx) : null,
+          vendor: p.vendorName ? { name: p.vendorName } : null,
+        }
+      }),
     }
   }
 
@@ -170,13 +181,14 @@ export class PresentationService {
   async shipment(id: string) {
     const leg = await this.shipmentRepo.findById(id)
     if (!leg) throw new NotFoundException('shipment not found')
-    const [booking, maps, milestones, alertRows, linkedPos, relatedEmails] = await Promise.all([
+    const [booking, maps, milestones, alertRows, linkedPos, relatedEmails, identifiers] = await Promise.all([
       this.bookingRepo.findById(leg.bookingId),
       this.masterMaps(),
       this.shipmentRepo.milestonesFor(id),
       this.alertRepo.list(),
       this.shipmentRepo.linkedPosForBooking(leg.bookingId) as Promise<LinkedPoRow[]>,
       this.emailRepo.emailsForShipment(id),
+      this.shipmentRepo.identifiersFor(id),
     ])
     // per-leg shipped qty/unit lives in shipment_pos — attach it so the PO table shows Shipped/UOM
     const legPos = await this.shipmentRepo.posFor(id)
@@ -191,7 +203,14 @@ export class PresentationService {
       receivedAt: isoOrNull(e.receivedAt),
       emailType: e.milestoneType ?? null,
     }))
-    return { ...base, milestones, emails, alerts: legAlerts }
+    // Contested fields (≥2 co-current values for one identity type) — recovered from the identifier set so
+    // the review page can highlight them + show "what each email said", even when the gate's reason is a
+    // bare count ("N unresolved field conflict(s)") that names no field. Identifiers store the source email
+    // as a Graph message-id; resolve it to the internal email id (queue_message.id) the popup opens by, so
+    // the "open source" link isn't broken (unresolved → null → shown as plain text).
+    const emailIdByGraph = new Map(relatedEmails.map((e) => [e.graphMessageId, e.id]))
+    const fieldConflicts = computeFieldConflicts(identifiers, (graphId) => emailIdByGraph.get(graphId ?? '') ?? null)
+    return { ...base, milestones, emails, alerts: legAlerts, fieldConflicts }
   }
 
   /**

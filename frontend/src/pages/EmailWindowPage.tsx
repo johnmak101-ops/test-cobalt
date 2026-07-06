@@ -42,8 +42,8 @@ export default function EmailWindowPage() {
   return (
     <div className="flex h-screen w-screen flex-col overflow-hidden bg-surface-800">
       {/* Subject bar */}
-      <div className="flex items-start justify-between gap-3 border-b border-border px-6 py-4">
-        <h2 className="text-lg font-semibold leading-snug text-text-primary">
+      <div className="flex items-start justify-between gap-3 border-b border-border px-4 py-4 sm:px-6">
+        <h2 className="min-w-0 break-words text-lg font-semibold leading-snug text-text-primary">
           {body?.subject || (isLoading ? 'Loading…' : '(no subject)')}
         </h2>
       </div>
@@ -55,7 +55,7 @@ export default function EmailWindowPage() {
       {/* Conversation panel — a forwarded MIME lumps earlier files onto the latest message, so show
           every ingested email in this thread with ITS OWN attachment count; click to read that one. */}
       {threadMessages.length > 1 && (
-        <div className="max-h-64 shrink-0 overflow-y-auto border-t border-border bg-surface-800 px-6 py-3">
+        <div className="max-h-64 shrink-0 overflow-y-auto border-t border-border bg-surface-800 px-4 py-3 sm:px-6">
           <p className="mb-2 text-xs font-semibold text-text-muted">
             Conversation ({threadMessages.length} emails)
           </p>
