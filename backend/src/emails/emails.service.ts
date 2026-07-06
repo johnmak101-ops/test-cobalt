@@ -42,7 +42,7 @@ export class EmailsService {
     try {
       const m = await this.emails.findIngested(messageId)
       if (m) {
-        return {
+        const corpus: OriginalEmail = {
           available: true,
           source: 'corpus',
           messageId,
@@ -55,6 +55,31 @@ export class EmailsService {
           bodyHtml: m.bodyHtml,
           hasAttachments: (m.attachmentCount ?? 0) > 0,
         }
+        const hasBody = !!((m.bodyText && m.bodyText.trim()) || (m.bodyHtml && m.bodyHtml.trim()))
+        if (hasBody) return corpus
+        // Body absent. A Graph-sourced email (graphId present) with no local body was necessarily nulled
+        // by retention — ingest always captures the body, and the original still lives in the mailbox, so
+        // re-fetch the FULL body from Graph. Corpus mail (no graphId) has no mailbox copy → genuinely empty.
+        const purged = !!m.graphId
+        if (m.graphId && this.graph.configured()) {
+          try {
+            const g = await this.graph.fetchMessage(m.graphId)
+            return {
+              ...corpus,
+              source: 'graph',
+              subject: m.subject ?? g.subject,
+              from: m.sender ?? g.from,
+              bodyPreview: g.bodyPreview,
+              bodyText: g.bodyText,
+              bodyHtml: g.bodyHtml,
+              webLink: g.webLink,
+            }
+          } catch (err) {
+            this.log.warn(`view-original body re-fetch failed for ${messageId}: ${String(err).slice(0, 80)}`)
+          }
+        }
+        // genuinely empty, or purged-but-unfetchable → return what we hold, flagging the purge for the UI
+        return { ...corpus, bodyPurged: purged }
       }
     } catch (err) {
       this.log.warn(`local email lookup unavailable: ${String(err).slice(0, 80)}`)

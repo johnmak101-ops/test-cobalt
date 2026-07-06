@@ -65,6 +65,24 @@ export class BookingRepository {
     return rows.map((r) => r.poNumber)
   }
 
+  /** Every given booking's PO numbers in ONE query (bookingId -> [poNumber]) — replaces the per-leg
+   *  poNumbersFor N+1 inside the committer's match loop (the dominant ingest cost as shipments grow). */
+  async poNumbersByBooking(bookingIds: string[]): Promise<Map<string, string[]>> {
+    const map = new Map<string, string[]>()
+    if (!bookingIds.length) return map
+    const rows = await this.db
+      .select({ bookingId: schema.bookingPos.bookingId, poNumber: schema.purchaseOrders.poNumber })
+      .from(schema.bookingPos)
+      .innerJoin(schema.purchaseOrders, eq(schema.bookingPos.poId, schema.purchaseOrders.id))
+      .where(inArray(schema.bookingPos.bookingId, bookingIds))
+    for (const r of rows) {
+      const arr = map.get(r.bookingId)
+      if (arr) arr.push(r.poNumber)
+      else map.set(r.bookingId, [r.poNumber])
+    }
+    return map
+  }
+
   // --- purchase_orders ---
   /** PO master with customer/vendor codes resolved (for the Matcher). When `openOnly`, drops POs
    *  whose linked bookings are all terminal (CLOSED/CANCELLED). */
@@ -226,20 +244,11 @@ export class BookingRepository {
    * the deterministic per-PO source + latest-received tie-break live upstream in resolvePoEnrichment.
    */
   async upsertPo(poNumber: string, customerId: string | null, vendorId: string | null, enrich?: PoEnrichInput) {
-    const [existing] = await this.db.select().from(schema.purchaseOrders).where(eq(schema.purchaseOrders.poNumber, poNumber))
-    if (existing) {
-      if (enrich) {
-        const patch: PoEnrichInput = {}
-        if (existing.brand == null && enrich.brand != null) patch.brand = enrich.brand
-        if (existing.itemStyleNo == null && enrich.itemStyleNo != null) patch.itemStyleNo = enrich.itemStyleNo
-        if (existing.totalQuantity == null && enrich.totalQuantity != null) patch.totalQuantity = enrich.totalQuantity
-        if (existing.quantityUnit == null && enrich.quantityUnit != null) patch.quantityUnit = enrich.quantityUnit
-        if (Object.keys(patch).length)
-          await this.db.update(schema.purchaseOrders).set({ ...patch, updatedAt: new Date() }).where(eq(schema.purchaseOrders.id, existing.id))
-      }
-      return existing.id
-    }
-    const [created] = await this.db
+    // Atomic find-or-create: INSERT ... ON CONFLICT (po_number) DO NOTHING, read back on conflict. Closes the
+    // read-then-write race where two concurrent emails carrying the same NEW po_number both miss a prior
+    // SELECT and both INSERT (→ unique violation, one email 500s). Enrichment is set on INSERT and
+    // FILL-IF-NULL on an existing row (human/ERP values never overwritten) — same human-wins semantics.
+    const [inserted] = await this.db
       .insert(schema.purchaseOrders)
       .values({
         poNumber,
@@ -250,8 +259,24 @@ export class BookingRepository {
         totalQuantity: enrich?.totalQuantity ?? null,
         quantityUnit: enrich?.quantityUnit ?? null,
       })
+      .onConflictDoNothing({ target: schema.purchaseOrders.poNumber })
       .returning()
-    return created.id
+    if (inserted) return inserted.id
+
+    // Conflict → the row exists (ours from before, or a concurrent insert that has since committed). Read
+    // it and fill-if-null the enrichment.
+    const [existing] = await this.db.select().from(schema.purchaseOrders).where(eq(schema.purchaseOrders.poNumber, poNumber))
+    if (!existing) throw new Error(`upsertPo: purchase_order ${poNumber} conflicted but was not found`)
+    if (enrich) {
+      const patch: PoEnrichInput = {}
+      if (existing.brand == null && enrich.brand != null) patch.brand = enrich.brand
+      if (existing.itemStyleNo == null && enrich.itemStyleNo != null) patch.itemStyleNo = enrich.itemStyleNo
+      if (existing.totalQuantity == null && enrich.totalQuantity != null) patch.totalQuantity = enrich.totalQuantity
+      if (existing.quantityUnit == null && enrich.quantityUnit != null) patch.quantityUnit = enrich.quantityUnit
+      if (Object.keys(patch).length)
+        await this.db.update(schema.purchaseOrders).set({ ...patch, updatedAt: new Date() }).where(eq(schema.purchaseOrders.id, existing.id))
+    }
+    return existing.id
   }
 
   // ---- PO CRUD (app-owned; master refs are validated, never created) ----

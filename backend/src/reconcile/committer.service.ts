@@ -233,42 +233,12 @@ export class CommitterService {
     //    ids — that is a PO reassignment the gate reviews, never a silent merge here.
     const groupPos = new Set(g.pos.map((p) => normKey(p)).filter(Boolean))
     const legs = await this.shipments.allLegs()
-    let existing: (typeof legs)[number] | undefined
-    for (const l of legs) {
-      const legStrong = strongKeys(l.matchKeys as Record<string, unknown>)
-      // BUG 4: a group whose strong key states a DIFFERENT value for a type the leg already carries is a
-      // DIFFERENT shipment (e.g. the grouper split ULLA26060096 off — the 2nd ULLA must never amend the
-      // first). Such a leg is never a match here, on ANY path (strong-overlap, PO, or conversationId).
-      if (strongKeysConflict(gk, legStrong)) continue
-      const bkPos = new Set((await this.bookings.poNumbersFor(l.bookingId)).map((p) => normKey(p)).filter(Boolean))
-      const sharePo = groupPos.size > 0 && setsOverlap(groupPos, bkPos)
-      if (gk.size > 0 && keysOverlap(legStrong, gk)) {
-        if (bkPos.size && !sharePo) continue // strong match but clashing POs → not the same shipment
-        existing = l
-        break
-      }
-      if (sharePo && (legStrong.size === 0 || gk.size === 0)) {
-        existing = l
-        break
-      }
-    }
-
-    // A2: a zero-identity group (no strong key AND no PO) has no cross-run handle, so each commit would
-    // insert a fresh ghost leg. Fall back to the conversationId persisted in match_keys, matching only
-    // another zero-identity leg of the same thread, so a re-ingest UPDATES the provisional row.
-    // BUG 4: the fallback ALSO requires the candidate leg to carry no strong key AND the group to be
-    // identity-less — so the conversationId can never bridge two identity-conflicting legs. (When gk.size
-    // is 0 no strong key can conflict, but the leg-strong==0 guard keeps the fallback strictly zero-identity.)
-    if (!existing && gk.size === 0 && groupPos.size === 0 && g.conversationId) {
-      const conv = normKey(g.conversationId)
-      existing = legs.find((l) => {
-        const mk = (l.matchKeys ?? {}) as Record<string, unknown>
-        const legStrong = strongKeys(mk)
-        if (legStrong.size !== 0) return false
-        if (strongKeysConflict(gk, legStrong)) return false
-        return normKey(mk.conversation_id) === conv
-      })
-    }
+    // ONE bulk load of every candidate booking's PO numbers (bookingId -> [poNumber]) instead of a per-leg
+    // query inside the match loop — the old O(N) PO round-trips per email were the dominant ingest cost as
+    // the shipment table grows. The matching itself is the pure, unit-tested findExistingLeg; the PO data it
+    // sees is byte-identical to the old per-leg poNumbersFor.
+    const posByBooking = await this.bookings.poNumbersByBooking(legs.map((l) => l.bookingId))
+    const existing = findExistingLeg(legs, posByBooking, gk, groupPos, g.conversationId)
 
     let bookingId: string
     let shipmentId: string
@@ -673,4 +643,53 @@ const strongKeysConflict = (a: Set<string>, b: Set<string>): boolean => {
     if (!shared) return true
   }
   return false
+}
+
+/**
+ * PURE leg-matching (extracted verbatim from apply() so the subtle rules are unit-tested and the per-leg PO
+ * lookup becomes ONE bulk load). Given all legs, a bookingId->[poNumber] map, and the group's keys, return the
+ * existing leg this group amends — or undefined (→ new leg). A leg matches when:
+ *   - it shares a STRONG key with the group AND is PO-consistent (never when their strong keys CONFLICT); OR
+ *   - they share a PO and at least ONE side has no strong id (a nascent PO-only leg gaining its first id).
+ * A2 fallback: a zero-identity group (no strong key AND no PO) matches another zero-identity leg of the same
+ * thread by the conversationId persisted in match_keys — so a re-ingest UPDATES the provisional row.
+ */
+export function findExistingLeg<L extends { bookingId: string; matchKeys: unknown }>(
+  legs: L[],
+  posByBooking: Map<string, string[]>,
+  gk: Set<string>,
+  groupPos: Set<string>,
+  conversationId: string | null,
+): L | undefined {
+  let existing: L | undefined
+  for (const l of legs) {
+    const legStrong = strongKeys(l.matchKeys as Record<string, unknown>)
+    // BUG 4: a group whose strong key states a DIFFERENT value for a type the leg already carries is a
+    // DIFFERENT shipment — never a match here, on ANY path (strong-overlap, PO, or conversationId).
+    if (strongKeysConflict(gk, legStrong)) continue
+    const bkPos = new Set((posByBooking.get(l.bookingId) ?? []).map((p) => normKey(p)).filter(Boolean))
+    const sharePo = groupPos.size > 0 && setsOverlap(groupPos, bkPos)
+    if (gk.size > 0 && keysOverlap(legStrong, gk)) {
+      if (bkPos.size && !sharePo) continue // strong match but clashing POs → not the same shipment
+      existing = l
+      break
+    }
+    if (sharePo && (legStrong.size === 0 || gk.size === 0)) {
+      existing = l
+      break
+    }
+  }
+  // A2: zero-identity group → match another zero-identity leg of the same thread by conversationId. The
+  // leg-strong==0 guard keeps it strictly zero-identity, so conversationId can never bridge two legs.
+  if (!existing && gk.size === 0 && groupPos.size === 0 && conversationId) {
+    const conv = normKey(conversationId)
+    existing = legs.find((l) => {
+      const mk = (l.matchKeys ?? {}) as Record<string, unknown>
+      const legStrong = strongKeys(mk)
+      if (legStrong.size !== 0) return false
+      if (strongKeysConflict(gk, legStrong)) return false
+      return normKey(mk.conversation_id) === conv
+    })
+  }
+  return existing
 }

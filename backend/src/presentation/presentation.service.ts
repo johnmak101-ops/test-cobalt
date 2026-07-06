@@ -22,6 +22,7 @@ import { deriveRoute, portLabel, poNumbersJson, isoOrNull } from './adapters/der
 import { computeFieldConflicts } from './field-conflicts'
 import { poQtyIssue, describePoQtyIssue } from '../reconcile/po-qty-consistency'
 import { stateToUiStatus } from './adapters/enums'
+import { makeTtlCache } from '../common/ttl-cache'
 
 type Ref = { id: string; code?: string | null; name: string }
 type PortRow = { id: string; unlocode?: string | null; country?: string | null; iata?: string | null }
@@ -36,6 +37,10 @@ interface MasterMaps {
 }
 
 const AT_RISK = new Set(['AT_RISK', 'DELAYED'])
+// Master data is read-mostly reference data; a master edit becomes visible within this window. Cache tuned
+// to sit at/above the 30s UI poll so repeated renders share one built maps object instead of rebuilding 24k
+// ports each time. Override with MASTER_MAPS_TTL_MS.
+const MASTER_MAPS_TTL_MS = Number(process.env.MASTER_MAPS_TTL_MS ?? 30_000)
 
 // Attachment mime resolution: declared_mime is often the generic octet-stream; infer from the
 // filename extension instead so the UI shows real types (PDF/XLS/image) for ~87% that were wrong.
@@ -76,20 +81,28 @@ export class PresentationService {
 
   // ---- shared assembly ----
 
-  private async masterMaps(): Promise<MasterMaps> {
-    const [customers, vendors, forwarders, ports] = await Promise.all([
-      this.mastersRepo.listCustomers(),
-      this.mastersRepo.listVendors(),
-      this.mastersRepo.listForwarders(),
-      this.mastersRepo.listPorts(),
-    ])
-    const byId = <T extends { id: string }>(rows: T[]) => new Map(rows.map((r) => [r.id, r]))
-    return {
-      customers: byId(customers as Ref[]),
-      vendors: byId(vendors as Ref[]),
-      forwarders: byId(forwarders as Ref[]),
-      ports: byId(ports as PortRow[]),
-    }
+  private readonly mapsCache = makeTtlCache<MasterMaps>(MASTER_MAPS_TTL_MS)
+
+  private masterMaps(): Promise<MasterMaps> {
+    // Master data — especially the ~24,768-row ports table — is read-mostly reference data, but it was
+    // rebuilt on EVERY list / detail / alerts / dashboard render (the dashboard + tracker poll every 30s
+    // per open tab). Cache the built maps for MASTER_MAPS_TTL_MS so those calls share ONE build instead of
+    // re-querying + re-Mapping 24k ports each time; concurrent misses share one in-flight build.
+    return this.mapsCache(async () => {
+      const [customers, vendors, forwarders, ports] = await Promise.all([
+        this.mastersRepo.listCustomers(),
+        this.mastersRepo.listVendors(),
+        this.mastersRepo.listForwarders(),
+        this.mastersRepo.listPorts(),
+      ])
+      const byId = <T extends { id: string }>(rows: T[]) => new Map(rows.map((r) => [r.id, r]))
+      return {
+        customers: byId(customers as Ref[]),
+        vendors: byId(vendors as Ref[]),
+        forwarders: byId(forwarders as Ref[]),
+        ports: byId(ports as PortRow[]),
+      }
+    })
   }
 
   private assembleInput(

@@ -10,15 +10,21 @@ export interface OriginalEmail {
   from?: string | null
   receivedDateTime?: string | null
   bodyPreview?: string | null
-  /** full body — populated for locally-ingested (corpus/same-host) email; the email window renders this */
+  /** full body — from the local row when retained, else re-fetched from the mailbox (Graph) after purge */
   bodyText?: string | null
   bodyHtml?: string | null
   webLink?: string | null
   hasAttachments?: boolean
+  /** local body was purged by retention and could NOT be re-fetched from Graph (creds absent / gone) */
+  bodyPurged?: boolean
 }
 
-/** Map a Graph `message` resource to our DTO (pure — unit-tested). */
+/** Map a Graph `message` resource to our DTO (pure — unit-tested). Includes the full body when the caller
+ *  selected it: Graph returns `body: { contentType: 'html' | 'text', content }`. */
 export function mapGraphMessage(messageId: string, m: Record<string, any>): OriginalEmail {
+  const body = m.body as { contentType?: string; content?: string } | undefined
+  const isHtml = (body?.contentType ?? '').toLowerCase() === 'html'
+  const content = body?.content ?? null
   return {
     available: true,
     source: 'graph',
@@ -27,15 +33,18 @@ export function mapGraphMessage(messageId: string, m: Record<string, any>): Orig
     from: m.from?.emailAddress?.address ?? m.from?.emailAddress?.name ?? null,
     receivedDateTime: m.receivedDateTime ?? null,
     bodyPreview: m.bodyPreview ?? null,
+    bodyHtml: isHtml ? content : null,
+    bodyText: isHtml ? null : content,
     webLink: m.webLink ?? null,
     hasAttachments: !!m.hasAttachments,
   }
 }
 
 /**
- * Minimal Microsoft Graph client for "view original" — client-credentials token + a single
- * message fetch (headers + preview, never the full body). VM1 hosts the Graph-facing poller, so
- * the same GRAPH_* creds are available here; the feature degrades gracefully when they are not set.
+ * Minimal Microsoft Graph client for "view original" — client-credentials token + a single message fetch
+ * (headers + preview + FULL BODY). VM1 hosts the Graph-facing poller, so the same GRAPH_* creds are
+ * available here; the feature degrades gracefully when they are not set. Fetching the full body on demand
+ * is what lets the queue purge `body_html` at retention without losing "view original" for aged mail.
  */
 @Injectable()
 export class GraphService {
@@ -76,11 +85,11 @@ export class GraphService {
     return j.access_token
   }
 
-  /** Fetch one message's headers + preview from Graph. Throws on transport/auth failure. */
+  /** Fetch one message's headers + preview + FULL BODY from Graph. Throws on transport/auth failure. */
   async fetchMessage(messageId: string): Promise<OriginalEmail> {
     const c = this.cfg()
     const token = await this.accessToken()
-    const select = 'subject,from,receivedDateTime,bodyPreview,webLink,hasAttachments'
+    const select = 'subject,from,receivedDateTime,bodyPreview,body,webLink,hasAttachments'
     const url =
       `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(c.mailbox)}` +
       `/messages/${encodeURIComponent(messageId)}?$select=${select}`
