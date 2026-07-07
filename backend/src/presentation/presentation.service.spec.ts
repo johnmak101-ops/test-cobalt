@@ -138,17 +138,6 @@ describe('PresentationService.shipmentHistory', () => {
   })
 })
 
-describe('PresentationService master search', () => {
-  it('filters vendors by query (case-insensitive, code or name) and shapes the ref', async () => {
-    expect((await build().vendors('rose')).vendors).toEqual([
-      { id: 'v1', name: 'Rose Knit', code: 'ROKNFT', type: 'factory', location: null, contactEmail: null, contactPhone: null, notes: null, createdAt: null, updatedAt: null },
-    ])
-    expect((await build().vendors('ROKN')).vendors).toHaveLength(1)
-    expect((await build().vendors('zzz')).vendors).toHaveLength(0)
-    expect((await build().vendors()).vendors).toHaveLength(1)
-  })
-})
-
 describe('PresentationService.alerts + alertRules', () => {
   it('maps alerts and nests the shipment summary', async () => {
     const { alerts: out } = await build().alerts()

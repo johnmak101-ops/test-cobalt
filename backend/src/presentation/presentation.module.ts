@@ -1,5 +1,9 @@
 import { Global, Module } from '@nestjs/common'
 import { PresentationService } from './presentation.service'
+import { EmailPresentationService } from './email-presentation.service'
+import { DocumentPresentationService } from './document-presentation.service'
+import { PurchaseOrderPresentationService } from './purchase-order-presentation.service'
+import { MasterDataPresentationService } from './master-data-presentation.service'
 import {
   UiDashboardController,
   UiMastersController,
@@ -28,7 +32,19 @@ import {
     UiEmailsController,
     UiEmailIntegrationController,
   ],
-  providers: [PresentationService],
-  exports: [PresentationService],
+  providers: [
+    PresentationService,
+    EmailPresentationService,
+    DocumentPresentationService,
+    PurchaseOrderPresentationService,
+    MasterDataPresentationService,
+  ],
+  exports: [
+    PresentationService,
+    EmailPresentationService,
+    DocumentPresentationService,
+    PurchaseOrderPresentationService,
+    MasterDataPresentationService,
+  ],
 })
 export class PresentationModule {}
