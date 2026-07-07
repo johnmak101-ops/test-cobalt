@@ -11,4 +11,8 @@ describe('validateEnv', () => {
   it('throws when JWT_SECRET is too short', () => {
     expect(() => validateEnv({ JWT_SECRET: 'short' })).toThrow(/at least 32/)
   })
+  it('passes through non-schema env vars (e.g. DATABASE_URL) so ConfigModule re-exports them', () => {
+    const out = validateEnv({ JWT_SECRET: 'x'.repeat(32), DATABASE_URL: 'postgres://x' }) as Record<string, unknown>
+    expect(out.DATABASE_URL).toBe('postgres://x')
+  })
 })

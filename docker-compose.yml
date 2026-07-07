@@ -28,6 +28,8 @@ services:
       DATABASE_URL: postgres://postgres:postgres@db:5432/cobalt
       PORT: "3000"
       STATIC_ROOT: /app/frontend/dist
+      # Demo secret only — set a real 32+ char JWT_SECRET in production.
+      JWT_SECRET: "cobalt-demo-jwt-secret-change-in-production-0123456789"
       # first boot: create the schema + load demo data. Set both to "0" after the volume is seeded.
       RUN_MIGRATIONS: "1"
       SEED_ON_START: "1"
