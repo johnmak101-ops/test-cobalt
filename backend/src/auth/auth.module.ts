@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common'
 import { JwtModule } from '@nestjs/jwt'
+import { ConfigModule, ConfigService } from '@nestjs/config'
 import { PassportModule } from '@nestjs/passport'
 import { APP_GUARD } from '@nestjs/core'
 import { AuthService } from './auth.service'
@@ -11,9 +12,16 @@ import { RolesGuard } from './roles.guard'
 @Module({
   imports: [
     PassportModule,
-    JwtModule.register({
-      secret: process.env.JWT_SECRET ?? 'dev-secret-change-me',
-      signOptions: { expiresIn: '8h' },
+    // registerAsync so the secret is read AFTER ConfigModule loads .env — a plain register() reads
+    // process.env at import time (before .env is loaded), which would sign tokens with a DIFFERENT
+    // secret than JwtStrategy verifies with when JWT_SECRET comes from .env → every request 401s.
+    JwtModule.registerAsync({
+      imports: [ConfigModule],
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => ({
+        secret: config.get<string>('JWT_SECRET') ?? 'dev-secret-change-me',
+        signOptions: { expiresIn: '8h' },
+      }),
     }),
   ],
   controllers: [AuthController],
