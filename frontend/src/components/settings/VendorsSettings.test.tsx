@@ -1,9 +1,9 @@
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
-import { VendorsSettings } from './SettingsPage'
+import { VendorsSettings } from './VendorsSettings'
 
 // Vendors are a read-only Cobalt Mesh mirror; the only real backend route (and the only hook) is GET /vendors.
-vi.mock('../hooks/use-vendors', () => ({
+vi.mock('../../hooks/use-vendors', () => ({
   useVendors: () => ({
     data: {
       vendors: [
