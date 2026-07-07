@@ -1,7 +1,7 @@
 /**
  * Email/inbox UI presentation. Read-only projections of the ingested mail (inbox list, attachments,
- * body, thread) plus the read-only email-integration status. Graph credentials are owned by the
- * ingestion service (graph_api) and never persisted here.
+ * body, thread). Graph credentials are owned by the ingestion service (graph_api) and never
+ * persisted here.
  */
 import { Injectable, NotFoundException } from '@nestjs/common'
 import { EmailRepository } from '../db/repositories/email.repository'
@@ -113,49 +113,5 @@ export class EmailPresentationService {
   }
   emailMarkRead(id: string, userId: string | null) {
     return this.emailRepo.markRead(id, userId)
-  }
-
-  // ---- email integration (read-only status; credentials live in the ingestion service) ----
-
-  async emailIntegration() {
-    const [{ count, lastAt }, st] = await Promise.all([this.emailRepo.ingestionStatus(), this.emailRepo.ingestState()])
-    // Real last-sync time = the Graph ingestion watermark; status from the stuck-counter (not count>0).
-    const syncDate = (st?.updatedAt ?? st?.watermark ?? lastAt) as Date | string | null
-    const iso = syncDate instanceof Date ? syncDate.toISOString() : syncDate ? String(syncDate) : null
-    const stuck = (st?.stuckCount ?? 0) > 0
-    const mailbox = st?.id ? String(st.id).replace(/^inbox:/, '') : null
-    return {
-      config: {
-        id: 'ingestion',
-        tenantId: '',
-        clientId: '',
-        clientSecret: '',
-        _secretMasked: true,
-        mailboxEmail: mailbox,
-        isActive: !!st || count > 0,
-        lastSyncAt: iso,
-        lastSyncStatus: st ? (stuck ? 'FAILED' : 'SUCCESS') : count > 0 ? 'SUCCESS' : null,
-        lastSyncError: stuck ? `ingestion stuck on message ${st?.stuckGraphId ?? '(unknown)'} (${st?.stuckCount} retries)` : null,
-        lastSyncCount: count, // lifetime ingested (queue keeps no per-sync count) — labeled "emails synced"
-        createdAt: iso ?? '',
-        updatedAt: iso ?? '',
-      },
-    }
-  }
-  // Governance: Graph credentials are owned by the ingestion service (graph_api), never persisted here.
-  emailIntegrationSave() {
-    return this.emailIntegration()
-  }
-  emailIntegrationTest() {
-    return {
-      success: true,
-      message:
-        'Email ingestion runs in the Cobalt ingestion service (graph_api). Credentials are managed there, not in the tracking app.',
-      userCount: 0,
-    }
-  }
-  async emailIntegrationSync() {
-    const { count } = await this.emailRepo.ingestionStatus()
-    return { synced: 0, skipped: count, errors: [] as string[] }
   }
 }

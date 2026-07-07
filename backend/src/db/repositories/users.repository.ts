@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common'
-import { eq } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
 import * as schema from '../contracts'
 import { DRIZZLE, type DrizzleDB } from '../drizzle.provider'
 
@@ -31,8 +31,11 @@ export class UsersRepository {
       .returning()
     return u ?? null
   }
-  async remove(id: string) {
-    const r = await this.db.delete(schema.users).where(eq(schema.users.id, id)).returning()
-    return r.length > 0
+  async countActiveByRole(role: string) {
+    const rows = await this.db
+      .select({ id: schema.users.id })
+      .from(schema.users)
+      .where(and(eq(schema.users.role, role as never), eq(schema.users.active, true)))
+    return rows.length
   }
 }

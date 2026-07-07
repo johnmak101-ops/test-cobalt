@@ -19,7 +19,7 @@ export class UsersController {
   }
 
   @Patch(':id') update(@Param('id') id: string, @Body() dto: UpdateUserDto, @CurrentUser() actor: AuthUser) {
-    return this.users.update(id, dto, actor.role)
+    return this.users.update(id, dto, actor.role, actor.id)
   }
 
   @Delete(':id') remove(@Param('id') id: string, @CurrentUser() actor: AuthUser) {

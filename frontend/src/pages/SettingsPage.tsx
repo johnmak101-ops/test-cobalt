@@ -2,13 +2,13 @@ import { NavLink, useLocation } from 'react-router-dom'
 import { cn } from '../lib/utils'
 import { VendorsSettings } from '../components/settings/VendorsSettings'
 import { AlertRulesSettings } from '../components/settings/AlertRulesSettings'
-import { EmailIntegrationSettings } from '../components/settings/EmailIntegrationSettings'
+import { UsersSettings } from '../components/settings/UsersSettings'
 
 export default function SettingsPage() {
   const location = useLocation()
   const isAlertsSettings = location.pathname.includes('/settings/alerts')
   const isVendorsSettings = location.pathname.includes('/settings/vendors')
-  const isEmailSettings = location.pathname.includes('/settings/email')
+  const isUsersSettings = location.pathname.includes('/settings/users')
 
   return (
     <div className="flex flex-col gap-6 lg:flex-row">
@@ -16,9 +16,9 @@ export default function SettingsPage() {
       <nav className="w-full space-y-1 lg:w-48 lg:shrink-0">
         {[
           { to: '/settings', label: 'General', end: true },
-          { to: '/settings/email', label: 'Email Integration', end: false },
           { to: '/settings/alerts', label: 'Alert Rules', end: false },
           { to: '/settings/vendors', label: 'Vendors', end: false },
+          { to: '/settings/users', label: 'Users', end: false },
         ].map((item) => (
           <NavLink
             key={item.to}
@@ -40,8 +40,8 @@ export default function SettingsPage() {
 
       {/* Settings Content */}
       <div className="flex-1">
-        {isEmailSettings ? (
-          <EmailIntegrationSettings />
+        {isUsersSettings ? (
+          <UsersSettings />
         ) : isAlertsSettings ? (
           <AlertRulesSettings />
         ) : isVendorsSettings ? (
@@ -50,8 +50,8 @@ export default function SettingsPage() {
           <div>
             <h2 className="text-base font-semibold text-text-primary">General Settings</h2>
             <p className="mt-2 text-sm text-text-secondary">
-              Application settings will be configured here. Email connection, user management,
-              and API configuration will be available in future updates.
+              Manage alert rules and vendors from the tabs on the left. Email ingestion is configured
+              on the server (via GRAPH_* environment variables), not in the app.
             </p>
           </div>
         )}

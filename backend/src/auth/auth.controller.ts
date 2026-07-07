@@ -1,8 +1,11 @@
-import { Body, Controller, Get, Post, Res, UnauthorizedException } from '@nestjs/common'
+import { BadRequestException, Body, Controller, Get, Post, Res, UnauthorizedException } from '@nestjs/common'
+import { Throttle } from '@nestjs/throttler'
 import type { Response } from 'express'
 import { AuthService } from './auth.service'
-import { Public, CurrentUser } from './decorators'
+import { Public, CurrentUser, AllowDuringMustReset } from './decorators'
 import { mapBackendRoleToUi } from '../presentation/adapters/enums'
+import { SESSION_COOKIE, SESSION_TTL_SECONDS } from './auth.constants'
+import { ChangePasswordDto } from './dto'
 
 interface SessionUser {
   id: string
@@ -13,13 +16,13 @@ interface SessionUser {
   mustReset?: boolean
 }
 
-const SESSION_COOKIE = 'session'
-const SESSION_MAX_AGE_MS = 1000 * 60 * 60 * 24 * 7 // 7 days
+const SESSION_MAX_AGE_MS = SESSION_TTL_SECONDS * 1000
 
 @Controller('auth')
 export class AuthController {
   constructor(private readonly auth: AuthService) {}
 
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @Public()
   @Post('login')
   async login(
@@ -34,7 +37,7 @@ export class AuthController {
       secure: process.env.NODE_ENV === 'production',
       maxAge: SESSION_MAX_AGE_MS,
     })
-    return result
+    return { user: result.user }
   }
 
   @Public()
@@ -44,16 +47,21 @@ export class AuthController {
     return { success: true }
   }
 
+  @AllowDuringMustReset()
   @Get('me')
   me(@CurrentUser() user: SessionUser) {
     return { user: { ...user, role: mapBackendRoleToUi(user.role) } }
   }
 
+  @AllowDuringMustReset()
   @Post('change-password')
   async changePassword(
     @CurrentUser() user: SessionUser,
-    @Body() body: { currentPassword: string; newPassword: string },
+    @Body() body: ChangePasswordDto,
   ) {
+    if (body.newPassword === body.currentPassword) {
+      throw new BadRequestException('new password must be different from the current password')
+    }
     const ok = await this.auth.changePassword(user.id, body.currentPassword, body.newPassword)
     if (!ok) throw new UnauthorizedException('current password is incorrect')
     return { success: true }

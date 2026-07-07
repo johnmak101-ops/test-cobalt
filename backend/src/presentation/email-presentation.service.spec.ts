@@ -32,11 +32,3 @@ describe('EmailPresentationService.emailsUnreadCount', () => {
     expect(await build().emailsUnreadCount()).toEqual({ unread: 7 })
   })
 })
-
-describe('EmailPresentationService.emailIntegrationTest', () => {
-  it('reports that credentials live in the ingestion service (read-only governance)', () => {
-    const r = build().emailIntegrationTest()
-    expect(r.success).toBe(true)
-    expect(r.message).toMatch(/ingestion service/i)
-  })
-})

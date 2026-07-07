@@ -131,9 +131,9 @@ function AppRoutes() {
             enforced by the backend PUT guard AND the read-only UI in AlertRulesPage. */}
         <Route path="/alerts/rules" element={<AlertRulesPage />} />
         <Route path="/settings" element={<SuperadminRoute><SettingsPage /></SuperadminRoute>} />
-        <Route path="/settings/email" element={<SuperadminRoute><SettingsPage /></SuperadminRoute>} />
         <Route path="/settings/alerts" element={<SuperadminRoute><SettingsPage /></SuperadminRoute>} />
         <Route path="/settings/vendors" element={<SuperadminRoute><SettingsPage /></SuperadminRoute>} />
+        <Route path="/settings/users" element={<SuperadminRoute><SettingsPage /></SuperadminRoute>} />
       </Route>
     </Routes>
   )

@@ -11,8 +11,9 @@ const safe = (u: {
   role: string
   active: boolean
   avatarInitials: string | null
+  mustReset: boolean
   createdAt: Date
-}) => ({ id: u.id, email: u.email, name: u.name, role: u.role, active: u.active, avatarInitials: u.avatarInitials, createdAt: u.createdAt })
+}) => ({ id: u.id, email: u.email, name: u.name, role: u.role, active: u.active, avatarInitials: u.avatarInitials, mustReset: u.mustReset, createdAt: u.createdAt })
 
 const initials = (name: string) =>
   name
@@ -40,20 +41,27 @@ export class UsersService {
       role: dto.role as never,
       passwordHash: await hashPassword(dto.password),
       avatarInitials: initials(dto.name),
+      mustReset: true,
     })
     return safe(user)
   }
 
   /** Update — admins may edit, but only a superadmin can touch a superadmin or grant SUPERADMIN. */
-  async update(id: string, dto: UpdateUserDto, actorRole: string) {
+  async update(id: string, dto: UpdateUserDto, actorRole: string, actorId?: string) {
     const target = await this.repo.findById(id)
     if (!target) throw new NotFoundException(`user ${id} not found`)
+    if (id === actorId && (dto.active === false || (dto.role !== undefined && dto.role !== target.role))) {
+      throw new BadRequestException('you cannot deactivate or change the role of your own account')
+    }
     const isSuper = actorRole === 'SUPERADMIN'
     if (target.role === 'SUPERADMIN' && !isSuper) {
       throw new ForbiddenException('only a superadmin can modify a superadmin')
     }
     if (dto.role === 'SUPERADMIN' && !isSuper) {
       throw new ForbiddenException('only a superadmin can grant the superadmin role')
+    }
+    if (target.role === 'SUPERADMIN' && target.active && (dto.active === false || (dto.role !== undefined && dto.role !== 'SUPERADMIN'))) {
+      await this.assertNotLastSuperadmin()
     }
 
     const patch: Record<string, unknown> = {}
@@ -63,18 +71,29 @@ export class UsersService {
     }
     if (dto.role !== undefined) patch.role = dto.role
     if (dto.active !== undefined) patch.active = dto.active
-    if (dto.password) patch.passwordHash = await hashPassword(dto.password)
+    if (dto.password) {
+      patch.passwordHash = await hashPassword(dto.password)
+      patch.mustReset = true // any admin-set password is temporary
+    }
 
     const user = await this.repo.update(id, patch)
     if (!user) throw new NotFoundException(`user ${id} not found`)
     return safe(user)
   }
 
-  /** Delete — controller restricts this to SUPERADMIN; you can't delete yourself. */
+  /** Soft-delete: deactivate (never hard-delete — audit rows reference user ids). SUPERADMIN-only. */
   async remove(id: string, actorId: string) {
-    if (id === actorId) throw new BadRequestException('you cannot delete your own account')
-    const ok = await this.repo.remove(id)
-    if (!ok) throw new NotFoundException(`user ${id} not found`)
-    return { deleted: true }
+    if (id === actorId) throw new BadRequestException('you cannot deactivate your own account')
+    const target = await this.repo.findById(id)
+    if (!target) throw new NotFoundException(`user ${id} not found`)
+    if (target.role === 'SUPERADMIN') await this.assertNotLastSuperadmin()
+    const user = await this.repo.update(id, { active: false })
+    if (!user) throw new NotFoundException(`user ${id} not found`)
+    return safe(user)
+  }
+
+  private async assertNotLastSuperadmin() {
+    const n = await this.repo.countActiveByRole('SUPERADMIN')
+    if (n <= 1) throw new BadRequestException('cannot deactivate or demote the last active superadmin')
   }
 }

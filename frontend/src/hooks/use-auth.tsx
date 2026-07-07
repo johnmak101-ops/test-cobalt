@@ -19,7 +19,6 @@ interface AuthContextValue {
   logout: () => void
 }
 
-const TOKEN_KEY = 'cobalt_token'
 const AuthContext = createContext<AuthContextValue | null>(null)
 
 function initials(name: string, email: string): string {
@@ -51,29 +50,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [loading, setLoading] = useState(true)
 
-  // Restore the session on mount (cookie or stored token → /auth/me).
+  // Restore the session on mount (httpOnly cookie → /auth/me).
   useEffect(() => {
     api
       .get<{ user: User }>('/auth/me')
       .then((r) => setUser(normalize(r.user)))
-      .catch(() => {
-        try {
-          localStorage.removeItem(TOKEN_KEY)
-        } catch {
-          /* ignore */
-        }
-        setUser(null)
-      })
+      .catch(() => setUser(null))
       .finally(() => setLoading(false))
   }, [])
 
   const login = useCallback(async (email: string, password: string) => {
-    const res = await api.post<{ token: string; user: User }>('/auth/login', { email, password })
-    try {
-      if (res?.token) localStorage.setItem(TOKEN_KEY, res.token)
-    } catch {
-      /* ignore */
-    }
+    await api.post('/auth/login', { email, password })
     const me = await api.get<{ user: User }>('/auth/me')
     setUser(normalize(me.user))
   }, [])
@@ -86,11 +73,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = useCallback(() => {
     api.post('/auth/logout', {}).catch(() => {})
-    try {
-      localStorage.removeItem(TOKEN_KEY)
-    } catch {
-      /* ignore */
-    }
     setUser(null)
   }, [])
 

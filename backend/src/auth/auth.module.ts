@@ -7,7 +7,9 @@ import { AuthService } from './auth.service'
 import { AuthController } from './auth.controller'
 import { JwtStrategy } from './jwt.strategy'
 import { JwtAuthGuard } from './jwt-auth.guard'
+import { MustResetGuard } from './must-reset.guard'
 import { RolesGuard } from './roles.guard'
+import { SESSION_TTL_SECONDS } from './auth.constants'
 
 @Module({
   imports: [
@@ -19,8 +21,8 @@ import { RolesGuard } from './roles.guard'
       imports: [ConfigModule],
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({
-        secret: config.get<string>('JWT_SECRET') ?? 'dev-secret-change-me',
-        signOptions: { expiresIn: '8h' },
+        secret: config.getOrThrow<string>('JWT_SECRET'),
+        signOptions: { expiresIn: SESSION_TTL_SECONDS },
       }),
     }),
   ],
@@ -28,8 +30,10 @@ import { RolesGuard } from './roles.guard'
   providers: [
     AuthService,
     JwtStrategy,
-    // global: authenticate every request (except @Public), then enforce @Roles
+    // global: authenticate every request (except @Public), then block mustReset users (except
+    // @AllowDuringMustReset), then enforce @Roles — registration order matters
     { provide: APP_GUARD, useClass: JwtAuthGuard },
+    { provide: APP_GUARD, useClass: MustResetGuard },
     { provide: APP_GUARD, useClass: RolesGuard },
   ],
 })

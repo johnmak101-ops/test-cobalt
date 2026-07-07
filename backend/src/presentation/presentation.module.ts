@@ -12,7 +12,6 @@ import {
   UiDocumentsController,
   UiPosController,
   UiEmailsController,
-  UiEmailIntegrationController,
 } from './ui.controllers'
 
 /**
@@ -30,7 +29,6 @@ import {
     UiDocumentsController,
     UiPosController,
     UiEmailsController,
-    UiEmailIntegrationController,
   ],
   providers: [
     PresentationService,

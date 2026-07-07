@@ -118,21 +118,3 @@ export class UiEmailsController {
     return this.ui.emailMarkRead(id, user.id)
   }
 }
-
-@Controller('email-integrations')
-export class UiEmailIntegrationController {
-  constructor(private readonly ui: EmailPresentationService) {}
-
-  @Get() get() {
-    return this.ui.emailIntegration()
-  }
-  @Roles('ADMIN') @Put() save() {
-    return this.ui.emailIntegrationSave()
-  }
-  @Roles('ADMIN') @Post('test') test() {
-    return this.ui.emailIntegrationTest()
-  }
-  @Roles('ADMIN') @Post('sync') sync() {
-    return this.ui.emailIntegrationSync()
-  }
-}

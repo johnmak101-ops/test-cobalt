@@ -114,6 +114,8 @@ export const users = tracking.table('users', {
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 })
 
+// RESERVED for future refresh-token rotation (auth model C). Not read/written today —
+// kept to avoid a destructive migration. See docs/superpowers/specs/2026-07-07-jwt-auth-user-crud-design.md.
 export const refreshTokens = tracking.table('refresh_tokens', {
   id: uuid('id').primaryKey().defaultRandom(),
   userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
