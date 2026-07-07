@@ -1,7 +1,7 @@
 import { BadRequestException, Body, Controller, Get, Post, Res, UnauthorizedException } from '@nestjs/common'
 import type { Response } from 'express'
 import { AuthService } from './auth.service'
-import { Public, CurrentUser } from './decorators'
+import { Public, CurrentUser, AllowDuringMustReset } from './decorators'
 import { mapBackendRoleToUi } from '../presentation/adapters/enums'
 import { SESSION_COOKIE, SESSION_TTL_SECONDS } from './auth.constants'
 import { ChangePasswordDto } from './dto'
@@ -45,11 +45,13 @@ export class AuthController {
     return { success: true }
   }
 
+  @AllowDuringMustReset()
   @Get('me')
   me(@CurrentUser() user: SessionUser) {
     return { user: { ...user, role: mapBackendRoleToUi(user.role) } }
   }
 
+  @AllowDuringMustReset()
   @Post('change-password')
   async changePassword(
     @CurrentUser() user: SessionUser,
