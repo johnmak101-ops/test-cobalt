@@ -89,3 +89,12 @@ legacy reconcile gate · gold→tracking `track-bench --assert` · OpenCode matc
 Phase 6 parser field-discipline (hbl/mbl + deterministic consignee fix) · Iterator scores via OpenCode
 (gate 4 runs without Azure key) + per-email parse guard · refiner-boundary docs.
 Result: provisional 6/9 → 2/9, confirmed 3 → 7; hbl/mbl recall 100%; 0 IDs lost to review_reasons-only.
+
+## Contracts (deferred to handover)
+- [ ] `[track]` **Re-extract the shared `@cobalt/contracts` package.** On 2026-07-07 (branch
+  `refactor/inline-contracts-into-backend`) `@cobalt/contracts` was **inlined into `backend/src/db`**
+  (schema + zod + `contracts.ts` barrel) with its migrations moved to `backend/drizzle/`, to make track
+  self-contained and kill the drizzle shadow-store trap (nested `node_modules` → 2 `drizzle-orm`
+  instances → `{}` query results). The original Phase 2 — ONE versioned schema package consumed by BOTH
+  cobalt-queue and cobalt-track — is deferred to handover and will be re-extracted fresh (cobalt org,
+  git-tagged) then. Spec/plan: `docs/superpowers/{specs,plans}/2026-07-07-inline-contracts-into-backend*`.
