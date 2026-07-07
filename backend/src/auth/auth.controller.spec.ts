@@ -40,3 +40,21 @@ describe('AuthController.logout — clear session cookie', () => {
     expect(out).toEqual({ success: true })
   })
 })
+
+describe('AuthController.changePassword — forced/self password change', () => {
+  const sessionUser = { id: 'u1', email: 'e@x.com', name: 'Ed', role: 'ADMIN' }
+  it('delegates to auth.changePassword for the current user and returns success', async () => {
+    const changePassword = vi.fn().mockResolvedValue(true)
+    const { controller } = make({ changePassword } as any)
+    const out = await controller.changePassword(sessionUser, { currentPassword: 'old', newPassword: 'new' })
+    expect(changePassword).toHaveBeenCalledWith('u1', 'old', 'new')
+    expect(out).toEqual({ success: true })
+  })
+  it('throws Unauthorized when the current password is wrong', async () => {
+    const changePassword = vi.fn().mockResolvedValue(false)
+    const { controller } = make({ changePassword } as any)
+    await expect(
+      controller.changePassword(sessionUser, { currentPassword: 'bad', newPassword: 'new' }),
+    ).rejects.toThrow()
+  })
+})

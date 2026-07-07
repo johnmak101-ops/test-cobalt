@@ -47,4 +47,14 @@ export class AuthController {
   me(@CurrentUser() user: SessionUser) {
     return { user: { ...user, role: mapBackendRoleToUi(user.role) } }
   }
+
+  @Post('change-password')
+  async changePassword(
+    @CurrentUser() user: SessionUser,
+    @Body() body: { currentPassword: string; newPassword: string },
+  ) {
+    const ok = await this.auth.changePassword(user.id, body.currentPassword, body.newPassword)
+    if (!ok) throw new UnauthorizedException('current password is incorrect')
+    return { success: true }
+  }
 }
