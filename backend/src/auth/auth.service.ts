@@ -1,13 +1,14 @@
 import { Injectable } from '@nestjs/common'
 import { JwtService } from '@nestjs/jwt'
 import { UsersRepository } from '../db/repositories/users.repository'
-import { verifyPassword } from './password'
+import { hashPassword, verifyPassword } from './password'
 
 export interface AuthUser {
   id: string
   email: string
   name: string
   role: string
+  mustReset: boolean
 }
 
 @Injectable()
@@ -21,7 +22,7 @@ export class AuthService {
     const user = await this.users.findByEmail(email)
     if (!user || !user.active) return null
     if (!(await verifyPassword(password, user.passwordHash))) return null
-    return { id: user.id, email: user.email, name: user.name, role: user.role }
+    return { id: user.id, email: user.email, name: user.name, role: user.role, mustReset: user.mustReset }
   }
 
   async login(email: string, password: string): Promise<{ token: string; user: AuthUser } | null> {
@@ -29,5 +30,14 @@ export class AuthService {
     if (!user) return null
     const token = await this.jwt.signAsync({ sub: user.id, email: user.email, role: user.role })
     return { token, user }
+  }
+
+  /** Change a user's password after verifying the current one; clears the forced-reset flag. */
+  async changePassword(userId: string, currentPassword: string, newPassword: string): Promise<boolean> {
+    const user = await this.users.findById(userId)
+    if (!user) return false
+    if (!(await verifyPassword(currentPassword, user.passwordHash))) return false
+    await this.users.update(userId, { passwordHash: await hashPassword(newPassword), mustReset: false })
+    return true
   }
 }

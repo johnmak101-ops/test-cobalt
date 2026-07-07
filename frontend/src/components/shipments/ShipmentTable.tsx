@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { Fragment, useState } from 'react'
 import { Badge } from '../ui/Badge'
 import { formatShortDate, formatRelativeTime } from '../../lib/utils'
 import { useNavigate } from 'react-router-dom'
@@ -49,10 +49,9 @@ export function ShipmentTable({ shipments }: ShipmentTableProps) {
               const poCount = s.linkedPOs?.length ?? 0
 
               return (
-                <>
+                <Fragment key={s.id}>
                   {/* Shipment parent row */}
                   <tr
-                    key={s.id}
                     onClick={() => navigate(`/shipments/${s.id}`)}
                     className="cursor-pointer border-b border-border last:border-0 hover:bg-surface-700 transition-colors"
                   >
@@ -163,7 +162,7 @@ export function ShipmentTable({ shipments }: ShipmentTableProps) {
                       <td className="px-4 py-2" colSpan={5}></td>
                     </tr>
                   ))}
-                </>
+                </Fragment>
               )
             })}
             {shipments.length === 0 && (

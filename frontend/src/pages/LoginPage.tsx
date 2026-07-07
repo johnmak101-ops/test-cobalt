@@ -4,16 +4,18 @@ import { CobaltLogo } from '../components/ui/CobaltLogo'
 import { cn } from '../lib/utils'
 import { LogIn } from 'lucide-react'
 
+// Dev-only quick sign-in — never rendered in a production build (gated on import.meta.env.DEV below).
+// These are the seeded accounts; they start on the placeholder password and are forced to reset on first login.
+const DEV_PASSWORD = 'cobalt-change-me'
 const DEV_USERS = [
-  { email: 'editor@cobalt.hk', name: 'Editor', role: 'MANAGER', initials: 'ED', color: 'bg-cobalt-primary' },
-  { email: 'admin@cobalt.hk', name: 'Admin', role: 'ADMIN', initials: 'AD', color: 'bg-state-sailed' },
-  { email: 'viewer@cobalt.hk', name: 'Viewer', role: 'COORDINATOR', initials: 'VW', color: 'bg-cobalt-teal' },
+  { email: 'super@cobalt.hk', name: 'Super', role: 'SUPERADMIN', initials: 'SU', color: 'bg-state-sailed' },
+  { email: 'admin@cobalt.hk', name: 'Admin', role: 'ADMIN', initials: 'AD', color: 'bg-cobalt-primary' },
 ]
 
 export default function LoginPage() {
   const { login } = useAuth()
-  const [email, setEmail] = useState('editor@cobalt.hk')
-  const [password, setPassword] = useState('cobalt')
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
@@ -75,31 +77,35 @@ export default function LoginPage() {
           </button>
         </form>
 
-        <p className="mb-2 mt-6 text-center text-[11px] text-text-muted">Quick sign-in (dev · password “cobalt”)</p>
-        <div className="space-y-2">
-          {DEV_USERS.map((u) => (
-            <button
-              key={u.email}
-              onClick={() => void doLogin(u.email, 'cobalt')}
-              disabled={busy}
-              className="flex w-full items-center gap-3 rounded-lg border border-border bg-surface-800 px-4 py-3 text-left transition-all hover:border-cobalt-primary/40 hover:bg-surface-700 disabled:opacity-50"
-            >
-              <div
-                className={cn(
-                  'flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-xs font-bold text-white',
-                  u.color,
-                )}
-              >
-                {u.initials}
-              </div>
-              <div className="min-w-0 flex-1">
-                <span className="text-sm font-medium text-text-primary">{u.name}</span>
-                <span className="ml-2 text-[10px] font-medium uppercase tracking-wider text-text-muted">{u.role}</span>
-              </div>
-              <LogIn size={14} className="text-text-muted" />
-            </button>
-          ))}
-        </div>
+        {import.meta.env.DEV && (
+          <>
+            <p className="mb-2 mt-6 text-center text-[11px] text-text-muted">Quick sign-in (dev only)</p>
+            <div className="space-y-2">
+              {DEV_USERS.map((u) => (
+                <button
+                  key={u.email}
+                  onClick={() => void doLogin(u.email, DEV_PASSWORD)}
+                  disabled={busy}
+                  className="flex w-full items-center gap-3 rounded-lg border border-border bg-surface-800 px-4 py-3 text-left transition-all hover:border-cobalt-primary/40 hover:bg-surface-700 disabled:opacity-50"
+                >
+                  <div
+                    className={cn(
+                      'flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-xs font-bold text-white',
+                      u.color,
+                    )}
+                  >
+                    {u.initials}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <span className="text-sm font-medium text-text-primary">{u.name}</span>
+                    <span className="ml-2 text-[10px] font-medium uppercase tracking-wider text-text-muted">{u.role}</span>
+                  </div>
+                  <LogIn size={14} className="text-text-muted" />
+                </button>
+              ))}
+            </div>
+          </>
+        )}
 
         <p className="mt-6 text-center text-[11px] text-text-muted">Cobalt Fashion Holding Limited</p>
       </div>

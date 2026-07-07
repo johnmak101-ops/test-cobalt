@@ -3,6 +3,8 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { AuthProvider, useAuth } from './hooks/use-auth'
 import { AppShell } from './components/layout/AppShell'
 import LoginPage from './pages/LoginPage'
+import ChangePasswordPage from './pages/ChangePasswordPage'
+import { authGate } from './lib/auth-gate'
 import DashboardPage from './pages/DashboardPage'
 import ShipmentTrackerPage from './pages/ShipmentTrackerPage'
 import ShipmentDetailPage from './pages/ShipmentDetailPage'
@@ -28,21 +30,28 @@ const queryClient = new QueryClient({
   },
 })
 
+function FullScreenSpinner() {
+  return (
+    <div className="flex h-screen items-center justify-center bg-bg">
+      <div className="h-6 w-6 animate-spin rounded-full border-2 border-cobalt-primary border-t-transparent" />
+    </div>
+  )
+}
+
 function ProtectedRoute({ children }: { children: ReactNode }) {
   const { user, loading } = useAuth()
+  const gate = authGate(user, loading)
+  if (gate === 'loading') return <FullScreenSpinner />
+  if (gate === 'login') return <Navigate to="/login" replace />
+  if (gate === 'reset') return <Navigate to="/change-password" replace />
+  return <>{children}</>
+}
 
-  if (loading) {
-    return (
-      <div className="flex h-screen items-center justify-center bg-bg">
-        <div className="h-6 w-6 animate-spin rounded-full border-2 border-cobalt-primary border-t-transparent" />
-      </div>
-    )
-  }
-
-  if (!user) {
-    return <Navigate to="/login" replace />
-  }
-
+/** Auth required, but WITHOUT the must-reset redirect — the change-password screen itself lives here. */
+function RequireAuth({ children }: { children: ReactNode }) {
+  const { user, loading } = useAuth()
+  if (loading) return <FullScreenSpinner />
+  if (!user) return <Navigate to="/login" replace />
   return <>{children}</>
 }
 
@@ -82,6 +91,14 @@ function AppRoutes() {
           <PublicRoute>
             <LoginPage />
           </PublicRoute>
+        }
+      />
+      <Route
+        path="/change-password"
+        element={
+          <RequireAuth>
+            <ChangePasswordPage />
+          </RequireAuth>
         }
       />
       {/* Chrome-less pop-up window for reading a single email — auth-gated but outside the sidebar layout. */}

@@ -6,9 +6,6 @@ import { NavLink, useLocation } from 'react-router-dom'
 import { cn } from '../lib/utils'
 import {
   useVendors,
-  useCreateVendor,
-  useDeleteVendor,
-  useImportVendorsCsv,
 } from '../hooks/use-vendors'
 import {
   useEmailIntegration,
@@ -16,7 +13,7 @@ import {
   useTestEmailConnection,
   useSyncEmails,
 } from '../hooks/use-email-integrations'
-import { Upload, Plus, Trash2, Factory, RefreshCw, CheckCircle2, XCircle, ChevronDown, ChevronRight, Zap } from 'lucide-react'
+import { Factory, RefreshCw, CheckCircle2, XCircle, ChevronDown, ChevronRight, Zap } from 'lucide-react'
 
 interface AlertRule {
   id: string
@@ -273,166 +270,21 @@ function AlertRulesSettings() {
   )
 }
 
-function VendorsSettings() {
+export function VendorsSettings() {
   const { data, isLoading } = useVendors()
-  const createVendor = useCreateVendor()
-  const deleteVendor = useDeleteVendor()
-  const importCsv = useImportVendorsCsv()
-  const [showCreate, setShowCreate] = useState(false)
-  const [newVendor, setNewVendor] = useState({ name: '', type: 'factory', location: '' })
-  const [csvText, setCsvText] = useState('')
-  const [showCsvImport, setShowCsvImport] = useState(false)
-
   const vendors = data?.vendors ?? []
-
-  const handleCreate = () => {
-    if (!newVendor.name.trim()) return
-    createVendor.mutate(
-      {
-        name: newVendor.name.trim(),
-        type: newVendor.type,
-        location: newVendor.location.trim() || undefined,
-      },
-      {
-        onSuccess: () => {
-          setNewVendor({ name: '', type: 'factory', location: '' })
-          setShowCreate(false)
-        },
-      }
-    )
-  }
-
-  const handleImportCsv = () => {
-    if (!csvText.trim()) return
-    importCsv.mutate(csvText.trim(), {
-      onSuccess: () => {
-        setCsvText('')
-        setShowCsvImport(false)
-      },
-    })
-  }
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h2 className="text-base font-semibold text-text-primary">Vendors / Factories</h2>
-          <p className="text-sm text-text-secondary">
-            Vendor &amp; factory records are mirrored read-only from the Cobalt Mesh API. Maintain them in Cobalt Mesh;
-            this app resolves them or flags unknowns for review.
-          </p>
-        </div>
-        <div className="flex shrink-0 gap-2">
-          <button
-            disabled
-            title="Vendors are maintained in the Cobalt Mesh API — read-only here"
-            onClick={() => {
-              setShowCsvImport(!showCsvImport)
-              setShowCreate(false)
-            }}
-            className="flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-text-secondary hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            <Upload size={13} />
-            CSV Import
-          </button>
-          <button
-            disabled
-            title="Vendors are maintained in the Cobalt Mesh API — read-only here"
-            onClick={() => {
-              setShowCreate(!showCreate)
-              setShowCsvImport(false)
-            }}
-            className="flex items-center gap-1.5 rounded-lg bg-cobalt-primary px-3 py-1.5 text-xs font-medium text-white hover:bg-cobalt-primary-light disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            <Plus size={13} />
-            Add Vendor
-          </button>
-        </div>
+      <div>
+        <h2 className="text-base font-semibold text-text-primary">Vendors / Factories</h2>
+        <p className="text-sm text-text-secondary">
+          Vendor &amp; factory records are mirrored read-only from the Cobalt Mesh API. Maintain them in Cobalt Mesh;
+          this app resolves them or flags unknowns for review.
+        </p>
       </div>
 
-      {/* CSV Import form */}
-      {showCsvImport && (
-        <Card>
-          <h4 className="mb-2 text-sm font-semibold text-text-primary">Import Vendors from CSV</h4>
-          <p className="mb-3 text-xs text-text-muted">
-            Paste CSV with columns: name, type, location, email, phone, notes (header row required)
-          </p>
-          <textarea
-            value={csvText}
-            onChange={(e) => setCsvText(e.target.value)}
-            placeholder={'name,type,location,email,phone\nShenzhen Textile Co,factory,Shenzhen,contact@example.com,+86 123'}
-            rows={5}
-            className="w-full rounded-lg border border-border bg-surface-700 p-3 font-mono text-xs text-text-primary placeholder:text-text-muted"
-          />
-          <div className="mt-3 flex items-center justify-between">
-            {importCsv.data && (
-              <p className="text-xs text-status-success">
-                Imported {importCsv.data.imported}, {importCsv.data.errors} errors
-              </p>
-            )}
-            {importCsv.isError && (
-              <p className="text-xs text-status-critical">{importCsv.error?.message}</p>
-            )}
-            <button
-              onClick={handleImportCsv}
-              disabled={!csvText.trim() || importCsv.isPending}
-              className="rounded-lg bg-cobalt-primary px-4 py-1.5 text-xs font-medium text-white hover:bg-cobalt-primary-light disabled:opacity-50"
-            >
-              {importCsv.isPending ? 'Importing...' : 'Import'}
-            </button>
-          </div>
-        </Card>
-      )}
-
-      {/* Quick create form */}
-      {showCreate && (
-        <Card>
-          <h4 className="mb-3 text-sm font-semibold text-text-primary">Add New Vendor</h4>
-          <div className="flex flex-wrap items-end gap-3">
-            <div>
-              <label className="text-xs text-text-muted">Name *</label>
-              <input
-                type="text"
-                value={newVendor.name}
-                onChange={(e) => setNewVendor({ ...newVendor, name: e.target.value })}
-                placeholder="e.g. Shenzhen Textile Co."
-                className="mt-1 block h-9 w-52 rounded-lg border border-border bg-surface-700 px-3 text-sm text-text-primary placeholder:text-text-muted"
-              />
-            </div>
-            <div>
-              <label className="text-xs text-text-muted">Type</label>
-              <select
-                value={newVendor.type}
-                onChange={(e) => setNewVendor({ ...newVendor, type: e.target.value })}
-                className="mt-1 block h-9 rounded-lg border border-border bg-surface-700 px-3 text-sm text-text-primary"
-              >
-                <option value="factory">Factory</option>
-                <option value="subcontractor">Subcontractor</option>
-                <option value="agent">Agent</option>
-              </select>
-            </div>
-            <div>
-              <label className="text-xs text-text-muted">Location</label>
-              <input
-                type="text"
-                value={newVendor.location}
-                onChange={(e) => setNewVendor({ ...newVendor, location: e.target.value })}
-                placeholder="e.g. Shenzhen, China"
-                className="mt-1 block h-9 w-40 rounded-lg border border-border bg-surface-700 px-3 text-sm text-text-primary placeholder:text-text-muted"
-              />
-            </div>
-            <button
-              onClick={handleCreate}
-              disabled={!newVendor.name.trim() || createVendor.isPending}
-              className="h-9 rounded-lg bg-cobalt-primary px-4 text-sm font-medium text-white hover:bg-cobalt-primary-light disabled:opacity-50"
-            >
-              {createVendor.isPending ? 'Adding...' : 'Add'}
-            </button>
-          </div>
-        </Card>
-      )}
-
-      {/* Vendors list */}
+      {/* Vendors list (read-only — vendors are maintained in Cobalt Mesh) */}
       {isLoading ? (
         <div className="text-sm text-text-muted">Loading vendors...</div>
       ) : vendors.length === 0 ? (
@@ -458,12 +310,6 @@ function VendorsSettings() {
                     {vendor.contactPhone && <span className="break-all">{vendor.contactPhone}</span>}
                   </div>
                 </div>
-                <button
-                  onClick={() => deleteVendor.mutate(vendor.id)}
-                  className="shrink-0 rounded-lg p-1.5 text-text-muted hover:bg-status-critical/10 hover:text-status-critical"
-                >
-                  <Trash2 size={14} />
-                </button>
               </div>
             </Card>
           ))}

@@ -1,5 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common'
 import { and, desc, eq, inArray, sql } from 'drizzle-orm'
+import { JOB_NO_PREFIX } from '../../common/job-no'
 import { alias } from 'drizzle-orm/pg-core'
 import * as schema from '../contracts'
 import { DRIZZLE, type DrizzleDB } from '../drizzle.provider'
@@ -38,7 +39,7 @@ export class BookingRepository {
     const [{ n }] = await this.db
       .select({ n: sql<number>`coalesce(max(substring(job_no from '[0-9]+$')::int), 0)::int` })
       .from(schema.bookings)
-      .where(sql`job_no like 'JOB-2026-%'`)
+      .where(sql`job_no like ${JOB_NO_PREFIX + '%'}`)
     return n + 1
   }
 

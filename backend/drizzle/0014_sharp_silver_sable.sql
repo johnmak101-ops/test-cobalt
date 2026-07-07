@@ -1,0 +1,1 @@
+ALTER TABLE "tracking"."users" ADD COLUMN "must_reset" boolean DEFAULT false NOT NULL;

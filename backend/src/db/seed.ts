@@ -8,8 +8,8 @@
 import { Pool } from 'pg'
 import { drizzle } from 'drizzle-orm/node-postgres'
 import { eq, sql } from 'drizzle-orm'
-import bcrypt from 'bcryptjs'
 import * as schema from './contracts'
+import { seedAuthUsers } from './seed-auth-users'
 
 const DATABASE_URL = process.env.DATABASE_URL ?? 'postgres://postgres:postgres@localhost:5432/cobalt'
 
@@ -198,16 +198,8 @@ async function main() {
     { id: 'A2', name: 'No Final BOL', description: 'No Final B/L received after ETD', state: 'AT_WAREHOUSE', triggerType: 'days_after', triggerReference: 'etd', watchFor: 'final_bl', thresholdHours: 72, countryThresholds: { BD: 168, KH: 168 }, severity: 'WARNING', computeTz: 'vessel' },
   ])
 
-  // ---- auth users (dev: every password is 'cobalt') ----
-  const pw = await bcrypt.hash('cobalt', 10)
-  await db.insert(schema.users).values([
-    { email: 'viewer@cobalt.hk', name: 'Vera Viewer', passwordHash: pw, role: 'VIEWER', avatarInitials: 'VV' },
-    { email: 'editor@cobalt.hk', name: 'Eddie Editor', passwordHash: pw, role: 'EDITOR', avatarInitials: 'EE' },
-    { email: 'admin@cobalt.hk', name: 'Amon Admin', passwordHash: pw, role: 'ADMIN', avatarInitials: 'AA' },
-    { email: 'super@cobalt.hk', name: 'Sue Super', passwordHash: pw, role: 'SUPERADMIN', avatarInitials: 'SS' },
-    // service account the Agent VM (cobalt-queue Matcher) logs in as to POST decisions
-    { email: 'agent@cobalt.hk', name: 'Cobalt Agent', passwordHash: pw, role: 'EDITOR', avatarInitials: 'AG' },
-  ])
+  // ---- auth accounts: 2 human admins (super/admin, forced first-login reset) + the Agent VM service account ----
+  await seedAuthUsers(db)
 
   // ---- app settings: the review-gate confidence threshold (admin-tunable) ----
   await db.insert(schema.appSettings).values({ key: 'confidence_threshold', value: 85 })
@@ -215,7 +207,7 @@ async function main() {
   // ---- email-extraction review queue (demo) ----
   // commit-first: high-confidence rows are AUTO_ACCEPTED (already applied, never surface in a tab); the
   // low-confidence rows land NEEDS_REVIEW for a human. Two are already actioned to populate the other tabs.
-  const [editorUser] = await db.select().from(schema.users).where(eq(schema.users.email, 'editor@cobalt.hk'))
+  const [reviewerUser] = await db.select().from(schema.users).where(eq(schema.users.email, 'admin@cobalt.hk'))
   const reviewRows = await db.insert(schema.reviewEmail).values([
     // — pending, LOW confidence, sparse, no agent suggestion (plain extracted-data view) —
     {
@@ -287,7 +279,7 @@ async function main() {
       extractionConfidence: 0.6,
       reviewStatus: 'REVIEWED_CORRECTED',
       shipmentId: atRiskLeg.id,
-      reviewedBy: editorUser?.id ?? null,
+      reviewedBy: reviewerUser?.id ?? null,
       reviewedAt: new Date('2026-02-10T10:30:00Z'),
       reviewNotes: 'Fixed booking number (OCR dropped a digit) and set the correct CFS cut-off date.',
       originalExtractedData: {
@@ -307,7 +299,7 @@ async function main() {
       emailType: 'Other',
       extractionConfidence: 0.18,
       reviewStatus: 'REJECTED',
-      reviewedBy: editorUser?.id ?? null,
+      reviewedBy: reviewerUser?.id ?? null,
       reviewedAt: new Date('2026-02-09T14:20:00Z'),
       reviewNotes: 'Marketing email — not a shipment document.',
       extractedData: {},
