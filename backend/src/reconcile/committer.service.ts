@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common'
+import { formatJobNo } from '../common/job-no'
 import type * as schema from '../db/contracts'
 import type { QTY_UNIT } from '../db/contracts'
 import { keysOverlap, strongKeys, normKey, str, num, date } from './match-keys'
@@ -589,7 +590,7 @@ export class CommitterService {
     return c ? this.masters.portByCodeOrName(c) : Promise.resolve(null)
   }
   private async nextJobNo(): Promise<string> {
-    return `JOB-2026-${String(await this.bookings.nextJobSeq()).padStart(4, '0')}`
+    return formatJobNo(await this.bookings.nextJobSeq())
   }
 
   /** Agent-path resolution of ReconGroup.fromPlatform: true only when EVERY source email of the leg resolves
