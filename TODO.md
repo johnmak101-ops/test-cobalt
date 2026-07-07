@@ -157,3 +157,33 @@ The `SettingsPage` + `PresentationService` god-components were already decompose
 - [ ] `[both]` **Booking-ingestion gap** — the tracking mailbox only sees To/Cc'd/forwarded mail, so
   person-addressed original booking emails+attachments are never ingested (→ empty-cargo shipments). Structural
   mail-flow fix; safety nets shipped. See `BOOKING-INGESTION-GAP.md` + the `booking-ingestion-gap` memory.
+
+## Architecture — split queue + ShipTrack into SEPARATE databases (added 2026-07-08)
+**Goal:** same Postgres instance, but each service owns a **separate database — NO shared `queue`/`evidence`
+schemas or tables.** Today (verified 2026-07-08) BOTH cobalt-queue (`D:\cobalt-queue`) and ShipTrack connect to
+the ONE database `cobalt` (`…@localhost:5432/cobalt`) and share the `queue`+`evidence` schemas, which ShipTrack
+reads **in-process via cross-schema SQL**. Target: cobalt-queue → its own db (owns `queue`/`evidence`); ShipTrack →
+its own db (owns `tracking`/`audit`/`alerts` only); integration becomes **HTTP-only** (`POST /api/decisions` +
+new read APIs), not a shared DB.
+
+**Enabler:** the `POST /api/decisions` payload already bundles the evidence rows + conflicts per shipment group,
+so ShipTrack can persist what it needs from that into its OWN tables instead of reading the `evidence` schema live.
+The hard remainder is the **Inbox / email-viewing** path, which reads `queue.queue_message` live.
+
+**Blast radius — ShipTrack reads `queue`/`evidence` in ~16 files; each must move to the API boundary or a local copy:**
+- [ ] `[track]` **`db/repositories/evidence.repository.ts`** — the load-bearing `innerJoin(parsed_record ⋈ queue_message)`
+  (`allWithMessage`, per-message replay) powering Change-History replay + PO-enrichment (consumed by
+  `reconcile/committer.service.ts` + `reconcile/po-enrichment.ts`). Persist from the decisions payload instead of joining live.
+- [ ] `[track]` **`db/repositories/email.repository.ts`** — Inbox list / body / attachments / ingestion-status read
+  `queue.queue_message` live. cobalt-queue must expose these via API, or replicate messages into a track-owned table.
+- [ ] `[track]` Audit + rewire the rest: `db/repositories/{masters,shipment,booking,review-email}.repository.ts`,
+  `presentation/{document-presentation.service,presentation.service,field-conflicts,mappers/email.mapper}.ts`,
+  `reconcile/reconcile.service.ts`, `db/{zod,seed}.ts`, the one-off `db/*.ts` scripts.
+- [ ] `[track]` Drop `queue`+`evidence` from `drizzle.config.ts` `schemaFilter`; delete `db/schema/{queue,evidence}.ts`
+  (+ their `contracts.ts`/`zod.ts` exports); fix any `tracking.ts` cross-schema FKs; update `test/setup-db.ts`
+  (stop truncating `queue.*`/`evidence.*`).
+- [ ] `[queue]` cobalt-queue: point at its own `DATABASE_URL`/db; **expose the reads ShipTrack loses** (parsed-record +
+  message for replay/enrichment; inbox messages + attachments) as APIs, or push them via the decisions payload / a sync.
+- [ ] `[both]` Provision the 2nd database + migrate existing `queue`/`evidence` data; update `docker-compose.yml`, env,
+  and the `cobalt-system-wiring` memory. **This is an architecture change, not a config flip** — the read sites above
+  must move to the HTTP boundary first, or ShipTrack breaks the moment the schemas leave its database.
