@@ -2,11 +2,20 @@ import bcrypt from 'bcryptjs'
 import * as schema from './contracts'
 import type { DrizzleDB } from './drizzle.provider'
 
+/** Seed passwords are dev placeholders; in production they MUST come from env (fail otherwise). */
+function seedPassword(envVar: string, devFallback: string): string {
+  const v = process.env[envVar]
+  if (v) return v
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error(`${envVar} must be set when seeding auth users in production`)
+  }
+  return devFallback
+}
 /** Placeholder password for the 2 human admin accounts (override via SEED_INITIAL_PASSWORD). Paired with
  *  `mustReset`, so it only ever grants the ONE first login before the account is forced to set a real one. */
-const INITIAL_PASSWORD = process.env.SEED_INITIAL_PASSWORD ?? 'cobalt-change-me'
+const INITIAL_PASSWORD = seedPassword('SEED_INITIAL_PASSWORD', 'cobalt-change-me')
 /** Agent VM (cobalt-queue Matcher) service-account password — must match the queue's TRACKING_AGENT_PASSWORD. */
-const AGENT_PASSWORD = process.env.TRACKING_AGENT_PASSWORD ?? 'cobalt'
+const AGENT_PASSWORD = seedPassword('TRACKING_AGENT_PASSWORD', 'cobalt')
 
 /**
  * Seed the initial auth accounts:

@@ -1,4 +1,5 @@
 import { IsBoolean, IsEmail, IsIn, IsOptional, IsString, MinLength } from 'class-validator'
+import { PASSWORD_MIN_LENGTH } from '../auth/auth.constants'
 
 const ROLES = ['VIEWER', 'EDITOR', 'ADMIN', 'SUPERADMIN']
 
@@ -14,7 +15,7 @@ export class CreateUserDto {
   role!: string
 
   @IsString()
-  @MinLength(4)
+  @MinLength(PASSWORD_MIN_LENGTH)
   password!: string
 }
 
@@ -28,6 +29,6 @@ export class UpdateUserDto {
   @IsOptional() @IsBoolean()
   active?: boolean
 
-  @IsOptional() @IsString() @MinLength(4)
+  @IsOptional() @IsString() @MinLength(PASSWORD_MIN_LENGTH)
   password?: string
 }
