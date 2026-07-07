@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common'
 import { ConfigModule } from '@nestjs/config'
 import { LoggerModule } from 'nestjs-pino'
 import { ServeStaticModule } from '@nestjs/serve-static'
+import { validateEnv } from './config/env.validation'
 import { loggerParams } from './logging/logging.options'
 import { DrizzleModule } from './db/drizzle.module'
 import { HealthModule } from './health/health.module'
@@ -23,7 +24,7 @@ import { UsersModule } from './users/users.module'
 
 @Module({
   imports: [
-    ConfigModule.forRoot({ isGlobal: true }),
+    ConfigModule.forRoot({ isGlobal: true, validate: validateEnv }),
     // Structured logging (pino): JSON to stdout + a rotating logs/backend.<date>.<n>.log, per-request req.id.
     LoggerModule.forRoot(loggerParams()),
     // Single-image deploy (Docker): when STATIC_ROOT points at the built SPA, the backend also serves it,

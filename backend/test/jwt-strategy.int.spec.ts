@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest'
+import { ConfigService } from '@nestjs/config'
 import * as schema from '../src/db/contracts'
 import { getTestDb, resetDb, closeTestDb, type TestDB } from './setup-db'
 import { UsersRepository } from '../src/db/repositories/users.repository'
@@ -10,7 +11,8 @@ let strategy: JwtStrategy
 
 beforeAll(async () => {
   db = (await getTestDb()).db
-  strategy = new JwtStrategy(new UsersRepository(db))
+  const config = { getOrThrow: () => 'test-secret' } as unknown as ConfigService
+  strategy = new JwtStrategy(new UsersRepository(db), config)
 })
 afterAll(closeTestDb)
 beforeEach(() => resetDb(db))

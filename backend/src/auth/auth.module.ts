@@ -8,6 +8,7 @@ import { AuthController } from './auth.controller'
 import { JwtStrategy } from './jwt.strategy'
 import { JwtAuthGuard } from './jwt-auth.guard'
 import { RolesGuard } from './roles.guard'
+import { SESSION_TTL_SECONDS } from './auth.constants'
 
 @Module({
   imports: [
@@ -19,8 +20,8 @@ import { RolesGuard } from './roles.guard'
       imports: [ConfigModule],
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({
-        secret: config.get<string>('JWT_SECRET') ?? 'dev-secret-change-me',
-        signOptions: { expiresIn: '8h' },
+        secret: config.getOrThrow<string>('JWT_SECRET'),
+        signOptions: { expiresIn: SESSION_TTL_SECONDS },
       }),
     }),
   ],
