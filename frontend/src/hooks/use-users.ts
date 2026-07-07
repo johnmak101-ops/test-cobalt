@@ -46,7 +46,7 @@ export function useUpdateUser() {
   return useMutation({
     mutationFn: ({ id, patch }: { id: string; patch: UpdateUserInput }) => api.patch<AdminUser>(`/users/${id}`, patch),
     onSuccess: () => qc.invalidateQueries({ queryKey: KEY }),
-    onError: (e) => toast(apiErrorMessage(e, 'Failed to update user')),
+    onError: (e) => { toast(apiErrorMessage(e, 'Failed to update user')); qc.invalidateQueries({ queryKey: KEY }) },
   })
 }
 export function useDeactivateUser() {

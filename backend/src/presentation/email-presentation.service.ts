@@ -1,7 +1,7 @@
 /**
  * Email/inbox UI presentation. Read-only projections of the ingested mail (inbox list, attachments,
- * body, thread) plus the read-only email-integration status. Graph credentials are owned by the
- * ingestion service (graph_api) and never persisted here.
+ * body, thread). Graph credentials are owned by the ingestion service (graph_api) and never
+ * persisted here.
  */
 import { Injectable, NotFoundException } from '@nestjs/common'
 import { EmailRepository } from '../db/repositories/email.repository'

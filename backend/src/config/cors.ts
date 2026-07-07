@@ -1,7 +1,7 @@
 const DEFAULT_ORIGINS = [
   'http://localhost:5173',
   'http://localhost:3000',
-  'https://StatusTrackAgent.Cobaltknitwear.com',
+  'https://statustrackagent.cobaltknitwear.com',
 ]
 
 /** Parse the comma-separated CORS_ORIGINS env, or fall back to the dev + prod defaults. */
