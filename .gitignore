@@ -41,6 +41,7 @@ pave.log
 
 # runtime logs / scratch
 backend/_run.*.log
+backend/logs/
 tmp/
 
 # dev server logs

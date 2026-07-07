@@ -2,13 +2,13 @@ import 'reflect-metadata'
 import { NestFactory } from '@nestjs/core'
 import { ValidationPipe } from '@nestjs/common'
 import type { NestExpressApplication } from '@nestjs/platform-express'
+import { Logger } from 'nestjs-pino'
 import { AppModule } from './app.module'
-import { PinoLoggerService } from './logging/pino-logger.service'
 
 async function bootstrap() {
-  const logger = new PinoLoggerService()
-  // bufferLogs so Nest's own startup lines are held until our structured logger is installed.
+  // bufferLogs so Nest's own startup lines are held until the pino logger is installed.
   const app = await NestFactory.create<NestExpressApplication>(AppModule, { bufferLogs: true })
+  const logger = app.get(Logger)
   app.useLogger(logger)
   // Agent→tracking decision payloads bundle every evidence row + conflict for a shipment
   // group; deeply threaded multi-PO shipments (e.g. the merged WYSE MACFUN air bookings)

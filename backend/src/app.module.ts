@@ -1,6 +1,8 @@
 import { Module } from '@nestjs/common'
 import { ConfigModule } from '@nestjs/config'
+import { LoggerModule } from 'nestjs-pino'
 import { ServeStaticModule } from '@nestjs/serve-static'
+import { loggerParams } from './logging/logging.options'
 import { DrizzleModule } from './db/drizzle.module'
 import { HealthModule } from './health/health.module'
 import { MastersModule } from './masters/masters.module'
@@ -22,6 +24,8 @@ import { UsersModule } from './users/users.module'
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
+    // Structured logging (pino): JSON to stdout + a rotating logs/backend.<date>.<n>.log, per-request req.id.
+    LoggerModule.forRoot(loggerParams()),
     // Single-image deploy (Docker): when STATIC_ROOT points at the built SPA, the backend also serves it,
     // so one container answers both the UI (/) and the API (/api). Unset in local dev (Vite serves the UI),
     // so this is a no-op there. The API keeps its /api prefix; /api/* is excluded from static fallback.
