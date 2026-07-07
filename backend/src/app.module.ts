@@ -30,7 +30,7 @@ import { UsersModule } from './users/users.module'
     // so one container answers both the UI (/) and the API (/api). Unset in local dev (Vite serves the UI),
     // so this is a no-op there. The API keeps its /api prefix; /api/* is excluded from static fallback.
     ...(process.env.STATIC_ROOT
-      ? [ServeStaticModule.forRoot({ rootPath: process.env.STATIC_ROOT, exclude: ['/api/(.*)'] })]
+      ? [ServeStaticModule.forRoot({ rootPath: process.env.STATIC_ROOT, exclude: ['/api/{*splat}'] })]
       : []),
     DrizzleModule,
     RepositoriesModule,
