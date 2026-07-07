@@ -32,7 +32,7 @@ export async function getTestDb(): Promise<{ db: TestDB; pool: Pool }> {
   pool = new Pool({ connectionString: TEST_URL })
   const present = await pool.query("select 1 from information_schema.schemata where schema_name = 'tracking'")
   if (present.rowCount === 0) {
-    const dir = join(process.cwd(), '..', 'packages', 'contracts', 'drizzle')
+    const dir = join(process.cwd(), 'drizzle')
     const files = readdirSync(dir)
       .filter((f) => f.endsWith('.sql'))
       .sort()
