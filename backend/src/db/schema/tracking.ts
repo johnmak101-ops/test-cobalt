@@ -108,6 +108,8 @@ export const users = tracking.table('users', {
   role: text('role', { enum: USER_ROLE }).notNull().default('VIEWER'),
   avatarInitials: text('avatar_initials'),
   active: boolean('active').notNull().default(true),
+  /** forces a password change on next login (seeded accounts start true) */
+  mustReset: boolean('must_reset').notNull().default(false),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 })
