@@ -3,6 +3,7 @@ import type { Response } from 'express'
 import { AuthService } from './auth.service'
 import { Public, CurrentUser } from './decorators'
 import { mapBackendRoleToUi } from '../presentation/adapters/enums'
+import { SESSION_COOKIE, SESSION_TTL_SECONDS } from './auth.constants'
 
 interface SessionUser {
   id: string
@@ -13,8 +14,7 @@ interface SessionUser {
   mustReset?: boolean
 }
 
-const SESSION_COOKIE = 'session'
-const SESSION_MAX_AGE_MS = 1000 * 60 * 60 * 24 * 7 // 7 days
+const SESSION_MAX_AGE_MS = SESSION_TTL_SECONDS * 1000
 
 @Controller('auth')
 export class AuthController {
@@ -34,7 +34,7 @@ export class AuthController {
       secure: process.env.NODE_ENV === 'production',
       maxAge: SESSION_MAX_AGE_MS,
     })
-    return result
+    return { user: result.user }
   }
 
   @Public()

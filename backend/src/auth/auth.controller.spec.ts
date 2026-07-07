@@ -14,13 +14,13 @@ describe('AuthController.me — wrap + role-map for the UI', () => {
   })
 })
 
-describe('AuthController.login — issue session cookie', () => {
-  it('sets an httpOnly session cookie with the token and returns the auth result', async () => {
+describe('AuthController.login — issue session cookie, no token in body', () => {
+  it('sets an httpOnly session cookie and returns only { user }', async () => {
     const { controller } = make({ login: vi.fn().mockResolvedValue({ token: 'tok', user: { id: 'u1', role: 'ADMIN' } }) })
     const res = { cookie: vi.fn(), clearCookie: vi.fn() }
     const out = await controller.login({ email: 'e@x.com', password: 'pw' }, res as any)
     expect(res.cookie).toHaveBeenCalledWith('session', 'tok', expect.objectContaining({ httpOnly: true }))
-    expect(out).toEqual({ token: 'tok', user: { id: 'u1', role: 'ADMIN' } })
+    expect(out).toEqual({ user: { id: 'u1', role: 'ADMIN' } })
   })
 
   it('throws Unauthorized and sets no cookie on bad credentials', async () => {
