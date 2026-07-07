@@ -10,13 +10,11 @@ RUN corepack enable && corepack prepare pnpm@9.15.4 --activate
 COPY pnpm-workspace.yaml package.json pnpm-lock.yaml ./
 COPY frontend/package.json frontend/
 COPY backend/package.json backend/
-COPY packages/contracts/package.json packages/contracts/
 RUN pnpm install --frozen-lockfile
 
-# 2) source + build (contracts -> dist FIRST; backend + frontend consume it)
+# 2) source + build (backend + frontend)
 COPY . .
-RUN pnpm --filter @cobalt/contracts build \
- && pnpm --filter backend build \
+RUN pnpm --filter backend build \
  && pnpm --filter frontend build
 
 # runtime env: backend serves the SPA from the built frontend, DB/PORT come from compose
