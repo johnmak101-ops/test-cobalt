@@ -6,7 +6,7 @@ import { useReviewQueue, useReviewCounts } from '../../hooks/use-review-queue'
 import { useEmails } from '../../hooks/use-emails'
 import { useAuth } from '../../hooks/use-auth'
 import { useUIStore } from '../../store'
-import { cn, formatRelativeTime } from '../../lib/utils'
+import { cn, formatRelativeTime, parsePONumbers } from '../../lib/utils'
 import { humanizeReason } from '../../lib/review-reasons'
 
 const roleLabelMap: Record<string, string> = {
@@ -177,7 +177,7 @@ export function TopBar() {
                           <div className="min-w-0 flex-1">
                             <p className="truncate text-xs font-medium text-text-primary">{alert.message}</p>
                             <p className="mt-0.5 text-[10px] text-text-muted">
-                              {alert.shipment?.poNumbers && `${JSON.parse(alert.shipment.poNumbers)[0]} · `}
+                              {alert.shipment?.poNumbers && `${parsePONumbers(alert.shipment.poNumbers)[0]} · `}
                               {formatRelativeTime(alert.triggeredAt)}
                             </p>
                           </div>
