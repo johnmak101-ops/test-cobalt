@@ -47,9 +47,12 @@ export class UsersService {
   }
 
   /** Update — admins may edit, but only a superadmin can touch a superadmin or grant SUPERADMIN. */
-  async update(id: string, dto: UpdateUserDto, actorRole: string) {
+  async update(id: string, dto: UpdateUserDto, actorRole: string, actorId?: string) {
     const target = await this.repo.findById(id)
     if (!target) throw new NotFoundException(`user ${id} not found`)
+    if (id === actorId && (dto.active === false || (dto.role !== undefined && dto.role !== target.role))) {
+      throw new BadRequestException('you cannot deactivate or change the role of your own account')
+    }
     const isSuper = actorRole === 'SUPERADMIN'
     if (target.role === 'SUPERADMIN' && !isSuper) {
       throw new ForbiddenException('only a superadmin can modify a superadmin')
@@ -57,7 +60,7 @@ export class UsersService {
     if (dto.role === 'SUPERADMIN' && !isSuper) {
       throw new ForbiddenException('only a superadmin can grant the superadmin role')
     }
-    if (target.role === 'SUPERADMIN' && (dto.active === false || (dto.role !== undefined && dto.role !== 'SUPERADMIN'))) {
+    if (target.role === 'SUPERADMIN' && target.active && (dto.active === false || (dto.role !== undefined && dto.role !== 'SUPERADMIN'))) {
       await this.assertNotLastSuperadmin()
     }
 

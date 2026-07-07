@@ -102,4 +102,11 @@ describe('UsersService (integration)', () => {
     const boss = await mk({ email: 'solo@cobalt.hk', role: 'SUPERADMIN' })
     await expect(users.update(boss.id, { role: 'ADMIN' }, 'SUPERADMIN')).rejects.toThrow(/last active superadmin/i)
   })
+
+  it('a superadmin cannot deactivate or demote their OWN account via update', async () => {
+    const me = await mk({ email: 'me@cobalt.hk', role: 'SUPERADMIN' })
+    await mk({ email: 'other-super@cobalt.hk', role: 'SUPERADMIN' }) // ensure it's the self-guard, not the last-super guard, that blocks
+    await expect(users.update(me.id, { active: false }, 'SUPERADMIN', me.id)).rejects.toThrow(/your own account/i)
+    await expect(users.update(me.id, { role: 'ADMIN' }, 'SUPERADMIN', me.id)).rejects.toThrow(/your own account/i)
+  })
 })
