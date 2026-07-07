@@ -1,6 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common'
 import { eq, inArray } from 'drizzle-orm'
-import * as schema from '@cobalt/contracts'
+import * as schema from '../contracts'
 import { DRIZZLE, type DrizzleDB } from '../drizzle.provider'
 
 export interface EvidenceRow {

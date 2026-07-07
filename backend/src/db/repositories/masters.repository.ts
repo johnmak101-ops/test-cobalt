@@ -1,6 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common'
 import { and, eq, ilike, desc, sql } from 'drizzle-orm'
-import * as schema from '@cobalt/contracts'
+import * as schema from '../contracts'
 import { DRIZZLE, type DrizzleDB } from '../drizzle.provider'
 
 type ResolutionKind = (typeof schema.MASTER_RESOLUTION_KIND)[number]

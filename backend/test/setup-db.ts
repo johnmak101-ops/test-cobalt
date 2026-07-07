@@ -1,7 +1,7 @@
 import { Pool } from 'pg'
 import { drizzle, type NodePgDatabase } from 'drizzle-orm/node-postgres'
 import { sql } from 'drizzle-orm'
-import * as schema from '@cobalt/contracts'
+import * as schema from '../src/db/contracts'
 import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { MastersRepository } from '../src/db/repositories/masters.repository'

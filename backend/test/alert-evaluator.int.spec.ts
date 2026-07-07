@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest'
-import * as schema from '@cobalt/contracts'
+import * as schema from '../src/db/contracts'
 import { getTestDb, resetDb, closeTestDb, repos, type TestDB } from './setup-db'
 import { AlertEvaluatorService } from '../src/alerts/alert-evaluator.service'
 

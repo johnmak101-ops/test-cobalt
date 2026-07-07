@@ -1,7 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common'
 import { and, desc, eq, inArray, sql } from 'drizzle-orm'
 import { alias } from 'drizzle-orm/pg-core'
-import * as schema from '@cobalt/contracts'
+import * as schema from '../contracts'
 import { DRIZZLE, type DrizzleDB } from '../drizzle.provider'
 
 /** The subset of PO columns enriched from parsed evidence at commit (types derived from the schema). */

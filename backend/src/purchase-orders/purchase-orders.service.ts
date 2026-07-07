@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common'
-import { QTY_UNIT } from '@cobalt/contracts'
+import { QTY_UNIT } from '../db/contracts'
 import { BookingRepository } from '../db/repositories/booking.repository'
 import { MastersRepository } from '../db/repositories/masters.repository'
 import { AuditRepository } from '../db/repositories/audit.repository'

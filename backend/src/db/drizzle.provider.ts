@@ -1,6 +1,6 @@
 import { Pool, type PoolConfig } from 'pg'
 import { drizzle, type NodePgDatabase } from 'drizzle-orm/node-postgres'
-import * as schema from '@cobalt/contracts'
+import * as schema from './contracts'
 
 /** DI token for the Drizzle database handle. */
 export const DRIZZLE = 'DRIZZLE'

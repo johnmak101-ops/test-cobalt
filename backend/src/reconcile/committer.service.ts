@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common'
-import type * as schema from '@cobalt/contracts'
-import type { QTY_UNIT } from '@cobalt/contracts'
+import type * as schema from '../db/contracts'
+import type { QTY_UNIT } from '../db/contracts'
 import { keysOverlap, strongKeys, normKey, str, num, date } from './match-keys'
 import { guardVendorForwarder, isPlatformNotForwarder, isNotificationPlatformSender } from './vendor-forwarder-guard'
 import { deriveState, classifyKind, MILESTONE_OF, DERIVED_MILESTONE_OF, normMode } from './state'

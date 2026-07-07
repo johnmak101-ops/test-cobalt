@@ -10,7 +10,7 @@
 import { Pool } from 'pg'
 import { eq } from 'drizzle-orm'
 import { drizzle } from 'drizzle-orm/node-postgres'
-import * as schema from '@cobalt/contracts'
+import * as schema from './contracts'
 import { MastersRepository } from './repositories/masters.repository'
 import { BookingRepository } from './repositories/booking.repository'
 import { ShipmentRepository } from './repositories/shipment.repository'

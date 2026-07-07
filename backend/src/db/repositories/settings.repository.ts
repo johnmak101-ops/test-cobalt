@@ -1,6 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common'
 import { eq } from 'drizzle-orm'
-import * as schema from '@cobalt/contracts'
+import * as schema from '../contracts'
 import { DRIZZLE, type DrizzleDB } from '../drizzle.provider'
 
 /** Key/value app settings (tracking-side tunables, e.g. the review-gate confidence threshold). */
