@@ -98,3 +98,62 @@ Result: provisional 6/9 → 2/9, confirmed 3 → 7; hbl/mbl recall 100%; 0 IDs l
   instances → `{}` query results). The original Phase 2 — ONE versioned schema package consumed by BOTH
   cobalt-queue and cobalt-track — is deferred to handover and will be re-extracted fresh (cobalt org,
   git-tagged) then. Spec/plan: `docs/superpowers/{specs,plans}/2026-07-07-inline-contracts-into-backend*`.
+
+## Auth hardening — follow-ups (added 2026-07-08)
+Cookie-only JWT login + server-side change-password + SUPERADMIN Users CRUD UI + Outlook-page removal
+**shipped & merged to main** (PR #11, `ca55a49`; spec/plan in `docs/superpowers/{specs,plans}/2026-07-07-jwt-auth-user-crud*`).
+Non-blocking follow-ups from the whole-branch review (none gate the merge):
+- [ ] `[track]` **Make the last-superadmin guard transactional.** `users.service.ts` `assertNotLastSuperadmin`
+  is check-then-act; two concurrent deactivations of the final 2 superadmins could both pass and reach 0
+  active. Use a conditional `UPDATE … WHERE (count of active superadmins) > 1` or a tx. (SUPERADMIN-only, narrow.)
+- [ ] `[track]` **e2e AppModule boot test.** No spec boots the full Nest app, so the global guard ORDER
+  (`JwtAuthGuard → MustResetGuard → RolesGuard`) and the login 429 are reasoned about, not asserted. Add a
+  supertest that boots `AppModule` (mustReset JWT → non-allowlisted route → 403; 11 logins/min → 429).
+- [ ] `[track]` **Resolve `SESSION_TTL_HOURS` via `ConfigService`.** `auth.constants.ts` reads it from
+  `process.env` at import (before `.env` loads), so a `.env`-file value is silently ignored (always 12h).
+  Read via `ConfigService`, or document it as an OS/compose-env-only knob.
+- [ ] `[track]` **Confirm `trust proxy: 1` at deploy.** `main.ts` trusts exactly one proxy hop (correct for
+  single-hop nginx same-origin); revisit if a CDN/second proxy is added — throttler client-IP + secure-cookie
+  detection depend on it.
+- [ ] `[track]` **Unify guard error shape (minor).** `MustResetGuard` throws `403 {code:'MUST_RESET'}` (object)
+  while `RolesGuard` throws a bare string; harmonize if a shared FE error handler ever needs it.
+
+## Tech-debt (2026-07-08 whole-codebase `/tech-debt` audit)
+The `SettingsPage` + `PresentationService` god-components were already decomposed (PR #9). Remaining:
+### Guardrails (highest leverage)
+- [ ] `[track]` **No CI.** ~540 tests (373 backend + 167 frontend) + tsc + builds never run on push/PR. Add one
+  workflow: `pnpm install --frozen-lockfile`, backend+frontend `tsc` + `vitest run`, both builds (this also runs
+  the frontend `no-db-access` guardrail test).
+- [ ] `[track]` **No lint/format.** Add ESLint (typescript-eslint) + Prettier + a `lint` script, wired into CI.
+- [ ] `[track]` **Docs describe the wrong stack.** `AGENTS*.md` (×4) + `README.md` + `PLAN.md` still say
+  "Hono / Cloudflare D1 / SQLite"; the app is NestJS 11 + Node + Postgres. Rewrite (or delete the stale
+  role-variants) — they mis-steer every agent.
+- [ ] `[track]` **Docker/deploy fragility.** `docker-entrypoint.sh` swallows migrate failures (`|| echo`
+  defeats `set -e` → boots on a broken schema); single-stage image ships devDeps + source; no `app`
+  healthcheck (though `/health` exists). Abort on migrate failure; add a multi-stage runtime + compose healthcheck.
+### Structural
+- [ ] `[track]` **`CommitterService` god file (~696 LOC).** `apply()` accretes resolution/matching/qty-guard/
+  enrichment/identifiers/milestones with `BUG N` comments. Extract collaborators (MasterResolver, LegMatcher,
+  PoQtyReconciler, MilestoneSynchronizer); leave `apply()` an orchestrator.
+- [ ] `[track]` **PO domain is homeless.** `pos` vs `purchase-orders` overlap (two read surfaces + duplicate
+  mappers), and POs have no repository (~12 methods live inside `BookingRepository`). Confirm the FE no longer
+  calls `/api/pos`, delete the orphaned `pos` module, extract a `PurchaseOrderRepository`.
+- [ ] `[track]` **Stringly-typed core.** `ReconGroup.fields: Record<string,unknown>` + ~106 `as`-casts thread
+  through committer/presentation; a renamed field escapes tsc. Define a typed `ParsedFields` at the decisions
+  DTO boundary.
+- [ ] `[track]` **Ingest full-table scans / N+1.** `committer.apply()` does `allLegs()` + whole
+  `parsed_record⋈queue_message` per commit; `lookupByMatchKey` is a triple N+1 over a full scan. Push candidate
+  filtering into indexed SQL.
+- [ ] `[track]` **Review-queue apply-back** (`emails/review-queue.service.ts:56`, `TODO(apply-back)`). A
+  `correct` verdict is stored to `review_email` but never re-applied to the shipment via the committer + field-locks.
+### Hygiene
+- [ ] `[track]` **Untrack `tmp/*.png`** (`git rm --cached tmp/*.png`); delete the ~102 MB working-tree `pave.log`.
+- [ ] `[track]` **`lucide-react` pinned `^1.8.0`** — a dead-end major (maintained line is `0.x`, caret can never
+  update). Re-pin to a current release.
+
+## Cross-system pointers (tracked in memory/docs — recorded here so they're not lost)
+- [ ] `[queue]` **Matcher source-fixes** — per-PO qty broadcast, thread-unstable identity over-split, CVP
+  `LPO→booking_no` phantoms. Detail in the `matcher-source-fixes` memory; track-system only symptom-guards these.
+- [ ] `[both]` **Booking-ingestion gap** — the tracking mailbox only sees To/Cc'd/forwarded mail, so
+  person-addressed original booking emails+attachments are never ingested (→ empty-cargo shipments). Structural
+  mail-flow fix; safety nets shipped. See `BOOKING-INGESTION-GAP.md` + the `booking-ingestion-gap` memory.
