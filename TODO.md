@@ -51,7 +51,7 @@ Context: see `C:\Users\John\.claude\plans\typed-wondering-moler.md` (merge refac
   do the generated-copy + CI diff-guard from the plan.
 
 ## Fields, SCAC & email disposition (added 2026-06-25 — parser-first)
-Field source-of-truth = the real `tracking.shipments` schema (`packages/contracts/src/schema/tracking.ts`) —
+Field source-of-truth = the real `tracking.shipments` schema (`backend/src/db/schema/tracking.ts`) —
 comprehensive: pol/pod, vessel, voyage, flight, mawb, ata, cfs_cutoff, qty_unit, brand + the 21 labelling
 fields. `C:\Users\John\pave-apps\cobalt_track_system` is the **mock-UI reference ONLY**; real project = this
 (D:). Architecture: **cobalt-queue parser is the SOLE extractor (extracts all info); track-system only
