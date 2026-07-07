@@ -2,11 +2,13 @@ import { NavLink, useLocation } from 'react-router-dom'
 import { cn } from '../lib/utils'
 import { VendorsSettings } from '../components/settings/VendorsSettings'
 import { AlertRulesSettings } from '../components/settings/AlertRulesSettings'
+import { UsersSettings } from '../components/settings/UsersSettings'
 
 export default function SettingsPage() {
   const location = useLocation()
   const isAlertsSettings = location.pathname.includes('/settings/alerts')
   const isVendorsSettings = location.pathname.includes('/settings/vendors')
+  const isUsersSettings = location.pathname.includes('/settings/users')
 
   return (
     <div className="flex flex-col gap-6 lg:flex-row">
@@ -16,6 +18,7 @@ export default function SettingsPage() {
           { to: '/settings', label: 'General', end: true },
           { to: '/settings/alerts', label: 'Alert Rules', end: false },
           { to: '/settings/vendors', label: 'Vendors', end: false },
+          { to: '/settings/users', label: 'Users', end: false },
         ].map((item) => (
           <NavLink
             key={item.to}
@@ -37,7 +40,9 @@ export default function SettingsPage() {
 
       {/* Settings Content */}
       <div className="flex-1">
-        {isAlertsSettings ? (
+        {isUsersSettings ? (
+          <UsersSettings />
+        ) : isAlertsSettings ? (
           <AlertRulesSettings />
         ) : isVendorsSettings ? (
           <VendorsSettings />
