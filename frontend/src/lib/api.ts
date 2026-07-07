@@ -1,6 +1,6 @@
 // Vite dev (5173) proxies /api → backend; backend (3000) serves /api directly;
 // PAVE / other origins hit the backend absolutely.
-const backendPort: string = (import.meta as any).env?.VITE_BACKEND_PORT ?? '3000'
+const backendPort: string = import.meta.env?.VITE_BACKEND_PORT ?? '3000'
 
 const API_BASE =
   window.location.port === '5173'

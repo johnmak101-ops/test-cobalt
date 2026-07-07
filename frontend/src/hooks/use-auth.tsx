@@ -8,12 +8,14 @@ interface User {
   email: string
   role: 'COORDINATOR' | 'MANAGER' | 'ADMIN' | 'SUPERADMIN'
   avatarInitials: string
+  mustReset: boolean
 }
 
 interface AuthContextValue {
   user: User | null
   loading: boolean
   login: (email: string, password: string) => Promise<void>
+  changePassword: (currentPassword: string, newPassword: string) => Promise<void>
   logout: () => void
 }
 
@@ -27,13 +29,21 @@ function initials(name: string, email: string): string {
   return src.slice(0, 2).toUpperCase()
 }
 
-function normalize(u: { id: string; name?: string; email: string; role?: string; avatarInitials?: string }): User {
+function normalize(u: {
+  id: string
+  name?: string
+  email: string
+  role?: string
+  avatarInitials?: string
+  mustReset?: boolean
+}): User {
   return {
     id: u.id,
     name: u.name ?? u.email,
     email: u.email,
     role: (u.role as User['role']) ?? 'COORDINATOR',
     avatarInitials: u.avatarInitials || initials(u.name ?? '', u.email),
+    mustReset: u.mustReset ?? false,
   }
 }
 
@@ -68,6 +78,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(normalize(me.user))
   }, [])
 
+  const changePassword = useCallback(async (currentPassword: string, newPassword: string) => {
+    await api.post('/auth/change-password', { currentPassword, newPassword })
+    const me = await api.get<{ user: User }>('/auth/me')
+    setUser(normalize(me.user))
+  }, [])
+
   const logout = useCallback(() => {
     api.post('/auth/logout', {}).catch(() => {})
     try {
@@ -78,7 +94,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null)
   }, [])
 
-  return <AuthContext.Provider value={{ user, loading, login, logout }}>{children}</AuthContext.Provider>
+  return (
+    <AuthContext.Provider value={{ user, loading, login, changePassword, logout }}>{children}</AuthContext.Provider>
+  )
 }
 
 export function useAuth() {
