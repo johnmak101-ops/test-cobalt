@@ -1,5 +1,5 @@
 import { normKey, str, num } from './match-keys'
-import { QTY_UNIT } from '@cobalt/contracts'
+import { QTY_UNIT } from '../db/contracts'
 
 /** The per-PO facts pulled from parsed evidence, ready to enrich purchase_orders. */
 export interface PoEnrichment {

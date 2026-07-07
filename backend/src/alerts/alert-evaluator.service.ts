@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common'
-import type * as schema from '@cobalt/contracts'
+import type * as schema from '../db/contracts'
 import { isFiring, crdRevisionNotReflected, type LegFacts } from './alert-rules'
 import { AlertRepository } from '../db/repositories/alert.repository'
 import { ShipmentRepository } from '../db/repositories/shipment.repository'

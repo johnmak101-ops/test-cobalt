@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest'
 import { eq } from 'drizzle-orm'
-import * as schema from '@cobalt/contracts'
+import * as schema from '../src/db/contracts'
 import { getTestDb, resetDb, closeTestDb, repos, type TestDB } from './setup-db'
 import { ReviewService } from '../src/review/review.service'
 import { QueueLearningClient } from '../src/review/queue-learning.client'

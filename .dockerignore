@@ -4,11 +4,6 @@
 **/.vite
 **/coverage
 
-# the packages/contracts nested "shadow store" — must NOT leak in (997-phantom-tsc trap);
-# the ROOT workspace manages contracts' deps in the image
-packages/contracts/pnpm-lock.yaml
-packages/contracts/pnpm-workspace.yaml
-
 # local env (the container gets DATABASE_URL etc. from compose, not a baked .env)
 **/.env
 **/.env.*

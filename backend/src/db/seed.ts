@@ -9,7 +9,7 @@ import { Pool } from 'pg'
 import { drizzle } from 'drizzle-orm/node-postgres'
 import { eq, sql } from 'drizzle-orm'
 import bcrypt from 'bcryptjs'
-import * as schema from '@cobalt/contracts'
+import * as schema from './contracts'
 
 const DATABASE_URL = process.env.DATABASE_URL ?? 'postgres://postgres:postgres@localhost:5432/cobalt'
 

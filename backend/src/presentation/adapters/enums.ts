@@ -1,6 +1,6 @@
 /**
  * Enum / role / unit translation between the production model and the new UI's contract.
- * Pure functions only — the single place the UI-facing vocabulary diverges from `@cobalt/contracts`.
+ * Pure functions only — the single place the UI-facing vocabulary diverges from `../../db/contracts`.
  */
 
 /** Leg `state` (BOOKED..DELIVERED) -> the UI's 6-state staircase (update-summary terminology). */

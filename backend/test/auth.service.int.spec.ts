@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest'
 import { JwtService } from '@nestjs/jwt'
-import * as schema from '@cobalt/contracts'
+import * as schema from '../src/db/contracts'
 import { getTestDb, resetDb, closeTestDb, type TestDB } from './setup-db'
 import { UsersRepository } from '../src/db/repositories/users.repository'
 import { AuthService } from '../src/auth/auth.service'
