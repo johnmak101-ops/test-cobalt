@@ -10,6 +10,7 @@ interface SessionUser {
   name: string
   role: string
   avatarInitials?: string | null
+  mustReset?: boolean
 }
 
 const SESSION_COOKIE = 'session'
