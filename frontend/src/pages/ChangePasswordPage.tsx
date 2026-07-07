@@ -20,6 +20,10 @@ export default function ChangePasswordPage() {
       setError('New password must be at least 8 characters')
       return
     }
+    if (newPassword === currentPassword) {
+      setError('New password must be different from your current password')
+      return
+    }
     if (newPassword !== confirm) {
       setError('New passwords do not match')
       return

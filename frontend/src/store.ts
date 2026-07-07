@@ -17,8 +17,10 @@ interface UIState {
 // Read persisted theme from localStorage, default to 'dark'
 function getInitialTheme(): Theme {
   if (typeof window === 'undefined') return 'dark'
-  const stored = localStorage.getItem('shiptrack-theme')
-  if (stored === 'light' || stored === 'dark') return stored
+  try {
+    const stored = localStorage.getItem('shiptrack-theme')
+    if (stored === 'light' || stored === 'dark') return stored
+  } catch { /* storage blocked (private mode) — fall through */ }
   return 'dark'
 }
 
@@ -26,7 +28,9 @@ function getInitialTheme(): Theme {
 function applyTheme(theme: Theme) {
   if (typeof document === 'undefined') return
   document.documentElement.setAttribute('data-theme', theme)
-  localStorage.setItem('shiptrack-theme', theme)
+  try {
+    localStorage.setItem('shiptrack-theme', theme)
+  } catch { /* storage blocked — DOM attribute still applied */ }
 }
 
 // Apply on initial load

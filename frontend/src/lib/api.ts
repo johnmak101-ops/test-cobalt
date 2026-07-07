@@ -10,46 +10,32 @@ const API_BASE =
       : `http://localhost:${backendPort}/api` // PAVE or other — hit backend directly
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
-  let token: string | null = null
-  try {
-    token = localStorage.getItem('cobalt_token')
-  } catch {
-    /* ignore */
-  }
   const res = await fetch(`${API_BASE}${path}`, {
-    credentials: 'include', // send the httpOnly session cookie
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}), // belt-and-suspenders for proxied cookies
-      ...options?.headers,
-    },
+    credentials: 'include', // httpOnly session cookie
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
     ...options,
   })
-
   if (!res.ok) {
     const error = await res.text()
     throw new Error(`API error ${res.status}: ${error}`)
   }
-
-  // tolerate empty bodies (e.g. 204 / no-content from action endpoints)
   const text = await res.text()
-  return (text ? JSON.parse(text) : undefined) as T
+  if (!text) return undefined as T
+  try {
+    return JSON.parse(text) as T
+  } catch {
+    throw new Error(`API error ${res.status}: response was not valid JSON`)
+  }
 }
 
 /**
  * Download ONE email attachment through the authenticated API. A bare `<a href>` can't be relied on
- * here (Bearer token isn't sent on plain navigation), so fetch the bytes and hand the browser a blob.
+ * here (the httpOnly session cookie isn't guaranteed to ride a plain cross-origin navigation), so
+ * fetch the bytes (with credentials) and hand the browser a blob.
  */
 export async function downloadAttachment(attachmentId: string, filename: string): Promise<void> {
-  let token: string | null = null
-  try {
-    token = localStorage.getItem('cobalt_token')
-  } catch {
-    /* ignore */
-  }
   const res = await fetch(`${API_BASE}/emails/attachments/${encodeURIComponent(attachmentId)}/download`, {
     credentials: 'include',
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
   })
   if (!res.ok) throw new Error(`download failed (${res.status})`)
   const blob = await res.blob()
