@@ -15,6 +15,7 @@ async function bootstrap() {
   // exceed Express's default 100kb JSON limit. Raise it for the decisions/* ingest path.
   app.useBodyParser('json', { limit: '25mb' })
   app.setGlobalPrefix('api')
+  app.set('trust proxy', 1) // correct client IP behind the reverse proxy (throttler + secure cookies)
   app.useGlobalPipes(new ValidationPipe({ transform: true, whitelist: true }))
   // Credentialed CORS so the UI's `credentials:'include'` cookie reaches the API.
   // `origin: true` reflects the request origin (never `*`, which browsers reject with credentials).

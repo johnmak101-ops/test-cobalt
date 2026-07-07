@@ -1,4 +1,5 @@
 import { BadRequestException, Body, Controller, Get, Post, Res, UnauthorizedException } from '@nestjs/common'
+import { Throttle } from '@nestjs/throttler'
 import type { Response } from 'express'
 import { AuthService } from './auth.service'
 import { Public, CurrentUser, AllowDuringMustReset } from './decorators'
@@ -21,6 +22,7 @@ const SESSION_MAX_AGE_MS = SESSION_TTL_SECONDS * 1000
 export class AuthController {
   constructor(private readonly auth: AuthService) {}
 
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @Public()
   @Post('login')
   async login(
