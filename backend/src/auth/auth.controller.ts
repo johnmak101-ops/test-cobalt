@@ -1,9 +1,10 @@
-import { Body, Controller, Get, Post, Res, UnauthorizedException } from '@nestjs/common'
+import { BadRequestException, Body, Controller, Get, Post, Res, UnauthorizedException } from '@nestjs/common'
 import type { Response } from 'express'
 import { AuthService } from './auth.service'
 import { Public, CurrentUser } from './decorators'
 import { mapBackendRoleToUi } from '../presentation/adapters/enums'
 import { SESSION_COOKIE, SESSION_TTL_SECONDS } from './auth.constants'
+import { ChangePasswordDto } from './dto'
 
 interface SessionUser {
   id: string
@@ -52,8 +53,11 @@ export class AuthController {
   @Post('change-password')
   async changePassword(
     @CurrentUser() user: SessionUser,
-    @Body() body: { currentPassword: string; newPassword: string },
+    @Body() body: ChangePasswordDto,
   ) {
+    if (body.newPassword === body.currentPassword) {
+      throw new BadRequestException('new password must be different from the current password')
+    }
     const ok = await this.auth.changePassword(user.id, body.currentPassword, body.newPassword)
     if (!ok) throw new UnauthorizedException('current password is incorrect')
     return { success: true }
