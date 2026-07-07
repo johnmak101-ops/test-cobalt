@@ -6,6 +6,10 @@
  */
 import { Body, Controller, Get, Param, Patch, Post, Put, Query } from '@nestjs/common'
 import { PresentationService } from './presentation.service'
+import { EmailPresentationService } from './email-presentation.service'
+import { DocumentPresentationService } from './document-presentation.service'
+import { PurchaseOrderPresentationService } from './purchase-order-presentation.service'
+import { MasterDataPresentationService } from './master-data-presentation.service'
 import { CurrentUser, Roles } from '../auth/decorators'
 
 @Controller('dashboard')
@@ -19,7 +23,7 @@ export class UiDashboardController {
 
 @Controller()
 export class UiMastersController {
-  constructor(private readonly ui: PresentationService) {}
+  constructor(private readonly ui: MasterDataPresentationService) {}
 
   @Get('vendors') vendors(@Query('q') q?: string, @Query('type') type?: string) {
     return this.ui.vendors(q, type)
@@ -61,7 +65,7 @@ export class UiShipmentHistoryController {
 
 @Controller('documents')
 export class UiDocumentsController {
-  constructor(private readonly ui: PresentationService) {}
+  constructor(private readonly ui: DocumentPresentationService) {}
 
   @Get() list() {
     return this.ui.documents()
@@ -81,7 +85,7 @@ export class UiDocumentsController {
 
 @Controller('purchase-orders')
 export class UiPosController {
-  constructor(private readonly ui: PresentationService) {}
+  constructor(private readonly ui: PurchaseOrderPresentationService) {}
 
   @Get() list(@Query('customerId') customerId?: string, @Query('open') open?: string) {
     return this.ui.purchaseOrders({ customerId, open: open === 'true' })
@@ -93,7 +97,7 @@ export class UiPosController {
 
 @Controller('emails')
 export class UiEmailsController {
-  constructor(private readonly ui: PresentationService) {}
+  constructor(private readonly ui: EmailPresentationService) {}
 
   @Get() list() {
     return this.ui.emails()
@@ -117,7 +121,7 @@ export class UiEmailsController {
 
 @Controller('email-integrations')
 export class UiEmailIntegrationController {
-  constructor(private readonly ui: PresentationService) {}
+  constructor(private readonly ui: EmailPresentationService) {}
 
   @Get() get() {
     return this.ui.emailIntegration()
