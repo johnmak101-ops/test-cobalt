@@ -201,16 +201,25 @@ git commit -m "refactor(backend): import schema/zod from local ./db/contracts, n
 **Files:**
 - Move: `packages/contracts/drizzle/` → `backend/drizzle/` (via `git mv`)
 - Create: `backend/drizzle.config.ts`
-- Modify: `backend/package.json` (scripts), `docker-entrypoint.sh`
+- Modify: `backend/package.json` (scripts), `docker-entrypoint.sh`, `backend/test/setup-db.ts` (hardcoded migration path)
 
 **Interfaces:**
 - Produces: `backend` owns `db:generate` / `db:migrate` / `db:push` / `db:studio`; the migrate entrypoint targets `--filter backend`.
 
-- [ ] **Step 1: Move the migration folder verbatim (history preserved)**
+- [ ] **Step 1: Move the migration folder verbatim + repoint its filesystem consumer**
 
 ```bash
 cd /d/cobalt_track_system
 git mv packages/contracts/drizzle backend/drizzle
+```
+
+Then fix the ONE hardcoded migration path in `backend/test/setup-db.ts` (a filesystem path the test-DB bootstrap reads — **not** an import, so Task 3's rewrite does not touch it). Change:
+```ts
+const dir = join(process.cwd(), '..', 'packages', 'contracts', 'drizzle')
+```
+to:
+```ts
+const dir = join(process.cwd(), 'drizzle')   // vitest cwd = backend; migrations now live in backend/drizzle
 ```
 
 - [ ] **Step 2: Create `backend/drizzle.config.ts`**
