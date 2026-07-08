@@ -1,5 +1,5 @@
 /**
- * Assemble the UI's inbox `ShippingEmail` from a `queue.queue_message` (+ optional
+ * Assemble the UI's inbox `ShippingEmail` from an `ingest.email_message` (+ optional
  * `tracking.review_email` overlay). Pure. `isRead` comes from the `tracking.email_read` overlay
  * (readAt != null); it is false when no read-state row exists for the message.
  */

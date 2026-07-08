@@ -13,6 +13,7 @@ import { AlertRepository } from '../src/db/repositories/alert.repository'
 import { EvidenceRepository } from '../src/db/repositories/evidence.repository'
 import { UsersRepository } from '../src/db/repositories/users.repository'
 import { SettingsRepository } from '../src/db/repositories/settings.repository'
+import { IngestRepository } from '../src/db/repositories/ingest.repository'
 
 const ADMIN_URL = process.env.TEST_ADMIN_URL ?? 'postgres://postgres:postgres@localhost:5432/postgres'
 const TEST_URL = process.env.TEST_DATABASE_URL ?? 'postgres://postgres:postgres@localhost:5432/cobalt_test'
@@ -47,8 +48,9 @@ export async function resetDb(db: TestDB) {
     tracking.booking_pos, tracking.bookings, tracking.purchase_orders,
     tracking.field_locks, tracking.app_settings, tracking.forwarder_aliases, tracking.consignees,
     tracking.forwarders, tracking.vendors, tracking.customers, tracking.ports,
-    audit.change_log, evidence.parsed_record, queue.queue_message,
-    alerts.alerts, alerts.alert_rules, tracking.users, tracking.refresh_tokens
+    audit.change_log,
+    alerts.alerts, alerts.alert_rules, tracking.users, tracking.refresh_tokens,
+    ingest.parsed_record, ingest.email_attachment, ingest.email_message, ingest.ingest_state
     restart identity cascade`)
 }
 
@@ -71,5 +73,6 @@ export function repos(db: TestDB) {
     evidence: new EvidenceRepository(db),
     users: new UsersRepository(db),
     settings: new SettingsRepository(db),
+    ingest: new IngestRepository(db),
   }
 }

@@ -2,7 +2,7 @@ import { z } from 'zod'
 
 /**
  * Runtime contracts for the two cross-service seams:
- *   1. evidence.parsed_record.fields  — what the PARSER emits (cobalt-queue → track-system)
+ *   1. ingest.parsed_record.fields  — what the PARSER emits (cobalt-queue → track-system)
  *   2. match_decision                  — what the MATCHING AGENT emits (VM2 → committer on VM1)
  * `.passthrough()` keeps these lenient: the LLM may add fields; we store the full JSONB anyway.
  */

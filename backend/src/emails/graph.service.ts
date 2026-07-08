@@ -40,6 +40,30 @@ export function mapGraphMessage(messageId: string, m: Record<string, any>): Orig
   }
 }
 
+/** One attachment's original bytes + metadata fetched from Graph (matched back by `graphAttachmentId`). */
+export interface GraphAttachment {
+  graphAttachmentId: string
+  filename: string
+  mime: string
+  sizeBytes: number
+  body: Buffer
+}
+
+/** Map a Graph `message/attachments` list to download rows (pure — unit-tested). Graph's `/attachments`
+ *  endpoint returns a mix of shapes (file/item/reference); only `fileAttachment`s carry `contentBytes`
+ *  (base64) — the others (forwarded messages, cloud-file references) have no bytes to serve here. */
+export function mapGraphAttachments(json: { value?: any[] }): GraphAttachment[] {
+  return (json.value ?? [])
+    .filter((a) => (a['@odata.type'] ?? '').includes('fileAttachment') && typeof a.contentBytes === 'string')
+    .map((a) => ({
+      graphAttachmentId: String(a.id),
+      filename: String(a.name ?? 'attachment'),
+      mime: String(a.contentType ?? 'application/octet-stream'),
+      sizeBytes: Number(a.size ?? 0),
+      body: Buffer.from(a.contentBytes, 'base64'),
+    }))
+}
+
 /**
  * Minimal Microsoft Graph client for "view original" — client-credentials token + a single message fetch
  * (headers + preview + FULL BODY). VM1 hosts the Graph-facing poller, so the same GRAPH_* creds are
@@ -96,5 +120,17 @@ export class GraphService {
     const res = await fetch(url, { headers: { authorization: `Bearer ${token}` } })
     if (!res.ok) throw new Error(`graph message ${res.status}`)
     return mapGraphMessage(messageId, (await res.json()) as Record<string, any>)
+  }
+
+  /** All file attachments of a message from Graph (original bytes). Throws on transport/auth failure. */
+  async fetchAttachments(graphMessageId: string): Promise<GraphAttachment[]> {
+    const c = this.cfg()
+    const token = await this.accessToken()
+    const url =
+      `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(c.mailbox)}` +
+      `/messages/${encodeURIComponent(graphMessageId)}/attachments?$select=id,name,contentType,size,contentBytes`
+    const res = await fetch(url, { headers: { authorization: `Bearer ${token}` } })
+    if (!res.ok) throw new Error(`graph attachments ${res.status}`)
+    return mapGraphAttachments((await res.json()) as { value?: any[] })
   }
 }

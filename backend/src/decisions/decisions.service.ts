@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common'
 import { CommitterService, type ReconGroup, type CommitResult } from '../reconcile/committer.service'
 import { SettingsService } from '../settings/settings.service'
+import { IngestRepository } from '../db/repositories/ingest.repository'
 import type { CreateDecisionDto } from './dto'
 
 export interface DecisionResult extends Omit<CommitResult, 'action'> {
@@ -31,6 +32,7 @@ export class DecisionsService {
   constructor(
     private readonly committer: CommitterService,
     private readonly settings: SettingsService,
+    private readonly ingestRepo: IngestRepository,
   ) {}
 
   async ingest(dto: CreateDecisionDto): Promise<DecisionResult> {
@@ -40,6 +42,13 @@ export class DecisionsService {
     // ACTIVE leg on EVERY ingest (surfacing in the tracker + burning a job number + duplicating on re-POST).
     // Acknowledge it without committing — the source email + parsed record are retained on the agent side.
     if (dto.disposition === 'skip') return { ...SKIP_RESULT, confidence: dto.confidence, reviewStatus: 'skip' }
+
+    // RECEIVE side of the cross-service push (post DB-split): cobalt-queue sends the per-email parsed
+    // records + metadata that used to live in the shared evidence/queue schemas alongside the decision.
+    // Persist them into our own `ingest` mirror BEFORE committing, so allWithMessage()/forMessages()
+    // (PO-enrichment, Change-History) see the rows the moment the shipment they back exists. Additive:
+    // legacy callers omit `evidence[]` → no ingest write (unchanged behavior).
+    if (dto.evidence?.length) await this.ingestRepo.upsertFromDecision(dto.evidence)
 
     const threshold = await this.settings.confidenceThreshold()
     // The agent's deterministic review gate is AUTHORITATIVE: a gate-auto decision confirms, a gate-review

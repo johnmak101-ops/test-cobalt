@@ -78,7 +78,7 @@ describe('CommitterService (integration, real Postgres)', () => {
 })
 
 describe('CommitterService — per-PO enrichment from parsed evidence (integration)', () => {
-  /** Seed one parsed_record (email × PO) with its queue_message received time. */
+  /** Seed one parsed_record (email × PO) with its ingest.email_message received time. */
   async function seedRecord(over: {
     graphMessageId: string
     receivedAt: string
@@ -88,10 +88,10 @@ describe('CommitterService — per-PO enrichment from parsed evidence (integrati
     recordIdx?: number
   }) {
     const [msg] = await db
-      .insert(schema.queueMessage)
+      .insert(schema.ingestEmailMessage)
       .values({ graphMessageId: over.graphMessageId, receivedAt: new Date(over.receivedAt) })
       .returning()
-    await db.insert(schema.parsedRecord).values({
+    await db.insert(schema.ingestParsedRecord).values({
       messageId: msg.id,
       recordIdx: over.recordIdx ?? 0,
       poNo: over.poNo,
@@ -260,11 +260,11 @@ describe('CommitterService — empty-cargo review flag (integration)', () => {
 })
 
 describe('CommitterService — CVP notification-platform legs → DOCUMENT (integration)', () => {
-  /** Seed a queue_message (the source email) with a graph id + sender, so the committer can resolve
-   *  whether the leg was built entirely from the notification platform on the agent path. */
+  /** Seed an ingest.email_message (the source email) with a graph id + sender, so the committer can
+   *  resolve whether the leg was built entirely from the notification platform on the agent path. */
   async function seedEmail(graphMessageId: string, sender: string) {
     await db
-      .insert(schema.queueMessage)
+      .insert(schema.ingestEmailMessage)
       .values({ graphMessageId, sender, receivedAt: new Date('2026-07-01T08:22:00Z') })
   }
 

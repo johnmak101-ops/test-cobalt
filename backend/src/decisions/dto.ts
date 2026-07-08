@@ -82,4 +82,23 @@ export class CreateDecisionDto {
   @IsOptional() @IsArray() evidenceRefs?: { graphId?: string; graphMessageId?: string; sourceFile?: string; receivedAt?: string; emailType?: string }[]
 
   @IsOptional() @IsString() conversationId?: string
+
+  /** Per-email parsed records + email metadata that back Change-History / PO-enrichment after the DB split.
+   *  Additive: legacy callers omit it → no ingest write (unchanged). Populated by cobalt-queue's send-side. */
+  @IsOptional() @IsArray() evidence?: {
+    graphMessageId: string
+    recordIdx?: number
+    poNo?: string | null
+    emailType?: string | null
+    senderType?: string | null
+    mode?: string | null
+    fields?: Record<string, unknown>
+    matchKeys?: Record<string, unknown>
+    subject?: string | null
+    sender?: string | null
+    receivedAt?: string | null
+    conversationId?: string | null
+    sourceFile?: string | null
+    attachments?: { graphAttachmentId: string; filename: string; declaredMime?: string; sizeBytes?: number; sourceKind?: string }[]
+  }[]
 }

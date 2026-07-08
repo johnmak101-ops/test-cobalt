@@ -41,7 +41,7 @@ async function main() {
       await pool.query(
         `SELECT se.email_type, qm.sender
            FROM tracking.shipment_emails se
-           LEFT JOIN queue.queue_message qm ON qm.graph_message_id = se.graph_message_id
+           LEFT JOIN ingest.email_message qm ON qm.graph_message_id = se.graph_message_id
           WHERE se.shipment_id = $1`,
         [leg.id],
       )

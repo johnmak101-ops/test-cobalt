@@ -4,20 +4,22 @@ import { EmailRepository } from '../db/repositories/email.repository'
 
 const MOCK_PREFIX = 'mock:'
 
-/** One downloadable attachment in the email window (one entry per FILE, not per parsed part). */
+/** One downloadable attachment in the email window (one entry per FILE — the `ingest` mirror already
+ *  stores one row per attachment, so there is no longer a "per parsed part" fan-out to collapse). */
 export interface EmailAttachment {
   filename: string
+  /** per-sheet/part label — a `queue_normalized` concept the ingest mirror doesn't have; always null */
   label: string | null
   kind: string | null
   mime: string | null
   sizeBytes: number
-  /** ORIGINAL bytes, base64 (capped) — office binary, image, or pdf the human downloads & opens */
+  /** ORIGINAL bytes, base64 (capped) — from ingest.email_attachment.raw_bytes, else an on-demand Graph fetch */
   base64?: string | null
-  /** text-native original (txt/csv/html) served as a file when there are no binary bytes */
+  /** reserved: a text-native rendering; not populated until a later task re-adds it (e.g. via Graph) */
   text?: string | null
   /** original exists but exceeds the inline cap */
   tooLarge?: boolean
-  /** an office binary whose original was NOT retained — only the parsed text survives (purged) */
+  /** an office binary with no local raw_bytes AND unfetchable from Graph (not configured, no graph ids, or the fetch failed) */
   parsedOnly?: boolean
 }
 
@@ -31,7 +33,7 @@ export class EmailsService {
 
   /**
    * "View original": resolve a milestone's source-email pointer to the actual email.
-   *  1. ingested in the shared queue schema (same-host) → return the real subject/sender/body
+   *  1. ingested in track-system's own `ingest` mirror (intra-DB) → return the real subject/sender/body
    *  2. `mock:<file>` not ingested → corpus pointer, no live copy (return the filename)
    *  3. live mailbox via Graph (production), else not configured
    * Never throws — any failure degrades to `available:false` so the UI always renders.
@@ -100,15 +102,14 @@ export class EmailsService {
   }
 
   /**
-   * Attachments for the email window — ONE entry per file, carrying the ORIGINAL so a human can
-   * download and open it locally:
-   *   - office binaries (docx/xlsx/doc/rtf) → the retained `rawBytes` (the real .docx/.xlsx)
-   *   - image / pdf → the passthrough bytes (already the original)
-   *   - txt/csv/html → the text content itself (that IS the original)
-   * The repository join yields one row per normalized PART (a multi-sheet xlsx → N rows), so we
-   * collapse by attachment id to avoid listing the same file N times. Documents float to the top so
-   * the meaningful files (B/L, invoice) sit above inline signature logos. Resilient: a queue that
-   * isn't co-located (2-VM split) degrades to `available:false`.
+   * Attachments for the email window — ONE entry per file (the ingest mirror already stores one row
+   * per attachment, so there is nothing left to collapse). Every kind is served the same way now:
+   * `rawBytes` (when we have it — dev-seed only for now) becomes the downloadable `base64`; failing
+   * that, a Graph fetch (see `fetchGraphOriginals`) is tried for anything real mail left unfetched; an
+   * office kind (docx/xlsx/doc/rtf) that even Graph can't produce is flagged `parsedOnly` so the UI
+   * knows the original isn't available; anything else with no bytes just carries its metadata.
+   * Documents float to the top so the meaningful files (B/L, invoice) sit above inline signature logos.
+   * Resilient: a DB hiccup degrades to `available:false`.
    */
   async getAttachments(messageId: string): Promise<{ available: boolean; attachments: EmailAttachment[] }> {
     if (!messageId) return { available: false, attachments: [] }
@@ -116,49 +117,36 @@ export class EmailsService {
     const OFFICE = new Set(['docx', 'xlsx', 'doc', 'rtf'])
     try {
       const rows = await this.emails.attachmentsFor(messageId)
+      // one memoized Graph round-trip covers every row of this message missing local bytes
+      const graphOriginals = await this.fetchGraphOriginals(rows)
 
-      // collapse the per-part rows into one group per attachment (the file)
-      const groups = new Map<string, typeof rows>()
-      for (const r of rows) {
-        const g = groups.get(r.attachmentId)
-        if (g) g.push(r)
-        else groups.set(r.attachmentId, [r])
-      }
-
-      const attachments: EmailAttachment[] = []
-      for (const group of groups.values()) {
-        const first = group[0]!
+      const attachments: EmailAttachment[] = rows.map((r) => {
         const a: EmailAttachment = {
-          filename: leafName(first.filename),
-          label: group.length > 1 ? null : first.label, // a per-sheet label is noise at file level
-          kind: first.sourceKind,
-          mime: first.declaredMime ?? first.mime ?? null,
-          sizeBytes: first.sizeBytes,
+          filename: leafName(r.filename),
+          label: null, // no per-part fan-out anymore — one row IS the file
+          kind: r.sourceKind,
+          mime: r.declaredMime,
+          sizeBytes: r.sizeBytes,
         }
-
-        const passthrough = group.find((g) => g.imageBytes) // image / pdf — bytes ARE the original
-        if (first.rawBytes) {
-          if (first.rawBytes.length <= MAX_INLINE) a.base64 = first.rawBytes.toString('base64')
+        if (r.rawBytes) {
+          if (r.rawBytes.length <= MAX_INLINE) a.base64 = r.rawBytes.toString('base64')
           else a.tooLarge = true
-        } else if (passthrough?.imageBytes) {
-          if (passthrough.imageBytes.length <= MAX_INLINE) a.base64 = passthrough.imageBytes.toString('base64')
-          else a.tooLarge = true
-          a.mime = passthrough.mime ?? a.mime
-        } else {
-          // no binary original — serve the text-native original, or flag a purged office doc
-          const textPart = group.find((g) => g.textContent)
-          if (textPart?.textContent) {
-            a.text = group.map((g) => g.textContent).filter(Boolean).join('\n\n').slice(0, 500_000)
-            a.kind = textPart.kind ?? first.sourceKind
-          }
-          if (OFFICE.has(first.sourceKind)) a.parsedOnly = true
+          return a
         }
-        attachments.push(a)
-      }
+        const g = graphOriginals.find((x) => x.graphAttachmentId === r.graphAttachmentId)
+        if (g) {
+          a.mime = a.mime ?? g.mime
+          if (g.body.length <= MAX_INLINE) a.base64 = g.body.toString('base64')
+          else a.tooLarge = true
+        } else if (r.sourceKind && OFFICE.has(r.sourceKind)) {
+          a.parsedOnly = true
+        }
+        return a
+      })
 
-      // documents (office/pdf/text) first, then images largest→smallest (signature logos sink)
+      // documents (office/pdf) first, then images largest→smallest (signature logos sink)
       const rank = (a: EmailAttachment) =>
-        (a.mime?.includes('pdf') || a.text != null || (a.kind != null && OFFICE.has(a.kind)) ? 100_000_000 : 0) + a.sizeBytes
+        (a.mime?.includes('pdf') || (a.kind != null && OFFICE.has(a.kind)) ? 100_000_000 : 0) + a.sizeBytes
       attachments.sort((x, y) => rank(y) - rank(x))
       return { available: attachments.length > 0, attachments }
     } catch (err) {
@@ -168,9 +156,8 @@ export class EmailsService {
   }
 
   /**
-   * ONE attachment's original bytes for the download endpoint, resolved the same way getAttachments
-   * inlines them: office rawBytes → passthrough image/pdf bytes → the text content as a file.
-   * Null when the id is unknown or the original was purged with no text surviving.
+   * ONE attachment's original bytes for the download endpoint — local `rawBytes` first, else a Graph
+   * fallback fetch matched by `graphAttachmentId`. Null when the id is unknown or neither source has it.
    */
   async getAttachmentOriginal(
     attachmentId: string,
@@ -179,22 +166,42 @@ export class EmailsService {
     const rows = await this.emails.attachmentById(attachmentId)
     const first = rows[0]
     if (!first) return null
-    const filename = leafName(first.filename)
-
     if (first.rawBytes) {
-      return { filename, mime: first.declaredMime ?? 'application/octet-stream', body: first.rawBytes }
-    }
-    const passthrough = rows.find((r) => r.imageBytes)
-    if (passthrough?.imageBytes) {
       return {
-        filename,
-        mime: passthrough.mime ?? first.declaredMime ?? 'application/octet-stream',
-        body: passthrough.imageBytes,
+        filename: leafName(first.filename),
+        mime: first.declaredMime ?? 'application/octet-stream',
+        body: first.rawBytes,
       }
     }
-    const text = rows.map((r) => r.textContent).filter(Boolean).join('\n\n')
-    if (text) return { filename, mime: 'text/plain; charset=utf-8', body: Buffer.from(text, 'utf8') }
-    return null
+    const g = (await this.fetchGraphOriginals([first])).find((x) => x.graphAttachmentId === first.graphAttachmentId)
+    if (!g) return null
+    return {
+      filename: leafName(first.filename),
+      mime: first.declaredMime ?? g.mime,
+      body: g.body,
+    }
+  }
+
+  /**
+   * Graph fallback for attachments with no local `rawBytes` — mirrors how `getOriginal` re-fetches a
+   * purged BODY from Graph, but for attachment bytes. Graph has no single-attachment-by-id endpoint
+   * cheaper than listing the message's attachments, so this fetches ONCE per call (memoized here, not
+   * across calls) for every row that still needs it, and the caller matches back by `graphAttachmentId`.
+   * Never throws: absent creds, a transport/auth failure, or an incomplete test double for `graph` all
+   * degrade to `[]` so callers fall through to their own parsedOnly/unavailable handling.
+   */
+  private async fetchGraphOriginals(
+    rows: { rawBytes: Buffer | null; graphAttachmentId: string | null; messageGraphId: string }[],
+  ) {
+    const needsGraph = rows.find((r) => !r.rawBytes && r.graphAttachmentId && r.messageGraphId)
+    if (!needsGraph) return []
+    try {
+      if (!this.graph.configured()) return []
+      return await this.graph.fetchAttachments(needsGraph.messageGraphId)
+    } catch (err) {
+      this.log.warn(`attachment Graph fetch failed: ${String(err).slice(0, 80)}`)
+      return []
+    }
   }
 }
 

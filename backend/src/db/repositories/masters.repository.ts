@@ -422,7 +422,7 @@ export class MastersRepository {
              fields->>'consignee_name' AS consignee,
              fields->>'vendor_code'    AS vendor,
              count(*)::int             AS n
-      FROM evidence.parsed_record
+      FROM ingest.parsed_record
       WHERE fields->>'customer_code' IS NOT NULL
       GROUP BY 1, 2, 3`)
     return (res as unknown as { rows: { cust: string; consignee: string | null; vendor: string | null; n: number }[] }).rows

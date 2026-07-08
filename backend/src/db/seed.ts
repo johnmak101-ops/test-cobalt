@@ -329,46 +329,74 @@ async function main() {
     },
   ]).returning()
 
-  // Mirror each review email into the shared queue schema so "View original" opens the REAL email
-  // (Outlook/O365 reading pane) in a new window, with downloadable attachments — exactly the
-  // production path (review_email.message_id → queue.queue_message, keyed by graph_message_id).
-  // Pending emails get a sample attachment so the download link is exercised. Idempotent: clears the
-  // prior demo (mock:) rows first (cascades to attachments). Real cobalt-queue rows are untouched.
-  await db.execute(sql`delete from queue.queue_message where graph_message_id like 'mock:%'`)
+  // Mirror each review email into ingest.* — track-system's own copy of the email + parsed-record data
+  // (in production, fed by POST /api/decisions; here, dev-only, populated straight off the seed data,
+  // body text and attachment bytes included) so "View original", attachment downloads, and the Change
+  // History replay all have something to read, keyed by graph_message_id. Pending emails get a sample
+  // attachment so the download link is exercised. Idempotent: clears the prior demo (mock:) rows first
+  // (cascades to attachments via ingest's own FK).
+  const strOrNull = (v: unknown): string | null => (typeof v === 'string' ? v : null)
+  const MATCH_KEY_FIELDS = ['customer_po', 'so_no', 'booking_no', 'hbl_awb_fcr_no', 'mbl', 'conversation_id'] as const
+  const pickMatchKeys = (fields: Record<string, unknown>): Record<string, unknown> => {
+    const out: Record<string, unknown> = {}
+    for (const k of MATCH_KEY_FIELDS) if (fields[k] !== undefined) out[k] = fields[k]
+    return out
+  }
+
+  await db.execute(sql`delete from ingest.email_message where graph_message_id like 'mock:%'`)
   for (const r of reviewRows) {
     if (!r.graphMessageId) continue
     const isPending = r.reviewStatus === 'NEEDS_REVIEW'
-    const [qm] = await db
-      .insert(schema.queueMessage)
+
+    // ingest mirror — track-system's own copy (production: POST /api/decisions; here: straight off seed data)
+    const [ingMsg] = await db
+      .insert(schema.ingestEmailMessage)
       .values({
         graphMessageId: r.graphMessageId,
         subject: r.subject,
         sender: r.sender,
         receivedAt: r.receivedAt,
-        bodyText: r.bodyText,
         status: 'DONE',
         attachmentCount: isPending ? 1 : 0,
+        bodyText: r.bodyText, // dev demo body
       })
       .returning()
-    await db.update(schema.reviewEmail).set({ messageId: qm.id }).where(eq(schema.reviewEmail.id, r.id))
+    // inbox join: review_email.message_id → ingest.email_message.id (see email.repository.listInbox)
+    await db.update(schema.reviewEmail).set({ messageId: ingMsg.id }).where(eq(schema.reviewEmail.id, r.id))
+
+    const extracted = (r.extractedData ?? {}) as Record<string, unknown>
+    // senderType/mode: no honest source in this seed (reviewEmail has neither; SENDER_TYPE enum has no
+    // "customer" value) — left null
+    await db.insert(schema.ingestParsedRecord).values({
+      messageId: ingMsg.id,
+      graphMessageId: r.graphMessageId,
+      poNo: strOrNull(extracted.customer_po),
+      emailType: r.emailType ?? null,
+      fields: extracted,
+      matchKeys: pickMatchKeys(extracted),
+    })
+
     if (!isPending) continue
-    // a small, real, downloadable CSV (served as text) so the O365-style chip's download link works
     const csv = 'PO,Item / Style,Qty,Unit\n100-100209,KT-771,5000,pieces'
-    const [att] = await db
-      .insert(schema.queueAttachment)
-      .values({
-        messageId: qm.id,
-        filename: 'packing-list.csv',
-        sourceKind: 'csv',
-        contentHash: `seed-${r.id}`,
-        sizeBytes: csv.length,
-        declaredMime: 'text/csv',
-      })
-      .returning()
-    await db.insert(schema.queueNormalized).values({
-      attachmentId: att.id, idx: 0, kind: 'csv', textContent: csv, mime: 'text/csv', label: 'packing-list',
+    await db.insert(schema.ingestEmailAttachment).values({
+      messageId: ingMsg.id,
+      filename: 'packing-list.csv',
+      declaredMime: 'text/csv',
+      sizeBytes: csv.length,
+      sourceKind: 'csv',
+      rawBytes: Buffer.from(csv, 'utf-8'),
     })
   }
+
+  // ingest's own poller checkpoint for the mock inbox (was queue.ingest_state upstream); upsert keeps
+  // reseeds idempotent.
+  await db
+    .insert(schema.ingestSyncState)
+    .values({ id: 'inbox:mock', watermark: new Date(), lastSyncAt: new Date() })
+    .onConflictDoUpdate({
+      target: schema.ingestSyncState.id,
+      set: { watermark: new Date(), lastSyncAt: new Date(), updatedAt: new Date() },
+    })
 
   // eslint-disable-next-line no-console
   console.log(`seed done: booking ${booking.jobNo} (${booking.id}) with legs ${leg1.legNo}(${leg1.legStatus}) / ${leg2.legNo}(${leg2.legStatus})`)
