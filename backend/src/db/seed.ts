@@ -334,7 +334,21 @@ async function main() {
   // production path (review_email.message_id → queue.queue_message, keyed by graph_message_id).
   // Pending emails get a sample attachment so the download link is exercised. Idempotent: clears the
   // prior demo (mock:) rows first (cascades to attachments). Real cobalt-queue rows are untouched.
+  //
+  // Additive: the SAME mock corpus is also mirrored into ingest.* — track-system's own copy, fed in
+  // production by POST /api/decisions but here (dev-only) populated straight off the seed data,
+  // body text and attachment bytes included. The queue/evidence writes stay as-is until Task 9 retires
+  // them; this only adds rows alongside.
+  const strOrNull = (v: unknown): string | null => (typeof v === 'string' ? v : null)
+  const MATCH_KEY_FIELDS = ['customer_po', 'so_no', 'booking_no', 'hbl_awb_fcr_no', 'mbl', 'conversation_id'] as const
+  const pickMatchKeys = (fields: Record<string, unknown>): Record<string, unknown> => {
+    const out: Record<string, unknown> = {}
+    for (const k of MATCH_KEY_FIELDS) if (fields[k] !== undefined) out[k] = fields[k]
+    return out
+  }
+
   await db.execute(sql`delete from queue.queue_message where graph_message_id like 'mock:%'`)
+  await db.execute(sql`delete from ingest.email_message where graph_message_id like 'mock:%'`)
   for (const r of reviewRows) {
     if (!r.graphMessageId) continue
     const isPending = r.reviewStatus === 'NEEDS_REVIEW'
@@ -351,6 +365,36 @@ async function main() {
       })
       .returning()
     await db.update(schema.reviewEmail).set({ messageId: qm.id }).where(eq(schema.reviewEmail.id, r.id))
+
+    // --- ingest mirror (additive; queue writes above stay until Task 9) ---
+    const [ingMsg] = await db
+      .insert(schema.ingestEmailMessage)
+      .values({
+        graphMessageId: qm.graphMessageId,
+        graphId: qm.graphId,
+        sourceFile: qm.sourceFile,
+        conversationId: qm.conversationId,
+        subject: qm.subject,
+        sender: qm.sender,
+        receivedAt: qm.receivedAt,
+        status: qm.status,
+        attachmentCount: qm.attachmentCount,
+        bodyText: qm.bodyText, // dev demo body
+        bodyHtml: qm.bodyHtml, // dev demo body (this mock corpus has none)
+      })
+      .returning()
+    // review_email.extracted_data already mirrors evidence.parsed_record.fields (see tracking.ts's doc
+    // comment on reviewEmail) — reuse it verbatim as this parsed record's fields/poNo/matchKeys.
+    const extracted = (r.extractedData ?? {}) as Record<string, unknown>
+    await db.insert(schema.ingestParsedRecord).values({
+      messageId: ingMsg.id,
+      graphMessageId: qm.graphMessageId,
+      poNo: strOrNull(extracted.customer_po),
+      emailType: r.emailType ?? null,
+      fields: extracted,
+      matchKeys: pickMatchKeys(extracted),
+    })
+
     if (!isPending) continue
     // a small, real, downloadable CSV (served as text) so the O365-style chip's download link works
     const csv = 'PO,Item / Style,Qty,Unit\n100-100209,KT-771,5000,pieces'
@@ -368,7 +412,26 @@ async function main() {
     await db.insert(schema.queueNormalized).values({
       attachmentId: att.id, idx: 0, kind: 'csv', textContent: csv, mime: 'text/csv', label: 'packing-list',
     })
+    // ingest owns the dev-only demo bytes (queue's rawBytes stays null; see queue.ts's "Option A" note)
+    await db.insert(schema.ingestEmailAttachment).values({
+      messageId: ingMsg.id,
+      filename: att.filename,
+      declaredMime: att.declaredMime,
+      sizeBytes: att.sizeBytes,
+      sourceKind: att.sourceKind,
+      rawBytes: Buffer.from(csv, 'utf-8'),
+    })
   }
+
+  // ingest's own poller checkpoint for the mock inbox (was queue.ingest_state upstream); upsert keeps
+  // reseeds idempotent.
+  await db
+    .insert(schema.ingestSyncState)
+    .values({ id: 'inbox:mock', watermark: new Date(), lastSyncAt: new Date() })
+    .onConflictDoUpdate({
+      target: schema.ingestSyncState.id,
+      set: { watermark: new Date(), lastSyncAt: new Date(), updatedAt: new Date() },
+    })
 
   // eslint-disable-next-line no-console
   console.log(`seed done: booking ${booking.jobNo} (${booking.id}) with legs ${leg1.legNo}(${leg1.legStatus}) / ${leg2.legNo}(${leg2.legStatus})`)
