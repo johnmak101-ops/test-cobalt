@@ -1,4 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
+import { Reflector } from '@nestjs/core'
+import { ROLES_KEY } from '../auth/decorators'
 import {
   UiDashboardController,
   UiMastersController,
@@ -44,6 +46,13 @@ describe('UiAlertRulesController', () => {
     const svc = fakeSvc()
     await new UiAlertRulesController(svc as any).get()
     expect(svc.alertRules).toHaveBeenCalledOnce()
+  })
+
+  // Write guard: saving alert SLAs must stay ADMIN-or-higher (rank-based guard).
+  // Locks in the fix for the demo-era hole where the guard was commented out.
+  it('restricts PUT /alert-rules to ADMIN or higher', () => {
+    const roles = new Reflector().get<string[]>(ROLES_KEY, UiAlertRulesController.prototype.save)
+    expect(roles).toEqual(['ADMIN'])
   })
 })
 

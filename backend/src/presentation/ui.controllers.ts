@@ -46,9 +46,9 @@ export class UiAlertRulesController {
   @Get() get() {
     return this.ui.alertRules()
   }
-  // DEMO 2026-07-03 (TEMPORARY): alert-rule saving opened to all authenticated users for the demo.
-  // REVERT after the demo by restoring `@Roles('SUPERADMIN')` below (paired with AlertRulesPage `canEdit`).
-  // @Roles('SUPERADMIN')
+  // Alert-rule saving is restricted to ADMIN or higher (rank-based guard → ADMIN + SUPERADMIN).
+  // Paired with the frontend AlertRulesPage `canEdit` gate.
+  @Roles('ADMIN')
   @Put() save(@Body() body: { rules?: Array<Record<string, unknown>> }) {
     return this.ui.saveAlertRules(body)
   }
