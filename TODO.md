@@ -159,27 +159,20 @@ The `SettingsPage` + `PresentationService` god-components were already decompose
   mail-flow fix; safety nets shipped. See `BOOKING-INGESTION-GAP.md` + the `booking-ingestion-gap` memory.
 
 ## Architecture — split queue + ShipTrack into SEPARATE databases (added 2026-07-08)
-**STATUS (2026-07-08): ShipTrack side DONE** on branch `feat/separate-shiptrack-database`
-(spec/plan: `docs/superpowers/{specs,plans}/2026-07-08-separate-shiptrack-database*`; 10 tasks, each reviewed).
-ShipTrack now owns ONLY `tracking`/`audit`/`alerts` + a new light **`ingest`** mirror; the `queue`/`evidence`
-schemas are DELETED (migration `0016_drop_queue_evidence`). **Verified end-to-end:** fresh migrate+seed → ingest-only
-schemas; backend 401/401 + frontend 167/167 + both builds green; app boots against the ingest-only DB; Inbox
-(`GET /api/emails`) and the decisions `evidence[]` receive path work over real HTTP.
+**STATUS (2026-07-08): ✅ COMPLETE — both sides MERGED.** The two services are now **HTTP-only** (`POST /api/decisions`
+with `evidence[]` + `GET /api/masters/resolution`) + Microsoft Graph for email body/attachments — **NO shared DB schema.**
+e2e-proven cobalt_queue → ShipTrack (ingest.* populated incl. graph attachment id; 16 curated facts flow over HTTP).
+- ShipTrack owns `cobalt` (`tracking`/`audit`/`alerts`/`ingest`) — **PR #12** (+ curated-facts seed **#13**).
+- cobalt-queue owns `cobalt_queue` (`queue`/`evidence`) — **PR #49** (+ curated-facts HTTP read **#50**).
+Spec/plan: `docs/superpowers/{specs,plans}/2026-07-08-separate-shiptrack-database*` (track) + `cobalt-queue/docs/superpowers/.../2026-07-08-cobalt-queue-own-db-and-evidence-send*`. Details in the `cobalt-system-wiring` memory.
 
-**Chosen approach** (differs from the original guess below): a **light track-owned `ingest` mirror**
-(`email_message` / `email_attachment` / `parsed_record`) fed by an **additive `evidence[]` field on
-`POST /api/decisions`**, plus **email body + attachment originals fetched from Microsoft Graph on demand**
-(local dev-seed bytes first, else Graph) — so cobalt-queue never needs to expose an email API. Dev-only
-disposable DB → **no data migration**.
+**Done:**
+- [x] `[track]` (PR #12) own **`ingest`** mirror (`email_message`/`email_attachment`/`parsed_record`); dropped queue/evidence (mig `0016`); **Graph-on-demand** for body/attachments (`GraphService.fetchAttachments`, local-seed-first); `evidence[]` receive side (`IngestRepository.upsertFromDecision`, upsert idempotent on `(graph_message_id, record_idx)` + `message_id NOT NULL`, mig `0017`).
+- [x] `[queue]` (PR #49) own db `cobalt_queue`; **SENDS** `evidence[]` (parsed record + metadata + attachments incl. `graph_attachment_id`) via `buildDecisionFromGroup`; captures the Graph attachment id in ingestion; `tracking-client` auth via **cookie→Bearer** (fixed a PRE-EXISTING PR#11 break — the agent couldn't auth at all).
+- [x] `[both]` (PR #13 + #50) curated `master_resolution` facts → **ShipTrack single source of truth** (seeded there, `vendor_group` enum added) + cobalt-queue parser reads them via `GET /api/masters/resolution` HTTP; retired cobalt-queue's local `seed-entity-facts.ts`.
 
-**Done (ShipTrack side):**
-- [x] `[track]` `evidence.repository.ts` → `ingest.parsed_record ⋈ ingest.email_message` (intra-DB); consumers unchanged.
-- [x] `[track]` `email.repository.ts` → reads `ingest.*`; `GraphService.fetchAttachments` + local-first→Graph fallback for body/attachments.
-- [x] `[track]` Rewired the rest (`masters`/`shipment` raw SQL, `reclassify-platform-documents.ts`, `seed.ts`, int tests); `presentation`/`reconcile`/`alerts` consume via the repos (no change needed).
-- [x] `[track]` Dropped `queue`+`evidence` from `schemaFilter`; deleted `schema/{queue,evidence}.ts`; migration `0016` `DROP SCHEMA ... CASCADE`; `test/setup-db.ts` truncate list cleaned.
-- [x] `[track]` Receive side of the push: `IngestRepository.upsertFromDecision` persists per-email parsed records + metadata (idempotent on `(graph_message_id, record_idx)`), wired into `DecisionsService`.
-
-**Remaining:**
-- [ ] `[queue]` cobalt-queue (`D:\cobalt-queue`): point at its OWN `DATABASE_URL`/db, and **SEND** per-email parsed records + email metadata via the new `evidence[]` on the decisions POST (ShipTrack's receive side is built + tested). It does NOT need to expose email read APIs — ShipTrack reads bodies/attachments from Graph.
-- [ ] `[both]` Provision cobalt-queue's own database + point it there; update `docker-compose.yml`/env + the `cobalt-system-wiring` memory. (No data migration — dev DB disposable.)
-- [ ] `[track]` (minor cleanups, non-blocking) make `ingest.parsed_record.message_id` `NOT NULL` to match the old source; add a seed comment for the intentionally-null `senderType`/`mode`; `scripts/backfill-shipment-ports.sql` still names `evidence.parsed_record` (standalone already-run script — fix or delete).
+**Remaining follow-ups (non-blocking):**
+- [ ] `[both]` **docker-compose 2nd-DB provisioning** — dev creates `cobalt_queue` manually; wire each repo's `docker-compose.yml`/env to its own DB. (Prod = AliCloud VMs, not compose → dev/demo convenience only.)
+- [ ] `[track]` **Retire ShipTrack's own `backend/src/db/seed-entity-facts.ts`** (7 facts, now redundant with `seed.ts`'s 16) + **reconcile `SEH`** (seeded `customer_canonical→PRMK` in seed.ts vs `customer_group→PRIMARK` in the old script).
+- [ ] `[track]` `scripts/backfill-shipment-ports.sql` still names `evidence.parsed_record` (standalone already-run script — fix or delete).
+- [ ] `[queue]` minor test coverage: `graphAttachmentId` on the zip/msg-flag normalize paths.
