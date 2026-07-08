@@ -30,10 +30,14 @@ const attachmentRow = (over: Partial<FakeAttachmentRow> = {}): FakeAttachmentRow
   messageGraphId: 'graph-msg-1',
   ...over,
 })
-const attachmentsSvc = (email: {
-  attachmentsFor?: (graphMessageId: string) => Promise<FakeAttachmentRow[]>
-  attachmentById?: (attachmentId: string) => Promise<FakeAttachmentRow[]>
-}) => new EmailsService({} as GraphService, email as unknown as EmailRepository)
+const attachmentsSvc = (
+  email: {
+    attachmentsFor?: (graphMessageId: string) => Promise<FakeAttachmentRow[]>
+    attachmentById?: (attachmentId: string) => Promise<FakeAttachmentRow[]>
+  },
+  // optional Graph mock for the on-demand fallback (Task 7); defaults to unconfigured, same as before
+  graph: Partial<GraphService> = {},
+) => new EmailsService(graph as GraphService, email as unknown as EmailRepository)
 
 describe('mapGraphMessage', () => {
   it('maps a Graph message resource to the DTO', () => {
@@ -328,5 +332,111 @@ describe('EmailsService.getAttachmentOriginal', () => {
       },
     }).getAttachmentOriginal('')
     expect(r).toBeNull()
+  })
+})
+
+describe('EmailsService — Graph attachment fallback (Task 7)', () => {
+  it('falls back to Graph for an attachment with no local bytes', async () => {
+    const service = attachmentsSvc(
+      {
+        attachmentById: async () => [attachmentRow({ attachmentId: 'x', filename: 'bl.pdf', graphAttachmentId: 'att1', messageGraphId: 'gmsg1' })],
+      },
+      {
+        configured: () => true,
+        fetchAttachments: async () => [
+          { graphAttachmentId: 'att1', filename: 'bl.pdf', mime: 'application/pdf', sizeBytes: 3, body: Buffer.from('abc') },
+        ],
+      },
+    )
+    const file = await service.getAttachmentOriginal('x')
+    expect(file?.body.toString()).toBe('abc')
+  })
+
+  it('does not call Graph for getAttachmentOriginal when local rawBytes is already present', async () => {
+    const service = attachmentsSvc(
+      { attachmentById: async () => [attachmentRow({ rawBytes: Buffer.from('local original') })] },
+      {
+        configured: () => true,
+        fetchAttachments: async () => {
+          throw new Error('should not be called — local bytes are present')
+        },
+      },
+    )
+    const file = await service.getAttachmentOriginal('att-1')
+    expect(file?.body.toString()).toBe('local original')
+  })
+
+  it('degrades to null (never throws) when Graph is configured but the fetch fails', async () => {
+    const service = attachmentsSvc(
+      { attachmentById: async () => [attachmentRow({ rawBytes: null })] },
+      {
+        configured: () => true,
+        fetchAttachments: async () => {
+          throw new Error('graph 500')
+        },
+      },
+    )
+    const file = await service.getAttachmentOriginal('att-1')
+    expect(file).toBeNull()
+  })
+
+  it('serves attachments from Graph in getAttachments when local rawBytes is absent, fetching once (memoized) for the whole message', async () => {
+    let calls = 0
+    const service = attachmentsSvc(
+      {
+        attachmentsFor: async () => [
+          attachmentRow({ attachmentId: 'a1', filename: 'bl.pdf', rawBytes: null, graphAttachmentId: 'g-1', messageGraphId: 'gmsg1' }),
+          attachmentRow({ attachmentId: 'a2', filename: 'inv.pdf', rawBytes: null, graphAttachmentId: 'g-2', messageGraphId: 'gmsg1' }),
+        ],
+      },
+      {
+        configured: () => true,
+        fetchAttachments: async () => {
+          calls++
+          return [
+            { graphAttachmentId: 'g-1', filename: 'bl.pdf', mime: 'application/pdf', sizeBytes: 3, body: Buffer.from('one') },
+            { graphAttachmentId: 'g-2', filename: 'inv.pdf', mime: 'application/pdf', sizeBytes: 3, body: Buffer.from('two') },
+          ]
+        },
+      },
+    )
+    const r = await service.getAttachments('gmsg1')
+    expect(calls).toBe(1) // ONE round-trip serves every attachment on the message
+    const bodies = r.attachments.map((a) => (a.base64 ? Buffer.from(a.base64, 'base64').toString() : null)).sort()
+    expect(bodies).toEqual(['one', 'two'])
+    expect(r.attachments.every((a) => a.parsedOnly === undefined)).toBe(true)
+  })
+
+  it('still flags parsedOnly for an office attachment when Graph is configured but the fetch fails', async () => {
+    const service = attachmentsSvc(
+      {
+        attachmentsFor: async () => [
+          attachmentRow({ filename: 'po.docx', sourceKind: 'docx', declaredMime: 'application/vnd.msword', rawBytes: null }),
+        ],
+      },
+      {
+        configured: () => true,
+        fetchAttachments: async () => {
+          throw new Error('graph 500')
+        },
+      },
+    )
+    const r = await service.getAttachments('m1')
+    expect(r.attachments[0]).toMatchObject({ kind: 'docx', parsedOnly: true })
+    expect(r.attachments[0].base64).toBeUndefined()
+  })
+
+  it('does not call Graph when every attachment already has local rawBytes', async () => {
+    const service = attachmentsSvc(
+      { attachmentsFor: async () => [attachmentRow({ rawBytes: Buffer.from('hello') })] },
+      {
+        configured: () => true,
+        fetchAttachments: async () => {
+          throw new Error('should not be called — nothing needs Graph')
+        },
+      },
+    )
+    const r = await service.getAttachments('m1')
+    expect(r.attachments[0].base64).toBe(Buffer.from('hello').toString('base64'))
   })
 })

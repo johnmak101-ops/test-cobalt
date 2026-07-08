@@ -13,13 +13,13 @@ export interface EmailAttachment {
   kind: string | null
   mime: string | null
   sizeBytes: number
-  /** ORIGINAL bytes, base64 (capped) — served straight from ingest.email_attachment.raw_bytes */
+  /** ORIGINAL bytes, base64 (capped) — from ingest.email_attachment.raw_bytes, else an on-demand Graph fetch */
   base64?: string | null
   /** reserved: a text-native rendering; not populated until a later task re-adds it (e.g. via Graph) */
   text?: string | null
   /** original exists but exceeds the inline cap */
   tooLarge?: boolean
-  /** an office binary with no local raw_bytes yet — original not fetched (see the Graph fallback task) */
+  /** an office binary with no local raw_bytes AND unfetchable from Graph (not configured, no graph ids, or the fetch failed) */
   parsedOnly?: boolean
 }
 
@@ -104,11 +104,12 @@ export class EmailsService {
   /**
    * Attachments for the email window — ONE entry per file (the ingest mirror already stores one row
    * per attachment, so there is nothing left to collapse). Every kind is served the same way now:
-   * `rawBytes` (when we have it — dev-seed only for now) becomes the downloadable `base64`; an office
-   * kind (docx/xlsx/doc/rtf) with no `rawBytes` is flagged `parsedOnly` so the UI knows the original
-   * isn't fetchable yet (a later task adds the on-demand Microsoft Graph fetch); anything else with no
-   * `rawBytes` just carries its metadata. Documents float to the top so the meaningful files (B/L,
-   * invoice) sit above inline signature logos. Resilient: a DB hiccup degrades to `available:false`.
+   * `rawBytes` (when we have it — dev-seed only for now) becomes the downloadable `base64`; failing
+   * that, a Graph fetch (see `fetchGraphOriginals`) is tried for anything real mail left unfetched; an
+   * office kind (docx/xlsx/doc/rtf) that even Graph can't produce is flagged `parsedOnly` so the UI
+   * knows the original isn't available; anything else with no bytes just carries its metadata.
+   * Documents float to the top so the meaningful files (B/L, invoice) sit above inline signature logos.
+   * Resilient: a DB hiccup degrades to `available:false`.
    */
   async getAttachments(messageId: string): Promise<{ available: boolean; attachments: EmailAttachment[] }> {
     if (!messageId) return { available: false, attachments: [] }
@@ -116,6 +117,8 @@ export class EmailsService {
     const OFFICE = new Set(['docx', 'xlsx', 'doc', 'rtf'])
     try {
       const rows = await this.emails.attachmentsFor(messageId)
+      // one memoized Graph round-trip covers every row of this message missing local bytes
+      const graphOriginals = await this.fetchGraphOriginals(rows)
 
       const attachments: EmailAttachment[] = rows.map((r) => {
         const a: EmailAttachment = {
@@ -127,6 +130,13 @@ export class EmailsService {
         }
         if (r.rawBytes) {
           if (r.rawBytes.length <= MAX_INLINE) a.base64 = r.rawBytes.toString('base64')
+          else a.tooLarge = true
+          return a
+        }
+        const g = graphOriginals.find((x) => x.graphAttachmentId === r.graphAttachmentId)
+        if (g) {
+          a.mime = a.mime ?? g.mime
+          if (g.body.length <= MAX_INLINE) a.base64 = g.body.toString('base64')
           else a.tooLarge = true
         } else if (r.sourceKind && OFFICE.has(r.sourceKind)) {
           a.parsedOnly = true
@@ -146,8 +156,8 @@ export class EmailsService {
   }
 
   /**
-   * ONE attachment's original bytes for the download endpoint — straight from `rawBytes`.
-   * Null when the id is unknown or there's no local original yet (see the Graph fallback task).
+   * ONE attachment's original bytes for the download endpoint — local `rawBytes` first, else a Graph
+   * fallback fetch matched by `graphAttachmentId`. Null when the id is unknown or neither source has it.
    */
   async getAttachmentOriginal(
     attachmentId: string,
@@ -155,11 +165,42 @@ export class EmailsService {
     if (!attachmentId) return null
     const rows = await this.emails.attachmentById(attachmentId)
     const first = rows[0]
-    if (!first?.rawBytes) return null
+    if (!first) return null
+    if (first.rawBytes) {
+      return {
+        filename: leafName(first.filename),
+        mime: first.declaredMime ?? 'application/octet-stream',
+        body: first.rawBytes,
+      }
+    }
+    const g = (await this.fetchGraphOriginals([first])).find((x) => x.graphAttachmentId === first.graphAttachmentId)
+    if (!g) return null
     return {
       filename: leafName(first.filename),
-      mime: first.declaredMime ?? 'application/octet-stream',
-      body: first.rawBytes,
+      mime: first.declaredMime ?? g.mime,
+      body: g.body,
+    }
+  }
+
+  /**
+   * Graph fallback for attachments with no local `rawBytes` — mirrors how `getOriginal` re-fetches a
+   * purged BODY from Graph, but for attachment bytes. Graph has no single-attachment-by-id endpoint
+   * cheaper than listing the message's attachments, so this fetches ONCE per call (memoized here, not
+   * across calls) for every row that still needs it, and the caller matches back by `graphAttachmentId`.
+   * Never throws: absent creds, a transport/auth failure, or an incomplete test double for `graph` all
+   * degrade to `[]` so callers fall through to their own parsedOnly/unavailable handling.
+   */
+  private async fetchGraphOriginals(
+    rows: { rawBytes: Buffer | null; graphAttachmentId: string | null; messageGraphId: string }[],
+  ) {
+    const needsGraph = rows.find((r) => !r.rawBytes && r.graphAttachmentId && r.messageGraphId)
+    if (!needsGraph) return []
+    try {
+      if (!this.graph.configured()) return []
+      return await this.graph.fetchAttachments(needsGraph.messageGraphId)
+    } catch (err) {
+      this.log.warn(`attachment Graph fetch failed: ${String(err).slice(0, 80)}`)
+      return []
     }
   }
 }
