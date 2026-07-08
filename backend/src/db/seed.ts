@@ -23,6 +23,7 @@ async function main() {
     tracking.booking_pos, tracking.bookings, tracking.purchase_orders,
     tracking.field_locks, tracking.app_settings, tracking.forwarder_aliases, tracking.consignees,
     tracking.forwarders, tracking.vendors, tracking.customers, tracking.ports,
+    tracking.master_resolution,
     tracking.users, tracking.refresh_tokens
     restart identity cascade`)
   await db.execute(sql`truncate table alerts.alerts, alerts.alert_rules restart identity cascade`)
@@ -113,6 +114,32 @@ async function main() {
     .insert(schema.consignees)
     .values({ name: 'CINQ-HUITIEMES S.A.', address: 'Paris, France', mapsToCustomerId: newlob.id })
     .returning()
+
+  // ---- curated master-resolution facts (single source of truth for the parser's validator) ----
+  // Previously seeded by a cobalt-queue dev script straight into the shared DB; post-split (ShipTrack
+  // owns its own DB) they belong here. Served live via GET /api/masters/resolution; cobalt-queue's
+  // parser reads them over HTTP.
+  const MASTER_RESOLUTION_FACTS: { kind: (typeof schema.MASTER_RESOLUTION_KIND)[number]; lhs: string; rhs: string; reason: string }[] = [
+    { kind: 'customer_canonical', lhs: 'COLEB', rhs: 'COLE', reason: 'group 3: duplicate master rows for Cole Buxton' },
+    { kind: 'customer_canonical', lhs: 'SEH', rhs: 'PRMK', reason: "group 13: SEH is Cobalt's internal short-form for Primark" },
+    { kind: 'customer_group', lhs: 'AEOW', rhs: 'AMERICAN_EAGLE', reason: 'groups 7-11: AEO Management (bill-to)' },
+    { kind: 'customer_group', lhs: 'BLUI', rhs: 'AMERICAN_EAGLE', reason: 'groups 7-11: Blue Star Imports (AE importer-of-record)' },
+    { kind: 'customer_group', lhs: 'TORL', rhs: 'TORY', reason: 'group 4: Tory US LLC' },
+    { kind: 'customer_group', lhs: 'TOFE', rhs: 'TORY', reason: 'group 4: Tory HK / Far East' },
+    { kind: 'customer_group', lhs: 'PRMK', rhs: 'PRIMARK', reason: 'Primark Ltd' },
+    { kind: 'customer_group', lhs: 'PRMS', rhs: 'PRIMARK', reason: 'group 17: Primark regional sibling' },
+    { kind: 'customer_group', lhs: 'PRMT', rhs: 'PRIMARK', reason: 'group 17: Primark regional sibling' },
+    { kind: 'customer_role', lhs: 'AEOW', rhs: 'bill_to', reason: 'groups 7-10: pins primary -> auto-apply' },
+    { kind: 'customer_role', lhs: 'BLUI', rhs: 'importer_of_record', reason: 'groups 7-11: retained as IOR co-valid member' },
+    { kind: 'customer_role', lhs: 'PRMT', rhs: 'bill_to', reason: 'group 17: PRMT is the invoiced/main Primark party -> pins primary -> auto' },
+    { kind: 'vendor_group', lhs: 'FEFALT', rhs: 'FENIX_FASHION', reason: 'group 2: Fenix Fashion HK (booking/invoice house)' },
+    { kind: 'vendor_group', lhs: 'TALIUN', rhs: 'FENIX_FASHION', reason: 'group 2: Tai Li Un (mainland factory for the same shipment)' },
+    { kind: 'vendor_group', lhs: 'YAQIHK', rhs: 'YAQI_AE', reason: 'group 11: Yaqi Textile HK (invoice house, American Eagle book)' },
+    { kind: 'vendor_group', lhs: 'BANSNK', rhs: 'YAQI_AE', reason: 'group 11: BD Spinners & Knitters (Bangladesh factory on the same B/L)' },
+  ]
+  await db.insert(schema.masterResolution).values(
+    MASTER_RESOLUTION_FACTS.map((f) => ({ ...f, status: 'approved' as const, source: 'seed' as const })),
+  )
 
   // ---- fixture PO mirror ----
   const [po] = await db

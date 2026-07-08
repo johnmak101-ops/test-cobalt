@@ -33,8 +33,10 @@ export const VENDOR_TYPE = ['factory', 'subcontractor', 'agent'] as const
 export const FORWARDER_ALIAS_TYPE = ['name', 'domain', 'chinese_name'] as const
 /** master_resolution — the resolution facts the validator enforces, curated from human corrections.
  *  customer_canonical (alias code → survivor code, COLEB→COLE), customer_group (code → buyer-group id),
- *  customer_role (code → bill_to/importer_of_record/booking_entity) drive the co-valid entity model. */
-export const MASTER_RESOLUTION_KIND = ['vendor_alias', 'vendor_name_marker', 'customer_vendor', 'consignee_for_customer', 'forwarder_ref', 'customer_canonical', 'customer_group', 'customer_role'] as const
+ *  customer_role (code → bill_to/importer_of_record/booking_entity), vendor_group (code → vendor-group id,
+ *  the vendor-side analogue of customer_group — a booking/invoice house and its manufacturing factory
+ *  co-valid on the same shipment) drive the co-valid entity model. */
+export const MASTER_RESOLUTION_KIND = ['vendor_alias', 'vendor_name_marker', 'customer_vendor', 'consignee_for_customer', 'forwarder_ref', 'customer_canonical', 'customer_group', 'customer_role', 'vendor_group'] as const
 export const MASTER_RESOLUTION_STATUS = ['approved', 'proposed', 'rejected'] as const
 export const MASTER_RESOLUTION_SOURCE = ['seed', 'curator', 'ops'] as const
 export const PORT_MODE = ['sea', 'air', 'both'] as const
