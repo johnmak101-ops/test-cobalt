@@ -23,6 +23,7 @@ import { RepositoriesModule } from './db/repositories.module'
 import { PresentationModule } from './presentation/presentation.module'
 import { AuthModule } from './auth/auth.module'
 import { UsersModule } from './users/users.module'
+import { AccessModule } from './access/access.module'
 
 @Module({
   imports: [
@@ -41,6 +42,7 @@ import { UsersModule } from './users/users.module'
     PresentationModule,
     AuthModule,
     UsersModule,
+    AccessModule,
     HealthModule,
     MastersModule,
     BookingsModule,

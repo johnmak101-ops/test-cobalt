@@ -11,6 +11,7 @@ import { DocumentPresentationService } from './document-presentation.service'
 import { PurchaseOrderPresentationService } from './purchase-order-presentation.service'
 import { MasterDataPresentationService } from './master-data-presentation.service'
 import { CurrentUser, Roles } from '../auth/decorators'
+import { PageRead, PageWrite } from '../access/page-access.decorators'
 
 @Controller('dashboard')
 export class UiDashboardController {
@@ -43,12 +44,13 @@ export class UiMastersController {
 export class UiAlertRulesController {
   constructor(private readonly ui: PresentationService) {}
 
+  @PageRead('alert_rules')
   @Get() get() {
     return this.ui.alertRules()
   }
-  // Alert-rule saving is restricted to ADMIN or higher (rank-based guard → ADMIN + SUPERADMIN).
-  // Paired with the frontend AlertRulesPage `canEdit` gate.
-  @Roles('ADMIN')
+  // Governed by the configurable Access Control matrix (page 'alert_rules'): reading needs View,
+  // saving needs Edit; superadmin always passes. Paired with the frontend PageAccessRoute + canEdit.
+  @PageWrite('alert_rules')
   @Put() save(@Body() body: { rules?: Array<Record<string, unknown>> }) {
     return this.ui.saveAlertRules(body)
   }

@@ -1,0 +1,42 @@
+import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest'
+import { getTestDb, resetDb, closeTestDb, repos, type TestDB } from './setup-db'
+import { PageAccessService } from '../src/access/page-access.service'
+
+let db: TestDB
+let access: PageAccessService
+
+beforeAll(async () => {
+  const t = await getTestDb()
+  db = t.db
+  access = new PageAccessService(repos(db).settings)
+})
+afterAll(closeTestDb)
+beforeEach(() => resetDb(db))
+
+describe('PageAccessService (integration — real app_settings round-trip)', () => {
+  it('serves registry defaults when nothing is stored', async () => {
+    expect(await access.levelFor('resolution_rules', 'ADMIN')).toBe('edit')
+    expect(await access.levelFor('resolution_rules', 'EDITOR')).toBe('none')
+    expect(await access.levelFor('alert_rules', 'VIEWER')).toBe('view')
+  })
+
+  it('persists overrides to app_settings and reads them back (JSONB round-trip), superadmin still edit', async () => {
+    // updatedBy is a nullable uuid FK; the controller passes the real actor.id, the test passes null.
+    await access.setMatrix({ resolution_rules: { EDITOR: 'view' }, alert_rules: { VIEWER: 'none' } }, null)
+
+    // overrides applied
+    expect(await access.levelFor('resolution_rules', 'EDITOR')).toBe('view')
+    expect(await access.levelFor('alert_rules', 'VIEWER')).toBe('none')
+    // untouched cells keep the registry default
+    expect(await access.levelFor('alert_rules', 'ADMIN')).toBe('edit')
+    // superadmin is never lockable
+    expect(await access.levelFor('resolution_rules', 'SUPERADMIN')).toBe('edit')
+
+    // forUser reflects the stored state per role (what the frontend gates on)
+    const managerLevels = await access.forUser('EDITOR')
+    expect(managerLevels.resolution_rules).toBe('view') // EDITOR override applied
+    expect(managerLevels.alert_rules).toBe('view') // EDITOR untouched → default (only VIEWER was set to none)
+    const coordinatorLevels = await access.forUser('VIEWER')
+    expect(coordinatorLevels.alert_rules).toBe('none') // VIEWER override applied
+  })
+})

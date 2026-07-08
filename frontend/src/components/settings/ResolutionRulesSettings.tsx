@@ -7,6 +7,7 @@ import {
   useCreateFact, usePatchFact, useDeactivateFact, useReactivateFact,
   useApproveProposal, useRejectProposal,
 } from '../../hooks/use-resolution'
+import { usePageAccess } from '../../hooks/use-page-access'
 
 const KINDS = [
   'vendor_alias', 'vendor_name_marker', 'customer_vendor', 'consignee_for_customer',
@@ -22,6 +23,8 @@ export function ResolutionRulesSettings() {
   const reactivate = useReactivateFact()
   const approve = useApproveProposal()
   const reject = useRejectProposal()
+  const { canEdit: canEditPage } = usePageAccess()
+  const canEdit = canEditPage('resolution_rules') // Access Control matrix; backend @PageWrite is authoritative
   const [showCreate, setShowCreate] = useState(false)
 
   return (
@@ -34,12 +37,16 @@ export function ResolutionRulesSettings() {
             masters) — changes take effect immediately.
           </p>
         </div>
-        <button
-          onClick={() => setShowCreate(true)}
-          className="flex shrink-0 items-center gap-1.5 rounded-lg bg-cobalt-primary px-3 py-2 text-sm font-semibold text-white hover:opacity-90"
-        >
-          <Plus size={14} /> Add rule
-        </button>
+        {canEdit ? (
+          <button
+            onClick={() => setShowCreate(true)}
+            className="flex shrink-0 items-center gap-1.5 rounded-lg bg-cobalt-primary px-3 py-2 text-sm font-semibold text-white hover:opacity-90"
+          >
+            <Plus size={14} /> Add rule
+          </button>
+        ) : (
+          <span className="shrink-0 text-xs text-text-muted">View-only access</span>
+        )}
       </div>
 
       {proposals && proposals.length > 0 && (
