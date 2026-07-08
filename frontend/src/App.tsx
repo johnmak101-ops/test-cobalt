@@ -64,6 +64,15 @@ function SuperadminRoute({ children }: { children: ReactNode }) {
   return <>{children}</>
 }
 
+/** ADMIN or higher — resolution-rule management is ADMIN-capable, unlike the rest of Settings. */
+function AdminRoute({ children }: { children: ReactNode }) {
+  const { user } = useAuth()
+  if (user && user.role !== 'ADMIN' && user.role !== 'SUPERADMIN') {
+    return <Navigate to="/" replace />
+  }
+  return <>{children}</>
+}
+
 function PublicRoute({ children }: { children: ReactNode }) {
   const { user, loading } = useAuth()
 
@@ -134,6 +143,7 @@ function AppRoutes() {
         <Route path="/settings/alerts" element={<SuperadminRoute><SettingsPage /></SuperadminRoute>} />
         <Route path="/settings/vendors" element={<SuperadminRoute><SettingsPage /></SuperadminRoute>} />
         <Route path="/settings/users" element={<SuperadminRoute><SettingsPage /></SuperadminRoute>} />
+        <Route path="/settings/resolution" element={<AdminRoute><SettingsPage /></AdminRoute>} />
       </Route>
     </Routes>
   )

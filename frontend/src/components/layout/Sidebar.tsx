@@ -19,6 +19,7 @@ import {
   ClipboardCheck,
   Package,
   FileText,
+  Waypoints,
   X,
 } from 'lucide-react'
 
@@ -42,6 +43,8 @@ const navItems: NavItem[] = [
   { to: '/documents', icon: FileText, label: 'Documents', roles: EVERYONE, badgeKey: 'documents' },
   { to: '/review-queue', icon: ClipboardCheck, label: 'Review Queue', roles: EVERYONE, badgeKey: 'pending' },
   { to: '/alerts', icon: AlertTriangle, label: 'Alerts', roles: EVERYONE, badgeKey: 'unreadAlerts' },
+  // Resolution Rules (master_resolution management) is ADMIN-capable; Settings proper stays superadmin-only.
+  { to: '/settings/resolution', icon: Waypoints, label: 'Resolution Rules', roles: ['ADMIN', 'SUPERADMIN'], badgeKey: null },
   // Settings is superadmin-only — every other level must not see it
   { to: '/settings', icon: Settings, label: 'Settings', roles: ['SUPERADMIN'], badgeKey: null },
 ]
