@@ -327,7 +327,7 @@ export const shipmentMilestones = tracking.table('shipment_milestones', {
   occurredAt: timestamp('occurred_at', { withTimezone: true }).notNull(),
   signal: text('signal', { enum: WAREHOUSE_SIGNAL }), // which signal fired AT_WAREHOUSE
   senderType: text('sender_type'), // load-bearing: who signaled (vendor vs forwarder)
-  evidenceRecordId: uuid('evidence_record_id'), // logical FK → evidence.parsed_record.id
+  evidenceRecordId: uuid('evidence_record_id'), // logical FK → ingest.parsed_record.id
   emailMessageId: text('email_message_id'), // graph id, for "view original"
   notes: text('notes'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -370,16 +370,16 @@ export const fieldLocks = tracking.table('field_locks', {
 
 /**
  * EMAIL-EXTRACTION REVIEW QUEUE (track-system owned).
- * A denormalized snapshot of one email's parser output (mirrors evidence.parsed_record.fields) plus
+ * A denormalized snapshot of one email's parser output (mirrors ingest.parsed_record.fields) plus
  * the human review-state. Commit-first: the data is applied to shipments regardless; high-confidence
  * extractions are seeded AUTO_ACCEPTED, only low-confidence land NEEDS_REVIEW for a human to
- * approve / correct / reject AFTER the fact. We snapshot here (not just read the queue/evidence seam)
+ * approve / correct / reject AFTER the fact. We snapshot here (not just read ingest.* live)
  * so the queue works standalone and the reviewer judges what was extracted at the time.
- * `message_id` / `graph_message_id` are logical FKs to queue.queue_message (no hard FK across the seam).
+ * `message_id` / `graph_message_id` are logical FKs to ingest.email_message (no hard FK across the seam).
  */
 export const reviewEmail = tracking.table('review_email', {
   id: uuid('id').primaryKey().defaultRandom(),
-  messageId: uuid('message_id'), // logical FK → queue.queue_message.id
+  messageId: uuid('message_id'), // logical FK → ingest.email_message.id
   graphMessageId: text('graph_message_id'), // for "view original"
   subject: text('subject'),
   sender: text('sender'),
@@ -403,13 +403,13 @@ export const reviewEmail = tracking.table('review_email', {
 }, (t) => [
   index('review_email_review_status_idx').on(t.reviewStatus), // the review-queue list filter
   index('review_email_shipment_id_idx').on(t.shipmentId), // FK: the shipment's review row(s)
-  index('review_email_message_id_idx').on(t.messageId), // logical FK lookup by queue message
+  index('review_email_message_id_idx').on(t.messageId), // logical FK lookup by ingest message
 ])
 
-/** Inbox read-state (app-owned; queue.queue_message lives in the ingestion system). Global read-state,
+/** Inbox read-state (app-owned; ingest.email_message lives in the ingestion system). Global read-state,
  *  one row per message; the mark-read action upserts here. */
 export const emailRead = tracking.table('email_read', {
-  messageId: uuid('message_id').primaryKey(), // logical FK → queue.queue_message.id (no hard FK across the seam)
+  messageId: uuid('message_id').primaryKey(), // logical FK → ingest.email_message.id (no hard FK across the seam)
   readAt: timestamp('read_at', { withTimezone: true }).notNull().defaultNow(),
   readBy: uuid('read_by').references(() => users.id),
 })

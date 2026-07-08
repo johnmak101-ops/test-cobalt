@@ -329,16 +329,12 @@ async function main() {
     },
   ]).returning()
 
-  // Mirror each review email into the shared queue schema so "View original" opens the REAL email
-  // (Outlook/O365 reading pane) in a new window, with downloadable attachments — exactly the
-  // production path (review_email.message_id → queue.queue_message, keyed by graph_message_id).
-  // Pending emails get a sample attachment so the download link is exercised. Idempotent: clears the
-  // prior demo (mock:) rows first (cascades to attachments). Real cobalt-queue rows are untouched.
-  //
-  // Additive: the SAME mock corpus is also mirrored into ingest.* — track-system's own copy, fed in
-  // production by POST /api/decisions but here (dev-only) populated straight off the seed data,
-  // body text and attachment bytes included. The queue/evidence writes stay as-is until Task 9 retires
-  // them; this only adds rows alongside.
+  // Mirror each review email into ingest.* — track-system's own copy of the email + parsed-record data
+  // (in production, fed by POST /api/decisions; here, dev-only, populated straight off the seed data,
+  // body text and attachment bytes included) so "View original", attachment downloads, and the Change
+  // History replay all have something to read, keyed by graph_message_id. Pending emails get a sample
+  // attachment so the download link is exercised. Idempotent: clears the prior demo (mock:) rows first
+  // (cascades to attachments via ingest's own FK).
   const strOrNull = (v: unknown): string | null => (typeof v === 'string' ? v : null)
   const MATCH_KEY_FIELDS = ['customer_po', 'so_no', 'booking_no', 'hbl_awb_fcr_no', 'mbl', 'conversation_id'] as const
   const pickMatchKeys = (fields: Record<string, unknown>): Record<string, unknown> => {
@@ -347,48 +343,31 @@ async function main() {
     return out
   }
 
-  await db.execute(sql`delete from queue.queue_message where graph_message_id like 'mock:%'`)
   await db.execute(sql`delete from ingest.email_message where graph_message_id like 'mock:%'`)
   for (const r of reviewRows) {
     if (!r.graphMessageId) continue
     const isPending = r.reviewStatus === 'NEEDS_REVIEW'
-    const [qm] = await db
-      .insert(schema.queueMessage)
+
+    // ingest mirror — track-system's own copy (production: POST /api/decisions; here: straight off seed data)
+    const [ingMsg] = await db
+      .insert(schema.ingestEmailMessage)
       .values({
         graphMessageId: r.graphMessageId,
         subject: r.subject,
         sender: r.sender,
         receivedAt: r.receivedAt,
-        bodyText: r.bodyText,
         status: 'DONE',
         attachmentCount: isPending ? 1 : 0,
+        bodyText: r.bodyText, // dev demo body
       })
       .returning()
-    await db.update(schema.reviewEmail).set({ messageId: qm.id }).where(eq(schema.reviewEmail.id, r.id))
+    // inbox join: review_email.message_id → ingest.email_message.id (see email.repository.listInbox)
+    await db.update(schema.reviewEmail).set({ messageId: ingMsg.id }).where(eq(schema.reviewEmail.id, r.id))
 
-    // --- ingest mirror (additive; queue writes above stay until Task 9) ---
-    const [ingMsg] = await db
-      .insert(schema.ingestEmailMessage)
-      .values({
-        graphMessageId: qm.graphMessageId,
-        graphId: qm.graphId,
-        sourceFile: qm.sourceFile,
-        conversationId: qm.conversationId,
-        subject: qm.subject,
-        sender: qm.sender,
-        receivedAt: qm.receivedAt,
-        status: qm.status,
-        attachmentCount: qm.attachmentCount,
-        bodyText: qm.bodyText, // dev demo body
-        bodyHtml: qm.bodyHtml, // dev demo body (this mock corpus has none)
-      })
-      .returning()
-    // review_email.extracted_data already mirrors evidence.parsed_record.fields (see tracking.ts's doc
-    // comment on reviewEmail) — reuse it verbatim as this parsed record's fields/poNo/matchKeys.
     const extracted = (r.extractedData ?? {}) as Record<string, unknown>
     await db.insert(schema.ingestParsedRecord).values({
       messageId: ingMsg.id,
-      graphMessageId: qm.graphMessageId,
+      graphMessageId: r.graphMessageId,
       poNo: strOrNull(extracted.customer_po),
       emailType: r.emailType ?? null,
       fields: extracted,
@@ -396,29 +375,13 @@ async function main() {
     })
 
     if (!isPending) continue
-    // a small, real, downloadable CSV (served as text) so the O365-style chip's download link works
     const csv = 'PO,Item / Style,Qty,Unit\n100-100209,KT-771,5000,pieces'
-    const [att] = await db
-      .insert(schema.queueAttachment)
-      .values({
-        messageId: qm.id,
-        filename: 'packing-list.csv',
-        sourceKind: 'csv',
-        contentHash: `seed-${r.id}`,
-        sizeBytes: csv.length,
-        declaredMime: 'text/csv',
-      })
-      .returning()
-    await db.insert(schema.queueNormalized).values({
-      attachmentId: att.id, idx: 0, kind: 'csv', textContent: csv, mime: 'text/csv', label: 'packing-list',
-    })
-    // ingest owns the dev-only demo bytes (queue's rawBytes stays null; see queue.ts's "Option A" note)
     await db.insert(schema.ingestEmailAttachment).values({
       messageId: ingMsg.id,
-      filename: att.filename,
-      declaredMime: att.declaredMime,
-      sizeBytes: att.sizeBytes,
-      sourceKind: att.sourceKind,
+      filename: 'packing-list.csv',
+      declaredMime: 'text/csv',
+      sizeBytes: csv.length,
+      sourceKind: 'csv',
       rawBytes: Buffer.from(csv, 'utf-8'),
     })
   }
