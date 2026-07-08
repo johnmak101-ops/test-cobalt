@@ -14,6 +14,7 @@ vi.mock('../components/settings/UsersSettings', () => ({ UsersSettings: () => <d
 vi.mock('../components/settings/VendorsSettings', () => ({ VendorsSettings: () => <div>vendors</div> }))
 vi.mock('../components/settings/AlertRulesSettings', () => ({ AlertRulesSettings: () => <div>alerts</div> }))
 vi.mock('../components/settings/AccessControlSettings', () => ({ AccessControlSettings: () => <div>access</div> }))
+vi.mock('../components/settings/ReviewPolicySettings', () => ({ ReviewPolicySettings: () => <div>review-policy</div> }))
 
 describe('SettingsPage nav (access-aware)', () => {
   it('an ADMIN sees access-granted config tabs (Alert Rules, Resolution) but not superadmin-only tabs', () => {
