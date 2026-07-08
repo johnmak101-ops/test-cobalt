@@ -299,7 +299,7 @@ export class ShipmentRepository {
   /**
    * Unlinked documents: kind='DOCUMENT' legs not yet linked onto a real shipment. Each row is enriched
    * with the booking's customer name, its distinct email type(s), a best-effort sender type (joined from
-   * evidence.parsed_record on graph_message_id), the PO numbers it carries, and the newest received-at.
+   * ingest.parsed_record on graph_message_id), the PO numbers it carries, and the newest received-at.
    * Ordered newest-first (nulls last). Single query; the per-row lists are aggregated in Postgres.
    */
   async documents() {
@@ -317,7 +317,7 @@ export class ShipmentRepository {
         senderType: sql<string | null>`(
           select pr.sender_type
           from tracking.shipment_emails se
-          join evidence.parsed_record pr on pr.graph_message_id = se.graph_message_id
+          join ingest.parsed_record pr on pr.graph_message_id = se.graph_message_id
           where se.shipment_id = ${schema.shipments.id} and pr.sender_type is not null
           limit 1
         )`,
@@ -347,8 +347,8 @@ export class ShipmentRepository {
 
   /**
    * One unlinked document's detail (the detail panel): booking customer + email type(s) + sender type +
-   * PO numbers + qty + newest received-at, plus the queue_message id of its most-recent source email
-   * (joined shipment_emails.graph_message_id → queue_message.graph_message_id) so the UI can open the
+   * PO numbers + qty + newest received-at, plus the email_message id of its most-recent source email
+   * (joined shipment_emails.graph_message_id → ingest.email_message.graph_message_id) so the UI can open the
    * source email pop-up. Null when the id isn't a document.
    */
   async documentDetail(id: string) {
@@ -366,7 +366,7 @@ export class ShipmentRepository {
         senderType: sql<string | null>`(
           select pr.sender_type
           from tracking.shipment_emails se
-          join evidence.parsed_record pr on pr.graph_message_id = se.graph_message_id
+          join ingest.parsed_record pr on pr.graph_message_id = se.graph_message_id
           where se.shipment_id = ${schema.shipments.id} and pr.sender_type is not null
           limit 1
         )`,
@@ -381,11 +381,11 @@ export class ShipmentRepository {
           from tracking.shipment_emails se
           where se.shipment_id = ${schema.shipments.id}
         )`,
-        // queue_message id of the newest source email (for the /email/:emailId pop-up)
+        // email_message id of the newest source email (for the /email/:emailId pop-up)
         emailId: sql<string | null>`(
           select qm.id
           from tracking.shipment_emails se
-          join queue.queue_message qm on qm.graph_message_id = se.graph_message_id
+          join ingest.email_message qm on qm.graph_message_id = se.graph_message_id
           where se.shipment_id = ${schema.shipments.id}
           order by se.received_at desc nulls last
           limit 1
