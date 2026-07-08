@@ -772,15 +772,16 @@ const DEFAULT_ALERT_RULES: AlertRule[] = [
 - Lucide React for icons
 
 **Backend:**
-- Hono (TypeScript) API server
-- Drizzle ORM with SQLite (POC) / PostgreSQL (production)
-- Claude API for email extraction
-- IMAP client for email ingestion
+- NestJS 11 (Node + TypeScript) API server
+- Drizzle ORM + PostgreSQL
+- Receives scored decisions from the **cobalt-queue** agent via `POST /api/decisions` — email
+  extraction + ingestion (Microsoft Graph + the Claude-based parser) run out of process in that
+  separate service, not in this app
 
 **Infrastructure:**
-- PAVE Studio deployment
-- Background worker for email polling (configurable interval)
-- Scheduled alert evaluation (every 15 minutes)
+- Single Docker image (NestJS serves `/api` + the built SPA) on AliCloud VMs
+- Email polling + extraction run in the separate cobalt-queue service
+- Scheduled alert evaluation
 
 ---
 

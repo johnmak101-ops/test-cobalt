@@ -1,59 +1,60 @@
-# Pave App
+# Cobalt ShipTrack
 
-A full-stack monorepo starter created with Pave Studio.
+Shipment-tracking app for Cobalt Knitwear. An upstream AI agent reads logistics email and posts scored
+decisions to this app, which turns them into a tracked **PO → Booking → Shipment** picture with alerts and
+a human review queue.
 
 ## Stack
 
-- **Frontend**: React 19 + TypeScript + Vite + Zustand
-- **Backend**: Hono + TypeScript + Drizzle ORM
-- **Database**: SQLite
-- **Package Manager**: pnpm
+- **Frontend**: React 19 + TypeScript + Vite + Zustand + TanStack Query + Tailwind
+- **Backend**: NestJS 11 (Node) + TypeScript + Drizzle ORM
+- **Database**: PostgreSQL
+- **Auth**: JWT in an httpOnly cookie (Bearer accepted for service accounts)
+- **Package manager**: pnpm (workspace)
 
-## Getting Started
+The backend exposes a REST API under `/api` and, in a single-image deploy (`STATIC_ROOT` set), also serves
+the built SPA from the same origin. The upstream AI agent (**cobalt-queue**, a separate service) posts to
+`POST /api/decisions` over HTTP — this app is the system of record + UI and does **not** parse email itself.
+
+## Getting started
 
 ```bash
-# Install dependencies
-pnpm install
-
-# Set up database
-pnpm db:push
-
-# Start development servers (frontend + backend)
-pnpm dev
+pnpm install                      # one clean workspace install
+# start Postgres with a `cobalt` database on :5432, then:
+pnpm --filter backend db:push     # apply the Drizzle schema
+pnpm dev                          # frontend (:5173) + backend (:3000)
 ```
 
-The app will be available at:
-- Frontend: http://localhost:5173
-- Backend API: http://localhost:3000
+- Frontend: <http://localhost:5173> (Vite dev server; proxies `/api` → backend)
+- Backend API: <http://localhost:3000/api>
 
-## Project Structure
+Backend env (`backend/.env`): `DATABASE_URL`, `JWT_SECRET` (≥ 32 chars), plus optional `CORS_ORIGINS`,
+`SESSION_TTL_HOURS`, `STATIC_ROOT` (prod SPA serving), and `GRAPH_*` (Microsoft Graph email ingestion).
+
+## Project structure
 
 ```
 .
-├── frontend/          # React frontend
+├── frontend/            # React SPA (Vite)
 │   └── src/
-├── backend/           # Hono API server
+├── backend/             # NestJS API (serves /api; serves the SPA in prod)
 │   ├── src/
-│   └── drizzle/      # Database migrations
-└── package.json      # Root package.json
+│   └── drizzle/         # PostgreSQL migrations (.sql)
+├── .github/workflows/   # CI: lint + typecheck + tests + build
+└── package.json         # pnpm workspace root
 ```
 
-## Available Scripts
+## Scripts
 
-- `pnpm dev` - Start both frontend and backend
-- `pnpm dev:frontend` - Start only frontend
-- `pnpm dev:backend` - Start only backend
-- `pnpm build` - Build both apps
-- `pnpm db:generate` - Generate database migrations
-- `pnpm db:push` - Push schema changes to database
+- `pnpm dev` — frontend + backend
+- `pnpm build` — build both
+- `pnpm lint` — ESLint (workspace, enforced in CI)
+- `pnpm format` / `pnpm format:check` — Prettier
+- `pnpm --filter backend run test` / `pnpm --filter frontend run test` — vitest
+- `pnpm --filter backend db:generate` / `db:push` — Drizzle migrations
 
-## Features
+## Tests & CI
 
-✅ Hot reload for frontend and backend
-✅ API proxy configured (frontend `/api` → backend)
-✅ TypeScript everywhere
-✅ Type-safe database with Drizzle ORM
-✅ State management with Zustand
-✅ Modern, fast dev experience
-
-Happy coding! 🚀
+Vitest. The backend integration specs (`backend/test/*.int.spec.ts`) need Postgres — they create and migrate
+a `cobalt_test` database on first connect (`backend/test/setup-db.ts`). CI runs lint + both typechecks +
+both suites + both builds on push to `main` and every PR (`.github/workflows/ci.yml`).
