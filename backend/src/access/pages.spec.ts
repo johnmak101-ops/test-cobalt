@@ -3,10 +3,12 @@ import { CONFIG_PAGE_IDS, LEVEL_RANK, registryDefault, isLevel, isConfigRole } f
 
 describe('access page registry', () => {
   it('governs alert_rules and resolution_rules with per-role defaults', () => {
-    expect(CONFIG_PAGE_IDS).toEqual(['alert_rules', 'resolution_rules'])
+    expect(CONFIG_PAGE_IDS).toEqual(['alert_rules', 'resolution_rules', 'review_policy'])
     expect(registryDefault('resolution_rules', 'ADMIN')).toBe('edit')
     expect(registryDefault('resolution_rules', 'EDITOR')).toBe('none')
     expect(registryDefault('alert_rules', 'VIEWER')).toBe('view')
+    expect(registryDefault('review_policy', 'EDITOR')).toBe('edit') // tunable → Manager edits by default
+    expect(registryDefault('review_policy', 'VIEWER')).toBe('none')
   })
 
   it('registryDefault is none for an unknown page or a non-configurable role', () => {
