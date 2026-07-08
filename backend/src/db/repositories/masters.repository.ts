@@ -41,7 +41,7 @@ export class MastersRepository {
     const [r] = await this.db
       .select()
       .from(schema.masterResolution)
-      .where(and(eq(schema.masterResolution.kind, 'customer_canonical'), eq(schema.masterResolution.lhs, c), eq(schema.masterResolution.status, 'approved')))
+      .where(and(eq(schema.masterResolution.kind, 'customer_canonical'), eq(schema.masterResolution.lhs, c), eq(schema.masterResolution.status, 'approved'), eq(schema.masterResolution.active, true)))
     return r?.rhs?.toUpperCase() ?? c
   }
   /** The approved buyer-group id for a code, or null. A BLANK group id is treated as NO fact (fail-safe:
@@ -50,7 +50,7 @@ export class MastersRepository {
     const [r] = await this.db
       .select()
       .from(schema.masterResolution)
-      .where(and(eq(schema.masterResolution.kind, 'customer_group'), eq(schema.masterResolution.lhs, code.toUpperCase()), eq(schema.masterResolution.status, 'approved')))
+      .where(and(eq(schema.masterResolution.kind, 'customer_group'), eq(schema.masterResolution.lhs, code.toUpperCase()), eq(schema.masterResolution.status, 'approved'), eq(schema.masterResolution.active, true)))
     const g = r?.rhs?.trim()
     return g ? g.toUpperCase() : null
   }
@@ -377,8 +377,61 @@ export class MastersRepository {
     return this.db
       .select()
       .from(schema.masterResolution)
-      .where(eq(schema.masterResolution.status, status))
+      .where(and(eq(schema.masterResolution.status, status), eq(schema.masterResolution.active, true)))
       .orderBy(desc(schema.masterResolution.createdAt))
+  }
+
+  /** Admin management view: every approved fact incl. deactivated (active=false) ones. */
+  listResolutionManage() {
+    return this.db
+      .select()
+      .from(schema.masterResolution)
+      .where(eq(schema.masterResolution.status, 'approved'))
+      .orderBy(schema.masterResolution.kind, schema.masterResolution.lhs)
+  }
+
+  async getFact(id: string) {
+    const [r] = await this.db.select().from(schema.masterResolution).where(eq(schema.masterResolution.id, id))
+    return r ?? null
+  }
+
+  /** Enforce the single-active invariant: turn off any live fact for this (kind,lhs) before a new one lands. */
+  async deactivateActiveFor(kind: ResolutionKind, lhs: string) {
+    await this.db
+      .update(schema.masterResolution)
+      .set({ active: false, updatedAt: new Date() })
+      .where(and(eq(schema.masterResolution.kind, kind), eq(schema.masterResolution.lhs, lhs), eq(schema.masterResolution.active, true)))
+  }
+
+  /** Create an ops-authored fact; an exact (kind,lhs,rhs) duplicate is reactivated (upsert). */
+  async insertOpsFact(v: { kind: ResolutionKind; lhs: string; rhs: string | null; reason: string | null; createdBy: string | null }) {
+    const [r] = await this.db
+      .insert(schema.masterResolution)
+      .values({ kind: v.kind, lhs: v.lhs, rhs: v.rhs, reason: v.reason, createdBy: v.createdBy, status: 'approved', source: 'ops', active: true })
+      .onConflictDoUpdate({
+        target: [schema.masterResolution.kind, schema.masterResolution.lhs, schema.masterResolution.rhs],
+        set: { active: true, status: 'approved', reason: v.reason, source: 'ops', updatedAt: new Date() },
+      })
+      .returning()
+    return r ?? null
+  }
+
+  async setActive(id: string, active: boolean) {
+    const [r] = await this.db
+      .update(schema.masterResolution)
+      .set({ active, updatedAt: new Date() })
+      .where(eq(schema.masterResolution.id, id))
+      .returning()
+    return r ?? null
+  }
+
+  async patchReason(id: string, reason: string | null) {
+    const [r] = await this.db
+      .update(schema.masterResolution)
+      .set({ reason, updatedAt: new Date() })
+      .where(eq(schema.masterResolution.id, id))
+      .returning()
+    return r ?? null
   }
 
   /** Insert a proposal; the (kind,lhs,rhs) unique constraint dedups, so a repeat returns null. */

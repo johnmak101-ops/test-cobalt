@@ -27,6 +27,9 @@ const AGENT_PASSWORD = seedPassword('TRACKING_AGENT_PASSWORD', 'cobalt')
 export async function seedAuthUsers(db: DrizzleDB) {
   const initialPw = await bcrypt.hash(INITIAL_PASSWORD, 10)
   const agentPw = await bcrypt.hash(AGENT_PASSWORD, 10)
+  // Idempotent: the seed no longer truncates `users` (that CASCADE would wipe master_resolution), so a
+  // reseed must not duplicate the demo accounts. Existing accounts (incl. a changed password) are left as-is;
+  // drop + recreate the DB for a fully pristine demo.
   return db
     .insert(schema.users)
     .values([
@@ -34,5 +37,6 @@ export async function seedAuthUsers(db: DrizzleDB) {
       { email: 'admin@cobalt.hk', name: 'Amon Admin', passwordHash: initialPw, role: 'ADMIN', avatarInitials: 'AA', mustReset: true },
       { email: 'agent@cobalt.hk', name: 'Cobalt Agent', passwordHash: agentPw, role: 'EDITOR', avatarInitials: 'AG', mustReset: false },
     ])
+    .onConflictDoNothing({ target: schema.users.email })
     .returning()
 }

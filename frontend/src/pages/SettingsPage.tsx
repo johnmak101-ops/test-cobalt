@@ -1,25 +1,35 @@
 import { NavLink, useLocation } from 'react-router-dom'
 import { cn } from '../lib/utils'
+import { useAuth } from '../hooks/use-auth'
 import { VendorsSettings } from '../components/settings/VendorsSettings'
 import { AlertRulesSettings } from '../components/settings/AlertRulesSettings'
 import { UsersSettings } from '../components/settings/UsersSettings'
+import { ResolutionRulesSettings } from '../components/settings/ResolutionRulesSettings'
 
 export default function SettingsPage() {
   const location = useLocation()
+  const { user } = useAuth()
+  const isSuper = user?.role === 'SUPERADMIN'
   const isAlertsSettings = location.pathname.includes('/settings/alerts')
   const isVendorsSettings = location.pathname.includes('/settings/vendors')
   const isUsersSettings = location.pathname.includes('/settings/users')
+  const isResolution = location.pathname.includes('/settings/resolution')
+
+  // Most Settings tabs are superadmin-only; Resolution Rules is ADMIN-capable, so it stays visible to
+  // an admin who reached /settings/resolution directly (the superadmin-only tabs would just redirect them).
+  const navItems = [
+    { to: '/settings', label: 'General', end: true, superOnly: true },
+    { to: '/settings/alerts', label: 'Alert Rules', end: false, superOnly: true },
+    { to: '/settings/vendors', label: 'Vendors', end: false, superOnly: true },
+    { to: '/settings/users', label: 'Users', end: false, superOnly: true },
+    { to: '/settings/resolution', label: 'Resolution Rules', end: false, superOnly: false },
+  ].filter((i) => isSuper || !i.superOnly)
 
   return (
     <div className="flex flex-col gap-6 lg:flex-row">
       {/* Settings Nav */}
       <nav className="w-full space-y-1 lg:w-48 lg:shrink-0">
-        {[
-          { to: '/settings', label: 'General', end: true },
-          { to: '/settings/alerts', label: 'Alert Rules', end: false },
-          { to: '/settings/vendors', label: 'Vendors', end: false },
-          { to: '/settings/users', label: 'Users', end: false },
-        ].map((item) => (
+        {navItems.map((item) => (
           <NavLink
             key={item.to}
             to={item.to}
@@ -40,7 +50,9 @@ export default function SettingsPage() {
 
       {/* Settings Content */}
       <div className="flex-1">
-        {isUsersSettings ? (
+        {isResolution ? (
+          <ResolutionRulesSettings />
+        ) : isUsersSettings ? (
           <UsersSettings />
         ) : isAlertsSettings ? (
           <AlertRulesSettings />

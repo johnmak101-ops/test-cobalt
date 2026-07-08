@@ -127,6 +127,13 @@
       "when": 1783485759201,
       "tag": "0017_little_kate_bishop",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1783501382506,
+      "tag": "0018_busy_ricochet",
+      "breakpoints": true
     }
   ]
 }
