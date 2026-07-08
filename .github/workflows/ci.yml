@@ -1,0 +1,72 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# A new push to a branch cancels its still-running CI.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    # Backend integration tests hit Postgres; backend/test/setup-db.ts creates + migrates
+    # `cobalt_test` on this server on first connect (fresh DB → all drizzle migrations run).
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    env:
+      TEST_ADMIN_URL: postgres://postgres:postgres@localhost:5432/postgres
+      TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/cobalt_test
+      # >= 32 chars so env-validated boot paths pass. CI-only, not a real secret.
+      JWT_SECRET: ci-not-a-real-secret-please-rotate-0123456789
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # pnpm before setup-node so the pnpm store can be cached.
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      # One clean workspace install from the lockfile — the correct install (NOT `pnpm -C <pkg>`,
+      # which nests a divergent drizzle-orm and breaks the backend typecheck).
+      - name: Install (frozen lockfile)
+        run: pnpm install --frozen-lockfile
+
+      - name: Backend — typecheck
+        run: pnpm --filter backend exec tsc --noEmit -p tsconfig.json
+
+      - name: Backend — tests
+        run: pnpm --filter backend run test
+
+      - name: Frontend — typecheck
+        run: pnpm --filter frontend exec tsc --noEmit
+
+      # Includes the `no-db-access` guardrail spec (frontend holds no DB driver / secret).
+      - name: Frontend — tests
+        run: pnpm --filter frontend run test
+
+      - name: Build (frontend + backend)
+        run: pnpm build

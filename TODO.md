@@ -148,12 +148,27 @@ vmseacbfstwbp1 = **StatusTrackAgent** = the AGENT (VM2). Earlier notes had these
   silently won't set (login breaks). Serve HTTPS internally (cert for statustrack.cobaltknitwear.com) + set
   NODE_ENV=production. If HTTP-only is unavoidable, add a `COOKIE_SECURE` env valve.
 
+## Governance — Config-Page Access Control + Review Policy (2026-07-09, MERGED)
+Both live on main. Permission model: business tunables → EDITOR, governance → ADMIN, page-access → SUPERADMIN.
+- [x] `[track]` **Config-Page Access Control (PR #17).** Superadmin-managed matrix (page × role → None/View/Edit) over the
+  config pages, backed by `app_settings.page_access` + a code registry (`src/access/pages.ts`). `PageAccessGuard` +
+  `@PageRead`/`@PageWrite` replace static `@Roles` on alert-rules + resolution endpoints; superadmin **Access Control** panel
+  at `/settings/access`; frontend `PageAccessRoute` + `usePageAccess`. Backend-authoritative for writes.
+- [x] `[track]` **Review Policy (PR #19).** Configurable human-review triggers (`decisions/review-policy.ts`:
+  conflict/no_strong_id/no_po/cancellation/platform_only/sparse) that DOWNGRADE an auto-confirm to review (safe direction
+  only); hooked in `decisions.service.ingest`; governed as page `review_policy` (EDITOR-editable). No confidence-score knob.
+- [ ] `[track]` **Access-control v2 — hard read-gating.** `none` hides the page + blocks writes (backend-authoritative) but
+  does NOT hard-block a direct API *read* of shared/agent-consumed endpoints (`GET /masters/resolution`, read by the parser).
+  Split the endpoint or add a service-account carve-out if hard read-gating is wanted.
+- [ ] `[track]` **Review-policy v2 — lookup triggers.** Add cross-leg triggers (new/unknown customer, sea↔air mode change,
+  moved shipment, duplicate number, late PO) — they need context the payload alone can't satisfy; the agent gate flags most.
+
 ## Tech-debt (2026-07-08 whole-codebase `/tech-debt` audit)
 The `SettingsPage` + `PresentationService` god-components were already decomposed (PR #9). Remaining:
 ### Guardrails (highest leverage)
-- [ ] `[track]` **No CI.** ~540 tests (373 backend + 167 frontend) + tsc + builds never run on push/PR. Add one
-  workflow: `pnpm install --frozen-lockfile`, backend+frontend `tsc` + `vitest run`, both builds (this also runs
-  the frontend `no-db-access` guardrail test).
+- [x] `[track]` **CI — DONE 2026-07-09.** `.github/workflows/ci.yml`: one workspace `pnpm install --frozen-lockfile`,
+  backend + frontend `tsc --noEmit` + `vitest run` (Postgres service for the int tests), both builds. Runs on
+  push-to-main + every PR. (~660 tests now: 460 backend + 198 frontend + the `no-db-access` guardrail.)
 - [ ] `[track]` **No lint/format.** Add ESLint (typescript-eslint) + Prettier + a `lint` script, wired into CI.
 - [ ] `[track]` **Docs describe the wrong stack.** `AGENTS*.md` (×4) + `README.md` + `PLAN.md` still say
   "Hono / Cloudflare D1 / SQLite"; the app is NestJS 11 + Node + Postgres. Rewrite (or delete the stale
@@ -211,4 +226,6 @@ Spec/plan: `docs/superpowers/{specs,plans}/2026-07-08-separate-shiptrack-databas
 Curated resolution facts (alias/group/canonical/role incl. SEH) are now **ADMIN-managed at runtime** — Settings → **Resolution Rules** (create/edit/deactivate + curator proposals inbox) backed by an `active` flag on `tracking.master_resolution` (mig `0018`) + ADMIN CRUD API (`POST/PATCH /masters/resolution*`; consumer `GET /masters/resolution` now filters `active=true`, so cobalt-queue honours deactivation with no change). **Seed is non-destructive**: `master_resolution`/`app_settings`/`alert_rules`/`users` are no longer truncated (seeded `onConflictDoNothing`) so runtime edits survive a reseed. Spec/plan: `docs/superpowers/{specs,plans}/2026-07-08-master-resolution-management*`. e2e-proven (auth→create→active-serve→deactivate→consumer-hides→unauth-401). Follow-ups:
 - [ ] `[track]` **Test-infra:** `backend/test/setup-db.ts` only runs migrations when the `tracking` schema is ABSENT, so a NEW migration needs a one-time `DROP DATABASE cobalt_test`. Track applied migrations (or use drizzle `migrate`) so new migrations auto-apply.
 - [ ] `[both]` **Code-only rule tables → data** (the deeper "don't code-bind facts" work the audit surfaced): ShipTrack `masters.repository.ts` port maps (`PORT_ALIASES`/`IATA_TO_UNLOCODE`/`ABBREV_OVERRIDE`/`NAME_CONTAINS_ALIASES`) — **ports have no data home anywhere**; cobalt-queue soul (`prompts/cobalt-parser.md`) port map + FORWARDER CARDS + carrier-prefix rules, and `validate.ts` party lists (`PLATFORM_NOT_FORWARDER`/`SELF`/`GENUINE_SHORT_BRANDS`/…). Extend the resolution/data model to cover these.
-- [x] `[track]` **Alert-rules write guard — DONE 2026-07-08.** `ui.controllers.ts` PUT `/alert-rules` now `@Roles('ADMIN')` (rank-based → ADMIN + SUPERADMIN, i.e. "admin or above"); paired frontend `AlertRulesPage.canEdit` gates on `role ∈ {ADMIN, SUPERADMIN}`. Regression test in `ui.controllers.spec.ts` asserts the metadata so it can't be silently removed again.
+- [x] `[track]` **Alert-rules write guard — SUPERSEDED by Config-Page Access Control (PR #17, 2026-07-09).** PUT `/alert-rules`
+  is now `@PageWrite('alert_rules')` (GET `@PageRead('alert_rules')`); editability is superadmin-configurable via the access
+  matrix instead of a static `@Roles('ADMIN')`. Frontend gates on `usePageAccess().canEdit('alert_rules')`.
