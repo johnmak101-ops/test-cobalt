@@ -12,6 +12,7 @@ import InboxPage from './pages/InboxPage'
 import AlertsPage from './pages/AlertsPage'
 import AlertRulesPage from './pages/AlertRulesPage'
 import SettingsPage from './pages/SettingsPage'
+import { PageAccessRoute } from './components/PageAccessRoute'
 import ReviewQueuePage from './pages/ReviewQueuePage'
 import ReviewShipmentPage from './pages/ReviewShipmentPage'
 import PurchaseOrdersPage from './pages/PurchaseOrdersPage'
@@ -59,15 +60,6 @@ function RequireAuth({ children }: { children: ReactNode }) {
 function SuperadminRoute({ children }: { children: ReactNode }) {
   const { user } = useAuth()
   if (user && user.role !== 'SUPERADMIN') {
-    return <Navigate to="/" replace />
-  }
-  return <>{children}</>
-}
-
-/** ADMIN or higher — resolution-rule management is ADMIN-capable, unlike the rest of Settings. */
-function AdminRoute({ children }: { children: ReactNode }) {
-  const { user } = useAuth()
-  if (user && user.role !== 'ADMIN' && user.role !== 'SUPERADMIN') {
     return <Navigate to="/" replace />
   }
   return <>{children}</>
@@ -136,14 +128,14 @@ function AppRoutes() {
         <Route path="/review-queue" element={<ReviewQueuePage />} />
         <Route path="/review-queue/:id" element={<ReviewShipmentPage />} />
         <Route path="/alerts" element={<AlertsPage />} />
-        {/* Alert rules are viewable by everyone (GET /alert-rules is open); saving stays superadmin-only,
-            enforced by the backend PUT guard AND the read-only UI in AlertRulesPage. */}
-        <Route path="/alerts/rules" element={<AlertRulesPage />} />
+        {/* Alert Rules access (view + save) is governed by the Access Control matrix ('alert_rules');
+            the backend @PageRead/@PageWrite guard is authoritative, this gates the UI + editability. */}
+        <Route path="/alerts/rules" element={<PageAccessRoute page="alert_rules"><AlertRulesPage /></PageAccessRoute>} />
         <Route path="/settings" element={<SuperadminRoute><SettingsPage /></SuperadminRoute>} />
-        <Route path="/settings/alerts" element={<SuperadminRoute><SettingsPage /></SuperadminRoute>} />
+        <Route path="/settings/alerts" element={<PageAccessRoute page="alert_rules"><SettingsPage /></PageAccessRoute>} />
         <Route path="/settings/vendors" element={<SuperadminRoute><SettingsPage /></SuperadminRoute>} />
         <Route path="/settings/users" element={<SuperadminRoute><SettingsPage /></SuperadminRoute>} />
-        <Route path="/settings/resolution" element={<AdminRoute><SettingsPage /></AdminRoute>} />
+        <Route path="/settings/resolution" element={<PageAccessRoute page="resolution_rules"><SettingsPage /></PageAccessRoute>} />
       </Route>
     </Routes>
   )

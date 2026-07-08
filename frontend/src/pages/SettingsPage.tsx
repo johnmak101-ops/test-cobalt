@@ -1,6 +1,7 @@
 import { NavLink, useLocation } from 'react-router-dom'
 import { cn } from '../lib/utils'
 import { useAuth } from '../hooks/use-auth'
+import { usePageAccess } from '../hooks/use-page-access'
 import { VendorsSettings } from '../components/settings/VendorsSettings'
 import { AlertRulesSettings } from '../components/settings/AlertRulesSettings'
 import { UsersSettings } from '../components/settings/UsersSettings'
@@ -9,21 +10,22 @@ import { ResolutionRulesSettings } from '../components/settings/ResolutionRulesS
 export default function SettingsPage() {
   const location = useLocation()
   const { user } = useAuth()
+  const { canView } = usePageAccess()
   const isSuper = user?.role === 'SUPERADMIN'
   const isAlertsSettings = location.pathname.includes('/settings/alerts')
   const isVendorsSettings = location.pathname.includes('/settings/vendors')
   const isUsersSettings = location.pathname.includes('/settings/users')
   const isResolution = location.pathname.includes('/settings/resolution')
 
-  // Most Settings tabs are superadmin-only; Resolution Rules is ADMIN-capable, so it stays visible to
-  // an admin who reached /settings/resolution directly (the superadmin-only tabs would just redirect them).
+  // General / Vendors / Users stay superadmin-only; Alert Rules & Resolution Rules follow the
+  // configurable Access Control matrix (shown when the user has at least View on that page).
   const navItems = [
-    { to: '/settings', label: 'General', end: true, superOnly: true },
-    { to: '/settings/alerts', label: 'Alert Rules', end: false, superOnly: true },
-    { to: '/settings/vendors', label: 'Vendors', end: false, superOnly: true },
-    { to: '/settings/users', label: 'Users', end: false, superOnly: true },
-    { to: '/settings/resolution', label: 'Resolution Rules', end: false, superOnly: false },
-  ].filter((i) => isSuper || !i.superOnly)
+    { to: '/settings', label: 'General', end: true, show: isSuper },
+    { to: '/settings/alerts', label: 'Alert Rules', end: false, show: canView('alert_rules') },
+    { to: '/settings/vendors', label: 'Vendors', end: false, show: isSuper },
+    { to: '/settings/users', label: 'Users', end: false, show: isSuper },
+    { to: '/settings/resolution', label: 'Resolution Rules', end: false, show: canView('resolution_rules') },
+  ].filter((i) => i.show)
 
   return (
     <div className="flex flex-col gap-6 lg:flex-row">
