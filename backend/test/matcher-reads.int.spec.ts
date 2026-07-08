@@ -67,6 +67,32 @@ describe('Matcher read-APIs (integration)', () => {
     expect((res.candidates[0] as any).lockedFields).toContain('eta')
   })
 
+  // Contract with the Agent VM (cobalt-queue `matcher/backend-adapter.ts`): a candidate must carry the
+  // transport `mode` as a TOP-LEVEL column, the identity columns in camelCase (soNo, hblAwbFcrNo, …), and the
+  // snake_case `matchKeys` bag. The adapter camel→snake-cases the columns into `fields`, lifts `mode` for the
+  // gate's sea↔air check, and passes `matchKeys` through as the strong-key bag. If this projection ever
+  // narrows (e.g. `allLegs()`/`lookupByMatchKey` start selecting a subset that drops `mode` or `matchKeys`),
+  // the agent's `backendDiff` silently goes inert — every update forced to review, or unsafe auto-applies —
+  // with no other failing test. This pins the wire shape the adapter depends on.
+  it('returns candidates in the shape the Agent VM adapter consumes (mode + camelCase columns + matchKeys)', async () => {
+    const [bk] = await db.insert(schema.bookings).values({ jobNo: 'JOB-CT', status: 'ACTIVE' }).returning()
+    await db.insert(schema.shipments).values({
+      bookingId: bk.id,
+      legNo: 1,
+      mode: 'AIR', // uppercase SHIPMENT_MODE enum — must arrive verbatim, NOT lowercased
+      soNo: 'SO-CT',
+      hblAwbFcrNo: 'HAWB-CT',
+      matchKeys: { so_no: 'SO-CT' },
+    })
+    const res = await shipments.lookupByMatchKey({ so_no: 'SO-CT' })
+    const c = res.candidates[0] as any
+    expect(c).toBeTruthy()
+    expect(c.mode).toBe('AIR') // top-level transport mode (gate's sea↔air check reads it)
+    expect(c.soNo).toBe('SO-CT') // camelCase identity columns → adapter camel→snakes them into `fields`
+    expect(c.hblAwbFcrNo).toBe('HAWB-CT')
+    expect(c.matchKeys).toMatchObject({ so_no: 'SO-CT' }) // snake_case bag → adapter passes through as matchKey
+  })
+
   it('lists active legs as tracker rows with their linked POs', async () => {
     await seedLeg({ so_no: 'SO-T1' }, { jobNo: 'JOB-T-9', po: 'PO-T9' })
     const res = await shipments.listForTracker()
