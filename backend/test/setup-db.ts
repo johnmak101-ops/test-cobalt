@@ -48,7 +48,8 @@ export async function resetDb(db: TestDB) {
     tracking.field_locks, tracking.app_settings, tracking.forwarder_aliases, tracking.consignees,
     tracking.forwarders, tracking.vendors, tracking.customers, tracking.ports,
     audit.change_log, evidence.parsed_record, queue.queue_message,
-    alerts.alerts, alerts.alert_rules, tracking.users, tracking.refresh_tokens
+    alerts.alerts, alerts.alert_rules, tracking.users, tracking.refresh_tokens,
+    ingest.parsed_record, ingest.email_attachment, ingest.email_message, ingest.ingest_state
     restart identity cascade`)
 }
 
