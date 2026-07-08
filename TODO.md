@@ -169,10 +169,13 @@ The `SettingsPage` + `PresentationService` god-components were already decompose
 - [x] `[track]` **CI — DONE 2026-07-09.** `.github/workflows/ci.yml`: one workspace `pnpm install --frozen-lockfile`,
   backend + frontend `tsc --noEmit` + `vitest run` (Postgres service for the int tests), both builds. Runs on
   push-to-main + every PR. (~660 tests now: 460 backend + 198 frontend + the `no-db-access` guardrail.)
-- [ ] `[track]` **No lint/format.** Add ESLint (typescript-eslint) + Prettier + a `lint` script, wired into CI.
-- [ ] `[track]` **Docs describe the wrong stack.** `AGENTS*.md` (×4) + `README.md` + `PLAN.md` still say
-  "Hono / Cloudflare D1 / SQLite"; the app is NestJS 11 + Node + Postgres. Rewrite (or delete the stale
-  role-variants) — they mis-steer every agent.
+- [x] `[track]` **Lint/format — DONE 2026-07-09 (PR #21).** ESLint 9 flat config (`eslint.config.mjs`,
+  typescript-eslint + react-hooks), 0 errors, enforced in CI (`pnpm lint`). Prettier config + `format`/
+  `format:check` scripts shipped as a dev tool (repo not mass-reformatted; format-check not CI-gated).
+- [x] `[track]` **Docs stack corrected — DONE 2026-07-09.** Rewrote `README.md` + `AGENTS.md` to the real
+  stack (NestJS 11 + Node + Postgres + pnpm workspace) and **deleted** the 3 stale PAVE role-variants
+  (`AGENTS.{reviewer,strategist,uiux-designer}.md`, which described Hono/Cloudflare D1/SQLite). No `PLAN.md`
+  exists. Only remaining stale-stack mention is this TODO's own historical note.
 - [ ] `[track]` **Docker/deploy fragility.** `docker-entrypoint.sh` swallows migrate failures (`|| echo`
   defeats `set -e` → boots on a broken schema); single-stage image ships devDeps + source; no `app`
   healthcheck (though `/health` exists). Abort on migrate failure; add a multi-stage runtime + compose healthcheck.
