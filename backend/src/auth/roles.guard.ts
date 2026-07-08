@@ -20,6 +20,8 @@ export class RolesGuard implements CanActivate {
     const userRank = user ? (RANK[user.role] ?? -1) : -1
     const minRequired = Math.min(...required.map((r) => RANK[r] ?? Number.POSITIVE_INFINITY))
     if (userRank >= minRequired) return true
-    throw new ForbiddenException(`requires role: ${required.join(' or ')} (or higher)`)
+    // Structured body { code, message } to match MustResetGuard's shape, so a shared FE handler can
+    // switch on `code` (here 'FORBIDDEN' vs the reset guard's 'MUST_RESET') rather than string-match.
+    throw new ForbiddenException({ code: 'FORBIDDEN', message: `requires role: ${required.join(' or ')} (or higher)` })
   }
 }

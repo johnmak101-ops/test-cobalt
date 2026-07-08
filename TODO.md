@@ -115,21 +115,38 @@ Result: provisional 6/9 → 2/9, confirmed 3 → 7; hbl/mbl recall 100%; 0 IDs l
 ## Auth hardening — follow-ups (added 2026-07-08)
 Cookie-only JWT login + server-side change-password + SUPERADMIN Users CRUD UI + Outlook-page removal
 **shipped & merged to main** (PR #11, `ca55a49`; spec/plan in `docs/superpowers/{specs,plans}/2026-07-07-jwt-auth-user-crud*`).
-Non-blocking follow-ups from the whole-branch review (none gate the merge):
-- [ ] `[track]` **Make the last-superadmin guard transactional.** `users.service.ts` `assertNotLastSuperadmin`
-  is check-then-act; two concurrent deactivations of the final 2 superadmins could both pass and reach 0
-  active. Use a conditional `UPDATE … WHERE (count of active superadmins) > 1` or a tx. (SUPERADMIN-only, narrow.)
-- [ ] `[track]` **e2e AppModule boot test.** No spec boots the full Nest app, so the global guard ORDER
-  (`JwtAuthGuard → MustResetGuard → RolesGuard`) and the login 429 are reasoned about, not asserted. Add a
-  supertest that boots `AppModule` (mustReset JWT → non-allowlisted route → 403; 11 logins/min → 429).
-- [ ] `[track]` **Resolve `SESSION_TTL_HOURS` via `ConfigService`.** `auth.constants.ts` reads it from
-  `process.env` at import (before `.env` loads), so a `.env`-file value is silently ignored (always 12h).
-  Read via `ConfigService`, or document it as an OS/compose-env-only knob.
-- [ ] `[track]` **Confirm `trust proxy: 1` at deploy.** `main.ts` trusts exactly one proxy hop (correct for
-  single-hop nginx same-origin); revisit if a CDN/second proxy is added — throttler client-IP + secure-cookie
-  detection depend on it.
-- [ ] `[track]` **Unify guard error shape (minor).** `MustResetGuard` throws `403 {code:'MUST_RESET'}` (object)
-  while `RolesGuard` throws a bare string; harmonize if a shared FE error handler ever needs it.
+Follow-ups from the whole-branch review — done on branch `feat/auth-hardening-followups` (2026-07-08):
+- [x] `[track]` **Last-superadmin guard is transactional.** `UsersRepository.updateGuardingLastActiveSuperadmin`
+  locks active SUPERADMIN rows `FOR UPDATE` + re-counts in a tx (throws `LastActiveSuperadminError`); `users.service`
+  update()/remove() route deactivation/demotion through it. Deterministic int test (side-tx holds the lock) — proven
+  red on the old check-then-act, green now.
+- [~] `[track]` **e2e AppModule boot test — PARTIAL.** Guard ORDER (JwtAuth→MustReset→Roles) + the global
+  ThrottlerGuard are now pinned structurally (`auth/guard-wiring.spec.ts`); per-guard behaviour + the login 10/min
+  metadata stay covered by the `*.guard.spec` / `login-throttle.spec` files. A full HTTP boot (supertest mustReset→403,
+  11 logins→429) is DEFERRED: vitest's esbuild transform drops `emitDecoratorMetadata`, so Nest DI can't build the graph
+  under the runner (hard abort at `NestFactory.create`). To do it behaviourally, add an SWC transform to
+  `backend/vitest.config.ts` (`unplugin-swc` + `@swc/core`).
+- [x] `[track]` **`SESSION_TTL_HOURS` via ConfigService.** `auth.constants.sessionTtlSeconds(config)` replaces the
+  import-time `process.env` read; used by the JWT `registerAsync` factory + injected into `AuthController` for the cookie
+  maxAge. A `.env` value is now honoured (was always 12h). Unit-tested.
+- [x] `[track]` **`trust proxy: 1` documented.** `main.ts` annotates the single-hop intranet-nginx assumption
+  (X-Forwarded-Proto → secure cookie; X-Forwarded-For → throttler IP); revisit if a CDN / 2nd proxy is added.
+- [x] `[track]` **Unified guard error shape.** `RolesGuard` now throws `403 {code:'FORBIDDEN',message}` to match
+  `MustResetGuard`'s `{code:'MUST_RESET',…}`; FE `apiErrorMessage` reads `.message`, so no break.
+
+### Prod-readiness — from `Server Information.pdf` review (2026-07-08, intranet single-origin)
+Authoritative server map: `.18` vmseacbfstapp1 = **StatusTrack**.Cobaltknitwear.com = the APP (VM1); `.19`
+vmseacbfstwbp1 = **StatusTrackAgent** = the AGENT (VM2). Earlier notes had these flipped (fixed in the
+`cobalt-production-url` memory). Recommended shape = single-origin HTTPS: NestJS serves SPA + `/api`; one nginx TLS hop.
+- [x] `[track]` **Frontend API base fixed for HTTPS.** `frontend/src/lib/api.ts` `resolveApiBase()` was port-only and
+  sent the prod HTTPS host (port '') to `http://localhost:3000` (mixed-content-blocked → app dead). Now relative `/api`
+  for any same-origin host; absolute localhost only for a different LOCAL port (PAVE/dev). Unit-tested.
+- [x] `[track]` **CORS default corrected.** `config/cors.ts` had pinned the agent host; now
+  `https://statustrack.cobaltknitwear.com` (the app). Same-origin makes CORS moot for the browser — set `CORS_ORIGINS`
+  explicitly in prod. Agent→app POST is server-to-server Bearer (CORS doesn't apply).
+- [ ] `[ops]` **HTTPS + `NODE_ENV=production` in prod.** The session cookie is `secure` only then; over plain HTTP it
+  silently won't set (login breaks). Serve HTTPS internally (cert for statustrack.cobaltknitwear.com) + set
+  NODE_ENV=production. If HTTP-only is unavoidable, add a `COOKIE_SECURE` env valve.
 
 ## Tech-debt (2026-07-08 whole-codebase `/tech-debt` audit)
 The `SettingsPage` + `PresentationService` god-components were already decomposed (PR #9). Remaining:

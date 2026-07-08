@@ -17,7 +17,11 @@ async function bootstrap() {
   // exceed Express's default 100kb JSON limit. Raise it for the decisions/* ingest path.
   app.useBodyParser('json', { limit: '25mb' })
   app.setGlobalPrefix('api')
-  app.set('trust proxy', 1) // correct client IP behind the reverse proxy (throttler + secure cookies)
+  // Trust exactly ONE proxy hop — the intranet nginx that terminates TLS on 443 and forwards to the
+  // app on :3000. This lets X-Forwarded-Proto drive req.secure (→ the `secure` session cookie) and
+  // X-Forwarded-For drive the throttler's client IP. Revisit the hop count if a CDN / second proxy is
+  // ever put in front (otherwise both read the wrong hop). See the cobalt-production-url note.
+  app.set('trust proxy', 1)
   app.useGlobalPipes(new ValidationPipe({ transform: true, whitelist: true }))
   app.use(helmet({ contentSecurityPolicy: false })) // security headers; CSP tuning deferred (would block the served SPA)
   // Credentialed CORS pinned to an allow-list (never `origin:true`, which reflects any site).

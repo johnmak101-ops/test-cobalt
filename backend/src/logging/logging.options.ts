@@ -15,6 +15,10 @@ import type { TransportTargetOptions } from 'pino'
  */
 export function loggerParams(): Params {
   const level = process.env.LOG_LEVEL ?? 'info'
+  // 'silent' means log nothing — skip the transport entirely. Besides being less wasteful, this
+  // avoids spawning a pino transport worker thread, which crashes when the app is booted inside a
+  // test runner's own worker (used by the AppModule boot spec).
+  if (level === 'silent') return { pinoHttp: { level: 'silent' } }
   const isProd = process.env.NODE_ENV === 'production'
   const logFile = process.env.LOG_FILE ?? 'logs/backend'
 

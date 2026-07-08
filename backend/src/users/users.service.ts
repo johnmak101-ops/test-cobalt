@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common'
-import { UsersRepository } from '../db/repositories/users.repository'
+import { UsersRepository, LastActiveSuperadminError } from '../db/repositories/users.repository'
 import { hashPassword } from '../auth/password'
 import type { CreateUserDto, UpdateUserDto } from './dto'
 
@@ -60,9 +60,6 @@ export class UsersService {
     if (dto.role === 'SUPERADMIN' && !isSuper) {
       throw new ForbiddenException('only a superadmin can grant the superadmin role')
     }
-    if (target.role === 'SUPERADMIN' && target.active && (dto.active === false || (dto.role !== undefined && dto.role !== 'SUPERADMIN'))) {
-      await this.assertNotLastSuperadmin()
-    }
 
     const patch: Record<string, unknown> = {}
     if (dto.name !== undefined) {
@@ -76,7 +73,11 @@ export class UsersService {
       patch.mustReset = true // any admin-set password is temporary
     }
 
-    const user = await this.repo.update(id, patch)
+    // Deactivating or demoting an active superadmin must go through the transactional guard so a
+    // concurrent second deactivation can't also pass and zero out the superadmins.
+    const removesSuperadmin =
+      target.role === 'SUPERADMIN' && target.active && (dto.active === false || (dto.role !== undefined && dto.role !== 'SUPERADMIN'))
+    const user = removesSuperadmin ? await this.guardedUpdate(id, patch) : await this.repo.update(id, patch)
     if (!user) throw new NotFoundException(`user ${id} not found`)
     return safe(user)
   }
@@ -86,14 +87,19 @@ export class UsersService {
     if (id === actorId) throw new BadRequestException('you cannot deactivate your own account')
     const target = await this.repo.findById(id)
     if (!target) throw new NotFoundException(`user ${id} not found`)
-    if (target.role === 'SUPERADMIN') await this.assertNotLastSuperadmin()
-    const user = await this.repo.update(id, { active: false })
+    const user =
+      target.role === 'SUPERADMIN' ? await this.guardedUpdate(id, { active: false }) : await this.repo.update(id, { active: false })
     if (!user) throw new NotFoundException(`user ${id} not found`)
     return safe(user)
   }
 
-  private async assertNotLastSuperadmin() {
-    const n = await this.repo.countActiveByRole('SUPERADMIN')
-    if (n <= 1) throw new BadRequestException('cannot deactivate or demote the last active superadmin')
+  /** repo.update, but atomically refuses to strand the system with no active superadmin. */
+  private async guardedUpdate(id: string, patch: Record<string, unknown>) {
+    try {
+      return await this.repo.updateGuardingLastActiveSuperadmin(id, patch)
+    } catch (e) {
+      if (e instanceof LastActiveSuperadminError) throw new BadRequestException(e.message)
+      throw e
+    }
   }
 }
