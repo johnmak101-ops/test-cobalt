@@ -3,7 +3,7 @@
  * pure mappers to produce the flat shapes the new UI expects. Read-only. Adds no new model concepts —
  * one UI "shipment" = one ACTIVE leg + its booking, projected flat.
  */
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common'
+import { Injectable, NotFoundException } from '@nestjs/common'
 import { ShipmentRepository } from '../db/repositories/shipment.repository'
 import { BookingRepository } from '../db/repositories/booking.repository'
 import { MastersRepository } from '../db/repositories/masters.repository'

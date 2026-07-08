@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { ReviewService } from './review.service'
 import type { ShipmentRepository } from '../db/repositories/shipment.repository'
 import type { BookingRepository } from '../db/repositories/booking.repository'

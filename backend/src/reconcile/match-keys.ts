@@ -52,7 +52,7 @@ export const str = (v: unknown): string | null => {
 }
 export const num = (v: unknown): number | null => {
   if (v == null || v === '') return null
-  const cleaned = String(v).replace(/[^0-9.\-]/g, '')
+  const cleaned = String(v).replace(/[^0-9.-]/g, '')
   if (cleaned === '' || cleaned === '-' || cleaned === '.') return null // e.g. 'abc' -> '' (Number('') is 0!)
   const n = Number(cleaned)
   return Number.isFinite(n) ? n : null
