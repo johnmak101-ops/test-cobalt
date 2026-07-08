@@ -8,7 +8,6 @@
     "dev": "nest start --watch",
     "start:prod": "node dist/main.js",
     "seed": "ts-node -P tsconfig.json src/db/seed.ts",
-    "seed:entity-facts": "ts-node --transpile-only -P tsconfig.json src/db/seed-entity-facts.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:unit": "vitest run src",

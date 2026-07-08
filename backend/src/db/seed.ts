@@ -1,7 +1,12 @@
 /**
  * Seed the tracking + alerts schemas with masters, a fixture PO mirror, the A1-A6 Pillar-4
  * rules, and one demo booking (PO 100-100209, New Lobster / Torque) re-planned sea -> air so
- * the read endpoints return a real two-leg booking. Idempotent: truncates first.
+ * the read endpoints return a real two-leg booking.
+ *
+ * Reseed policy: demo TRANSACTIONAL data (bookings/shipments/review_email/ingest) is truncated + rebuilt,
+ * but ADMIN-OWNED config — master_resolution facts, app_settings, alert_rules, users — is seeded
+ * idempotently (onConflictDoNothing) and NEVER truncated, so runtime admin edits survive a reseed.
+ * For a fully pristine demo, drop + recreate the database.
  *
  * Run: pnpm --filter backend seed   (uses DATABASE_URL, or the local dev DB by default)
  */
@@ -17,16 +22,20 @@ async function main() {
   const pool = new Pool({ connectionString: DATABASE_URL })
   const db = drizzle(pool, { schema })
 
+  // Admin-owned config (master_resolution, app_settings, alert_rules, users) is DELIBERATELY not truncated:
+  // a reseed refreshes demo TRANSACTIONAL data but preserves runtime admin edits (facts added in
+  // Settings → Resolution Rules, tuned thresholds, changed passwords). Those are seeded idempotently below.
+  // NOTE: `users` must also stay out of the truncate — master_resolution.created_by/reviewed_by FK it, so a
+  // `truncate users CASCADE` would wipe master_resolution regardless of it being off the list.
   await db.execute(sql`truncate table
     tracking.review_email,
     tracking.shipment_pos, tracking.shipment_milestones, tracking.shipments,
     tracking.booking_pos, tracking.bookings, tracking.purchase_orders,
-    tracking.field_locks, tracking.app_settings, tracking.forwarder_aliases, tracking.consignees,
+    tracking.field_locks, tracking.forwarder_aliases, tracking.consignees,
     tracking.forwarders, tracking.vendors, tracking.customers, tracking.ports,
-    tracking.master_resolution,
-    tracking.users, tracking.refresh_tokens
+    tracking.refresh_tokens
     restart identity cascade`)
-  await db.execute(sql`truncate table alerts.alerts, alerts.alert_rules restart identity cascade`)
+  await db.execute(sql`truncate table alerts.alerts restart identity cascade`)
 
   // ---- masters ----
   const [newlob] = await db.insert(schema.customers).values({ code: 'NEWLOB', name: 'New Lobster (UK)' }).returning()
@@ -121,7 +130,7 @@ async function main() {
   // parser reads them over HTTP.
   const MASTER_RESOLUTION_FACTS: { kind: (typeof schema.MASTER_RESOLUTION_KIND)[number]; lhs: string; rhs: string; reason: string }[] = [
     { kind: 'customer_canonical', lhs: 'COLEB', rhs: 'COLE', reason: 'group 3: duplicate master rows for Cole Buxton' },
-    { kind: 'customer_canonical', lhs: 'SEH', rhs: 'PRMK', reason: "group 13: SEH is Cobalt's internal short-form for Primark" },
+    { kind: 'customer_group', lhs: 'SEH', rhs: 'PRIMARK', reason: 'group 13: SEH bootstraps as a Primark GROUP sibling (stays reviewed); flip in Settings → Resolution Rules if confirmed a hard fold' },
     { kind: 'customer_group', lhs: 'AEOW', rhs: 'AMERICAN_EAGLE', reason: 'groups 7-11: AEO Management (bill-to)' },
     { kind: 'customer_group', lhs: 'BLUI', rhs: 'AMERICAN_EAGLE', reason: 'groups 7-11: Blue Star Imports (AE importer-of-record)' },
     { kind: 'customer_group', lhs: 'TORL', rhs: 'TORY', reason: 'group 4: Tory US LLC' },
@@ -137,9 +146,10 @@ async function main() {
     { kind: 'vendor_group', lhs: 'YAQIHK', rhs: 'YAQI_AE', reason: 'group 11: Yaqi Textile HK (invoice house, American Eagle book)' },
     { kind: 'vendor_group', lhs: 'BANSNK', rhs: 'YAQI_AE', reason: 'group 11: BD Spinners & Knitters (Bangladesh factory on the same B/L)' },
   ]
+  // idempotent bootstrap: insert missing curated facts, never clobber runtime admin edits/deactivations.
   await db.insert(schema.masterResolution).values(
     MASTER_RESOLUTION_FACTS.map((f) => ({ ...f, status: 'approved' as const, source: 'seed' as const })),
-  )
+  ).onConflictDoNothing()
 
   // ---- fixture PO mirror ----
   const [po] = await db
@@ -223,13 +233,13 @@ async function main() {
   await db.insert(schema.alertRules).values([
     { id: 'A1', name: 'No Draft BOL', description: 'No Draft B/L received after ETD', state: 'CONFIRMED', triggerType: 'days_after', triggerReference: 'etd', watchFor: 'draft_bl', thresholdHours: 24, countryThresholds: { BD: 48, KH: 48 }, severity: 'WARNING', computeTz: 'vessel' },
     { id: 'A2', name: 'No Final BOL', description: 'No Final B/L received after ETD', state: 'AT_WAREHOUSE', triggerType: 'days_after', triggerReference: 'etd', watchFor: 'final_bl', thresholdHours: 72, countryThresholds: { BD: 168, KH: 168 }, severity: 'WARNING', computeTz: 'vessel' },
-  ])
+  ]).onConflictDoNothing()
 
   // ---- auth accounts: 2 human admins (super/admin, forced first-login reset) + the Agent VM service account ----
   await seedAuthUsers(db)
 
   // ---- app settings: the review-gate confidence threshold (admin-tunable) ----
-  await db.insert(schema.appSettings).values({ key: 'confidence_threshold', value: 85 })
+  await db.insert(schema.appSettings).values({ key: 'confidence_threshold', value: 85 }).onConflictDoNothing()
 
   // ---- email-extraction review queue (demo) ----
   // commit-first: high-confidence rows are AUTO_ACCEPTED (already applied, never surface in a tab); the
