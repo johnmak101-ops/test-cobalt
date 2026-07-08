@@ -13,6 +13,7 @@ import { AlertRepository } from '../src/db/repositories/alert.repository'
 import { EvidenceRepository } from '../src/db/repositories/evidence.repository'
 import { UsersRepository } from '../src/db/repositories/users.repository'
 import { SettingsRepository } from '../src/db/repositories/settings.repository'
+import { IngestRepository } from '../src/db/repositories/ingest.repository'
 
 const ADMIN_URL = process.env.TEST_ADMIN_URL ?? 'postgres://postgres:postgres@localhost:5432/postgres'
 const TEST_URL = process.env.TEST_DATABASE_URL ?? 'postgres://postgres:postgres@localhost:5432/cobalt_test'
@@ -72,5 +73,6 @@ export function repos(db: TestDB) {
     evidence: new EvidenceRepository(db),
     users: new UsersRepository(db),
     settings: new SettingsRepository(db),
+    ingest: new IngestRepository(db),
   }
 }

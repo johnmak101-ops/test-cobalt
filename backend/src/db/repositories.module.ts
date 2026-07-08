@@ -10,6 +10,7 @@ import { EmailRepository } from './repositories/email.repository'
 import { ReviewEmailRepository } from './repositories/review-email.repository'
 import { UsersRepository } from './repositories/users.repository'
 import { SettingsRepository } from './repositories/settings.repository'
+import { IngestRepository } from './repositories/ingest.repository'
 
 const repositories = [
   MastersRepository,
@@ -23,6 +24,7 @@ const repositories = [
   ReviewEmailRepository,
   UsersRepository,
   SettingsRepository,
+  IngestRepository,
 ]
 
 /** Global so any service can inject a repository without re-importing. */
