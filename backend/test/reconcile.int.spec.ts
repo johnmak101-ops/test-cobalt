@@ -29,11 +29,11 @@ async function seedEmail(
   conversationId = 'thread-1',
 ) {
   const [msg] = await db
-    .insert(schema.queueMessage)
+    .insert(schema.ingestEmailMessage)
     .values({ graphMessageId: graphId, conversationId, receivedAt: new Date(receivedAt), status: 'DONE' })
     .returning()
   await db
-    .insert(schema.parsedRecord)
+    .insert(schema.ingestParsedRecord)
     .values({ messageId: msg.id, recordIdx: 0, poNo, emailType, mode: 'Sea-LCL', fields, matchKeys, confidence: 'high' })
 }
 

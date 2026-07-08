@@ -88,10 +88,10 @@ describe('CommitterService — per-PO enrichment from parsed evidence (integrati
     recordIdx?: number
   }) {
     const [msg] = await db
-      .insert(schema.queueMessage)
+      .insert(schema.ingestEmailMessage)
       .values({ graphMessageId: over.graphMessageId, receivedAt: new Date(over.receivedAt) })
       .returning()
-    await db.insert(schema.parsedRecord).values({
+    await db.insert(schema.ingestParsedRecord).values({
       messageId: msg.id,
       recordIdx: over.recordIdx ?? 0,
       poNo: over.poNo,
@@ -264,7 +264,7 @@ describe('CommitterService — CVP notification-platform legs → DOCUMENT (inte
    *  whether the leg was built entirely from the notification platform on the agent path. */
   async function seedEmail(graphMessageId: string, sender: string) {
     await db
-      .insert(schema.queueMessage)
+      .insert(schema.ingestEmailMessage)
       .values({ graphMessageId, sender, receivedAt: new Date('2026-07-01T08:22:00Z') })
   }
 

@@ -16,54 +16,60 @@ export interface EvidenceRow {
   sender: string | null
 }
 
-/** Read access to the evidence contract (parsed_record joined with its queue_message). */
+/** Read access to the ingest contract (ingest.parsed_record joined with its ingest.email_message). */
 @Injectable()
 export class EvidenceRepository {
   constructor(@Inject(DRIZZLE) private readonly db: DrizzleDB) {}
 
-  /** Parsed records of specific emails (queue_message ids) — the Change History's per-email replay source. */
-  forMessages(messageIds: string[]) {
+  /** Parsed records of specific emails (email_message ids) — the Change History's per-email replay source. */
+  forMessages(messageIds: string[]): Promise<
+    { messageId: string; subject: string | null; sender: string | null; receivedAt: Date | null; fields: Record<string, unknown> | null }[]
+  > {
     if (!messageIds.length) return Promise.resolve([])
     return this.db
       .select({
-        messageId: schema.parsedRecord.messageId,
-        subject: schema.queueMessage.subject,
-        sender: schema.queueMessage.sender,
-        receivedAt: schema.queueMessage.receivedAt,
-        fields: schema.parsedRecord.fields,
+        messageId: schema.ingestParsedRecord.messageId,
+        subject: schema.ingestEmailMessage.subject,
+        sender: schema.ingestEmailMessage.sender,
+        receivedAt: schema.ingestEmailMessage.receivedAt,
+        fields: schema.ingestParsedRecord.fields,
       })
-      .from(schema.parsedRecord)
-      .innerJoin(schema.queueMessage, eq(schema.parsedRecord.messageId, schema.queueMessage.id))
-      .where(inArray(schema.parsedRecord.messageId, messageIds))
+      .from(schema.ingestParsedRecord)
+      .innerJoin(schema.ingestEmailMessage, eq(schema.ingestParsedRecord.messageId, schema.ingestEmailMessage.id))
+      .where(inArray(schema.ingestParsedRecord.messageId, messageIds))
+      // unlike allWithMessage()/EvidenceRow, this method's messageId is never null: the innerJoin only
+      // matches rows whose parsed_record.message_id equals a real email_message.id (ingest's column,
+      // unlike evidence's, isn't declared NOT NULL — but the join makes null unreachable here regardless).
+      .then((rows) => rows.map((r) => ({ ...r, messageId: r.messageId as string })))
   }
 
   allWithMessage(): Promise<EvidenceRow[]> {
     return this.db
       .select({
-        id: schema.parsedRecord.id,
-        messageId: schema.parsedRecord.messageId,
-        fields: schema.parsedRecord.fields,
-        matchKeys: schema.parsedRecord.matchKeys,
-        emailType: schema.parsedRecord.emailType,
-        poNo: schema.parsedRecord.poNo,
-        mode: schema.parsedRecord.mode,
-        receivedAt: schema.queueMessage.receivedAt,
-        conversationId: schema.queueMessage.conversationId,
-        sender: schema.queueMessage.sender,
+        id: schema.ingestParsedRecord.id,
+        messageId: schema.ingestParsedRecord.messageId,
+        fields: schema.ingestParsedRecord.fields,
+        matchKeys: schema.ingestParsedRecord.matchKeys,
+        emailType: schema.ingestParsedRecord.emailType,
+        poNo: schema.ingestParsedRecord.poNo,
+        mode: schema.ingestParsedRecord.mode,
+        receivedAt: schema.ingestEmailMessage.receivedAt,
+        conversationId: schema.ingestEmailMessage.conversationId,
+        sender: schema.ingestEmailMessage.sender,
       })
-      .from(schema.parsedRecord)
-      .innerJoin(schema.queueMessage, eq(schema.parsedRecord.messageId, schema.queueMessage.id))
+      .from(schema.ingestParsedRecord)
+      .innerJoin(schema.ingestEmailMessage, eq(schema.ingestParsedRecord.messageId, schema.ingestEmailMessage.id))
   }
 
   /** Senders of the given source emails, keyed by graph_message_id — used to detect a leg built entirely
    *  from the CVP notification platform (classifyKind rule (c)) on the agent/decisions path, where the DTO
-   *  carries no sender. Best-effort: a 2-VM split where queue_message isn't co-located returns fewer rows,
+   *  carries no sender. Best-effort: a 2-VM split where email_message isn't co-located returns fewer rows,
    *  which the caller treats as "not provably platform-only" (never a false demote). */
   sendersByGraphIds(graphMessageIds: string[]): Promise<{ graphMessageId: string | null; sender: string | null }[]> {
     if (!graphMessageIds.length) return Promise.resolve([])
     return this.db
-      .select({ graphMessageId: schema.queueMessage.graphMessageId, sender: schema.queueMessage.sender })
-      .from(schema.queueMessage)
-      .where(inArray(schema.queueMessage.graphMessageId, graphMessageIds))
+      .select({ graphMessageId: schema.ingestEmailMessage.graphMessageId, sender: schema.ingestEmailMessage.sender })
+      .from(schema.ingestEmailMessage)
+      .where(inArray(schema.ingestEmailMessage.graphMessageId, graphMessageIds))
   }
 }
