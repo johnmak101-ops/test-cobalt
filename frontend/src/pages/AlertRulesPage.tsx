@@ -3,7 +3,7 @@ import { api } from '../lib/api'
 import { Card } from '../components/ui/Card'
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useAuth } from '../hooks/use-auth'
+import { usePageAccess } from '../hooks/use-page-access'
 import { cn } from '../lib/utils'
 import { ArrowLeft, Lock } from 'lucide-react'
 
@@ -47,9 +47,9 @@ const SEVERITY_COLORS: Record<string, string> = {
 
 export default function AlertRulesPage() {
   const navigate = useNavigate()
-  const { user } = useAuth()
-  // Alert-rule editing is restricted to ADMIN or higher (paired with the backend PUT guard in ui.controllers.ts).
-  const canEdit = user?.role === 'ADMIN' || user?.role === 'SUPERADMIN'
+  // Editability follows the Access Control matrix ('alert_rules'); the backend @PageWrite guard is authoritative.
+  const { canEdit: canEditPage } = usePageAccess()
+  const canEdit = canEditPage('alert_rules')
   const { data, isLoading } = useQuery<{ rules: AlertRule[] }>({
     queryKey: ['alertRules'],
     queryFn: () => api.get('/alert-rules'),

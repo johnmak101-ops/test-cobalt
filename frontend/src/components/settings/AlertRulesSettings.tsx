@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react'
 import { api } from '../../lib/api'
 import { Card } from '../ui/Card'
 import { cn } from '../../lib/utils'
+import { usePageAccess } from '../../hooks/use-page-access'
 
 interface AlertRule {
   id: string
@@ -51,6 +52,8 @@ export function AlertRulesSettings() {
     queryFn: () => api.get('/alert-rules'),
   })
   const qc = useQueryClient()
+  const { canEdit: canEditPage } = usePageAccess()
+  const canEdit = canEditPage('alert_rules') // Access Control matrix; backend @PageWrite is authoritative
   const [localRules, setLocalRules] = useState<AlertRule[]>([])
   const [dirty, setDirty] = useState(false)
 
@@ -234,6 +237,9 @@ export function AlertRulesSettings() {
       </div>
 
       {/* Actions */}
+      {!canEdit && (
+        <p className="pt-2 text-right text-xs text-text-muted">You have view-only access to Alert Rules.</p>
+      )}
       <div className="flex items-center justify-end gap-3 pt-2">
         <button
           onClick={() => {
@@ -249,7 +255,7 @@ export function AlertRulesSettings() {
         </button>
         <button
           onClick={() => saveRules.mutate(localRules)}
-          disabled={!dirty || saveRules.isPending}
+          disabled={!canEdit || !dirty || saveRules.isPending}
           className="rounded-lg bg-cobalt-primary px-4 py-2 text-sm font-medium text-white hover:bg-cobalt-primary-light disabled:opacity-50"
         >
           {saveRules.isPending ? 'Saving...' : 'Save Changes'}

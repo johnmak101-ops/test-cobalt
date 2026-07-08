@@ -136,6 +136,7 @@ function AppRoutes() {
         <Route path="/settings/vendors" element={<SuperadminRoute><SettingsPage /></SuperadminRoute>} />
         <Route path="/settings/users" element={<SuperadminRoute><SettingsPage /></SuperadminRoute>} />
         <Route path="/settings/resolution" element={<PageAccessRoute page="resolution_rules"><SettingsPage /></PageAccessRoute>} />
+        <Route path="/settings/access" element={<SuperadminRoute><SettingsPage /></SuperadminRoute>} />
       </Route>
     </Routes>
   )

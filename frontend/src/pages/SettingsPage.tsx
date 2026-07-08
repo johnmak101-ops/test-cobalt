@@ -6,6 +6,7 @@ import { VendorsSettings } from '../components/settings/VendorsSettings'
 import { AlertRulesSettings } from '../components/settings/AlertRulesSettings'
 import { UsersSettings } from '../components/settings/UsersSettings'
 import { ResolutionRulesSettings } from '../components/settings/ResolutionRulesSettings'
+import { AccessControlSettings } from '../components/settings/AccessControlSettings'
 
 export default function SettingsPage() {
   const location = useLocation()
@@ -16,6 +17,7 @@ export default function SettingsPage() {
   const isVendorsSettings = location.pathname.includes('/settings/vendors')
   const isUsersSettings = location.pathname.includes('/settings/users')
   const isResolution = location.pathname.includes('/settings/resolution')
+  const isAccess = location.pathname.includes('/settings/access')
 
   // General / Vendors / Users stay superadmin-only; Alert Rules & Resolution Rules follow the
   // configurable Access Control matrix (shown when the user has at least View on that page).
@@ -25,6 +27,7 @@ export default function SettingsPage() {
     { to: '/settings/vendors', label: 'Vendors', end: false, show: isSuper },
     { to: '/settings/users', label: 'Users', end: false, show: isSuper },
     { to: '/settings/resolution', label: 'Resolution Rules', end: false, show: canView('resolution_rules') },
+    { to: '/settings/access', label: 'Access Control', end: false, show: isSuper },
   ].filter((i) => i.show)
 
   return (
@@ -52,7 +55,9 @@ export default function SettingsPage() {
 
       {/* Settings Content */}
       <div className="flex-1">
-        {isResolution ? (
+        {isAccess ? (
+          <AccessControlSettings />
+        ) : isResolution ? (
           <ResolutionRulesSettings />
         ) : isUsersSettings ? (
           <UsersSettings />

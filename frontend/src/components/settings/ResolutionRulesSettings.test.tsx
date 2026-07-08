@@ -18,6 +18,9 @@ vi.mock('../../hooks/use-resolution', () => ({
   useApproveProposal: () => ({ mutate: vi.fn(), isPending: false }),
   useRejectProposal: () => ({ mutate: vi.fn(), isPending: false }),
 }))
+vi.mock('../../hooks/use-page-access', () => ({
+  usePageAccess: () => ({ canEdit: () => true, canView: () => true, levelFor: () => 'edit', loading: false }),
+}))
 
 describe('ResolutionRulesSettings', () => {
   it('lists facts and marks a deactivated one', () => {
