@@ -6,6 +6,35 @@ import type { EmailRepository } from '../db/repositories/email.repository'
 const svc = (graph: Partial<GraphService>, email: Partial<EmailRepository> = { findIngested: async () => null }) =>
   new EmailsService(graph as GraphService, email as EmailRepository)
 
+// attachmentsFor/attachmentById read the flat `ingest.email_attachment` mirror — one row per file,
+// no `queue_normalized` fan-out. A loosely-typed fake keeps these tests decoupled from Drizzle's
+// query-builder return types (attachmentById isn't `async` on the real repo).
+type FakeAttachmentRow = {
+  attachmentId: string
+  filename: string
+  sourceKind: string | null
+  sizeBytes: number
+  declaredMime: string | null
+  rawBytes: Buffer | null
+  graphAttachmentId: string | null
+  messageGraphId: string
+}
+const attachmentRow = (over: Partial<FakeAttachmentRow> = {}): FakeAttachmentRow => ({
+  attachmentId: 'att-1',
+  filename: 'invoice.pdf',
+  sourceKind: 'text_pdf',
+  sizeBytes: 10,
+  declaredMime: 'application/pdf',
+  rawBytes: null,
+  graphAttachmentId: 'graph-att-1',
+  messageGraphId: 'graph-msg-1',
+  ...over,
+})
+const attachmentsSvc = (email: {
+  attachmentsFor?: (graphMessageId: string) => Promise<FakeAttachmentRow[]>
+  attachmentById?: (attachmentId: string) => Promise<FakeAttachmentRow[]>
+}) => new EmailsService({} as GraphService, email as unknown as EmailRepository)
+
 describe('mapGraphMessage', () => {
   it('maps a Graph message resource to the DTO', () => {
     const dto = mapGraphMessage('AAA', {
@@ -78,7 +107,7 @@ describe('EmailsService.getOriginal', () => {
     expect(r.available).toBe(false)
   })
 
-  it('returns the actual email when it is ingested in the shared queue', async () => {
+  it('returns the actual email when it is ingested in the ingest mirror', async () => {
     const r = await svc(
       { configured: () => false },
       {
@@ -178,5 +207,126 @@ describe('EmailsService.getOriginal', () => {
       },
     ).getOriginal('msg-key')
     expect(r).toMatchObject({ available: true, source: 'corpus', bodyPurged: false })
+  })
+})
+
+describe('EmailsService.getAttachments', () => {
+  it('serves base64 straight from rawBytes — one row per file, no per-part collapse', async () => {
+    const bytes = Buffer.from('hello world')
+    const r = await attachmentsSvc({
+      attachmentsFor: async () => [attachmentRow({ rawBytes: bytes })],
+    }).getAttachments('m1')
+    expect(r.available).toBe(true)
+    expect(r.attachments).toHaveLength(1)
+    expect(r.attachments[0]).toMatchObject({
+      filename: 'invoice.pdf',
+      label: null,
+      kind: 'text_pdf',
+      mime: 'application/pdf',
+      base64: bytes.toString('base64'),
+    })
+    expect(r.attachments[0].parsedOnly).toBeUndefined()
+    expect(r.attachments[0].tooLarge).toBeUndefined()
+  })
+
+  it('flags parsedOnly for an office kind with no local rawBytes (fetch is a later task)', async () => {
+    const r = await attachmentsSvc({
+      attachmentsFor: async () => [
+        attachmentRow({ filename: 'po.docx', sourceKind: 'docx', declaredMime: 'application/vnd.msword', rawBytes: null }),
+      ],
+    }).getAttachments('m1')
+    expect(r.attachments[0]).toMatchObject({ kind: 'docx', parsedOnly: true })
+    expect(r.attachments[0].base64).toBeUndefined()
+  })
+
+  it('leaves a non-office kind with no rawBytes as bare metadata (not parsedOnly)', async () => {
+    const r = await attachmentsSvc({
+      attachmentsFor: async () => [
+        attachmentRow({ filename: 'logo.png', sourceKind: 'image', declaredMime: 'image/png', rawBytes: null }),
+      ],
+    }).getAttachments('m1')
+    expect(r.attachments[0]).toMatchObject({ kind: 'image' })
+    expect(r.attachments[0].base64).toBeUndefined()
+    expect(r.attachments[0].parsedOnly).toBeUndefined()
+  })
+
+  it('flags tooLarge when rawBytes exceeds the inline cap', async () => {
+    const big = Buffer.alloc(13 * 1024 * 1024)
+    const r = await attachmentsSvc({ attachmentsFor: async () => [attachmentRow({ rawBytes: big })] }).getAttachments('m1')
+    expect(r.attachments[0].tooLarge).toBe(true)
+    expect(r.attachments[0].base64).toBeUndefined()
+  })
+
+  it('ranks documents (office/pdf) above images regardless of arrival order or size', async () => {
+    const r = await attachmentsSvc({
+      attachmentsFor: async () => [
+        attachmentRow({
+          attachmentId: 'a-img', filename: 'sig.png', sourceKind: 'image', declaredMime: 'image/png',
+          sizeBytes: 999_999, rawBytes: Buffer.from('x'),
+        }),
+        attachmentRow({
+          attachmentId: 'a-doc', filename: 'invoice.pdf', sourceKind: 'text_pdf', declaredMime: 'application/pdf',
+          sizeBytes: 10, rawBytes: Buffer.from('y'),
+        }),
+      ],
+    }).getAttachments('m1')
+    expect(r.attachments.map((a) => a.filename)).toEqual(['invoice.pdf', 'sig.png'])
+  })
+
+  it('returns unavailable for an empty messageId without querying the repository', async () => {
+    const r = await attachmentsSvc({
+      attachmentsFor: async () => {
+        throw new Error('should not be called')
+      },
+    }).getAttachments('')
+    expect(r).toEqual({ available: false, attachments: [] })
+  })
+
+  it('degrades to unavailable (never throws) when the repository lookup fails', async () => {
+    const r = await attachmentsSvc({
+      attachmentsFor: async () => {
+        throw new Error('db down')
+      },
+    }).getAttachments('m1')
+    expect(r).toEqual({ available: false, attachments: [] })
+  })
+})
+
+describe('EmailsService.getAttachmentOriginal', () => {
+  it('returns the original bytes when rawBytes is present', async () => {
+    const body = Buffer.from('the real docx')
+    const r = await attachmentsSvc({
+      attachmentById: async () => [attachmentRow({ filename: 'po.docx', declaredMime: 'application/msword', rawBytes: body })],
+    }).getAttachmentOriginal('att-1')
+    expect(r).toEqual({ filename: 'po.docx', mime: 'application/msword', body })
+  })
+
+  it('falls back to octet-stream when declaredMime is null', async () => {
+    const body = Buffer.from('bytes')
+    const r = await attachmentsSvc({
+      attachmentById: async () => [attachmentRow({ declaredMime: null, rawBytes: body })],
+    }).getAttachmentOriginal('att-1')
+    expect(r?.mime).toBe('application/octet-stream')
+  })
+
+  it('returns null when there is no local rawBytes yet (pre-Graph-fallback)', async () => {
+    const r = await attachmentsSvc({
+      attachmentById: async () => [attachmentRow({ rawBytes: null })],
+    }).getAttachmentOriginal('att-1')
+    expect(r).toBeNull()
+  })
+
+  it('returns null when the attachment id is unknown', async () => {
+    const r = await attachmentsSvc({ attachmentById: async () => [] }).getAttachmentOriginal('missing')
+    expect(r).toBeNull()
+  })
+
+  it('returns null for an empty attachment id without querying the repository', async () => {
+    const r = await attachmentsSvc({
+      attachmentById: async () => {
+        throw new Error('should not be called')
+      },
+    }).getAttachmentOriginal('')
+    expect(r).toBeNull()
   })
 })
