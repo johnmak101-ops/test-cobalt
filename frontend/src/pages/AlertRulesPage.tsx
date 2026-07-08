@@ -48,9 +48,8 @@ const SEVERITY_COLORS: Record<string, string> = {
 export default function AlertRulesPage() {
   const navigate = useNavigate()
   const { user } = useAuth()
-  // DEMO 2026-07-03 (TEMPORARY): all authenticated users may edit alert rules for the demo.
-  // REVERT after the demo to: `user?.role === 'SUPERADMIN'` (paired with the backend PUT guard in ui.controllers.ts).
-  const canEdit = !!user
+  // Alert-rule editing is restricted to ADMIN or higher (paired with the backend PUT guard in ui.controllers.ts).
+  const canEdit = user?.role === 'ADMIN' || user?.role === 'SUPERADMIN'
   const { data, isLoading } = useQuery<{ rules: AlertRule[] }>({
     queryKey: ['alertRules'],
     queryFn: () => api.get('/alert-rules'),
@@ -140,7 +139,7 @@ export default function AlertRulesPage() {
         {!canEdit && (
           <span className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-surface-700 px-3 py-1.5 text-xs font-medium text-text-muted">
             <Lock size={13} />
-            View only · a superadmin can edit
+            View only · an admin can edit
           </span>
         )}
       </div>
@@ -274,7 +273,7 @@ export default function AlertRulesPage() {
             ))}
           </div>
 
-          {/* Actions — superadmin only (backend rejects a non-superadmin PUT anyway) */}
+          {/* Actions — admin or higher (backend rejects a lower-role PUT anyway) */}
           {canEdit && (
           <div className="flex items-center justify-end gap-3 pt-2">
             <button
