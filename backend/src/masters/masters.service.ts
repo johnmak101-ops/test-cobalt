@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common'
 import { MastersRepository } from '../db/repositories/masters.repository'
+import { MASTER_RESOLUTION_KIND } from '../db/schema/enums'
 import {
   CreateForwarderDto,
   UpdateForwarderDto,
@@ -14,6 +15,10 @@ const nn = (s?: string | null): string | null => {
   const t = s?.trim()
   return t ? t : null
 }
+
+type ResolutionKind = (typeof MASTER_RESOLUTION_KIND)[number]
+/** uppercase + trim — codes are canonical uppercase (matches canonicalCode/customerGroupOf lookups). */
+const up = (s: string): string => s.trim().toUpperCase()
 
 @Injectable()
 export class MastersService {
@@ -80,6 +85,30 @@ export class MastersService {
   // --- master resolution: curated facts + proposals (the loop) ---
   resolution() {
     return this.repo.listResolution('approved')
+  }
+  /** Admin management view — all approved facts incl. deactivated. */
+  resolutionManage() {
+    return this.repo.listResolutionManage()
+  }
+  /** Create an ADMIN-authored fact. Supersedes any existing active fact for the same (kind,lhs). */
+  async createFact(dto: { kind: string; lhs: string; rhs?: string | null; reason?: string | null }, userId: string) {
+    const kind = dto.kind as ResolutionKind
+    const lhs = up(dto.lhs)
+    const rhs = dto.rhs && dto.rhs.trim() ? up(dto.rhs) : null
+    await this.repo.deactivateActiveFor(kind, lhs)
+    return this.repo.insertOpsFact({ kind, lhs, rhs, reason: nn(dto.reason), createdBy: userId })
+  }
+  patchReason(id: string, reason?: string | null) {
+    return this.repo.patchReason(id, nn(reason))
+  }
+  deactivate(id: string) {
+    return this.repo.setActive(id, false)
+  }
+  async reactivate(id: string) {
+    const f = await this.repo.getFact(id)
+    if (!f) return null
+    await this.repo.deactivateActiveFor(f.kind, f.lhs)
+    return this.repo.setActive(id, true)
   }
   proposals() {
     return this.repo.listResolution('proposed')

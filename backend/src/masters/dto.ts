@@ -1,4 +1,5 @@
 import { IsIn, IsOptional, IsString, MinLength } from 'class-validator'
+import { MASTER_RESOLUTION_KIND } from '../db/schema/enums'
 
 const PORT_MODES = ['sea', 'air']
 
@@ -35,4 +36,15 @@ export class UpdateConsigneeDto {
   @IsOptional() @IsString() @MinLength(1) name?: string
   @IsOptional() @IsString() address?: string
   @IsOptional() @IsString() mapsToCustomerId?: string
+}
+
+// master_resolution curated facts (ADMIN-managed; app-owned, NOT ERP masters).
+export class CreateResolutionFactDto {
+  @IsIn([...MASTER_RESOLUTION_KIND]) kind!: string
+  @IsString() @MinLength(1) lhs!: string
+  @IsOptional() @IsString() rhs?: string
+  @IsOptional() @IsString() reason?: string
+}
+export class PatchResolutionFactDto {
+  @IsOptional() @IsString() reason?: string
 }

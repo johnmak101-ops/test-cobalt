@@ -135,3 +135,53 @@ describe('MastersService — proposals loop delegation', () => {
     expect(listCalls).toEqual(['approved', 'proposed'])
   })
 })
+
+function resolutionRepo() {
+  const calls: { fn: string; [k: string]: unknown }[] = []
+  const repo = {
+    deactivateActiveFor: (kind: string, lhs: string) => { calls.push({ fn: 'deactivateActiveFor', kind, lhs }); return Promise.resolve() },
+    insertOpsFact: (v: unknown) => { calls.push({ fn: 'insertOpsFact', v }); return Promise.resolve({ id: 'r1', ...(v as object) }) },
+    getFact: (id: string) => { calls.push({ fn: 'getFact', id }); return Promise.resolve({ id, kind: 'customer_group', lhs: 'SEH' }) },
+    setActive: (id: string, active: boolean) => { calls.push({ fn: 'setActive', id, active }); return Promise.resolve({ id, active }) },
+    patchReason: (id: string, reason: string | null) => { calls.push({ fn: 'patchReason', id, reason }); return Promise.resolve({ id, reason }) },
+    listResolutionManage: () => { calls.push({ fn: 'listResolutionManage' }); return Promise.resolve([{ id: 'r1' }]) },
+  }
+  return { svc: new MastersService(repo as unknown as MastersRepository), calls }
+}
+
+describe('MastersService — resolution CRUD', () => {
+  it('createFact uppercases + trims, defaults ops/approved, supersedes the old (kind,lhs) BEFORE inserting', async () => {
+    const { svc, calls } = resolutionRepo()
+    await svc.createFact({ kind: 'customer_group', lhs: '  seh ', rhs: ' primark ', reason: '  x  ' }, 'user-1')
+    expect(calls.map((c) => c.fn)).toEqual(['deactivateActiveFor', 'insertOpsFact'])
+    expect(calls[0]).toEqual({ fn: 'deactivateActiveFor', kind: 'customer_group', lhs: 'SEH' })
+    expect(calls[1].v).toEqual({ kind: 'customer_group', lhs: 'SEH', rhs: 'PRIMARK', reason: 'x', createdBy: 'user-1' })
+  })
+  it('createFact keeps a blank rhs as null', async () => {
+    const { svc, calls } = resolutionRepo()
+    await svc.createFact({ kind: 'vendor_name_marker', lhs: 'ROSE KNIT', rhs: '  ', reason: undefined }, 'user-1')
+    expect(calls[1].v).toEqual({ kind: 'vendor_name_marker', lhs: 'ROSE KNIT', rhs: null, reason: null, createdBy: 'user-1' })
+  })
+  it('deactivate flips active=false', async () => {
+    const { svc, calls } = resolutionRepo()
+    await svc.deactivate('r1')
+    expect(calls).toEqual([{ fn: 'setActive', id: 'r1', active: false }])
+  })
+  it('reactivate supersedes same (kind,lhs) then re-enables', async () => {
+    const { svc, calls } = resolutionRepo()
+    await svc.reactivate('r1')
+    expect(calls.map((c) => c.fn)).toEqual(['getFact', 'deactivateActiveFor', 'setActive'])
+    expect(calls[2]).toEqual({ fn: 'setActive', id: 'r1', active: true })
+  })
+  it('patchReason trims empty → null', async () => {
+    const { svc, calls } = resolutionRepo()
+    await svc.patchReason('r1', '   ')
+    expect(calls).toEqual([{ fn: 'patchReason', id: 'r1', reason: null }])
+  })
+  it('resolutionManage() delegates to the repo manage list', async () => {
+    const { svc, calls } = resolutionRepo()
+    const rows = await svc.resolutionManage()
+    expect(calls).toEqual([{ fn: 'listResolutionManage' }])
+    expect(rows).toEqual([{ id: 'r1' }])
+  })
+})
