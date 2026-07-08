@@ -1,4 +1,4 @@
--- Backfill shipments.pol_id / pod_id / origin_country from evidence.parsed_record.
+-- Backfill shipments.pol_id / pod_id / origin_country from ingest.parsed_record.
 --
 -- Why: the matcher's decision `fields` never carried pol/pod to the committer, so all committed
 -- shipments had null port FKs → route + originCountry rendered '—' across Shipments/Dashboard/Alerts
@@ -18,7 +18,7 @@ FROM (
   FROM tracking.shipments s2
   LEFT JOIN LATERAL (
     SELECT pr.fields->>'pol' AS pol, pr.fields->>'pod' AS pod
-    FROM evidence.parsed_record pr
+    FROM ingest.parsed_record pr
     WHERE ((pr.fields->>'booking_no' = s2.booking_no AND s2.booking_no IS NOT NULL)
         OR (pr.fields->>'so_no' = s2.so_no AND s2.so_no IS NOT NULL))
       AND trim(coalesce(pr.fields->>'pol','')) <> ''

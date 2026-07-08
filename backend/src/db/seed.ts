@@ -365,6 +365,8 @@ async function main() {
     await db.update(schema.reviewEmail).set({ messageId: ingMsg.id }).where(eq(schema.reviewEmail.id, r.id))
 
     const extracted = (r.extractedData ?? {}) as Record<string, unknown>
+    // senderType/mode: no honest source in this seed (reviewEmail has neither; SENDER_TYPE enum has no
+    // "customer" value) — left null
     await db.insert(schema.ingestParsedRecord).values({
       messageId: ingMsg.id,
       graphMessageId: r.graphMessageId,

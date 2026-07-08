@@ -22,9 +22,7 @@ export class EvidenceRepository {
   constructor(@Inject(DRIZZLE) private readonly db: DrizzleDB) {}
 
   /** Parsed records of specific emails (email_message ids) — the Change History's per-email replay source. */
-  forMessages(messageIds: string[]): Promise<
-    { messageId: string; subject: string | null; sender: string | null; receivedAt: Date | null; fields: Record<string, unknown> | null }[]
-  > {
+  forMessages(messageIds: string[]) {
     if (!messageIds.length) return Promise.resolve([])
     return this.db
       .select({
@@ -37,10 +35,6 @@ export class EvidenceRepository {
       .from(schema.ingestParsedRecord)
       .innerJoin(schema.ingestEmailMessage, eq(schema.ingestParsedRecord.messageId, schema.ingestEmailMessage.id))
       .where(inArray(schema.ingestParsedRecord.messageId, messageIds))
-      // unlike allWithMessage()/EvidenceRow, this method's messageId is never null: the innerJoin only
-      // matches rows whose parsed_record.message_id equals a real email_message.id (ingest's column,
-      // unlike evidence's, isn't declared NOT NULL — but the join makes null unreachable here regardless).
-      .then((rows) => rows.map((r) => ({ ...r, messageId: r.messageId as string })))
   }
 
   allWithMessage(): Promise<EvidenceRow[]> {

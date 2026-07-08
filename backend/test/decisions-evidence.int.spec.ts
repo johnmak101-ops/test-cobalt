@@ -61,6 +61,18 @@ describe('IngestRepository.upsertFromDecision (integration)', () => {
     expect(records.map((r) => r.poNo).sort()).toEqual(['PO-A', 'PO-B'])
   })
 
+  it('two evidence[] entries with the SAME graphMessageId AND SAME recordIdx in ONE call upsert to a single row (last wins, not a silent duplicate/loss)', async () => {
+    const ev = [
+      { graphMessageId: 'g-dup', recordIdx: 0, poNo: 'FIRST', fields: { line: 'first' } },
+      { graphMessageId: 'g-dup', recordIdx: 0, poNo: 'SECOND', fields: { line: 'second' } },
+    ]
+    await ingestRepo.upsertFromDecision(ev) // a same-batch collision on (graph_message_id, record_idx)
+
+    const records = await db.select().from(schema.ingestParsedRecord).where(eq(schema.ingestParsedRecord.graphMessageId, 'g-dup'))
+    expect(records).toHaveLength(1) // the unique constraint's onConflictDoUpdate collapses the collision, it never inserts twice
+    expect(records[0]!.poNo).toBe('SECOND') // last entry in the batch wins
+  })
+
   it('a message upsert refreshes metadata (e.g. subject correction on a follow-up POST)', async () => {
     await ingestRepo.upsertFromDecision([{ graphMessageId: 'g3', subject: 'first cut' }])
     await ingestRepo.upsertFromDecision([{ graphMessageId: 'g3', subject: 'corrected subject' }])

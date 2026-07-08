@@ -1,4 +1,4 @@
-import { pgSchema, uuid, text, integer, timestamp, jsonb, customType } from 'drizzle-orm/pg-core'
+import { pgSchema, uuid, text, integer, timestamp, jsonb, customType, unique } from 'drizzle-orm/pg-core'
 
 /** Postgres `bytea` ↔ Node Buffer (dev-seed bytes only). */
 const bytea = customType<{ data: Buffer; driverData: Buffer }>({ dataType() { return 'bytea' } })
@@ -44,7 +44,7 @@ export const ingestEmailAttachment = ingest.table('email_attachment', {
 
 export const ingestParsedRecord = ingest.table('parsed_record', {
   id: uuid('id').primaryKey().defaultRandom(),
-  messageId: uuid('message_id').references(() => ingestEmailMessage.id, { onDelete: 'cascade' }),
+  messageId: uuid('message_id').notNull().references(() => ingestEmailMessage.id, { onDelete: 'cascade' }),
   graphMessageId: text('graph_message_id'),
   recordIdx: integer('record_idx').notNull().default(0),
   poNo: text('po_no'),
@@ -56,7 +56,11 @@ export const ingestParsedRecord = ingest.table('parsed_record', {
   confidence: text('confidence'),
   parserAdapter: text('parser_adapter'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-})
+}, (t) => [
+  // one row per (email, record index) — lets a re-POST of the same decision upsert in place instead of
+  // delete-then-insert (which isn't concurrency-safe: a same-batch duplicate could silently overwrite).
+  unique('ingest_parsed_record_gmid_idx_uq').on(t.graphMessageId, t.recordIdx),
+])
 
 /** Graph sync watermark for the Settings "last sync" tile (was `queue.ingest_state`). */
 export const ingestSyncState = ingest.table('ingest_state', {

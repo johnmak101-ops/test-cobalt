@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common'
-import { and, eq } from 'drizzle-orm'
+import { eq, sql } from 'drizzle-orm'
 import * as schema from '../contracts'
 import { DRIZZLE, type DrizzleDB } from '../drizzle.provider'
 
@@ -25,15 +25,16 @@ export interface EvidenceInput {
  * `ingest` mirror (`email_message` / `email_attachment` / `parsed_record`) — the RECEIVE side of the
  * cross-service push from cobalt-queue's `POST /api/decisions` `evidence[]`.
  *
- * Idempotent on re-POST, but the two child tables have no natural unique key to conflict on (an
- * attachment's `graph_attachment_id` can be absent; several parsed records legitimately share one
- * `graph_message_id`, distinguished only by `record_idx` — e.g. multiple PO lines parsed out of a
- * single email), so each is made idempotent via delete-then-insert instead of `onConflictDoNothing`:
+ * Idempotent on re-POST:
  *   - `email_message` upserts on its real unique constraint (`graph_message_id`).
- *   - `email_attachment` replaces the WHOLE set for the message — one evidence entry is assumed to
- *     carry that email's complete current attachment list.
- *   - `parsed_record` replaces only its own `(graph_message_id, record_idx)` row, so two evidence
- *     entries for the same email with different `recordIdx` don't clobber each other.
+ *   - `email_attachment` has no natural unique key to conflict on (a `graph_attachment_id` can be
+ *     absent), so it replaces the WHOLE set for the message via delete-then-insert — one evidence
+ *     entry is assumed to carry that email's complete current attachment list.
+ *   - `parsed_record` upserts on the real `(graph_message_id, record_idx)` unique constraint, so two
+ *     evidence entries for the same email with different `recordIdx` don't clobber each other, AND a
+ *     same-key duplicate (same-batch or concurrent re-POST) safely updates in place — last write wins,
+ *     via the database's own conflict detection — instead of the old delete-then-insert dance, which
+ *     could race under true concurrency (both sides find nothing to delete, then both insert).
  */
 @Injectable()
 export class IngestRepository {
@@ -84,19 +85,30 @@ export class IngestRepository {
 
       const recordIdx = e.recordIdx ?? 0
       await this.db
-        .delete(schema.ingestParsedRecord)
-        .where(and(eq(schema.ingestParsedRecord.graphMessageId, e.graphMessageId), eq(schema.ingestParsedRecord.recordIdx, recordIdx)))
-      await this.db.insert(schema.ingestParsedRecord).values({
-        messageId: msg!.id,
-        graphMessageId: e.graphMessageId,
-        recordIdx,
-        poNo: e.poNo ?? null,
-        emailType: e.emailType ?? null,
-        senderType: e.senderType ?? null,
-        mode: e.mode ?? null,
-        fields: e.fields ?? {},
-        matchKeys: e.matchKeys ?? {},
-      })
+        .insert(schema.ingestParsedRecord)
+        .values({
+          messageId: msg!.id,
+          graphMessageId: e.graphMessageId,
+          recordIdx,
+          poNo: e.poNo ?? null,
+          emailType: e.emailType ?? null,
+          senderType: e.senderType ?? null,
+          mode: e.mode ?? null,
+          fields: e.fields ?? {},
+          matchKeys: e.matchKeys ?? {},
+        })
+        .onConflictDoUpdate({
+          target: [schema.ingestParsedRecord.graphMessageId, schema.ingestParsedRecord.recordIdx],
+          set: {
+            poNo: sql`excluded.po_no`,
+            emailType: sql`excluded.email_type`,
+            senderType: sql`excluded.sender_type`,
+            mode: sql`excluded.mode`,
+            fields: sql`excluded.fields`,
+            matchKeys: sql`excluded.match_keys`,
+            messageId: sql`excluded.message_id`,
+          },
+        })
     }
   }
 }
