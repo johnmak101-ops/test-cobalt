@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest'
+import { ForbiddenException } from '@nestjs/common'
 import { Reflector } from '@nestjs/core'
 import { RolesGuard } from './roles.guard'
 
@@ -35,5 +36,18 @@ describe('RolesGuard (rank-based hierarchy)', () => {
   })
   it('forbids when there is no user', () => {
     expect(() => guardWith(['ADMIN']).canActivate(ctx(undefined))).toThrow()
+  })
+  it('forbids with a structured { code: "FORBIDDEN" } body (unified guard shape)', () => {
+    let err: unknown
+    try {
+      guardWith(['SUPERADMIN']).canActivate(ctx({ role: 'ADMIN' }))
+    } catch (e) {
+      err = e
+    }
+    expect(err).toBeInstanceOf(ForbiddenException)
+    expect((err as ForbiddenException).getResponse()).toMatchObject({
+      code: 'FORBIDDEN',
+      message: expect.stringContaining('SUPERADMIN'),
+    })
   })
 })

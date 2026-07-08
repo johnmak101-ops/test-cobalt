@@ -1,13 +1,24 @@
-// Vite dev (5173) proxies /api → backend; backend (3000) serves /api directly;
-// PAVE / other origins hit the backend absolutely.
 const backendPort: string = import.meta.env?.VITE_BACKEND_PORT ?? '3000'
 
-const API_BASE =
-  window.location.port === '5173'
-    ? '/api' // Vite dev server — it proxies /api
-    : window.location.port === '3000'
-      ? '/api' // Backend serving static files
-      : `http://localhost:${backendPort}/api` // PAVE or other — hit backend directly
+/**
+ * Resolve the API base for the page's origin.
+ *
+ * Same-origin `/api` is the default: the backend serves the SPA, so the API rides the same origin —
+ * whether that's a real host over HTTP/HTTPS (prod, incl. the implicit :443 where `port` is ''),
+ * Vite's proxied dev server on :5173, or the backend itself on :3000. A purely port-based check
+ * mis-classifies the prod HTTPS host (port '') as "other" and points the browser at
+ * `http://localhost:3000` — which hits the *user's* machine and is blocked as mixed content.
+ *
+ * The only absolute case is a SPA served from a DIFFERENT *local* port (PAVE / other dev), which
+ * talks to the backend on localhost directly.
+ */
+export function resolveApiBase(loc: Pick<Location, 'hostname' | 'port'>, backendPort: string): string {
+  const isLocalHost = loc.hostname === 'localhost' || loc.hostname === '127.0.0.1'
+  const isProxyOrBackend = loc.port === '5173' || loc.port === '3000'
+  return !isLocalHost || isProxyOrBackend ? '/api' : `http://localhost:${backendPort}/api`
+}
+
+const API_BASE = resolveApiBase(window.location, backendPort)
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {

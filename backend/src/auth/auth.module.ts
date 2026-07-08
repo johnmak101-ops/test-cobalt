@@ -9,7 +9,7 @@ import { JwtStrategy } from './jwt.strategy'
 import { JwtAuthGuard } from './jwt-auth.guard'
 import { MustResetGuard } from './must-reset.guard'
 import { RolesGuard } from './roles.guard'
-import { SESSION_TTL_SECONDS } from './auth.constants'
+import { sessionTtlSeconds } from './auth.constants'
 
 @Module({
   imports: [
@@ -22,7 +22,7 @@ import { SESSION_TTL_SECONDS } from './auth.constants'
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({
         secret: config.getOrThrow<string>('JWT_SECRET'),
-        signOptions: { expiresIn: SESSION_TTL_SECONDS },
+        signOptions: { expiresIn: sessionTtlSeconds(config) },
       }),
     }),
   ],

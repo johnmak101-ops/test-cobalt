@@ -4,7 +4,7 @@ import { resolveCorsOrigins } from './cors'
 describe('resolveCorsOrigins', () => {
   it('defaults to localhost dev origins + the prod URL when CORS_ORIGINS is unset', () => {
     const o = resolveCorsOrigins(undefined)
-    expect(o).toContain('https://statustrackagent.cobaltknitwear.com')
+    expect(o).toContain('https://statustrack.cobaltknitwear.com')
     expect(o).toContain('http://localhost:5173')
     expect(o).toContain('http://localhost:3000')
   })

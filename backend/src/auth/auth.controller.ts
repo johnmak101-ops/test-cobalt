@@ -1,10 +1,11 @@
 import { BadRequestException, Body, Controller, Get, Post, Res, UnauthorizedException } from '@nestjs/common'
+import { ConfigService } from '@nestjs/config'
 import { Throttle } from '@nestjs/throttler'
 import type { Response } from 'express'
 import { AuthService } from './auth.service'
 import { Public, CurrentUser, AllowDuringMustReset } from './decorators'
 import { mapBackendRoleToUi } from '../presentation/adapters/enums'
-import { SESSION_COOKIE, SESSION_TTL_SECONDS } from './auth.constants'
+import { SESSION_COOKIE, sessionTtlSeconds } from './auth.constants'
 import { ChangePasswordDto } from './dto'
 
 interface SessionUser {
@@ -16,11 +17,16 @@ interface SessionUser {
   mustReset?: boolean
 }
 
-const SESSION_MAX_AGE_MS = SESSION_TTL_SECONDS * 1000
-
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly auth: AuthService) {}
+  private readonly sessionMaxAgeMs: number
+
+  constructor(
+    private readonly auth: AuthService,
+    config: ConfigService,
+  ) {
+    this.sessionMaxAgeMs = sessionTtlSeconds(config) * 1000
+  }
 
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @Public()
@@ -35,7 +41,7 @@ export class AuthController {
       httpOnly: true,
       sameSite: 'lax',
       secure: process.env.NODE_ENV === 'production',
-      maxAge: SESSION_MAX_AGE_MS,
+      maxAge: this.sessionMaxAgeMs,
     })
     return { user: result.user }
   }

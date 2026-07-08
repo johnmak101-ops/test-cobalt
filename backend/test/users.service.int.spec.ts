@@ -109,4 +109,41 @@ describe('UsersService (integration)', () => {
     await expect(users.update(me.id, { active: false }, 'SUPERADMIN', me.id)).rejects.toThrow(/your own account/i)
     await expect(users.update(me.id, { role: 'ADMIN' }, 'SUPERADMIN', me.id)).rejects.toThrow(/your own account/i)
   })
+
+  it('refuses to deactivate the last superadmin even under a concurrent superadmin mutation (transactional guard)', async () => {
+    // Deterministic version of the check-then-act race: a *side* transaction grabs the whole
+    // active-superadmin set FOR UPDATE (standing in for a concurrent deactivation in flight), then
+    // retires s1 and commits. The guarded remove(s2) must serialize behind that lock, re-read, and
+    // refuse — because only s2 would remain. A check-then-act guard instead reads a stale "2 active"
+    // and deactivates s2 anyway, reaching zero.
+    const { pool } = await getTestDb()
+    const s1 = await mk({ email: 's1@cobalt.hk', role: 'SUPERADMIN' })
+    const s2 = await mk({ email: 's2@cobalt.hk', role: 'SUPERADMIN' })
+
+    const client = await pool.connect()
+    let removeRejected = false
+    try {
+      await client.query('BEGIN')
+      // Hold the lock the guard needs, so remove(s2) is forced to wait for us (and re-read after).
+      await client.query("SELECT id FROM tracking.users WHERE role = 'SUPERADMIN' AND active = true FOR UPDATE")
+
+      const removal = users.remove(s2.id, 'other-id').catch((e: Error) => {
+        removeRejected = true
+        return e
+      })
+      // Give remove(s2) time to reach + block on the lock, then retire s1 and release it.
+      await new Promise((r) => setTimeout(r, 100))
+      await client.query('UPDATE tracking.users SET active = false WHERE id = $1', [s1.id])
+      await client.query('COMMIT')
+
+      const result = await removal
+      expect(removeRejected).toBe(true)
+      expect((result as Error).message).toMatch(/last active superadmin/i)
+    } finally {
+      client.release()
+    }
+
+    // Invariant the guard protects: exactly one active superadmin remains (s2). Check-then-act → 0.
+    expect(await repos(db).users.countActiveByRole('SUPERADMIN')).toBe(1)
+  })
 })
