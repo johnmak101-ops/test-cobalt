@@ -198,7 +198,8 @@ The `SettingsPage` + `PresentationService` god-components were already decompose
 - [ ] `[track]` **Review-queue apply-back** (`emails/review-queue.service.ts:56`, `TODO(apply-back)`). A
   `correct` verdict is stored to `review_email` but never re-applied to the shipment via the committer + field-locks.
 ### Hygiene
-- [ ] `[track]` **Untrack `tmp/*.png`** (`git rm --cached tmp/*.png`); delete the ~102 MB working-tree `pave.log`.
+- [x] `[track]` **Untrack `tmp/*.png` — DONE 2026-07-09.** `git rm --cached` on the 4 tracked screenshots
+  (committed before `tmp/` was gitignored). `pave.log` is already gone from the working tree + gitignored.
 - [ ] `[track]` **`lucide-react` pinned `^1.8.0`** — a dead-end major (maintained line is `0.x`, caret can never
   update). Re-pin to a current release.
 
