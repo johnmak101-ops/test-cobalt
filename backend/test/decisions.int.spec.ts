@@ -154,3 +154,25 @@ describe('DecisionsService (integration)', () => {
     expect(so?.emailMessageId).toBe('g-so-1')
   })
 })
+
+describe('DecisionsService review policy (integration)', () => {
+  it('downgrades an auto-confirm to review when an enabled trigger matches (safe direction)', async () => {
+    await settings.setReviewPolicy(['conflict'], null)
+    const res = await decisions.ingest(decision({ autoApply: true, confidence: 95, conflicts: ['SO number disagreement'] }))
+    expect(res.reviewStatus).toBe('provisional') // downgraded even though the agent auto-confirmed
+    const [leg] = await db.select().from(schema.shipments)
+    expect(leg.reviewStatus).toBe('provisional')
+    expect(leg.reviewReasons).toContain("there's an unresolved conflict") // reason surfaced in the review queue
+  })
+
+  it('leaves an auto-confirm alone when no enabled trigger matches', async () => {
+    await settings.setReviewPolicy(['conflict'], null)
+    const res = await decisions.ingest(decision({ autoApply: true, conflicts: [] }))
+    expect(res.reviewStatus).toBe('confirmed')
+  })
+
+  it('an empty policy never downgrades (default behaviour unchanged)', async () => {
+    const res = await decisions.ingest(decision({ autoApply: true, conflicts: ['x'] }))
+    expect(res.reviewStatus).toBe('confirmed')
+  })
+})

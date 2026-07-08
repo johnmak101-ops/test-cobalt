@@ -3,6 +3,7 @@ import { CommitterService, type ReconGroup, type CommitResult } from '../reconci
 import { SettingsService } from '../settings/settings.service'
 import { IngestRepository } from '../db/repositories/ingest.repository'
 import type { CreateDecisionDto } from './dto'
+import { evaluate } from './review-policy'
 
 export interface DecisionResult extends Omit<CommitResult, 'action'> {
   /** `skip` = the decision was 不需處理 and acknowledged WITHOUT committing a shipment (see ingest). */
@@ -56,10 +57,22 @@ export class DecisionsService {
     // sparse early in its lifecycle (PO first, identity ids fill in later), so a completeness-based score must
     // NOT veto a decision the policy gate already cleared. Legacy callers that OMIT autoApply fall back to the
     // score-vs-threshold routing (unchanged).
-    const reviewStatus: 'provisional' | 'confirmed' =
+    let reviewStatus: 'provisional' | 'confirmed' =
       dto.autoApply === undefined
         ? dto.confidence >= threshold ? 'confirmed' : 'provisional'
         : dto.autoApply ? 'confirmed' : 'provisional'
+    let reviewReasons = dto.reviewReasons ?? null
+
+    // Admin-configured review policy (Settings ▸ Review Policy): an enabled trigger that matches
+    // downgrades an auto-confirm to human review — safe direction only, never the reverse. Applies to
+    // live agent decisions too. Empty policy (the default) → no-op.
+    if (reviewStatus === 'confirmed') {
+      const fired = evaluate(await this.settings.reviewPolicy(), dto)
+      if (fired.length) {
+        reviewStatus = 'provisional'
+        reviewReasons = [...(dto.reviewReasons ?? []), ...fired]
+      }
+    }
 
     const events = (dto.events ?? []).map((e) => ({
       emailType: e.emailType,
@@ -88,7 +101,7 @@ export class DecisionsService {
       evidenceIds,
       confidence: dto.confidence,
       reviewStatus,
-      reviewReasons: dto.reviewReasons ?? null,
+      reviewReasons,
     }
 
     const result = await this.committer.apply(group)
