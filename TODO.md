@@ -200,8 +200,9 @@ The `SettingsPage` + `PresentationService` god-components were already decompose
 ### Hygiene
 - [x] `[track]` **Untrack `tmp/*.png` — DONE 2026-07-09.** `git rm --cached` on the 4 tracked screenshots
   (committed before `tmp/` was gitignored). `pave.log` is already gone from the working tree + gitignored.
-- [ ] `[track]` **`lucide-react` pinned `^1.8.0`** — a dead-end major (maintained line is `0.x`, caret can never
-  update). Re-pin to a current release.
+- [x] `[track]` **`lucide-react` bumped to `^1.17.0` — DONE 2026-07-09.** The old note's premise was wrong:
+  lucide-react's maintained line IS 1.x (npm `latest` = 1.17.0), so `^1.8.0` was never a dead end — the caret
+  updates within 1.x. Bumped to `^1.17.0` (resolved 1.21.0) for freshness; frontend tsc + build + 198 tests green.
 
 ## Cross-system pointers (tracked in memory/docs — recorded here so they're not lost)
 - [ ] `[queue]` **Matcher source-fixes** — per-PO qty broadcast, thread-unstable identity over-split, CVP
