@@ -1,0 +1,6 @@
+**/dist/**
+**/node_modules/**
+**/coverage/**
+backend/drizzle/**
+pnpm-lock.yaml
+**/*.md

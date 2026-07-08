@@ -62,7 +62,7 @@ function harness(over: Over = {}) {
       log('audit.write', row)
     },
   }
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   const svc = new PurchaseOrdersService(bookings as any, masters as any, audit as any)
   return { svc, calls }
 }

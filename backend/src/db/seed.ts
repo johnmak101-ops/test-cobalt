@@ -435,13 +435,13 @@ async function main() {
       set: { watermark: new Date(), lastSyncAt: new Date(), updatedAt: new Date() },
     })
 
-  // eslint-disable-next-line no-console
+   
   console.log(`seed done: booking ${booking.jobNo} (${booking.id}) with legs ${leg1.legNo}(${leg1.legStatus}) / ${leg2.legNo}(${leg2.legStatus})`)
   await pool.end()
 }
 
 main().catch((e) => {
-  // eslint-disable-next-line no-console
+   
   console.error(e)
   process.exit(1)
 })

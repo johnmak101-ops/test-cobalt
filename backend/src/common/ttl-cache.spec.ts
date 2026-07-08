@@ -16,7 +16,7 @@ describe('makeTtlCache', () => {
   })
 
   it('shares one in-flight build across concurrent misses (no thundering herd)', async () => {
-    let t = 0
+    const t = 0
     const cache = makeTtlCache<string>(1000, () => t)
     let resolve!: (v: string) => void
     const build = vi.fn(() => new Promise<string>((r) => (resolve = r)))

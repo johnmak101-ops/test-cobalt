@@ -55,6 +55,9 @@ jobs:
       - name: Install (frozen lockfile)
         run: pnpm install --frozen-lockfile
 
+      - name: Lint
+        run: pnpm lint
+
       - name: Backend — typecheck
         run: pnpm --filter backend exec tsc --noEmit -p tsconfig.json
 
