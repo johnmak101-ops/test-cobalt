@@ -95,6 +95,8 @@ export const masterResolution = tracking.table('master_resolution', {
   reviewedAt: timestamp('reviewed_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  /** false = deactivated: kept for audit but no longer served to consumers (status stays 'approved'). */
+  active: boolean('active').notNull().default(true),
 }, (t) => [unique('master_resolution_uq').on(t.kind, t.lhs, t.rhs)])
 
 // ============================================================
