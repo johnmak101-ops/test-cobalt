@@ -7,7 +7,8 @@ set -e
 # Use `migrate` (applies backend/drizzle/*.sql) — NOT `push`, which needs a TTY prompt.
 if [ "$RUN_MIGRATIONS" = "1" ]; then
   echo "[entrypoint] applying migrations (drizzle-kit migrate) against $DATABASE_URL ..."
-  pnpm --filter backend exec drizzle-kit migrate || echo "[entrypoint] WARN: migrate failed"
+  # No `|| echo`: with `set -e` a migrate failure ABORTS boot, so we never serve on a broken schema.
+  pnpm --filter backend exec drizzle-kit migrate
 fi
 
 if [ "$SEED_ON_START" = "1" ]; then

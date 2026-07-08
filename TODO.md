@@ -176,9 +176,12 @@ The `SettingsPage` + `PresentationService` god-components were already decompose
   stack (NestJS 11 + Node + Postgres + pnpm workspace) and **deleted** the 3 stale PAVE role-variants
   (`AGENTS.{reviewer,strategist,uiux-designer}.md`, which described Hono/Cloudflare D1/SQLite). No `PLAN.md`
   exists. Only remaining stale-stack mention is this TODO's own historical note.
-- [ ] `[track]` **Docker/deploy fragility.** `docker-entrypoint.sh` swallows migrate failures (`|| echo`
-  defeats `set -e` → boots on a broken schema); single-stage image ships devDeps + source; no `app`
-  healthcheck (though `/health` exists). Abort on migrate failure; add a multi-stage runtime + compose healthcheck.
+- [~] `[track]` **Docker/deploy fragility — PARTIALLY DONE 2026-07-09.** Fixed the two safe issues:
+  migrate now ABORTS boot on failure (dropped `|| echo` so `set -e` fires → never serve on a broken
+  schema), and the image has a `HEALTHCHECK` (node hits `GET /api/health`; no curl in the slim image).
+  **Still deferred:** multi-stage runtime to drop devDeps + source — the entrypoint's `drizzle-kit migrate`
+  (devDep) + `seed` (ts-node + source) need reworking to a prod-only path first, so it's not a safe
+  drop-in. `docker build` verified.
 ### Structural
 - [ ] `[track]` **`CommitterService` god file (~696 LOC).** `apply()` accretes resolution/matching/qty-guard/
   enrichment/identifiers/milestones with `BUG N` comments. Extract collaborators (MasterResolver, LegMatcher,
