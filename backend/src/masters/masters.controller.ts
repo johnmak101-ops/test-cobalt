@@ -1,6 +1,7 @@
 import { Body, Controller, Get, Param, Patch, Post } from '@nestjs/common'
 import { MastersService } from './masters.service'
 import { Roles, CurrentUser } from '../auth/decorators'
+import { PageRead, PageWrite } from '../access/page-access.decorators'
 import type { AuthUser } from '../auth/auth.service'
 import {
   CreateForwarderDto,
@@ -26,25 +27,28 @@ export class MastersController {
 
   // Master resolution (curated facts) + the curator loop.
   @Get('resolution') resolution() { return this.masters.resolution() }
-  @Get('resolution/manage') @Roles('ADMIN') resolutionManage() { return this.masters.resolutionManage() }
-  @Roles('ADMIN') @Post('resolution') createFact(@Body() dto: CreateResolutionFactDto, @CurrentUser() u: AuthUser) {
+  // Resolution Rules page — governed by the Access Control matrix (page 'resolution_rules'):
+  // management reads need View, mutations need Edit; superadmin always passes. The consumer read
+  // `GET resolution` above stays UNGATED — cobalt-queue's parser reads it over HTTP.
+  @Get('resolution/manage') @PageRead('resolution_rules') resolutionManage() { return this.masters.resolutionManage() }
+  @PageWrite('resolution_rules') @Post('resolution') createFact(@Body() dto: CreateResolutionFactDto, @CurrentUser() u: AuthUser) {
     return this.masters.createFact(dto, u.id)
   }
-  @Roles('ADMIN') @Patch('resolution/:id') patchFact(@Param('id') id: string, @Body() dto: PatchResolutionFactDto) {
+  @PageWrite('resolution_rules') @Patch('resolution/:id') patchFact(@Param('id') id: string, @Body() dto: PatchResolutionFactDto) {
     return this.masters.patchReason(id, dto.reason)
   }
-  @Roles('ADMIN') @Post('resolution/:id/deactivate') deactivateFact(@Param('id') id: string) {
+  @PageWrite('resolution_rules') @Post('resolution/:id/deactivate') deactivateFact(@Param('id') id: string) {
     return this.masters.deactivate(id)
   }
-  @Roles('ADMIN') @Post('resolution/:id/reactivate') reactivateFact(@Param('id') id: string) {
+  @PageWrite('resolution_rules') @Post('resolution/:id/reactivate') reactivateFact(@Param('id') id: string) {
     return this.masters.reactivate(id)
   }
-  @Get('proposals') proposals() { return this.masters.proposals() }
-  @Roles('ADMIN') @Post('curate') curate() { return this.masters.curate() }
-  @Roles('ADMIN') @Post('proposals/:id/approve') approveProposal(@Param('id') id: string, @CurrentUser() u: AuthUser) {
+  @PageRead('resolution_rules') @Get('proposals') proposals() { return this.masters.proposals() }
+  @PageWrite('resolution_rules') @Post('curate') curate() { return this.masters.curate() }
+  @PageWrite('resolution_rules') @Post('proposals/:id/approve') approveProposal(@Param('id') id: string, @CurrentUser() u: AuthUser) {
     return this.masters.approveProposal(id, u.id)
   }
-  @Roles('ADMIN') @Post('proposals/:id/reject') rejectProposal(@Param('id') id: string, @CurrentUser() u: AuthUser) {
+  @PageWrite('resolution_rules') @Post('proposals/:id/reject') rejectProposal(@Param('id') id: string, @CurrentUser() u: AuthUser) {
     return this.masters.rejectProposal(id, u.id)
   }
 

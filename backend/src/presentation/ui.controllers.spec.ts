@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import { Reflector } from '@nestjs/core'
 import { ROLES_KEY } from '../auth/decorators'
+import { PAGE_READ_KEY, PAGE_WRITE_KEY } from '../access/page-access.decorators'
 import {
   UiDashboardController,
   UiMastersController,
@@ -48,11 +49,15 @@ describe('UiAlertRulesController', () => {
     expect(svc.alertRules).toHaveBeenCalledOnce()
   })
 
-  // Write guard: saving alert SLAs must stay ADMIN-or-higher (rank-based guard).
-  // Locks in the fix for the demo-era hole where the guard was commented out.
-  it('restricts PUT /alert-rules to ADMIN or higher', () => {
-    const roles = new Reflector().get<string[]>(ROLES_KEY, UiAlertRulesController.prototype.save)
-    expect(roles).toEqual(['ADMIN'])
+  it('governs GET /alert-rules with @PageRead(alert_rules)', () => {
+    expect(new Reflector().get<string>(PAGE_READ_KEY, UiAlertRulesController.prototype.get)).toBe('alert_rules')
+  })
+
+  // Write guard: saving alert SLAs now requires Edit on the 'alert_rules' page (Access Control matrix),
+  // replacing the static @Roles('ADMIN'). Locks in the fix for the demo-era hole where the guard was off.
+  it('governs PUT /alert-rules with @PageWrite(alert_rules) and leaves no residual @Roles', () => {
+    expect(new Reflector().get<string>(PAGE_WRITE_KEY, UiAlertRulesController.prototype.save)).toBe('alert_rules')
+    expect(new Reflector().get(ROLES_KEY, UiAlertRulesController.prototype.save)).toBeUndefined()
   })
 })
 
