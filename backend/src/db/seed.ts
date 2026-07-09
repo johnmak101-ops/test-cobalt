@@ -1,14 +1,15 @@
 /**
- * Seed the tracking + alerts schemas with masters, a fixture PO mirror, the A1-A6 Pillar-4
- * rules, and one demo booking (PO 100-100209, New Lobster / Torque) re-planned sea -> air so
- * the read endpoints return a real two-leg booking.
+ * Seed the tracking + alerts schemas.
  *
- * Reseed policy: demo TRANSACTIONAL data (bookings/shipments/review_email/ingest) is truncated + rebuilt,
- * but ADMIN-OWNED config — master_resolution facts, app_settings, alert_rules, users — is seeded
- * idempotently (onConflictDoNothing) and NEVER truncated, so runtime admin edits survive a reseed.
- * For a fully pristine demo, drop + recreate the database.
+ * ALWAYS (prod + dev): ports (no ERP home) + admin config (master_resolution facts, alert_rules, users,
+ * app_settings), all idempotent (onConflictDoNothing) — never truncated, so runtime admin edits survive.
  *
- * Run: pnpm --filter backend seed   (uses DATABASE_URL, or the local dev DB by default)
+ * SEED_DEMO=1 (dev/demo only): the demo dataset — demo masters (customers/vendors/forwarders/consignees),
+ * a fixture PO/booking re-planned sea→air, the review queue, and the ingest mirror. Rebuilt from a truncate.
+ * In PROD leave SEED_DEMO unset: masters come from the daily Cobalt Mesh sync (sync-masters.ts), not the seed.
+ *
+ * Run: pnpm --filter backend seed            (prod-shape: ports + config only)
+ *      SEED_DEMO=1 pnpm --filter backend seed (full local demo dataset)
  */
 import { Pool } from 'pg'
 import { drizzle } from 'drizzle-orm/node-postgres'
@@ -22,54 +23,25 @@ async function main() {
   const pool = new Pool({ connectionString: DATABASE_URL })
   const db = drizzle(pool, { schema })
 
-  // Admin-owned config (master_resolution, app_settings, alert_rules, users) is DELIBERATELY not truncated:
-  // a reseed refreshes demo TRANSACTIONAL data but preserves runtime admin edits (facts added in
-  // Settings → Resolution Rules, tuned thresholds, changed passwords). Those are seeded idempotently below.
-  // NOTE: `users` must also stay out of the truncate — master_resolution.created_by/reviewed_by FK it, so a
-  // `truncate users CASCADE` would wipe master_resolution regardless of it being off the list.
-  await db.execute(sql`truncate table
-    tracking.review_email,
-    tracking.shipment_pos, tracking.shipment_milestones, tracking.shipments,
-    tracking.booking_pos, tracking.bookings, tracking.purchase_orders,
-    tracking.field_locks, tracking.forwarder_aliases, tracking.consignees,
-    tracking.forwarders, tracking.vendors, tracking.customers, tracking.ports,
-    tracking.refresh_tokens
-    restart identity cascade`)
-  await db.execute(sql`truncate table alerts.alerts restart identity cascade`)
+  // SEED_DEMO gates the local demo dataset (masters + shipments + review queue). Prod seeds ONLY ports +
+  // admin config; masters come from the daily Mesh sync (sync-masters.ts).
+  const DEMO = process.env.SEED_DEMO === '1' || process.env.SEED_DEMO === 'true'
 
-  // ---- masters ----
-  const [newlob] = await db.insert(schema.customers).values({ code: 'NEWLOB', name: 'New Lobster (UK)' }).returning()
-  await db.insert(schema.customers).values([
-    { code: 'SKIM', name: 'SKIM' },
-    { code: 'WYSE', name: 'WYSE MACFUN' },
-    { code: 'BELSTAFF', name: 'Belstaff' },
-  ])
+  // Demo rebuild: wipe the demo transactional data + demo masters (NOT master_resolution/app_settings/
+  // alert_rules/users, which are admin-owned and preserved). Only in demo mode — never truncate real data.
+  if (DEMO) {
+    await db.execute(sql`truncate table
+      tracking.review_email,
+      tracking.shipment_pos, tracking.shipment_milestones, tracking.shipments,
+      tracking.booking_pos, tracking.bookings, tracking.purchase_orders,
+      tracking.field_locks, tracking.forwarder_aliases, tracking.consignees,
+      tracking.forwarders, tracking.vendors, tracking.customers,
+      tracking.refresh_tokens
+      restart identity cascade`)
+    await db.execute(sql`truncate table alerts.alerts restart identity cascade`)
+  }
 
-  const [factory] = await db
-    .insert(schema.vendors)
-    .values({ code: 'ROKNFT', name: 'Roknit Factory', type: 'factory', location: 'Shenzhen' })
-    .returning()
-
-  const [torque] = await db.insert(schema.forwarders).values({ code: 'TORQUE', name: 'Torque / Shipair' }).returning()
-  const fwd = await db
-    .insert(schema.forwarders)
-    .values([
-      { code: 'GFS', name: 'GFS' },
-      { code: 'JAS', name: 'JAS' },
-      { code: 'DSV', name: 'DSV' },
-      { code: 'LOGWIN', name: 'Logwin' },
-      { code: 'APL', name: 'APL Logistics' },
-      { code: 'DPWORLD', name: 'DP World' },
-      { code: 'SEKO', name: 'SEKO Logistics' },
-    ])
-    .returning()
-
-  await db.insert(schema.forwarderAliases).values([
-    { forwarderId: torque.id, aliasType: 'domain', value: 'torque.example' },
-    { forwarderId: torque.id, aliasType: 'name', value: 'Shipair' },
-    { forwarderId: fwd[0].id, aliasType: 'name', value: 'Global Freight Solutions' },
-  ])
-
+  // ---- ports (ALWAYS — no ERP home; idempotent so a prod reseed is a no-op) ----
   const ports = await db
     .insert(schema.ports)
     .values([
@@ -116,18 +88,13 @@ async function main() {
       { unlocode: 'BDDAC', name: 'Dhaka', country: 'BD', mode: 'sea' },
       { unlocode: 'AEKLF', name: 'Khor Fakkan', country: 'AE', mode: 'sea' },
     ])
+    .onConflictDoNothing()
     .returning()
   const port = (code: string) => ports.find((p) => p.unlocode === code)
 
-  const [consignee] = await db
-    .insert(schema.consignees)
-    .values({ name: 'CINQ-HUITIEMES S.A.', address: 'Paris, France', mapsToCustomerId: newlob.id })
-    .returning()
-
-  // ---- curated master-resolution facts (single source of truth for the parser's validator) ----
-  // Previously seeded by a cobalt-queue dev script straight into the shared DB; post-split (ShipTrack
-  // owns its own DB) they belong here. Served live via GET /api/masters/resolution; cobalt-queue's
-  // parser reads them over HTTP.
+  // ---- curated master-resolution facts (ALWAYS — admin config, served via GET /api/masters/resolution;
+  // cobalt-queue's parser reads them over HTTP). NOT gated behind SEED_DEMO: these include RELATIONSHIP facts
+  // (customer_group/role, vendor_group) that are business knowledge, not name-inferable, and must survive. ----
   const MASTER_RESOLUTION_FACTS: { kind: (typeof schema.MASTER_RESOLUTION_KIND)[number]; lhs: string; rhs: string; reason: string }[] = [
     { kind: 'customer_canonical', lhs: 'COLEB', rhs: 'COLE', reason: 'group 3: duplicate master rows for Cole Buxton' },
     { kind: 'customer_group', lhs: 'SEH', rhs: 'PRIMARK', reason: 'group 13: SEH bootstraps as a Primark GROUP sibling (stays reviewed); flip in Settings → Resolution Rules if confirmed a hard fold' },
@@ -146,10 +113,67 @@ async function main() {
     { kind: 'vendor_group', lhs: 'YAQIHK', rhs: 'YAQI_AE', reason: 'group 11: Yaqi Textile HK (invoice house, American Eagle book)' },
     { kind: 'vendor_group', lhs: 'BANSNK', rhs: 'YAQI_AE', reason: 'group 11: BD Spinners & Knitters (Bangladesh factory on the same B/L)' },
   ]
-  // idempotent bootstrap: insert missing curated facts, never clobber runtime admin edits/deactivations.
   await db.insert(schema.masterResolution).values(
     MASTER_RESOLUTION_FACTS.map((f) => ({ ...f, status: 'approved' as const, source: 'seed' as const })),
   ).onConflictDoNothing()
+
+  // ---- Pillar-4 alert rules (ALWAYS) — only A1/A2 active, country-aware, anchored on ETD ----
+  await db.insert(schema.alertRules).values([
+    { id: 'A1', name: 'No Draft BOL', description: 'No Draft B/L received after ETD', state: 'CONFIRMED', triggerType: 'days_after', triggerReference: 'etd', watchFor: 'draft_bl', thresholdHours: 24, countryThresholds: { BD: 48, KH: 48 }, severity: 'WARNING', computeTz: 'vessel' },
+    { id: 'A2', name: 'No Final BOL', description: 'No Final B/L received after ETD', state: 'AT_WAREHOUSE', triggerType: 'days_after', triggerReference: 'etd', watchFor: 'final_bl', thresholdHours: 72, countryThresholds: { BD: 168, KH: 168 }, severity: 'WARNING', computeTz: 'vessel' },
+  ]).onConflictDoNothing()
+
+  // ---- auth accounts (ALWAYS): 2 human admins + the Agent VM service account ----
+  await seedAuthUsers(db)
+
+  // ---- app settings (ALWAYS): the review-gate confidence threshold ----
+  await db.insert(schema.appSettings).values({ key: 'confidence_threshold', value: 85 }).onConflictDoNothing()
+
+  if (!DEMO) {
+    console.log('seed done: ports + admin config only (masters via the daily Mesh sync). Set SEED_DEMO=1 for the demo dataset.')
+    await pool.end()
+    return
+  }
+
+  // ======================= DEMO DATASET (SEED_DEMO=1 only) =======================
+
+  // ---- demo masters ----
+  const [newlob] = await db.insert(schema.customers).values({ code: 'NEWLOB', name: 'New Lobster (UK)' }).returning()
+  await db.insert(schema.customers).values([
+    { code: 'SKIM', name: 'SKIM' },
+    { code: 'WYSE', name: 'WYSE MACFUN' },
+    { code: 'BELSTAFF', name: 'Belstaff' },
+  ])
+
+  const [factory] = await db
+    .insert(schema.vendors)
+    .values({ code: 'ROKNFT', name: 'Roknit Factory', type: 'factory', location: 'Shenzhen' })
+    .returning()
+
+  const [torque] = await db.insert(schema.forwarders).values({ code: 'TORQUE', name: 'Torque / Shipair' }).returning()
+  const fwd = await db
+    .insert(schema.forwarders)
+    .values([
+      { code: 'GFS', name: 'GFS' },
+      { code: 'JAS', name: 'JAS' },
+      { code: 'DSV', name: 'DSV' },
+      { code: 'LOGWIN', name: 'Logwin' },
+      { code: 'APL', name: 'APL Logistics' },
+      { code: 'DPWORLD', name: 'DP World' },
+      { code: 'SEKO', name: 'SEKO Logistics' },
+    ])
+    .returning()
+
+  await db.insert(schema.forwarderAliases).values([
+    { forwarderId: torque.id, aliasType: 'domain', value: 'torque.example' },
+    { forwarderId: torque.id, aliasType: 'name', value: 'Shipair' },
+    { forwarderId: fwd[0].id, aliasType: 'name', value: 'Global Freight Solutions' },
+  ])
+
+  const [consignee] = await db
+    .insert(schema.consignees)
+    .values({ name: 'CINQ-HUITIEMES S.A.', address: 'Paris, France', mapsToCustomerId: newlob.id })
+    .returning()
 
   // ---- fixture PO mirror ----
   const [po] = await db
@@ -228,22 +252,7 @@ async function main() {
     { shipmentId: atRiskLeg.id, milestoneType: 'SO_RECEIVED', occurredAt: new Date('2026-02-12T00:00:00Z'), senderType: 'forwarder' },
   ])
 
-  // ---- Pillar-4 alert rules — only A1/A2 active, country-aware (CN/BD/KH/VN/IN), anchored on ETD ----
-  // Per Cobalt_SYSTEM_UPDATE_SUMMARY_20260623: threshold in hours; per-country overrides in country_thresholds.
-  await db.insert(schema.alertRules).values([
-    { id: 'A1', name: 'No Draft BOL', description: 'No Draft B/L received after ETD', state: 'CONFIRMED', triggerType: 'days_after', triggerReference: 'etd', watchFor: 'draft_bl', thresholdHours: 24, countryThresholds: { BD: 48, KH: 48 }, severity: 'WARNING', computeTz: 'vessel' },
-    { id: 'A2', name: 'No Final BOL', description: 'No Final B/L received after ETD', state: 'AT_WAREHOUSE', triggerType: 'days_after', triggerReference: 'etd', watchFor: 'final_bl', thresholdHours: 72, countryThresholds: { BD: 168, KH: 168 }, severity: 'WARNING', computeTz: 'vessel' },
-  ]).onConflictDoNothing()
-
-  // ---- auth accounts: 2 human admins (super/admin, forced first-login reset) + the Agent VM service account ----
-  await seedAuthUsers(db)
-
-  // ---- app settings: the review-gate confidence threshold (admin-tunable) ----
-  await db.insert(schema.appSettings).values({ key: 'confidence_threshold', value: 85 }).onConflictDoNothing()
-
   // ---- email-extraction review queue (demo) ----
-  // commit-first: high-confidence rows are AUTO_ACCEPTED (already applied, never surface in a tab); the
-  // low-confidence rows land NEEDS_REVIEW for a human. Two are already actioned to populate the other tabs.
   const [reviewerUser] = await db.select().from(schema.users).where(eq(schema.users.email, 'admin@cobalt.hk'))
   const reviewRows = await db.insert(schema.reviewEmail).values([
     // — pending, LOW confidence, sparse, no agent suggestion (plain extracted-data view) —
@@ -366,12 +375,7 @@ async function main() {
     },
   ]).returning()
 
-  // Mirror each review email into ingest.* — track-system's own copy of the email + parsed-record data
-  // (in production, fed by POST /api/decisions; here, dev-only, populated straight off the seed data,
-  // body text and attachment bytes included) so "View original", attachment downloads, and the Change
-  // History replay all have something to read, keyed by graph_message_id. Pending emails get a sample
-  // attachment so the download link is exercised. Idempotent: clears the prior demo (mock:) rows first
-  // (cascades to attachments via ingest's own FK).
+  // Mirror each review email into ingest.* — track-system's own copy (production: POST /api/decisions).
   const strOrNull = (v: unknown): string | null => (typeof v === 'string' ? v : null)
   const MATCH_KEY_FIELDS = ['customer_po', 'so_no', 'booking_no', 'hbl_awb_fcr_no', 'mbl', 'conversation_id'] as const
   const pickMatchKeys = (fields: Record<string, unknown>): Record<string, unknown> => {
@@ -385,7 +389,6 @@ async function main() {
     if (!r.graphMessageId) continue
     const isPending = r.reviewStatus === 'NEEDS_REVIEW'
 
-    // ingest mirror — track-system's own copy (production: POST /api/decisions; here: straight off seed data)
     const [ingMsg] = await db
       .insert(schema.ingestEmailMessage)
       .values({
@@ -395,15 +398,12 @@ async function main() {
         receivedAt: r.receivedAt,
         status: 'DONE',
         attachmentCount: isPending ? 1 : 0,
-        bodyText: r.bodyText, // dev demo body
+        bodyText: r.bodyText,
       })
       .returning()
-    // inbox join: review_email.message_id → ingest.email_message.id (see email.repository.listInbox)
     await db.update(schema.reviewEmail).set({ messageId: ingMsg.id }).where(eq(schema.reviewEmail.id, r.id))
 
     const extracted = (r.extractedData ?? {}) as Record<string, unknown>
-    // senderType/mode: no honest source in this seed (reviewEmail has neither; SENDER_TYPE enum has no
-    // "customer" value) — left null
     await db.insert(schema.ingestParsedRecord).values({
       messageId: ingMsg.id,
       graphMessageId: r.graphMessageId,
@@ -425,8 +425,6 @@ async function main() {
     })
   }
 
-  // ingest's own poller checkpoint for the mock inbox (was queue.ingest_state upstream); upsert keeps
-  // reseeds idempotent.
   await db
     .insert(schema.ingestSyncState)
     .values({ id: 'inbox:mock', watermark: new Date(), lastSyncAt: new Date() })
@@ -435,13 +433,11 @@ async function main() {
       set: { watermark: new Date(), lastSyncAt: new Date(), updatedAt: new Date() },
     })
 
-   
-  console.log(`seed done: booking ${booking.jobNo} (${booking.id}) with legs ${leg1.legNo}(${leg1.legStatus}) / ${leg2.legNo}(${leg2.legStatus})`)
+  console.log(`seed done (demo): booking ${booking.jobNo} (${booking.id}) with legs ${leg1.legNo}(${leg1.legStatus}) / ${leg2.legNo}(${leg2.legStatus})`)
   await pool.end()
 }
 
 main().catch((e) => {
-   
   console.error(e)
   process.exit(1)
 })

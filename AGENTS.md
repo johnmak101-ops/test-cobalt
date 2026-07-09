@@ -25,6 +25,21 @@ Orientation for AI coding agents working in this repo.
 - Presentation/adapters (flat UI shapes): `backend/src/presentation/`.
 - Frontend API client: `frontend/src/lib/api.ts` (relative `/api`, same-origin).
 
+## Master data
+
+- `customers` / `vendors` / `forwarders` are a **read-only mirror** of the Cobalt Mesh ERP, refreshed by a
+  **daily job**: `node dist/db/sync-masters.js` (dev: `npx tsx src/db/sync-masters.ts`) under a cron
+  (`0 3 * * *`). It upserts by code and **never deletes**. Config: `MESH_*` in `.env` (see `.env.example`;
+  the secret is confidential — never commit it). Mesh→local mapping: `customers`→customers,
+  `factories`+`gmtsuppliers`→vendors (factory/agent; a code in both dedupes, factory wins), `forwarders`→forwarders.
+- **`ports`** are seeded (no ERP home). **consignees / brands / carriers are NOT synced** — no local master
+  (brand/SCAC are free-text) or no Mesh endpoint (consignees); left for later (a `carriers` master could
+  later back the free-text SCAC).
+- The seed is `ports + admin config` by default; `SEED_DEMO=1 pnpm --filter backend seed` adds the demo dataset.
+- **Planned next:** an LLM name→master matcher (retrieve-then-match: `pg_trgm`/embeddings candidates → LLM pick
+  + confidence → review), replacing the code-bound name tables + `vendor_alias`/`forwarder_ref`/`customer_canonical`
+  facts. Lives cobalt-queue-side; the daily sync is its fresh candidate set.
+
 ## Build / test / lint
 
 - Install: `pnpm install --frozen-lockfile` — ONE workspace install at the repo root. Never

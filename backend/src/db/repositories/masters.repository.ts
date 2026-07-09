@@ -26,6 +26,24 @@ export class MastersRepository {
     return this.db.select().from(schema.consignees).orderBy(schema.consignees.name)
   }
 
+  // ---- masters sync (ERP mirror; insert new + fill-if-changed; NEVER deletes) ----
+  async insertCustomers(rows: { code: string; name: string; erpSyncedAt: Date }[]) {
+    if (rows.length) await this.db.insert(schema.customers).values(rows)
+  }
+  async updateCustomer(id: string, patch: { name?: string; erpSyncedAt: Date }) {
+    await this.db.update(schema.customers).set({ ...patch, updatedAt: new Date() }).where(eq(schema.customers.id, id))
+  }
+  async insertVendors(rows: { code: string; name: string; type: 'factory' | 'agent'; location: string | null; contactEmail: string | null; contactPhone: string | null; erpSyncedAt: Date }[]) {
+    if (rows.length) await this.db.insert(schema.vendors).values(rows)
+  }
+  async updateVendor(id: string, patch: { name?: string; type?: 'factory' | 'agent'; location?: string | null; contactEmail?: string | null; contactPhone?: string | null; erpSyncedAt: Date }) {
+    await this.db.update(schema.vendors).set({ ...patch, updatedAt: new Date() }).where(eq(schema.vendors.id, id))
+  }
+  async insertForwarders(rows: { code: string; name: string }[]) {
+    if (rows.length) await this.db.insert(schema.forwarders).values(rows)
+  }
+  // forwarder update reuses the existing Ops-CRUD updateForwarder(id, patch) below (name → row).
+
   async customerIdByCode(code: string) {
     const [r] = await this.db.select().from(schema.customers).where(eq(schema.customers.code, code.toUpperCase()))
     return r?.id ?? null
