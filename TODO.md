@@ -4,6 +4,41 @@ Tags: `[queue]` = cobalt-queue · `[track]` = cobalt_track_system.
 Context: see `C:\Users\John\.claude\plans\typed-wondering-moler.md` (merge refactor plan) and the
 `merge-refactor-progress` memory. Checkpoints 1–2 + Phase 6 + Iterator→OpenCode are shipped.
 
+## De-correction — dissolve code-side model-corrections so the soul/skills can iterate (2026-07-09)
+PRINCIPLE: track-system code that SILENTLY corrects the LLM/matcher masks the error → no human correction →
+the Iterator gets no signal → the soul never learns. **A fix is a freeze.** The move is "stop silently fixing,
+start surfacing": convert silent-corrections to review-flags, delete pure backstops, hold classifiers until the
+soul catches up. Full 3-agent sweep of backend/src on 2026-07-09; ties to `matcher-source-fixes` memory.
+
+### (a) Pure backstops — DELETE (done, PR "de-correct batch 1"): honest null, no wrong data written
+- [x] `scacFromMbl` (committer-helpers) — no longer guess SCAC from the MBL prefix; the parser owns SCAC (rule 6).
+- [x] origin-country GUESS in `deriveOriginCountry` (committer-leg-mapping) — keep the resolved-port country; drop the LOCODE-prefix + free-text `COUNTRY_TO_ISO2` guessing.
+- [x] `qty_unit ?? 'cartons'` default (committer.service) — a missing unit stays null, not guessed.
+- KEPT ON PURPOSE: `dedupeCsv` — dedup of legitimate multi-source aggregation (same style across PO sheets + B/L rider), NOT a model-error mask.
+
+### (b) Silent drops → CONVERT to review-flags (keep the raw model value + surface it)
+- [ ] per-PO qty BROADCAST guard (`po-enrichment.ts:49-111`) — drops the qty from PO-master enrichment; make it FLAG the PO total as a suspected broadcast (keep the value). Distinct from the leg-level `poQtyIssue` flag — this sets `purchase_orders.total_quantity`. Upstream matcher: task_d1d3e8d4 / BX876110.
+- [ ] brand-leak drop + brand/style "latest-wins" (`po-enrichment.ts:28,99`) — surface a per-PO brand/style conflict rather than silently resolving to newest.
+
+### (c) Classifiers — SOUL-FIRST, then delete (removing now floods phantoms/duplicates — currently load-bearing)
+Plan: (1) SHADOW-FLAG first — keep current behavior BUT record "code would have corrected X" as evidence, so the
+gap (how often the model is wrong) is measurable; (2) fix the soul rule upstream (cobalt-queue parser/matcher +
+Iterator generalization); (3) when the shadow flag stops firing, DELETE the track guard. Items: `forwarder_name`
+platform scrub (`committer.service:105`, also wipes `forwarderRaw`); CVP phantom suppression + `classifyKind`
+DOCUMENT demotions (`state.ts:58`; task_9d91d677 / LPO→booking_no); `normBookingKey` revision folding (`match-keys`
+— move WITH the matcher's mirrored copy; the comment mandates parity).
+
+### (d) Legacy reconcile path — same disease, low live impact
+`merge.ts` FIELD_CLASS-allowlist drop + `sameId`/`sameName` folding + higher-rank silent supersede; `reconcile.service`
+group re-derivation + PO split. Manual rebuild path only; apply the (b)/(c) principle when it is next touched.
+
+### KEEP — these FEED iteration or are safety (do NOT remove)
+- review-flags (the good pattern): `poQtyIssue`→provisional, empty-cargo flag, `review-policy` triggers, equal-rank conflict emission.
+- safety invariants: field-locks (human-wins), audit, commit idempotency (`findExistingLeg` + BUG-4 `strongKeysConflict`), `writeParties` primary-recompute. (The committer docstring already says these live in code on purpose.)
+
+### Reference tables → move to data/soul (ties to the "code-only rule tables → data" item below)
+masters.repository: `PORT_ALIASES` / `IATA_TO_UNLOCODE` / `ABBREV_OVERRIDE {HCM:VNSGN}` / `NAME_CONTAINS_ALIASES` / `GENERIC_HOSTS` / legal-form fold; `PLATFORM_NOT_FORWARDER` (+ `cleanup-platform-forwarder` script); state.ts `MILESTONE_OF` / `DERIVED_MILESTONE_OF` / mode-map; merge.ts `FIELD_CLASS` / `DOC_RANK`; match-keys `STRONG`. (`MASTER_RESOLUTION_FACTS` already externalized to the editable `master_resolution` table.)
+
 ## Agents & OpenPAVE
 - [x] `[queue]` **LLM refiner for the Iterator — BUILT 2026-06-16 (not yet live-proven).** Was:
   `heuristicRefiner` only memorises correction *pairs* (a brittle lookup; a PROMOTE just means "no

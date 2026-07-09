@@ -15,7 +15,7 @@ import { AuditRepository } from '../db/repositories/audit.repository'
 import { EvidenceRepository } from '../db/repositories/evidence.repository'
 import { resolvePoEnrichment } from './po-enrichment'
 import { poQtyIssue, describePoQtyIssue } from './po-qty-consistency'
-import { mapFieldsToLegColumns, deriveOriginCountry } from './committer-leg-mapping'
+import { mapFieldsToLegColumns } from './committer-leg-mapping'
 
 /** One reconciled shipment picture, ready to commit. */
 export interface ReconGroup {
@@ -113,7 +113,7 @@ export class CommitterService {
     ])
     const polId = pol?.id ?? null
     // origin_country: the resolved port's country, else derived from an unseeded LOCODE-shaped/free-text POL.
-    const originCountry = deriveOriginCountry(pol?.country, str(f.poi ?? (f as Record<string, unknown>).pol))
+    const originCountry = pol?.country ?? null // resolved-port country only; no code-side guessing from a raw POL
 
     // Phase-4 guard: a forwarder mislabeled as the vendor must never land in the vendor slot.
     // If flagged, the vendor link is dropped, the (empty) forwarder slot is filled, and the leg
@@ -232,9 +232,7 @@ export class CommitterService {
     for (const poNo of g.pos) {
       const mapped = num(g.poQty?.[normKey(poNo)])
       const perPoQty = mapped ?? (g.pos.length === 1 ? num(f.qty) : null)
-      // only default the unit to 'cartons' when there IS a qty — otherwise a phantom 'cartons' shows on the PO
-      // table while CARGO shows (pending). No qty -> unit is whatever was extracted, or null.
-      const perPoUnit = perPoQty != null ? str(f.qty_unit) ?? 'cartons' : str(f.qty_unit)
+      const perPoUnit = str(f.qty_unit) // no code-side default — a missing unit stays null (the parser owns it)
       const enr = poEnrichment?.get(normKey(poNo))
       const qctx = { legQty: perPoQty, legUnit: perPoUnit, poTotal: enr?.totalQuantity ?? null, poUnit: enr?.quantityUnit ?? null }
       const issue = poQtyIssue(qctx)

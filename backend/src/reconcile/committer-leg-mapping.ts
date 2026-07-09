@@ -6,25 +6,7 @@
  * (scac fallback, poi/pol alias, CSV dedupe, string/number/date coercion) fast to unit-test in isolation.
  */
 import { str, num, date } from './match-keys'
-import { dedupeCsv, scacFromMbl, countryToIso2 } from './committer-helpers'
-
-/**
- * origin_country resolution: prefer the resolved port's country; else, for an UNSEEDED POL, derive it from a
- * UN/LOCODE-shaped raw value (2 ISO-country letters + 3 alnum, e.g. CNPVG → CN), else from the spelled-out
- * country in the raw POL's trailing segment. Mirrors `pol?.country ?? …` — a non-null port country (even '')
- * is returned verbatim and never falls through.
- */
-export function deriveOriginCountry(
-  resolvedPortCountry: string | null | undefined,
-  rawPol: string | null,
-): string | null {
-  if (resolvedPortCountry != null) return resolvedPortCountry
-  const p = (rawPol ?? '').toUpperCase()
-  if (/^[A-Z]{2}[A-Z0-9]{3}$/.test(p)) return p.slice(0, 2)
-  // free-text POL that spells out the origin country in its trailing segment
-  const tail = (p.split(',').pop() ?? '').replace(/[^A-Z ]+/g, ' ').replace(/\s+/g, ' ').trim()
-  return countryToIso2(tail)
-}
+import { dedupeCsv } from './committer-helpers'
 
 /**
  * Map the parsed `fields` bag to the leg columns that derive purely from it. Excludes the columns the committer
@@ -41,7 +23,7 @@ export function mapFieldsToLegColumns(f: Record<string, unknown>): Record<string
     hblAwbFcrNo: str(f.hbl_awb_fcr_no),
     mbl: str(f.mbl),
     containerNo: str(f.container_no),
-    scacCode: str(f.scac_code ?? f.scac) ?? scacFromMbl(str(f.mbl)), // alias `scac`; fall back to MBL prefix
+    scacCode: str(f.scac_code ?? f.scac), // alias `scac` — the parser owns SCAC; no MBL-prefix guessing
     vesselName: str(f.vessel_name),
     voyageNo: str(f.voyage_no),
     flightNo: str(f.flight_no),

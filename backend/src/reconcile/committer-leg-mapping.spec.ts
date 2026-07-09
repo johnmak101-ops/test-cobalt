@@ -1,33 +1,11 @@
 import { describe, it, expect } from 'vitest'
-import { mapFieldsToLegColumns, deriveOriginCountry } from './committer-leg-mapping'
-
-describe('deriveOriginCountry — resolved port country, else LOCODE prefix, else spelled-out tail', () => {
-  it('returns the resolved port country verbatim when present (?? semantics: even an empty string wins)', () => {
-    expect(deriveOriginCountry('VN', 'CNPVG')).toBe('VN')
-    expect(deriveOriginCountry('', 'CNPVG')).toBe('') // pol?.country ?? … keeps '' — never falls through
-  })
-  it('derives ISO-2 from a UN/LOCODE-shaped raw POL (2 country letters + 3 alnum) when the port is unseeded', () => {
-    expect(deriveOriginCountry(null, 'CNPVG')).toBe('CN')
-    expect(deriveOriginCountry(null, 'INMAA')).toBe('IN')
-    expect(deriveOriginCountry(null, 'cnpvg')).toBe('CN') // uppercased internally
-  })
-  it('derives from the free-text trailing country segment when there is no port and no LOCODE shape', () => {
-    expect(deriveOriginCountry(null, 'SHAHJALAL INTL. AIR PORT, BANGLADESH')).toBe('BD')
-    expect(deriveOriginCountry(undefined, 'Some Depot, Vietnam'.toUpperCase())).toBe('VN')
-  })
-  it('returns null when nothing resolves (3-letter IATA, unknown free text, empty)', () => {
-    expect(deriveOriginCountry(null, 'CKG')).toBeNull() // IATA — not the 5-char LOCODE shape, not a country
-    expect(deriveOriginCountry(null, 'NOWHERE PORT')).toBeNull()
-    expect(deriveOriginCountry(null, null)).toBeNull()
-  })
-})
+import { mapFieldsToLegColumns } from './committer-leg-mapping'
 
 describe('mapFieldsToLegColumns — direct field→leg-column mapping (pure, no I/O)', () => {
-  it('resolves scacCode from scac_code, the scac alias, or the MBL prefix — in that order', () => {
+  it('resolves scacCode from scac_code or the scac alias — the parser owns SCAC, no MBL-prefix guessing', () => {
     expect(mapFieldsToLegColumns({ scac_code: 'MAEU' }).scacCode).toBe('MAEU')
     expect(mapFieldsToLegColumns({ scac: 'MEDU' }).scacCode).toBe('MEDU') // alias
-    expect(mapFieldsToLegColumns({ mbl: 'MEDUP5180997' }).scacCode).toBe('MEDU') // derived fallback
-    expect(mapFieldsToLegColumns({ scac_code: 'ABCD', mbl: 'MEDUP5180997' }).scacCode).toBe('ABCD') // explicit wins
+    expect(mapFieldsToLegColumns({ mbl: 'MEDUP5180997' }).scacCode).toBeNull() // MBL no longer guesses SCAC
     expect(mapFieldsToLegColumns({}).scacCode).toBeNull()
   })
   it('reads polRaw from poi, falling back to the pol alias (poi wins)', () => {
