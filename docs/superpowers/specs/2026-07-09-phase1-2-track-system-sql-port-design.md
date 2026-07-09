@@ -46,9 +46,11 @@ order is satisfiable), the SQL Server `setup-db` harness, CI wiring. Then repos 
   schema (`backend/src/db/schema/*.ts`), in FK-creation order. Type map (from the ADR + Phase 0 findings):
   `uuid→uniqueidentifier DEFAULT NEWID()`, `timestamptz→datetimeoffset(7)`, `jsonb→NVARCHAR(MAX)`,
   `text{enum}→nvarchar + CHECK`, `bigserial→bigint IDENTITY(1,1)`, `pgSchema→CREATE SCHEMA`.
-- **Decision: keep the `tracking`/`ingest`/`alerts`/`audit` SCHEMA names** (not flatten to `dbo`). SQL
-  Server supports schemas; Kysely addresses them as `db.selectFrom('tracking.shipments')`. This keeps the
-  Drizzle schema-of-truth legible and the port 1:1. *(Phase 0 used `dbo` for the spike only.)*
+- **Decision: all tables in the default `dbo` schema** (revised from the original "keep tracking/ingest/alerts/audit
+  schemas"). Rationale: `kysely-codegen` flattens multi-schema DBs into a single namespace with duplicate keys
+  (TS errors), and schema-nested Kysely `Database` interfaces require manual maintenance. All 29 table names
+  are unique, so `dbo` is collision-free; table names carry the semantic grouping (`shipment_*`, `alert_*`,
+  etc.) and the Drizzle schema files remain the logical reference. *(Phase 0 spike used `dbo` too — this aligns.)*
 - The Drizzle schema files STAY as the readable reference; Kysely's `kysely-codegen` (run against the
   migrated SQL Server DB) generates the typed `Database` interface. **No hand-written `SpikeDB`-style
   interfaces for the full port** — codegen is the source of truth (the Phase 0 spike's hand interface was

@@ -73,3 +73,43 @@ jobs:
 
       - name: Build (frontend + backend)
         run: pnpm build
+
+  # SQL Server (Fabric SQL target) — informational during the Phase 1+2 port; becomes required
+  # when all repos are ported. Runs the foundation + ported-repo specs against mssql-2022.
+  build-and-test-sqlserver:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    services:
+      mssql:
+        image: mcr.microsoft.com/mssql/server:2022-latest
+        env:
+          ACCEPT_EULA: 'Y'
+          MSSQL_SA_PASSWORD: YourStrong!Passw0rd
+        ports:
+          - 1433:1433
+        options: >-
+          --health-cmd "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P \"$MSSQL_SA_PASSWORD\" -Q 'SELECT 1' -C"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      FABRIC_FOUNDATION: '1'
+      SQL_SERVER_TEST_URL: 'Server=localhost,1433;Database=cobalt_test;User Id=sa;Password=YourStrong!Passw0rd;Encrypt=false;TrustServerCertificate=true'
+      JWT_SECRET: ci-not-a-real-secret-please-rotate-0123456789
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Install (frozen lockfile)
+        run: pnpm install --frozen-lockfile
+      - name: Create cobalt_test database
+        run: /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "$MSSQL_SA_PASSWORD" -C -Q "CREATE DATABASE cobalt_test"
+      - name: Backend — typecheck
+        run: pnpm --filter backend exec tsc --noEmit -p tsconfig.json
+      - name: Backend — foundation + SQL Server specs
+        run: pnpm --filter backend run test
