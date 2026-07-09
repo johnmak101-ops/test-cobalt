@@ -4,11 +4,13 @@ Tags: `[queue]` = cobalt-queue · `[track]` = cobalt_track_system.
 Context: see `C:\Users\John\.claude\plans\typed-wondering-moler.md` (merge refactor plan) and the
 `merge-refactor-progress` memory. Checkpoints 1–2 + Phase 6 + Iterator→OpenCode are shipped.
 
-## Fabric SQL migration (Postgres → Microsoft Fabric SQL / Kysely) — ACTIVE, 2026-07-09
+## Fabric SQL migration (Postgres → Microsoft Fabric SQL / Kysely) — ✅ COMPLETE 2026-07-10
 Plan: `FABRIC-SQL-MIGRATION-PLAN.md`. ADR: `ADR-database-platform-fabric-vs-postgres.md`.
-Locked: Kysely (both apps) + RabbitMQ (replaces pg-boss) + local SQL Server 2022 (dev/CI; Fabric = deploy).
-The track-system \`0000_init\` T-SQL schema (29 tables) lives in \`backend/kysely-migrations/\`; codegen
-Kysely types in \`backend/src/db/kysely/db.generated.ts\`; SQL Server int specs gated on \`FABRIC_FOUNDATION=1\`.
+Locked & delivered: Kysely (both apps) + RabbitMQ (replaced pg-boss) + local SQL Server 2022 (dev/CI;
+Fabric = deploy target). The track-system `0000_init` T-SQL schema (29 tables) lives in
+`backend/src/db/kysely-migrations/` (ships inside `dist/`); codegen types in
+`backend/src/db/kysely/db.generated.ts` with the curated overlay `backend/src/db/kysely/db.ts`
+(import `DB` from there). All SQL Server specs run UNGATED — mssql IS the engine.
 
 ### Phase 2 — track-system data layer → SQL ✅ ALL 13 REPOS PORTED (2026-07-09)
 Every Drizzle repository now has a Kysely/SQL Server twin (\`*.repository.kysely.ts\`) built alongside the
@@ -28,8 +30,8 @@ original, each with a SQL Server int spec, all green on the local \`mssql-2022\`
 | email | #59 | 10 | TOP via modifyFront, thread GROUP BY all cols |
 | shipment | #60 | 10 | documents STRING_AGG-over-DISTINCT, linkDocument tx |
 
-**Full SQL Server suite on main: 12 files, 97 tests green.** PR #60 (shipment) is the final port —
-verify it's MERGED before starting Phase 2-swap (check \`git log\` / \`gh pr view 60\`).
+**Full SQL Server suite on main: 12 files, 97 tests green** (PR #60 was the final port; the swap —
+#61/#62 — then made these the real repositories and the specs run ungated in the main suite).
 
 **Key SQL Server gotchas the ports encode (apply to the swap + Phase 3):**
 - Kysely 0.29's \`MssqlDialect\` emits \`.limit(n)\` VERBATIM as \`limit\` (Postgres syntax) → use
@@ -49,27 +51,45 @@ verify it's MERGED before starting Phase 2-swap (check \`git log\` / \`gh pr vie
 - Cross-test data leaks (one shared DB per file) — assert on SPECIFIC seeded rows, not global counts/positions.
 - Kysely 0.29 doesn't export \`Insertable\` — replace* methods take \`Record<string,unknown>[]\` cast \`as never\`.
 
-### NEXT — Phase 2-swap: wire the Kysely ports into the module (the cutover)
-The ports are NOT yet wired — \`RepositoriesModule\` still injects the Drizzle originals. The swap:
-1. Add a Kysely \`db\` provider (\`createKysely<DB>(connStr)\`) analogous to \`drizzle.provider.ts\`, config from env
-   (\`SQL_SERVER_URL\` / the existing mssql conn-string shape in \`mssql-dialect.ts\`).
-2. Replace each repository's \`@Inject(DRIZZLE)\` class with its \`*.kysely.ts\` twin in \`repositories.module.ts\`
-   (one repo at a time, keeping the Postgres suite green is NOT required — pre-production, no live data).
-3. **The acceptance gate = the full Postgres test suite passes against the Kysely-backed repos on SQL Server.**
-   The existing \`*.int.spec.ts\` (service-level) tests are the net; the kysely int specs guard the data layer.
-   Re-point \`setup-db.ts\` at the mssql container (or run both engines in CI during the swap).
-4. Audit call-sites for Drizzle-only ergonomics the ports changed: e.g. \`updateLeg\`/\`update\`/\`dismissDocument\`
-   returned thenable Drizzle queries (callers \`await\` without reading the row) — the Kysely ports return the
-   row/\`void\` (verified callers don't read them). \`insertLeg\`/\`create\` return the row (committer uses \`leg\`).
-5. Retire the Drizzle schema/migrations/provider once the swap is green (\`drizzle.provider.ts\`,
-   \`db/schema/*\`, the Postgres \`backend/drizzle\` migrations). KEEP the kysely int specs.
-6. Point dev/docker-compose + \`AGENTS.md\` at the SQL engine (Phase 4 of the plan).
+### Phase 2-swap — ✅ DONE 2026-07-10 (track PR #61 + #62, both merged)
+The Kysely ports BECAME the repositories (same class tokens, `@Inject(KYSELY)`); `KyselyModule` +
+`SQL_SERVER_URL` boot the app on SQL Server; `test/setup-db.ts` auto-creates + migrates `cobalt_test`
+(kysely ledger, `sp_MSforeachtable` reset — dev/CI only, that proc doesn't exist on Fabric); all 22
+service-level int specs converted (assertions unchanged); seed/seed-auth-users/sync-masters/load-ports
+ported (5 obsolete one-off Postgres backfills deleted); `migrate-cli.ts` (static registry, creates the
+DB if missing) wired into the Docker entrypoint; CI = single job on an mssql-2022 service. Drizzle
+provider/schema/migrations + `drizzle-orm`/`drizzle-kit`/`pg` deps DELETED (#62); `contracts.ts` = zod
+only; enum arrays live in `src/db/enums.ts`. Restored on the way (the ports had exact-match-only stubs
+but the LLM Master Matcher that replaces them is deferred BEHIND this migration): the tiered
+`portByCodeOrName` (ABBREV_OVERRIDE HCM→VNSGN before IATA; fixes a live wrong-port bug) and the staged
+exactly-one-guarded `forwarderIdByName` — in JS over the ERP-mirrored sets (SQL Server 2022 has no
+regexp_replace). Suite: 634 backend + 198 frontend green on SQL Server.
 
-### Phase 3 — cobalt-queue data layer + RabbitMQ (the OTHER app; unstarted)
-Repo: \`D:/cobalt-queue\`. 8-table schema (queue/evidence) → T-SQL on Kysely; replace pg-boss with RabbitMQ
-behind the existing worker seam (\`src/consumer/worker.ts\` \`registerWorker(boss)\`). A RabbitBoss adapter spike
-is already green behind the worker seam (PR #51 there: \`RABBITMQ_SPIKE=1\`-gated). Green gate = cobalt-queue's
-suite passes on SQL Server. See the plan's Phase 3 + the \`LLM-MASTER-MATCHER-SPEC.md\` §5/§8 follow-up.
+### Phase 3 — ✅ DONE 2026-07-10 (cobalt-queue PR #52)
+8-table queue/evidence schema → T-SQL (`src/db/kysely-migrations/`, flattened dbo) on Kysely; lazy
+`db` handle keeps the fail-fast contract; every call site ported (worker/enqueue, ingest, matcher,
+viewer/API, parser master-db/skills, iterator stores w/ runtime DDL, all dev scripts). pg-boss →
+**RabbitBoss** (RabbitMQ) behind the worker seam: fixed-TTL retry ladder (60/120/240s, `x-attempts`),
+`email.process.dead` terminal queue, broker-native crash requeue — proven live incl. the full
+retry→dead path. `pg`/`pg-boss`/`drizzle-*` removed. Suite 697/699 green (2 = broker-gated, run live).
+
+### Phase 4 — ✅ e2e PROVEN 2026-07-10 (both apps on SQL Server + RabbitMQ)
+enqueue → RabbitMQ → worker(stub) → `parsed_record` (cobalt_queue) → matcher (deterministic) + critic
+(heuristic) + curated facts read live over `GET /api/masters/resolution` → `POST /api/decisions` →
+track-system committer: shipment created (provisional + gate reason carried through, PO linked),
+`evidence[]` → ingest mirror rows (`email_message`/`parsed_record`), alert evaluator re-ran live.
+
+### Migration follow-ups (non-blocking)
+- [ ] `[ops]` **Fabric-deploy verification**: dev/CI run on the SQL Server 2022 container; before prod,
+  run the suites/migrations once against a real Fabric SQL DB (Entra auth in the conn string) and note
+  Fabric gaps (no `sp_MSforeachtable` — test-reset + demo-wipe are dev-only paths by design).
+- [ ] `[queue]` **Corpus re-ingest**: the parsed corpus lives in the OLD Postgres `cobalt_queue`; the
+  fresh SQL DB starts empty. Re-ingest .msg corpus / re-pull Graph mail, then the deferred full re-parse.
+- [ ] `[both]` kysely 0.29 ships a native `.top(n)` — optional mechanical sweep to replace the
+  `.modifyFront(sql`top …`)` idiom.
+- [x] `[both]` docker-compose 2nd-DB provisioning — superseded: each repo's compose is now self-contained
+  (track: mssql + app; queue: rabbitmq in-stack + SQL Server via host/Fabric), migrate services create
+  their own DB if missing.
 
 
 ## De-correction — dissolve code-side model-corrections so the soul/skills can iterate (2026-07-09)
