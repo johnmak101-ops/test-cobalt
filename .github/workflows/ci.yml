@@ -114,4 +114,6 @@ jobs:
       - name: Backend — typecheck
         run: pnpm --filter backend exec tsc --noEmit -p tsconfig.json
       - name: Backend — foundation + SQL Server specs
-        run: pnpm --filter backend run test
+        # Only the SQL Server-gated specs (foundation + ported repos). The full Postgres suite runs
+        # in the build-and-test job. These specs skip when FABRIC_FOUNDATION is unset; here it IS set.
+        run: pnpm --filter backend exec vitest run test/foundation.int.spec.ts test/masters.kysely.int.spec.ts
