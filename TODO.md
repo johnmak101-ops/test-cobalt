@@ -73,9 +73,18 @@ masters.repository: `PORT_ALIASES` / `IATA_TO_UNLOCODE` / `ABBREV_OVERRIDE {HCM:
   edits / field-locks) and whether/when to schedule a gated pass.
 
 ## Masters & validation
-- [ ] `[track]` **Seed the curated masters facts.** `MACAU FUNG TAI → MACFUN` (and other approved
-  `master_resolution` rows) are live DB-only; add them to the track-system seed so they survive a DB
-  reset. (Memory: "move master_resolution seed into backend/seed.ts".)
+- [x] `[track]` **Masters from ERP, not seed — DONE 2026-07-09 (PR #47).** The architect's call: don't
+  hardcode masters; pull them daily from Cobalt Mesh. `customers`/`vendors`(=factories+gmtsuppliers)/`forwarders`
+  are now a read-only ERP mirror via `sync-masters.ts` (daily cron, upsert-never-delete); `ports` stay seeded;
+  demo dataset gated behind `SEED_DEMO`. So `MACAU FUNG TAI → MACFUN` etc. arrive as real vendor masters from
+  the ERP (no hand-seeding). `master_resolution` curated facts stay seeded (prod config). consignees/brands/
+  carriers not synced (no local master / no endpoint). See the `cobalt-mesh-masters-sync` memory.
+- [ ] `[queue]` **LLM name→master matcher (planned next piece, own spec).** Resolve extracted party NAMES →
+  masters via retrieve-then-match: cheap candidates (`pg_trgm`/embeddings over the now-fresh master list) →
+  LLM picks best/none + confidence → low-confidence to review → human correction feeds the soul. Replaces the
+  code-bound name tables (`PORT_ALIASES`/`NAME_CONTAINS`/…) + the ALIAS facts (`vendor_alias`/`forwarder_ref`/
+  `customer_canonical`). RELATIONSHIP facts (`customer_group`/`role`/`vendor_group`) stay curated (not
+  name-inferable). Lives cobalt-queue-side; the Mesh sync (#47) is its prerequisite candidate set.
 - [ ] **Keep party/shipper fixes deterministic.** The reliable consignee fix is the `validate.ts`
   "consignee-resolves-to-a-vendor → replace with the customer's real consignee" rule + a masters
   alias — NOT parser-prompt edits (the LLM ignored the explicit per-customer guidance). Route new
