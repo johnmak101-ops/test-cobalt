@@ -3,7 +3,8 @@ import { formatJobNo } from '../common/job-no'
 import type * as schema from '../db/contracts'
 import { keysOverlap, strongKeys, normKey, str, num, date } from './match-keys'
 import { guardVendorForwarder, isPlatformNotForwarder, isNotificationPlatformSender } from './vendor-forwarder-guard'
-import { deriveState, classifyKind, MILESTONE_OF, DERIVED_MILESTONE_OF, normMode } from './state'
+import { deriveState, classifyKind, normMode } from './state'
+import { deriveMilestoneRows, deriveEmailRows } from './milestone-rows'
 import { MastersRepository } from '../db/repositories/masters.repository'
 import { BookingRepository } from '../db/repositories/booking.repository'
 import { PurchaseOrderRepository } from '../db/repositories/purchase-order.repository'
@@ -412,65 +413,8 @@ export class CommitterService {
   }
 
   private async syncMilestones(shipmentId: string, g: ReconGroup, state: string) {
-    const seen = new Set<string>()
-    const rows: (typeof schema.shipmentMilestones.$inferInsert)[] = []
-    for (const ev of [...g.events].sort((a, b) => a.receivedAt.localeCompare(b.receivedAt))) {
-      const mt = MILESTONE_OF[ev.emailType]
-      if (!mt || seen.has(mt)) continue
-      seen.add(mt)
-      rows.push({
-        shipmentId,
-        milestoneType: mt as (typeof schema.shipmentMilestones.$inferInsert)['milestoneType'],
-        occurredAt: new Date(ev.receivedAt),
-        senderType: 'forwarder',
-        emailMessageId: ev.graphId ?? null, // graph id → "view original" re-fetch
-      })
-    }
-    // BUG 7: also emit milestones DERIVED from field presence (warehouse_start_date → AT_WAREHOUSE,
-    // atd → SAILED), dated by that field, so the timeline matches the state deriveState already reached from
-    // the same fields. Idempotent via `seen` (a field-derived type never duplicates an email-derived one of
-    // the same type). Only when the field has a parseable date.
-    for (const { field, milestone } of DERIVED_MILESTONE_OF) {
-      if (seen.has(milestone)) continue
-      const occurredAt = date(g.fields[field])
-      if (!occurredAt) continue
-      seen.add(milestone)
-      rows.push({
-        shipmentId,
-        milestoneType: milestone as (typeof schema.shipmentMilestones.$inferInsert)['milestoneType'],
-        occurredAt,
-        senderType: 'forwarder',
-        notes: 'derived', // field-derived, not email-type-mapped
-      })
-    }
-    // BUG 3: deriveState can reach SAILED via the Invoice/Billing + mbl + past-etd path with atd NULL, so the
-    // atd→SAILED derived milestone above never fires and the timeline shows a blank departure. When the committed
-    // state IS SAILED but no SAILED milestone was emitted (neither email- nor atd-derived) and atd is absent,
-    // emit one dated by etd. Idempotent via `seen`; never double-emits when atd already produced a SAILED row.
-    if (state === 'SAILED' && !seen.has('SAILED') && !date(g.fields.atd)) {
-      const etd = date(g.fields.etd)
-      if (etd) {
-        seen.add('SAILED')
-        rows.push({
-          shipmentId,
-          milestoneType: 'SAILED' as (typeof schema.shipmentMilestones.$inferInsert)['milestoneType'],
-          occurredAt: etd,
-          senderType: 'forwarder',
-          notes: 'derived from etd',
-        })
-      }
-    }
-    await this.shipments.replaceMilestones(shipmentId, rows)
-    // Related Emails: EVERY source email (deduped by graph id) — including unmapped "Other"/Customs emails
-    // that carry the shipment's data but map to no milestone, so they were invisible before.
-    const seenEmail = new Set<string>()
-    const emailRows: (typeof schema.shipmentEmails.$inferInsert)[] = []
-    for (const ev of g.events) {
-      if (!ev.graphId || seenEmail.has(ev.graphId)) continue
-      seenEmail.add(ev.graphId)
-      emailRows.push({ shipmentId, graphMessageId: ev.graphId, emailType: ev.emailType, receivedAt: new Date(ev.receivedAt) })
-    }
-    await this.shipments.replaceEmails(shipmentId, emailRows)
+    await this.shipments.replaceMilestones(shipmentId, deriveMilestoneRows(shipmentId, g.events, g.fields, state))
+    await this.shipments.replaceEmails(shipmentId, deriveEmailRows(shipmentId, g.events))
   }
 
   private writeAudit(
