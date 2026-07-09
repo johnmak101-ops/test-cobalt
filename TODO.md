@@ -83,8 +83,12 @@ track-system committer: shipment created (provisional + gate reason carried thro
 - [ ] `[ops]` **Fabric-deploy verification**: dev/CI run on the SQL Server 2022 container; before prod,
   run the suites/migrations once against a real Fabric SQL DB (Entra auth in the conn string) and note
   Fabric gaps (no `sp_MSforeachtable` — test-reset + demo-wipe are dev-only paths by design).
-- [ ] `[queue]` **Corpus re-ingest**: the parsed corpus lives in the OLD Postgres `cobalt_queue`; the
-  fresh SQL DB starts empty. Re-ingest .msg corpus / re-pull Graph mail, then the deferred full re-parse.
+- [x] `[queue]` **Corpus re-ingest — DONE 2026-07-10.** The corpus lived in the pre-split `cobalt_new`
+  Postgres DB (not `cobalt_queue`); copied wholesale into SQL Server via row_to_json JSONL export +
+  kysely import: 797 messages, 398 attachments, 566 normalized parts (~163MB varbinary blobs), 2710
+  parsed evidence rows, 4 sender rules. Gotcha encoded: tedious binds an explicit `null` as nvarchar →
+  varbinary columns must be OMITTED when null. The deferred full re-parse remains optional (evidence
+  came across intact).
 - [ ] `[both]` kysely 0.29 ships a native `.top(n)` — optional mechanical sweep to replace the
   `.modifyFront(sql`top …`)` idiom.
 - [x] `[both]` docker-compose 2nd-DB provisioning — superseded: each repo's compose is now self-contained
@@ -167,21 +171,29 @@ masters.repository: `PORT_ALIASES` / `IATA_TO_UNLOCODE` / `ABBREV_OVERRIDE {HCM:
   demo dataset gated behind `SEED_DEMO`. So `MACAU FUNG TAI → MACFUN` etc. arrive as real vendor masters from
   the ERP (no hand-seeding). `master_resolution` curated facts stay seeded (prod config). consignees/brands/
   carriers not synced (no local master / no endpoint). See the `cobalt-mesh-masters-sync` memory.
-- [~] `[queue]` **LLM name→master matcher — design APPROVED 2026-07-09, DEFERRED behind the Fabric SQL migration.**
-  Design: `docs/superpowers/specs/2026-07-09-llm-master-matcher-design.md` (LLM-only resolution: delete the
-  deterministic name→code fast-path; parser soul resolves clear cases, an LLM `MasterMatcherAgent`
-  disambiguates the rest via a `POST /api/masters/candidates` retrieve-then-match endpoint; corrections feed
-  back as a retrieval boost + Iterator soul rules, never a deterministic fast-path). Phase 0 plan written:
-  `docs/superpowers/plans/2026-07-09-phase0-masters-enrichment.md`.
-  **On hold because:** Phase 0 adds `pg_trgm` + GIN trigram indexes (Postgres-only) to track-system, but the
-  Fabric SQL migration (`FABRIC-SQL-MIGRATION-PLAN.md`) drops Postgres + regenerates a fresh T-SQL schema →
-  that work would be thrown away. Resume AFTER the Fabric migration lands; re-spec the retrieval approach for
-  T-SQL (Full-Text Search / similarity UDF instead of `pg_trgm`) — see migration plan Phase 5 follow-up.
-  Original spec: `LLM-MASTER-MATCHER-SPEC.md` (superseded by the design doc).
-- [ ] **Keep party/shipper fixes deterministic.** The reliable consignee fix is the `validate.ts`
-  "consignee-resolves-to-a-vendor → replace with the customer's real consignee" rule + a masters
-  alias — NOT parser-prompt edits (the LLM ignored the explicit per-customer guidance). Route new
-  party-confusion cases to validate + masters.
+- [x] `[both]` **LLM name→master matcher — Phase 0+1 BUILT 2026-07-10** (track PR #64 + queue PR #53).
+  Design: `docs/superpowers/specs/2026-07-09-llm-master-matcher-design.md` + T-SQL re-spec
+  `docs/superpowers/specs/2026-07-10-master-matcher-tsql-respec.md` (pg_trgm → app-side trigram; the
+  masters are a few-k-row ERP mirror, so retrieval scores in TS — portable SQL Server ↔ Fabric).
+  SHIPPED: track `POST /api/masters/candidates` (trigram name + domain + region + `prior_correction`
+  boost; prior_correction excluded from the consumer resolution GET) + Mesh customer enrichment;
+  queue `MasterMatcherAgent` (`MASTER_MATCHER=stub|openpave`, soul `prompts/cobalt-master-matcher.md`,
+  candidates-only enforced in code, failure→none→review) wired into the runner before merge, and
+  **THE DELETION**: `resolveEntity` + every deterministic name→code tier + SEED name tables +
+  resolution indexes + alias-kind overlay reads + `customerResolvedFuzzy` are GONE (value-correcting
+  drops converted to pure flags per de-correction). Verified: revalidate 33→0 silent rewrites; gate
+  auto 79→102 with unknown-customer count unchanged; live openpave probe resolved MACFUN conf 0.95.
+  **Remaining phases:** Phase 2 (co-occurrence/brand signals, tuned scoring, multi-domain table),
+  Phase 3 (automatic `prior_correction` writes from review corrections + Iterator soul generalization,
+  scheduled re-match of provisional legs). Follow-ups: Resolution Rules UI still offers the retired
+  alias kinds (rows are audit history — hide/deprecate in UI); short-name forwarder trigram recall
+  ("DSV AIR AND SEA" → 0 candidates on a sparse master set) worth a track-side look.
+- [x] ~~**Keep party/shipper fixes deterministic.**~~ SUPERSEDED 2026-07-10 by the matcher decision D
+  (the deterministic consignee/alias route is deleted; party fixes now flow raw → LLM matcher →
+  review → `prior_correction` retrieval facts). Historical context: the `validate.ts`
+  "consignee-resolves-to-a-vendor" rule shipped 2026-06 when the parser ignored per-customer prompt
+  guidance. New party-confusion cases now go to the review queue → a `prior_correction` fact
+  (Settings → Resolution Rules), NOT validate.ts tables.
 
 ## Tracking & review
 - [ ] `[both]` **JOB-2026-0006 (optional, not a bug).** Stays provisional on a *genuine* two-booking-ref
