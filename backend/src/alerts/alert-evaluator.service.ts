@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common'
-import type * as schema from '../db/contracts'
+import type { Selectable } from 'kysely'
+import type { DB } from '../db/kysely/db'
 import { isFiring, crdRevisionNotReflected, type LegFacts } from './alert-rules'
 import { AlertRepository } from '../db/repositories/alert.repository'
 import { ShipmentRepository } from '../db/repositories/shipment.repository'
@@ -63,7 +64,7 @@ export class AlertEvaluatorService {
 
   /** A7: a requested cargo-ready revision the newest booking document doesn't reflect. */
   private async evaluateCrdRevisions(
-    legs: Array<typeof schema.shipments.$inferSelect>,
+    legs: Array<Selectable<DB['shipments']>>,
     now: Date,
   ): Promise<number> {
     await this.alerts.ensureRule(A7_RULE as never)
@@ -117,8 +118,8 @@ export class AlertEvaluatorService {
   }
 
   private buildFacts(
-    leg: typeof schema.shipments.$inferSelect,
-    ms: (typeof schema.shipmentMilestones.$inferSelect)[],
+    leg: Selectable<DB['shipments']>,
+    ms: Selectable<DB['shipmentMilestones']>[],
   ): LegFacts {
     const at = (t: string) => ms.find((m) => m.milestoneType === t)?.occurredAt ?? null
     return {

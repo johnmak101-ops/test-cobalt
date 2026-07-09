@@ -1,1 +1,0 @@
-ALTER TABLE "tracking"."purchase_orders" ADD COLUMN "notes" text;

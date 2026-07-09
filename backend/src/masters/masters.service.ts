@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common'
 import { MastersRepository } from '../db/repositories/masters.repository'
-import { MASTER_RESOLUTION_KIND } from '../db/schema/enums'
+import { MASTER_RESOLUTION_KIND } from '../db/enums'
 import {
   CreateForwarderDto,
   UpdateForwarderDto,

@@ -1,5 +1,5 @@
 import { IsIn, IsOptional, IsString, MinLength } from 'class-validator'
-import { MASTER_RESOLUTION_KIND } from '../db/schema/enums'
+import { MASTER_RESOLUTION_KIND } from '../db/enums'
 
 const PORT_MODES = ['sea', 'air']
 

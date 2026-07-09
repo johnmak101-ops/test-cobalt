@@ -1,5 +1,5 @@
 import { normKey, str, num } from './match-keys'
-import { QTY_UNIT } from '../db/contracts'
+import { QTY_UNIT } from '../db/enums'
 
 /** The per-PO facts pulled from parsed evidence, ready to enrich purchase_orders. The first four fields
  *  are the enrichment payload (consumed by upsertPo); the trailing flags are de-correction review-signals

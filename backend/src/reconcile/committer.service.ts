@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common'
 import { formatJobNo } from '../common/job-no'
-import type * as schema from '../db/contracts'
+import type { Insertable } from 'kysely'
+import type { DB } from '../db/kysely/db'
 import { keysOverlap, strongKeys, normKey, normBookingKey, str, num, date } from './match-keys'
 import { guardVendorForwarder, isPlatformNotForwarder, isNotificationPlatformSender } from './vendor-forwarder-guard'
 import { deriveState, classifyKindDetail, normMode } from './state'
@@ -395,7 +396,7 @@ export class CommitterService {
     if (!primaryCanon) return
     const primaryGroup = await this.masters.customerGroupOf(primaryCanon)
     const seen = new Set<string>()
-    const rows: (typeof schema.shipmentParties.$inferInsert)[] = []
+    const rows: Insertable<DB['shipmentParties']>[] = []
     for (const e of g.entities) {
       if (e.type !== 'customer_code' || !e.value) continue
       const canon = await this.masters.canonicalCode(String(e.value))
@@ -410,7 +411,7 @@ export class CommitterService {
       const cust = await this.masters.customerByCode(canon)
       rows.push({
         shipmentId,
-        role: (e.role ?? 'other') as (typeof schema.shipmentParties.$inferInsert)['role'],
+        role: (e.role ?? 'other') as Insertable<DB['shipmentParties']>['role'],
         customerId: cust?.id ?? null,
         customerCode: canon,
         customerName: cust?.name ?? null,

@@ -1,2 +1,0 @@
-ALTER TABLE "ingest"."parsed_record" ALTER COLUMN "message_id" SET NOT NULL;--> statement-breakpoint
-ALTER TABLE "ingest"."parsed_record" ADD CONSTRAINT "ingest_parsed_record_gmid_idx_uq" UNIQUE("graph_message_id","record_idx");
