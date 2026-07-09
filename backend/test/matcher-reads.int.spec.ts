@@ -58,6 +58,18 @@ describe('Matcher read-APIs (integration)', () => {
     expect((res.candidates[0] as any).matchedBy).toBe('po')
   })
 
+  it('gives each candidate ONLY its own booking’s POs (no cross-leg bleed when batching the PO lookup)', async () => {
+    // Two legs share a strong key but sit on SEPARATE bookings, each with its own PO. Each candidate must
+    // carry only that booking's PO — pins the per-booking grouping the bulk poNumbersByBooking load relies on.
+    await seedLeg({ so_no: 'SO-DUP' }, { jobNo: 'JOB-D-1', po: 'PO-AAA' })
+    await seedLeg({ so_no: 'SO-DUP' }, { jobNo: 'JOB-D-2', po: 'PO-BBB' })
+    const res = await shipments.lookupByMatchKey({ so_no: 'SO-DUP' })
+    expect(res.candidates).toHaveLength(2)
+    const posByJob = Object.fromEntries((res.candidates as any[]).map((c) => [c.jobNo, c.pos]))
+    expect(posByJob['JOB-D-1']).toEqual(['PO-AAA'])
+    expect(posByJob['JOB-D-2']).toEqual(['PO-BBB'])
+  })
+
   it('surfaces human-locked fields so the agent does not propose to overwrite them', async () => {
     const { leg } = await seedLeg({ so_no: 'SO-3' }, { jobNo: 'JOB-B-3' })
     await db

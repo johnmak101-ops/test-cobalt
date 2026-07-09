@@ -282,9 +282,13 @@ export class ShipmentsService {
     if (gk.size === 0 && !poNorm) return { query: keys, candidates: [] as unknown[] }
 
     const legs = await this.shipments.allLegs()
+    // ONE bulk load of every candidate booking's PO numbers (bookingId -> [poNumber]) instead of a per-leg
+    // query inside the loop — the old O(N) poNumbersFor round-trips were the dominant cost as shipments grow.
+    // Mirrors the committer's match loop; the PO list each leg sees is byte-identical to per-leg poNumbersFor.
+    const posByBooking = await this.bookings.poNumbersByBooking(legs.map((l) => l.bookingId))
     const candidates: unknown[] = []
     for (const leg of legs) {
-      const pos = await this.bookings.poNumbersFor(leg.bookingId)
+      const pos = posByBooking.get(leg.bookingId) ?? []
       const byKey = gk.size > 0 && keysOverlap(strongKeys(leg.matchKeys as Record<string, unknown>), gk)
       const byPo = !!poNorm && pos.map(normKey).includes(poNorm)
       if (!byKey && !byPo) continue
