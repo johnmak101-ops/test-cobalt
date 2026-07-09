@@ -2,6 +2,13 @@
 
 > **Status:** design, ready for implementation by another agent. Self-contained handoff doc.
 > **Date:** 2026-07-09. **Author context:** follows the Cobalt Mesh masters sync (PR #47).
+> **⚠ T-SQL RE-SPEC NEEDED (Fabric SQL migration landed 2026-07-10):** the platform is now SQL Server /
+> Fabric SQL on Kysely — `pg_trgm` / GIN trigram retrieval (§5 signal "name", §8 step 2) does NOT exist
+> there. Re-spec the fuzzy-name retrieval as SQL Server Full-Text Search (FREETEXTTABLE/CONTAINSTABLE),
+> a similarity UDF, or app-side candidate pre-filter over the (small, ERP-mirrored) master sets — the
+> staged JS resolution in `masters.repository.ts` (`forwarderIdByName`) is the working precedent.
+> The deterministic tiers this matcher was to replace were PORTED (not dropped) in the migration and
+> stay live until it lands.
 > **Repos:** track-system = `D:\cobalt_track_system` (this repo, deterministic truth-keeper);
 > cobalt-queue = the Agent/VM2 parser+matcher (the LLM lives here). Read `AGENTS.md` +
 > `.claude/.../memory/cobalt-master-data-governance.md`, `cobalt-mesh-masters-sync.md`,
