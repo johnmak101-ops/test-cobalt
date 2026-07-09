@@ -152,9 +152,11 @@ vmseacbfstwbp1 = **StatusTrackAgent** = the AGENT (VM2). Earlier notes had these
 - [x] `[track]` **CORS default corrected.** `config/cors.ts` had pinned the agent host; now
   `https://statustrack.cobaltknitwear.com` (the app). Same-origin makes CORS moot for the browser — set `CORS_ORIGINS`
   explicitly in prod. Agent→app POST is server-to-server Bearer (CORS doesn't apply).
-- [ ] `[ops]` **HTTPS + `NODE_ENV=production` in prod.** The session cookie is `secure` only then; over plain HTTP it
-  silently won't set (login breaks). Serve HTTPS internally (cert for statustrack.cobaltknitwear.com) + set
-  NODE_ENV=production. If HTTP-only is unavoidable, add a `COOKIE_SECURE` env valve.
+- [~] `[ops]` **HTTPS + `NODE_ENV=production` — `COOKIE_SECURE` valve DONE 2026-07-09.** The session cookie is
+  `secure` only in production; over plain HTTP it silently won't set (login breaks). Prefer HTTPS internally (cert
+  for statustrack.cobaltknitwear.com) + NODE_ENV=production. If HTTP-only is unavoidable, set `COOKIE_SECURE=false`
+  (now supported via `auth.constants.cookieSecure`; login-set + logout-clear now share attrs so a Secure cookie
+  actually clears). **Remaining = the ops decision** to serve HTTPS / set the env — no code left.
 
 ## Governance — Config-Page Access Control + Review Policy (2026-07-09, MERGED)
 Both live on main. Permission model: business tunables → EDITOR, governance → ADMIN, page-access → SUPERADMIN.

@@ -5,7 +5,7 @@ import type { Response } from 'express'
 import { AuthService } from './auth.service'
 import { Public, CurrentUser, AllowDuringMustReset } from './decorators'
 import { mapBackendRoleToUi } from '../presentation/adapters/enums'
-import { SESSION_COOKIE, sessionTtlSeconds } from './auth.constants'
+import { SESSION_COOKIE, sessionTtlSeconds, sessionCookieOptions } from './auth.constants'
 import { ChangePasswordDto } from './dto'
 
 interface SessionUser {
@@ -37,19 +37,15 @@ export class AuthController {
   ) {
     const result = await this.auth.login(body.email, body.password)
     if (!result) throw new UnauthorizedException('invalid credentials')
-    res.cookie(SESSION_COOKIE, result.token, {
-      httpOnly: true,
-      sameSite: 'lax',
-      secure: process.env.NODE_ENV === 'production',
-      maxAge: this.sessionMaxAgeMs,
-    })
+    res.cookie(SESSION_COOKIE, result.token, { ...sessionCookieOptions(), maxAge: this.sessionMaxAgeMs })
     return { user: result.user }
   }
 
   @Public()
   @Post('logout')
   logout(@Res({ passthrough: true }) res: Response) {
-    res.clearCookie(SESSION_COOKIE)
+    // clear MUST carry the same attributes as the set, or the browser won't drop a Secure/SameSite cookie.
+    res.clearCookie(SESSION_COOKIE, sessionCookieOptions())
     return { success: true }
   }
 

@@ -4,6 +4,9 @@ const envSchema = z
   .object({
     JWT_SECRET: z.string().min(32, 'JWT_SECRET must be at least 32 characters'),
     NODE_ENV: z.string().optional(),
+    // Overrides the NODE_ENV heuristic for the session cookie's Secure attribute — 'true'/'1' force it on,
+    // 'false'/'0' off (an HTTP-only intranet deploy where a Secure cookie would silently break login).
+    COOKIE_SECURE: z.string().optional(),
     SESSION_TTL_HOURS: z.coerce.number().positive().optional(),
     CORS_ORIGINS: z.string().optional(),
   })

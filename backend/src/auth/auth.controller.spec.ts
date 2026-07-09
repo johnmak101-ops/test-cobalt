@@ -49,7 +49,7 @@ describe('AuthController.logout — clear session cookie', () => {
     const { controller } = make()
     const res = { cookie: vi.fn(), clearCookie: vi.fn() }
     const out = controller.logout(res as any)
-    expect(res.clearCookie).toHaveBeenCalledWith('session')
+    expect(res.clearCookie).toHaveBeenCalledWith('session', expect.objectContaining({ httpOnly: true, sameSite: 'lax', secure: false }))
     expect(out).toEqual({ success: true })
   })
 })
