@@ -40,9 +40,11 @@ Context: see `C:\Users\John\.claude\plans\typed-wondering-moler.md` (merge refac
   everything when convenient; re-validate (`revalidate.ts`, seconds) for validator/master changes.
 
 ## Tests & infra
-- [ ] `[track]` **Integration tests** for the new paths: committer `writeIdentifiers` (history persist +
-  idempotency on re-POST), the reconcile review gate (`score.ts` end-to-end), and the masters
-  curator/approve endpoints.
+- [~] `[track]` **Integration tests — writeIdentifiers DONE 2026-07-09.** Added a committer int test
+  (identifier history: cross-type dedup + is_current + idempotency on re-apply — it had 0 int coverage). The
+  reconcile review gate is ALREADY covered (`score.spec.ts` unit + `decisions.int.spec` e2e gate). The masters
+  curator/approve endpoints have unit coverage (`masters.controller.spec` + `masters.spec`) + were manually
+  e2e-proven; a real-DB CRUD int test remains a nice-to-have, not a true gap.
 - [ ] `[queue]` **`AZURE_API_KEY` gap.** The direct-Azure parser and `benchmark.ts` (parser recall) still
   need the key; matcher + Iterator now run via OpenCode. Either set the key, or add OpenCode paths to
   the remaining azure-only dev tools.
@@ -75,8 +77,10 @@ displays** — the mock's own `extractor.ts` is reference, not used. Disposition
     auto-applies). That adaptation IS present; the new test guards it against regression.
 
 ### [track] — deferred (doing parser first)
-- [ ] `[track]` **Add SCAC** — `tracking.shipments.scac_code text` (MISSING from the real schema; rule 6).
-  Migration + zod contract + Masters/Detail UI row + carrier-master validation. (Mock UI already has it.)
+- [x] `[track]` **SCAC — ALREADY DONE (verified 2026-07-09).** `tracking.shipments.scac_code` exists (schema
+  line ~219), zod contract has `scac_code`, the committer writes it (`mapFieldsToLegColumns`), the presentation
+  mapper exposes `scacCode` (+ `shipment.mapper.spec`), and the email-timeline adapter maps it. Stored "as-is"
+  by design — no carrier-master validation (deliberate, per the schema comment). Nothing to add.
 - [ ] `[track]` **Update/identifier coverage (rule 5: "update = change in any tracked field").** Make the
   change-history + `shipment_identifiers` paths cover the FULL field set (incl. crd, atd, scac, qty_unit,
   brand, pol/pod) — not a stale subset.
@@ -192,9 +196,10 @@ The `SettingsPage` + `PresentationService` god-components were already decompose
   (`mapFieldsToLegColumns`/`deriveOriginCountry`, PR #28); `LegMatcher` (`findExistingLeg`) already pure.
   **Remaining:** extract the stateful collaborators (MasterResolver, PoQtyReconciler, MilestoneSynchronizer)
   so `apply()` reads as a thin orchestrator.
-- [~] `[track]` **PO domain — `PurchaseOrderRepository` extracted (PR #27, 2026-07-09).** The ~12 PO methods
-  moved out of `BookingRepository` into their own `PurchaseOrderRepository`. **Remaining:** confirm the FE no
-  longer calls `/api/pos` and delete the orphaned `pos` module (the `pos` vs `purchase-orders` read overlap).
+- [x] `[track]` **PO domain — RESOLVED 2026-07-09.** `PurchaseOrderRepository` extracted from `BookingRepository`
+  (PR #27). The `/pos` module is **NOT orphaned** — the FE reads via `/purchase-orders` (`UiPosController`), but
+  **cobalt-queue's matcher `src/matcher/tracking-client.ts:72` calls `GET /pos?open=true`** (verified against the
+  checked-out queue repo), so `/pos` is a LIVE cross-service agent contract. KEEP it; do not delete.
 - [x] `[track]` **Stringly-typed core — DECIDED NOT TO DO 2026-07-09.** Typed `ParsedFields` was evaluated and
   declined: the `fields` bag is a generic agent→app wire boundary read with DYNAMIC keys (`fields[k]`) in
   merge/state/the derived-milestone loop, which forces an index signature `[key:string]:unknown` — and that

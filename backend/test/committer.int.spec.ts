@@ -50,6 +50,31 @@ describe('CommitterService (integration, real Postgres)', () => {
     expect(await db.select().from(schema.shipments)).toHaveLength(1)
   })
 
+  it('persists identifier history (cross-type dedup + is_current) and is idempotent on re-apply', async () => {
+    const g = group({
+      fields: { booking_no: 'BK-1', so_no: 'SO-1' },
+      matchKeys: { booking_no: 'BK-1' },
+      identifiers: [
+        { type: 'booking_no', value: 'BK-1', isCurrent: true },
+        { type: 'so_no', value: 'BK-1' }, // SAME value as booking_no → cross-type deduped (kept under booking_no)
+        { type: 'so_no', value: 'SO-1' },
+        { type: 'container_no', value: 'CT-1' },
+      ],
+    })
+    const res = await committer.apply(g)
+    const idRows = () =>
+      db.select().from(schema.shipmentIdentifiers).where(eq(schema.shipmentIdentifiers.shipmentId, res.shipmentId))
+    const rows1 = await idRows()
+    // BK-1 kept ONLY under booking_no (so_no:BK-1 dropped by cross-type dedup); so_no:SO-1 + container_no:CT-1 survive
+    expect(rows1.map((r) => `${r.type}:${r.value}`).sort()).toEqual(['booking_no:BK-1', 'container_no:CT-1', 'so_no:SO-1'])
+    // is_current: booking_no BK-1 equals the committed column → current
+    expect(rows1.find((r) => r.type === 'booking_no')!.isCurrent).toBe(true)
+
+    // idempotent (delete+insert per shipment): re-applying the same decision never piles up duplicate rows
+    await committer.apply(g)
+    expect(await idRows()).toHaveLength(rows1.length)
+  })
+
   it('human-wins: a locked field is never overwritten by the agent', async () => {
     const a = await committer.apply(group({ fields: { so_no: 'AGENT-SO' } }))
     await db.update(schema.shipments).set({ soNo: 'HUMAN-SO' }).where(eq(schema.shipments.id, a.shipmentId))
