@@ -88,7 +88,7 @@ jobs:
         ports:
           - 1433:1433
         options: >-
-          --health-cmd "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P \"$MSSQL_SA_PASSWORD\" -Q 'SELECT 1' -C"
+          --health-cmd "grep -q 'SQL Server is now ready' /var/opt/mssql/log/errorlog"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 20
@@ -108,7 +108,9 @@ jobs:
       - name: Install (frozen lockfile)
         run: pnpm install --frozen-lockfile
       - name: Create cobalt_test database
-        run: /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "$MSSQL_SA_PASSWORD" -C -Q "CREATE DATABASE cobalt_test"
+        run: pnpm --filter backend exec node -e "const t=require('tedious');const c=new t.Connection({server:'localhost',authentication:{type:'default',options:{userName:'sa',password:process.env.MSSQL_SA_PASSWORD}},options:{port:1433,trustServerCertificate:true,encrypt:false}});c.on('connect',e=>{if(e){console.error(e);process.exit(1)}c.execSql(new t.Request('CREATE DATABASE cobalt_test',r=>{if(r)console.log('db exists or created');c.close();process.exit(0)}))});c.connect()"
+        env:
+          MSSQL_SA_PASSWORD: YourStrong!Passw0rd
       - name: Backend — typecheck
         run: pnpm --filter backend exec tsc --noEmit -p tsconfig.json
       - name: Backend — foundation + SQL Server specs
