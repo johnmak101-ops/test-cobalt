@@ -206,7 +206,7 @@ export class CommitterService {
       const bk = await this.bookings.findById(bookingId)
       jobNo = bk?.jobNo ?? '(unknown)'
       await this.applyFields(shipmentId, existing as Record<string, unknown>, legValues, skippedLockedFields, g)
-      await this.fillBooking(bookingId, { customerId, vendorId: effVendorId, forwarderId: effForwarderId, brand: str(f.brand), crd: date(f.cargo_ready_date) })
+      await this.fillBooking(bookingId, shipmentId, { customerId, vendorId: effVendorId, forwarderId: effForwarderId, brand: str(f.brand), crd: date(f.cargo_ready_date) }, g)
       // review gate + cancellation are lifecycle metadata, not lockable fields — always reflect the latest.
       // leg_status only ever moves to CANCELLED here; never resurrect a leg the reconcile path superseded.
       const metaPatch: Record<string, unknown> = {}
@@ -349,11 +349,19 @@ export class CommitterService {
     if (Object.keys(patch).length) await this.shipments.updateLeg(shipmentId, patch)
   }
 
-  private async fillBooking(bookingId: string, vals: Record<string, unknown>) {
+  private async fillBooking(bookingId: string, shipmentId: string, vals: Record<string, unknown>, g: ReconGroup) {
     const bk = await this.bookings.findById(bookingId)
     if (!bk) return
     const patch: Record<string, unknown> = {}
-    for (const [k, v] of Object.entries(vals)) if (v != null && (bk as Record<string, unknown>)[k] == null) patch[k] = v
+    for (const [k, v] of Object.entries(vals)) {
+      if (v == null || (bk as Record<string, unknown>)[k] != null) continue
+      patch[k] = v
+      // rule 5 (change-history completeness): brand is a booking-only field with no shipments column, so
+      // without an audit here a later-learned brand never appears in the shipment's change-history. crd/
+      // customer/vendor/forwarder are already covered (leg audit / resolved-link display), so only the
+      // human-readable brand is surfaced here (never a raw UUID).
+      if (k === 'brand') await this.writeAudit('shipment', shipmentId, 'update', null, toStr(v), g, 'brand')
+    }
     if (Object.keys(patch).length) await this.bookings.update(bookingId, patch)
   }
 

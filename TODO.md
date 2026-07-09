@@ -132,9 +132,12 @@ displays** — the mock's own `extractor.ts` is reference, not used. Disposition
   line ~219), zod contract has `scac_code`, the committer writes it (`mapFieldsToLegColumns`), the presentation
   mapper exposes `scacCode` (+ `shipment.mapper.spec`), and the email-timeline adapter maps it. Stored "as-is"
   by design — no carrier-master validation (deliberate, per the schema comment). Nothing to add.
-- [ ] `[track]` **Update/identifier coverage (rule 5: "update = change in any tracked field").** Make the
-  change-history + `shipment_identifiers` paths cover the FULL field set (incl. crd, atd, scac, qty_unit,
-  brand, pol/pod) — not a stale subset.
+- [~] `[track]` **Update/identifier coverage (rule 5: "update = change in any tracked field").** Audit
+  already covers all LEG fields (`applyFields` diffs every column — atd/scac/qty_unit/cargoReadyDate/pol/pod
+  included). **DONE 2026-07-09:** `fillBooking` now audits **brand** (a booking-only field with no leg
+  column → previously invisible in change-history). Remaining is genuinely small/ambiguous: customer/vendor/
+  forwarder booking-link fills are shown as resolved links (auditing raw UUIDs adds noise) and
+  `shipment_identifiers` is identity-only by design — confirm whether any real gap is left before more work.
 - [x] `[track]` **`reconcile/merge.ts` FIELD_CLASS coverage — DONE 2026-07-09.** Added the parser's "extract all
   info" fields so the reconcile-from-evidence path (`POST /reconcile`) stops dropping them: `ata`(schedule);
   `pol`/`vessel_name`/`voyage_no`/`flight_no`/`mawb`/`scac_code`/`brand`/`qty_unit`/`gross_weight`/`measurement`(text);

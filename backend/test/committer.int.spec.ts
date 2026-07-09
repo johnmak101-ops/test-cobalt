@@ -102,6 +102,21 @@ describe('CommitterService (integration, real Postgres)', () => {
     expect(audit.length).toBeGreaterThan(0)
     expect(audit.some((a) => a.changeType === 'create' && a.sourceType === 'agent')).toBe(true)
   })
+
+  it('rule 5: a later-learned booking brand lands in the change-history (booking-only field, no leg column)', async () => {
+    // create with no brand, then a later email states one → fillBooking fills booking.brand. Without an
+    // audit there, brand (which has no shipments column) would never appear in the change-history.
+    const a = await committer.apply(group({ fields: { so_no: 'SO-BR' }, matchKeys: { so_no: 'SO-BR' } }))
+    const b = await committer.apply(group({ fields: { so_no: 'SO-BR', brand: 'FENIX' }, matchKeys: { so_no: 'SO-BR' } }))
+    expect(b.shipmentId).toBe(a.shipmentId) // same leg (amend)
+    const brandRow = (await db.select().from(schema.changeLog).where(eq(schema.changeLog.entityId, a.shipmentId)))
+      .find((r) => r.field === 'brand')
+    expect(brandRow?.newValue).toBe('FENIX')
+    expect(brandRow?.changeType).toBe('update')
+    // and it actually landed on the booking
+    const [bk] = await db.select().from(schema.bookings).where(eq(schema.bookings.id, a.bookingId))
+    expect(bk.brand).toBe('FENIX')
+  })
 })
 
 describe('CommitterService — per-PO enrichment from parsed evidence (integration)', () => {
