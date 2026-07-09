@@ -257,6 +257,13 @@ The `SettingsPage` + `PresentationService` god-components were already decompose
   updates within 1.x. Bumped to `^1.17.0` (resolved 1.21.0) for freshness; frontend tsc + build + 198 tests green.
 
 ## Cross-system pointers (tracked in memory/docs — recorded here so they're not lost)
+- [ ] `[queue]` **Soul/skill iteration is shadowed (audit 2026-07-09).** Iterating the parser soul feels inert because
+  (1) `validate.ts` + `critic/merge.ts` re-make ~19 reading judgments the prompt already states (frozen-code shadow),
+  and (2) the Iterator's fast path only produces tabular SKILLS while the SOUL path is manual/unscheduled
+  (`pnpm cli batch:iterate`, ≥10-gated, needs a warm openpave teacher — else it just memorizes pairs). 3 moves:
+  unblock the loop (schedule + warm teacher + lower gates), relax the frozen backstops, collapse duplicated party
+  facts (`PLATFORM_NOT_FORWARDER` ×3, SCAC map redundant w/ carrier master) → master-data. Full map in the
+  `cobalt-queue-soul-iteration-map` memory. NEEDS a dedicated cobalt-queue session w/ its benchmark — not a blind edit.
 - [ ] `[queue]` **Matcher source-fixes** — per-PO qty broadcast, thread-unstable identity over-split, CVP
   `LPO→booking_no` phantoms. Detail in the `matcher-source-fixes` memory; track-system only symptom-guards these.
 - [ ] `[both]` **Booking-ingestion gap** — the tracking mailbox only sees To/Cc'd/forwarded mail, so
