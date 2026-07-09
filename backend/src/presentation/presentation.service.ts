@@ -34,6 +34,25 @@ interface MasterMaps {
   ports: Map<string, PortRow>
 }
 
+/** Pure per-shipment summary (id + PO JSON + route + customer) from preloaded rows + master maps — the
+ *  batch-friendly core of the old per-alert shipmentSummary(). No I/O. */
+export function buildShipmentSummary(
+  leg: { id: string; bookingId: string; mode: string | null; polId: string | null; podId: string | null },
+  booking: { customerId: string | null } | null,
+  poNumbers: string[],
+  maps: MasterMaps,
+) {
+  const customer = booking?.customerId ? maps.customers.get(booking.customerId) : undefined
+  const pol = leg.polId ? maps.ports.get(leg.polId) : undefined
+  const pod = leg.podId ? maps.ports.get(leg.podId) : undefined
+  return {
+    id: leg.id,
+    poNumbers: poNumbersJson(poNumbers),
+    route: deriveRoute(portLabel(leg.mode, pol?.unlocode, pol?.iata), portLabel(leg.mode, pod?.unlocode, pod?.iata)),
+    customer: customer ? { name: customer.name } : null,
+  }
+}
+
 const AT_RISK = new Set(['AT_RISK', 'DELAYED'])
 // Master data is read-mostly reference data; a master edit becomes visible within this window. Cache tuned
 // to sit at/above the 30s UI poll so repeated renders share one built maps object instead of rebuilding 24k
@@ -116,22 +135,21 @@ export class PresentationService {
     }
   }
 
-  private async shipmentSummary(shipmentId: string, maps: MasterMaps) {
-    const leg = await this.shipmentRepo.findById(shipmentId)
-    if (!leg) return null
-    const [booking, poNumbers] = await Promise.all([
-      this.bookingRepo.findById(leg.bookingId),
-      this.bookingRepo.poNumbersFor(leg.bookingId),
+  /** Summaries for many shipmentIds in 3 bulk queries (legs + their bookings + PO numbers) instead of 3 per
+   *  id — the old shipmentSummary() ran per alert. Returns id -> summary; a missing id → caller uses null. */
+  private async shipmentSummariesByIds(shipmentIds: string[], maps: MasterMaps) {
+    const ids = [...new Set(shipmentIds)]
+    const legs = await this.shipmentRepo.findByIds(ids)
+    const bookingIds = [...legs.values()].map((l) => l.bookingId)
+    const [bookingsById, posByBooking] = await Promise.all([
+      this.bookingRepo.findByIds(bookingIds),
+      this.bookingRepo.poNumbersByBooking(bookingIds),
     ])
-    const customer = booking?.customerId ? maps.customers.get(booking.customerId) : undefined
-    const pol = leg.polId ? maps.ports.get(leg.polId) : undefined
-    const pod = leg.podId ? maps.ports.get(leg.podId) : undefined
-    return {
-      id: leg.id,
-      poNumbers: poNumbersJson(poNumbers),
-      route: deriveRoute(portLabel(leg.mode, pol?.unlocode, pol?.iata), portLabel(leg.mode, pod?.unlocode, pod?.iata)),
-      customer: customer ? { name: customer.name } : null,
+    const out = new Map<string, ReturnType<typeof buildShipmentSummary>>()
+    for (const [id, leg] of legs) {
+      out.set(id, buildShipmentSummary(leg, bookingsById.get(leg.bookingId) ?? null, posByBooking.get(leg.bookingId) ?? [], maps))
     }
+    return out
   }
 
   // ---- shipments ----
@@ -301,11 +319,11 @@ export class PresentationService {
 
   async alerts(status?: string) {
     const [rows, maps] = await Promise.all([this.alertRepo.list(status), this.masterMaps()])
-    const out: ReturnType<typeof toUiAlert>[] = []
-    for (const a of rows) {
-      const shipment = a.shipmentId ? await this.shipmentSummary(a.shipmentId, maps) : null
-      out.push(toUiAlert({ alert: a, shipment }))
-    }
+    const summaries = await this.shipmentSummariesByIds(
+      rows.map((a) => a.shipmentId).filter((x): x is string => !!x),
+      maps,
+    )
+    const out = rows.map((a) => toUiAlert({ alert: a, shipment: a.shipmentId ? summaries.get(a.shipmentId) ?? null : null }))
     return { alerts: out }
   }
 
@@ -357,11 +375,14 @@ export class PresentationService {
       newEmails: pendingReview, // emails awaiting human review — the actionable "new" count
     }
 
-    const recentAlerts: ReturnType<typeof toUiAlert>[] = []
-    for (const a of activeAlerts.slice(0, 5)) {
-      const shipment = a.shipmentId ? await this.shipmentSummary(a.shipmentId, maps) : null
-      recentAlerts.push(toUiAlert({ alert: a, shipment }))
-    }
+    const recentAlertRows = activeAlerts.slice(0, 5)
+    const recentSummaries = await this.shipmentSummariesByIds(
+      recentAlertRows.map((a) => a.shipmentId).filter((x): x is string => !!x),
+      maps,
+    )
+    const recentAlerts = recentAlertRows.map((a) =>
+      toUiAlert({ alert: a, shipment: a.shipmentId ? recentSummaries.get(a.shipmentId) ?? null : null }),
+    )
 
     const bookingsById = new Map<string, BookingRow>(bookingRows.map((b: BookingRow) => [b.id, b]))
     const recentLegs = [...legs]

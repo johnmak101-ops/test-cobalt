@@ -44,6 +44,7 @@ const build = () => {
   const shipmentRepo = {
     activeLegs: async () => legs,
     findById: async (id: string) => legs.find((l) => l.id === id) ?? null,
+    findByIds: async (ids: string[]) => new Map(legs.filter((l) => ids.includes(l.id)).map((l) => [l.id, l])),
     milestonesFor: async () => [],
     posFor: async () => [],
     linkedPosForBooking: async (id: string) =>
@@ -55,7 +56,9 @@ const build = () => {
   const bookingRepo = {
     listOrdered: async () => bookings,
     findById: async (id: string) => bookings.find((b) => b.id === id) ?? null,
+    findByIds: async (ids: string[]) => new Map(bookings.filter((b) => ids.includes(b.id)).map((b) => [b.id, b])),
     poNumbersFor: async (id: string) => (id === 'b1' ? ['PO-1'] : []),
+    poNumbersByBooking: async (ids: string[]) => new Map(ids.filter((id) => id === 'b1').map((id) => [id, ['PO-1']])),
   }
   const mastersRepo = {
     listCustomers: async () => customers,

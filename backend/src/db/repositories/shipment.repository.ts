@@ -107,6 +107,14 @@ export class ShipmentRepository {
     const [s] = await this.db.select().from(schema.shipments).where(eq(schema.shipments.id, id))
     return s ?? null
   }
+  /** Fetch many legs in ONE query (id -> leg) — replaces per-item findById in read loops (alert summaries). */
+  async findByIds(ids: string[]): Promise<Map<string, typeof schema.shipments.$inferSelect>> {
+    const map = new Map<string, typeof schema.shipments.$inferSelect>()
+    if (!ids.length) return map
+    const rows = await this.db.select().from(schema.shipments).where(inArray(schema.shipments.id, ids))
+    for (const s of rows) map.set(s.id, s)
+    return map
+  }
   async insertLeg(values: typeof schema.shipments.$inferInsert) {
     const [s] = await this.db.insert(schema.shipments).values(values).returning()
     return s
