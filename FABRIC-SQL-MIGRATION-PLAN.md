@@ -42,15 +42,20 @@ Azure namespace is available — RabbitMQ runs locally in Docker with the same D
   CHECK, one window-fn query, one transaction) to Kysely on Fabric SQL; run that slice of tests green.
 
 ### Spike 2 — RabbitMQ (replaces pg-boss, which is Postgres-only)
-- **RabbitMQ** (self-hosted message broker; runs in Docker locally, managed offering / Service Bus in prod
-later) replaces pg-boss. Native dead-letter queues, retries (via TTL + DLX), and scheduling — the same
-properties pg-boss provided, without a Postgres dependency and without requiring an Azure namespace.
-- **Leverage the seam:** cobalt-queue already wraps the queue behind a `PgBoss`-typed boundary
+- **RabbitMQ** (self-hosted AMQP broker; Docker locally, self-hosted on the AliCloud VMs / a managed RabbitMQ
+  in prod) replaces pg-boss — no Postgres and no Azure dependency; the app already runs on AliCloud, so a
+  co-located broker fits. **Client: `rascal`** (config-driven wrapper over `amqplib` giving retry /
+  dead-letter / backoff / connection recovery declaratively — closest to pg-boss's semantics) or plain
+  `amqplib` + `amqp-connection-manager`.
+- **Retry/DLQ (the one gap):** RabbitMQ has no built-in retry-count/backoff — use the **DLX + TTL retry-queue**
+  pattern (or rascal's retry config); dead-letter via a **Dead-Letter Exchange**; track attempts via the
+  `x-death` header (cobalt-queue also keeps its own visible attempt counter).
+- **Leverage the seam:** cobalt-queue wraps the queue behind a `PgBoss`-typed boundary
   (`src/consumer/worker.ts` `registerWorker(boss)`, `src/consumer/index.ts`) — swap **only the adapter** there
-  (map `boss.work` → AMQP consumer `consume`/`ack`/`nack`; DLQ via a dead-letter exchange + retry via TTL),
-  not the business logic.
-- **Spike:** prove enqueue → consume(batch) → ack / nack → dead-letter via `amqplib`, wired into the worker
-  seam; confirm the config knobs (prefetch, retry TTL, max-delivery before DLQ) map to RabbitMQ settings.
+  (`boss.work` → `channel.consume` + `prefetch(n)`; ack/nack; DLX). pg-boss's batch handler → `prefetch(n)`
+  concurrency (the parser processes emails individually). Business logic untouched.
+- **Spike:** prove publish → consume(prefetch) → ack / nack→retry-queue(TTL) → dead-letter-exchange, wired into
+  the worker seam.
 
 **Phase 0 exit:** both spikes green on the local SQL Server 2022 container + a local RabbitMQ container; a
 T-SQL migration runner + a shared Kysely `db` provider pattern established. (Fabric SQL + prod broker are
@@ -121,10 +126,12 @@ Server / Fabric — that is the objective gate, and dev-stage means there's no d
 
 1. **ORM: Kysely for BOTH apps** — SQL-first, MSSQL via `tedious`; both codebases are raw-SQL/JSON-forward, and
    one shared Fabric DB argues for one stack. (Prisma rejected: complex/raw SQL → `$queryRaw` + a Rust engine.)
-2. **Queue: RabbitMQ** — replaces pg-boss, behind cobalt-queue's existing worker seam; native DLQ (dead-letter
-   exchange) + retries (TTL). Runs in Docker locally; a managed offering / Azure Service Bus is the prod option.
-   (Original choice was Azure Service Bus; switched because no Azure namespace is available. SQL-table queue was
-   the one-DB alternative; RabbitMQ chosen for being a dedicated, mature broker over a hand-rolled SQL queue.)
+2. **Queue: RabbitMQ** — replaces pg-boss, behind cobalt-queue's existing worker seam; DLQ via a dead-letter
+   exchange + retries via TTL (client: `rascal`, a config-driven `amqplib` wrapper, or plain `amqplib` +
+   `amqp-connection-manager`). Docker locally; self-hosted on the AliCloud VMs / a managed RabbitMQ in prod —
+   no Postgres and no Azure dependency (the app runs on AliCloud, so a co-located broker fits).
+   (Rejected: Azure Service Bus — needs an Azure namespace + cross-cloud calls from AliCloud; a hand-rolled
+   SQL-table queue — more code/risk than a dedicated mature broker.)
 3. **Test engine: local SQL Server 2022 container** for dev + CI; Fabric SQL is the deploy target. **Running**
    (`mssql-2022` container on `localhost:1433`).
 
