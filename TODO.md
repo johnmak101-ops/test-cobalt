@@ -4,6 +4,74 @@ Tags: `[queue]` = cobalt-queue · `[track]` = cobalt_track_system.
 Context: see `C:\Users\John\.claude\plans\typed-wondering-moler.md` (merge refactor plan) and the
 `merge-refactor-progress` memory. Checkpoints 1–2 + Phase 6 + Iterator→OpenCode are shipped.
 
+## Fabric SQL migration (Postgres → Microsoft Fabric SQL / Kysely) — ACTIVE, 2026-07-09
+Plan: `FABRIC-SQL-MIGRATION-PLAN.md`. ADR: `ADR-database-platform-fabric-vs-postgres.md`.
+Locked: Kysely (both apps) + RabbitMQ (replaces pg-boss) + local SQL Server 2022 (dev/CI; Fabric = deploy).
+The track-system \`0000_init\` T-SQL schema (29 tables) lives in \`backend/kysely-migrations/\`; codegen
+Kysely types in \`backend/src/db/kysely/db.generated.ts\`; SQL Server int specs gated on \`FABRIC_FOUNDATION=1\`.
+
+### Phase 2 — track-system data layer → SQL ✅ ALL 13 REPOS PORTED (2026-07-09)
+Every Drizzle repository now has a Kysely/SQL Server twin (\`*.repository.kysely.ts\`) built alongside the
+original, each with a SQL Server int spec, all green on the local \`mssql-2022\` container + in CI.
+| repo | PR | tests | notes |
+|---|---|---|---|
+| foundation (0000_init T-SQL + codegen + CI) | #49 | 30 | 29-table schema, mssql-2022 CI job |
+| masters | #50 | — | data-access + exact-match resolution |
+| settings/users/audit (leaf) | #51 | 4 | leaf-repos.kysely.int.spec |
+| ingest | #52 | 2 | upsert-from-decision, transactional |
+| evidence | #53 | 4 | ingest joins |
+| purchase-order | #54 | 5 | listPos/poDetail/upsertPo/CRUD/links |
+| alert | #55 | 8 | dedup_key unique (single-NULL safe — always set) |
+| field-lock | #56 | 5 | upsert lock (human-wins) |
+| review-email | #57 | 5 | queue reads + review-state writes |
+| booking | #58 | 8 | nextJobSeq (T-SQL trailing-digit extract) |
+| email | #59 | 10 | TOP via modifyFront, thread GROUP BY all cols |
+| shipment | #60 | 10 | documents STRING_AGG-over-DISTINCT, linkDocument tx |
+
+**Full SQL Server suite on main: 12 files, 97 tests green.** PR #60 (shipment) is the final port —
+verify it's MERGED before starting Phase 2-swap (check \`git log\` / \`gh pr view 60\`).
+
+**Key SQL Server gotchas the ports encode (apply to the swap + Phase 3):**
+- Kysely 0.29's \`MssqlDialect\` emits \`.limit(n)\` VERBATIM as \`limit\` (Postgres syntax) → use
+  \`.modifyFront(sql\\`top ${sql.lit(n)}\\`)\` for row caps; \`... limit 1\` in raw subqueries → \`select top 1 …\`.
+- SQL Server \`STRING_AGG\` has NO \`DISTINCT\` → aggregate over a \`SELECT DISTINCT\` subquery.
+- \`order by … nulls last\` → \`case when x is null then 1 else 0 end asc\` + \`expr desc\` (NULLs sort first in ASC).
+- \`GROUP BY\` must list EVERY non-aggregated selected column (no Postgres functional-dependency shortcut).
+- \`onConflictDoNothing\`/\`onConflictDoUpdate\` → check-then-insert/update catching the unique violation
+  (\`dedup_key\` is always set by the evaluator → the single-NULL unique gotcha doesn't bite).
+- \`returning\` → \`.output('inserted.col')\` / \`.outputAll('inserted')\` / \`outputAll('deleted')\`.
+- \`count(*)::int\` → \`count(*)\` cast to number client-side (codegen types it as string).
+- JSON \`nvarchar(max)\` columns (\`match_keys\`, \`country_thresholds\`, \`fields\`, \`match_keys\`) stringified on
+  insert; \`ParseJSONResultsPlugin\` parses them back to objects on read — DON'T assert they're strings in tests.
+- \`bit\` columns (\`is_current\`, \`is_primary\`, \`enabled\`, \`locked\`) come back as JS \`boolean\` (not 0/1).
+- SQL Server returns \`uniqueidentifier\`s UPPERCASE — compare UUIDs case-insensitively (`.toLowerCase())`).
+- \`entity_id\`/FKs are \`uniqueidentifier\` — tests must pass real UUIDs (use \`randomUUID()\`), not string literals.
+- Cross-test data leaks (one shared DB per file) — assert on SPECIFIC seeded rows, not global counts/positions.
+- Kysely 0.29 doesn't export \`Insertable\` — replace* methods take \`Record<string,unknown>[]\` cast \`as never\`.
+
+### NEXT — Phase 2-swap: wire the Kysely ports into the module (the cutover)
+The ports are NOT yet wired — \`RepositoriesModule\` still injects the Drizzle originals. The swap:
+1. Add a Kysely \`db\` provider (\`createKysely<DB>(connStr)\`) analogous to \`drizzle.provider.ts\`, config from env
+   (\`SQL_SERVER_URL\` / the existing mssql conn-string shape in \`mssql-dialect.ts\`).
+2. Replace each repository's \`@Inject(DRIZZLE)\` class with its \`*.kysely.ts\` twin in \`repositories.module.ts\`
+   (one repo at a time, keeping the Postgres suite green is NOT required — pre-production, no live data).
+3. **The acceptance gate = the full Postgres test suite passes against the Kysely-backed repos on SQL Server.**
+   The existing \`*.int.spec.ts\` (service-level) tests are the net; the kysely int specs guard the data layer.
+   Re-point \`setup-db.ts\` at the mssql container (or run both engines in CI during the swap).
+4. Audit call-sites for Drizzle-only ergonomics the ports changed: e.g. \`updateLeg\`/\`update\`/\`dismissDocument\`
+   returned thenable Drizzle queries (callers \`await\` without reading the row) — the Kysely ports return the
+   row/\`void\` (verified callers don't read them). \`insertLeg\`/\`create\` return the row (committer uses \`leg\`).
+5. Retire the Drizzle schema/migrations/provider once the swap is green (\`drizzle.provider.ts\`,
+   \`db/schema/*\`, the Postgres \`backend/drizzle\` migrations). KEEP the kysely int specs.
+6. Point dev/docker-compose + \`AGENTS.md\` at the SQL engine (Phase 4 of the plan).
+
+### Phase 3 — cobalt-queue data layer + RabbitMQ (the OTHER app; unstarted)
+Repo: \`D:/cobalt-queue\`. 8-table schema (queue/evidence) → T-SQL on Kysely; replace pg-boss with RabbitMQ
+behind the existing worker seam (\`src/consumer/worker.ts\` \`registerWorker(boss)\`). A RabbitBoss adapter spike
+is already green behind the worker seam (PR #51 there: \`RABBITMQ_SPIKE=1\`-gated). Green gate = cobalt-queue's
+suite passes on SQL Server. See the plan's Phase 3 + the \`LLM-MASTER-MATCHER-SPEC.md\` §5/§8 follow-up.
+
+
 ## De-correction — dissolve code-side model-corrections so the soul/skills can iterate (2026-07-09)
 PRINCIPLE: track-system code that SILENTLY corrects the LLM/matcher masks the error → no human correction →
 the Iterator gets no signal → the soul never learns. **A fix is a freeze.** The move is "stop silently fixing,
