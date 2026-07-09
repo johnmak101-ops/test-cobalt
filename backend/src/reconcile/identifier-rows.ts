@@ -3,10 +3,11 @@
  * rules (cross-type dedup, co-current is_current) are unit-tested in isolation. No I/O — the committer's thin
  * writeIdentifiers shell reads the leg, calls these, and persists the rows.
  */
-import type * as schema from '../db/contracts'
+import type { Insertable } from 'kysely'
+import type { DB } from '../db/kysely/db'
 import { normKey } from './match-keys'
 
-type IdentifierRow = typeof schema.shipmentIdentifiers.$inferInsert
+type IdentifierRow = Insertable<DB['shipmentIdentifiers']>
 type Identifier = {
   type: string
   value: string

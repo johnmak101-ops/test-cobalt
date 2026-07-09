@@ -3,12 +3,13 @@
  * rules (email-type mapping, field-derived milestones, the SAILED etd-fallback, graph-id dedup) are unit-tested
  * in isolation. No I/O — the committer's thin syncMilestones shell persists the returned rows.
  */
-import type * as schema from '../db/contracts'
+import type { Insertable } from 'kysely'
+import type { DB } from '../db/kysely/db'
 import { MILESTONE_OF, DERIVED_MILESTONE_OF } from './state'
 import { date } from './match-keys'
 
-type MilestoneRow = typeof schema.shipmentMilestones.$inferInsert
-type EmailRow = typeof schema.shipmentEmails.$inferInsert
+type MilestoneRow = Insertable<DB['shipmentMilestones']>
+type EmailRow = Insertable<DB['shipmentEmails']>
 type SourceEvent = { emailType: string; receivedAt: string; graphId?: string | null }
 
 /** Milestone rows for a leg: one per source-email type (dated by receivedAt), plus field-derived milestones
