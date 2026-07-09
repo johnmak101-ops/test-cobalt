@@ -5,6 +5,7 @@ import { keysOverlap, strongKeys, normKey, str, num, date } from './match-keys'
 import { guardVendorForwarder, isPlatformNotForwarder, isNotificationPlatformSender } from './vendor-forwarder-guard'
 import { deriveState, classifyKind, normMode } from './state'
 import { deriveMilestoneRows, deriveEmailRows } from './milestone-rows'
+import { currentIdentifierValues, deriveIdentifierRows } from './identifier-rows'
 import { MastersRepository } from '../db/repositories/masters.repository'
 import { BookingRepository } from '../db/repositories/booking.repository'
 import { PurchaseOrderRepository } from '../db/repositories/purchase-order.repository'
@@ -317,53 +318,7 @@ export class CommitterService {
     if (!g.identifiers?.length) return
     const leg = await this.shipments.findById(shipmentId)
     if (!leg) return
-    const COL = { so_no: 'soNo', booking_no: 'bookingNo', hbl_awb_fcr_no: 'hblAwbFcrNo', mbl: 'mbl', container_no: 'containerNo' } as const
-    const current: Record<string, string> = {}
-    for (const [type, col] of Object.entries(COL)) {
-      const v = (leg as Record<string, unknown>)[col]
-      if (v != null && v !== '') current[type] = alnum(v)
-    }
-    // 7b: the SAME value can arrive under several identity types (a booking number echoed as an SO number,
-    // an MBL echoed as an HBL). In the WRITTEN history keep each alnum-equal value only under its highest-
-    // priority type (booking_no > mbl > hbl_awb_fcr_no > so_no), so the identifier table isn't polluted with
-    // redundant cross-type rows. match_keys/strongKeys stay type-scoped and are untouched by this.
-    const TYPE_PRIORITY: Record<string, number> = { booking_no: 0, mbl: 1, hbl_awb_fcr_no: 2, so_no: 3 }
-    const bestTypeForValue = new Map<string, string>()
-    for (const id of g.identifiers) {
-      if (!id.value || !(id.type in COL)) continue
-      const rank = TYPE_PRIORITY[id.type]
-      if (rank === undefined) continue // container_no etc. — not cross-type deduped
-      const av = alnum(id.value)
-      const cur = bestTypeForValue.get(av)
-      if (cur === undefined || rank < (TYPE_PRIORITY[cur] ?? Infinity)) bestTypeForValue.set(av, id.type)
-    }
-    const seen = new Set<string>()
-    const rows = g.identifiers
-      .filter((id) => id.value && id.type in COL)
-      .filter((id) => {
-        // drop a prioritizable value that is being kept under a higher-priority type
-        if (id.type in TYPE_PRIORITY) {
-          const winner = bestTypeForValue.get(alnum(id.value))
-          if (winner && winner !== id.type) return false
-        }
-        return true
-      })
-      .filter((id) => {
-        const k = `${id.type}:${id.value}`
-        if (seen.has(k)) return false
-        seen.add(k)
-        return true
-      })
-      .map((id) => ({
-        shipmentId,
-        type: id.type as (typeof schema.shipmentIdentifiers.$inferInsert)['type'],
-        value: id.value,
-        docType: id.docType ?? null,
-        rank: id.rank ?? null,
-        isCurrent: current[id.type] === alnum(id.value) || id.isCurrent === true,
-        sourceEmailId: id.sourceEmailId ?? null,
-        observedAt: id.observedAt ? new Date(id.observedAt) : null,
-      }))
+    const rows = deriveIdentifierRows(shipmentId, g.identifiers, currentIdentifierValues(leg as Record<string, unknown>))
     await this.shipments.replaceIdentifiers(shipmentId, rows)
   }
 
@@ -484,7 +439,6 @@ const reviewReasonsFor = (g: ReconGroup): string[] | null =>
 
 const toStr = (v: unknown): string | null => (v == null ? null : v instanceof Date ? v.toISOString() : String(v))
 const same = (a: unknown, b: unknown) => toStr(a) === toStr(b)
-const alnum = (v: unknown): string => String(v ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '')
 const setsOverlap = (a: Set<string>, b: Set<string>) => {
   for (const x of a) if (b.has(x)) return true
   return false
