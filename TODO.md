@@ -40,11 +40,11 @@ Context: see `C:\Users\John\.claude\plans\typed-wondering-moler.md` (merge refac
   everything when convenient; re-validate (`revalidate.ts`, seconds) for validator/master changes.
 
 ## Tests & infra
-- [~] `[track]` **Integration tests — writeIdentifiers DONE 2026-07-09.** Added a committer int test
-  (identifier history: cross-type dedup + is_current + idempotency on re-apply — it had 0 int coverage). The
-  reconcile review gate is ALREADY covered (`score.spec.ts` unit + `decisions.int.spec` e2e gate). The masters
-  curator/approve endpoints have unit coverage (`masters.controller.spec` + `masters.spec`) + were manually
-  e2e-proven; a real-DB CRUD int test remains a nice-to-have, not a true gap.
+- [x] `[track]` **Integration tests — DONE 2026-07-09.** writeIdentifiers: committer int test (identifier
+  history — cross-type dedup + is_current + idempotency; was 0 int coverage). Reconcile review gate: already
+  covered (`score.spec.ts` unit + `decisions.int.spec` e2e). Masters curator/approve: added
+  `masters-resolution.int.spec` (create → active-serve/consumer-reads → deactivate/consumer-hides → manage-still-
+  shows; single-active invariant; reactivate).
 - [ ] `[queue]` **`AZURE_API_KEY` gap.** The direct-Azure parser and `benchmark.ts` (parser recall) still
   need the key; matcher + Iterator now run via OpenCode. Either set the key, or add OpenCode paths to
   the remaining azure-only dev tools.
