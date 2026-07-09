@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common'
-import { and, desc, eq } from 'drizzle-orm'
+import { and, desc, eq, ne } from 'drizzle-orm'
 import * as schema from '../contracts'
 import { DRIZZLE, type DrizzleDB } from '../drizzle.provider'
 
@@ -14,12 +14,20 @@ export class AuditRepository {
     return this.db.insert(schema.changeLog).values(row)
   }
 
-  /** Change-log rows for one entity, newest first (by monotonic seq). */
+  /** Change-log rows for one entity, newest first (by monotonic seq). Excludes de-correction 'shadow'
+   *  measurement rows — they record what code WOULD have corrected, not a real change, so they never
+   *  belong in the user-facing change-history / email timeline. */
   listForEntity(entityType: AuditEntity, entityId: string) {
     return this.db
       .select()
       .from(schema.changeLog)
-      .where(and(eq(schema.changeLog.entityType, entityType), eq(schema.changeLog.entityId, entityId)))
+      .where(
+        and(
+          eq(schema.changeLog.entityType, entityType),
+          eq(schema.changeLog.entityId, entityId),
+          ne(schema.changeLog.changeType, 'shadow'),
+        ),
+      )
       .orderBy(desc(schema.changeLog.seq))
   }
 }

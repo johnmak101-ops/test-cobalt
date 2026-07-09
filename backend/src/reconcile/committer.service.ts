@@ -1,9 +1,9 @@
 import { Injectable } from '@nestjs/common'
 import { formatJobNo } from '../common/job-no'
 import type * as schema from '../db/contracts'
-import { keysOverlap, strongKeys, normKey, str, num, date } from './match-keys'
+import { keysOverlap, strongKeys, normKey, normBookingKey, str, num, date } from './match-keys'
 import { guardVendorForwarder, isPlatformNotForwarder, isNotificationPlatformSender } from './vendor-forwarder-guard'
-import { deriveState, classifyKind, normMode } from './state'
+import { deriveState, classifyKindDetail, normMode } from './state'
 import { deriveMilestoneRows, deriveEmailRows } from './milestone-rows'
 import { currentIdentifierValues, deriveIdentifierRows } from './identifier-rows'
 import { MastersRepository } from '../db/repositories/masters.repository'
@@ -13,7 +13,7 @@ import { ShipmentRepository } from '../db/repositories/shipment.repository'
 import { FieldLockRepository } from '../db/repositories/field-lock.repository'
 import { AuditRepository } from '../db/repositories/audit.repository'
 import { EvidenceRepository } from '../db/repositories/evidence.repository'
-import { resolvePoEnrichment } from './po-enrichment'
+import { resolvePoEnrichment, unattributedBrandStyle } from './po-enrichment'
 import { poQtyIssue, describePoQtyIssue } from './po-qty-consistency'
 import { mapFieldsToLegColumns } from './committer-leg-mapping'
 
@@ -99,10 +99,26 @@ export class CommitterService {
     const f = g.fields
     const gk = strongKeys(g.matchKeys)
 
+    // de-correction (c) — SOUL-FIRST shadow: the classifiers below still fire exactly as today (they are
+    // load-bearing), but each model-correction is recorded as a 'shadow' audit row so the gap is measurable.
+    // The rows are flushed after the leg id is known and never surface in the user-facing history.
+    const shadows: { field: string; oldValue: string | null; newValue: string | null; note: string }[] = []
+
+    // c3: normBookingKey folds a revision suffix ('BX845666 V3' → 'BX845666') so a re-issue amends its base.
+    // Kept byte-identical to the matcher's mirror (parity mandated) — only shadow-measured here, never changed.
+    const bnRaw = str(g.matchKeys?.booking_no) ?? str(f.booking_no)
+    if (bnRaw && normBookingKey(bnRaw) !== normKey(bnRaw))
+      shadows.push({ field: 'booking_no', oldValue: bnRaw, newValue: normBookingKey(bnRaw), note: 'normBookingKey revision fold' })
+
     // A notification platform (TradeLinkOne CVP portal) is never the forwarder — scrub before resolution
     // so its synced forwarder master row (code 603) can't link. Parser-side validate 4c is the first line;
     // this covers evidence parsed before that rule (and any other producer).
-    if (isPlatformNotForwarder(str(f.forwarder_name))) f.forwarder_name = null
+    // c1: keep the scrub (behavior unchanged); shadow-record what it removed.
+    const scrubbedForwarder = isPlatformNotForwarder(str(f.forwarder_name)) ? str(f.forwarder_name) : null
+    if (scrubbedForwarder) {
+      shadows.push({ field: 'forwarder_name', oldValue: scrubbedForwarder, newValue: null, note: 'platform-not-forwarder scrub' })
+      f.forwarder_name = null
+    }
 
     const [customerId, vendorId, forwarderId, pol, podId] = await Promise.all([
       this.resolveCustomer(f.customer_code),
@@ -143,7 +159,12 @@ export class CommitterService {
     // fromPlatform: the rebuild path pre-computes it (senders in hand); on the agent path the DTO carries no
     // sender, so resolve it here from the source emails' graph ids (defense in depth — see classifyKind (c)).
     const fromPlatform = g.fromPlatform ?? (await this.allSourceEmailsFromPlatform(g))
-    const kind = classifyKind(emailTypes, f, { fromPlatform })
+    const { kind, rule: kindRule } = classifyKindDetail(emailTypes, f, { fromPlatform })
+    // c2: rules (b) invoice-only-SO-ref and (c) platform-only are model-correcting demotions (CVP phantom
+    // suppression) — shadow-record them. Rule (a) bare_orphan is a genuine no-identity document, not a
+    // correction, so it is NOT recorded. Behavior (the demotion itself) is unchanged.
+    if (kind === 'DOCUMENT' && (kindRule === 'invoice_so_ref' || kindRule === 'platform_only'))
+      shadows.push({ field: 'kind', oldValue: 'SHIPMENT', newValue: 'DOCUMENT', note: `classifyKind ${kindRule}` })
     const legValues: Record<string, unknown> = {
       ...mapFieldsToLegColumns(f), // direct field→column mapping (raws, cargo, dates, scac fallback, CSV dedupe)
       mode: normMode(g.mode),
@@ -218,7 +239,10 @@ export class CommitterService {
     // Per-PO master enrichment (brand / item_style_no / total_quantity + unit): pulled from the parsed_record
     // whose PO matches — NOT the shipment-level aggregate — so a brand stated at the SO level never leaks onto
     // every PO, and a PO showing two brands across a thread resolves latest-received-wins. See resolvePoEnrichment.
-    const poEnrichment = g.pos.length ? resolvePoEnrichment(await this.evidence.allWithMessage()) : null
+    const allEvidence = g.pos.length ? await this.evidence.allWithMessage() : []
+    const poEnrichment = g.pos.length ? resolvePoEnrichment(allEvidence) : null
+    // de-correction (b2 no-PO): brand/style stated with no PO to attach to — surfaced, never silently dropped.
+    const unattributed = g.pos.length ? unattributedBrandStyle(allEvidence) : []
 
     // per-PO shipped qty: prefer the Matcher's unambiguous per-PO qty map (keyed by normalized po_no) when it
     // provides one for this PO; else fall back to the single-PO case (a shipment carrying ONE PO owns the whole
@@ -229,6 +253,9 @@ export class CommitterService {
     // any such inconsistency and route the shipment to review below — the qty is kept (not dropped), never
     // silently accepted as fact.
     const poQtyIssues: string[] = []
+    // de-correction (b1/b2): the model's per-PO facts are KEPT and SURFACED, never silently corrected —
+    // a suspected broadcast total and a brand/style conflict route the leg to review with the raw value intact.
+    const poFlagReasons: string[] = []
     for (const poNo of g.pos) {
       const mapped = num(g.poQty?.[normKey(poNo)])
       const perPoQty = mapped ?? (g.pos.length === 1 ? num(f.qty) : null)
@@ -237,9 +264,30 @@ export class CommitterService {
       const qctx = { legQty: perPoQty, legUnit: perPoUnit, poTotal: enr?.totalQuantity ?? null, poUnit: enr?.quantityUnit ?? null }
       const issue = poQtyIssue(qctx)
       if (issue) poQtyIssues.push(`PO ${poNo}: ${describePoQtyIssue(issue, qctx)}`)
+      if (enr?.broadcastSuspected && enr.totalQuantity != null)
+        poFlagReasons.push(`PO ${poNo}: total_quantity ${enr.totalQuantity} looks like a broadcast total (same value across ≥3 POs) — verify`)
+      if (enr?.brandConflict)
+        poFlagReasons.push(`PO ${poNo}: brand conflict ${enr.brandConflict.join(' vs ')} (kept ${enr.brand}) — verify`)
+      if (enr?.styleConflict)
+        poFlagReasons.push(`PO ${poNo}: item_style_no conflict ${enr.styleConflict.join(' vs ')} (kept ${enr.itemStyleNo}) — verify`)
       const poId = await this.purchaseOrders.upsertPo(poNo, customerId, effVendorId, enr)
       await this.bookings.linkPo(bookingId, poId)
       await this.shipments.linkPo(shipmentId, poId, perPoQty, perPoUnit)
+    }
+    // de-correction (b2 no-PO): a brand/style stated with NO PO is not leaked onto every PO (the LLM did not
+    // say per-PO) and no longer silently dropped — flagged for a human on the shipment whose identity it
+    // shares, but only when no PO here already carries that field (so a genuine per-PO value isn't drowned).
+    const poGotBrand = g.pos.some((p) => poEnrichment?.get(normKey(p))?.brand != null)
+    const poGotStyle = g.pos.some((p) => poEnrichment?.get(normKey(p))?.itemStyleNo != null)
+    const seenUnattributed = new Set<string>()
+    for (const u of unattributed) {
+      if (u.field === 'brand' && poGotBrand) continue
+      if (u.field === 'item_style_no' && poGotStyle) continue
+      if (!keysOverlap(strongKeys(u.matchKeys), gk)) continue // gk = strongKeys(g.matchKeys), computed above
+      const dedupe = `${u.field}:${u.value}`
+      if (seenUnattributed.has(dedupe)) continue
+      seenUnattributed.add(dedupe)
+      poFlagReasons.push(`shipment-level ${u.field} "${u.value}" not attributed to any PO — verify per-PO ${u.field}`)
     }
     // Data-completeness escalations route the shipment to human review. Additive: only ever escalate to
     // provisional + append (deduped) reasons — data is kept, never dropped; the reviewer resolves it.
@@ -256,6 +304,7 @@ export class CommitterService {
     const cargoMissing = isRealLeg && cargoUnitButNoNumbers
     const dataIssues = [
       ...poQtyIssues,
+      ...poFlagReasons,
       ...(cargoMissing ? ['booked shipment missing cargo detail (qty/weight/volume) — source attachment likely not ingested'] : []),
     ]
     if (dataIssues.length) {
@@ -263,12 +312,15 @@ export class CommitterService {
       const mergedReasons = [...new Set([...priorReasons, ...dataIssues])]
       await this.shipments.updateLeg(shipmentId, { reviewStatus: 'provisional', reviewReasons: mergedReasons })
       if (poQtyIssues.length) await this.writeAudit('shipment', shipmentId, 'update', null, poQtyIssues.join('; '), g, 'po_qty_conflict')
+      if (poFlagReasons.length) await this.writeAudit('shipment', shipmentId, 'update', null, poFlagReasons.join('; '), g, 'po_enrichment_flag')
       if (cargoMissing) await this.writeAudit('shipment', shipmentId, 'update', null, 'missing cargo qty/weight/volume', g, 'cargo_missing')
     }
 
     await this.writeIdentifiers(shipmentId, g)
     await this.writeParties(shipmentId, g)
     await this.syncMilestones(shipmentId, g, state)
+    // de-correction (c): flush the shadow measurements now that the leg id exists (never changes behavior).
+    for (const s of shadows) await this.writeShadow(shipmentId, s.field, s.oldValue, s.newValue, s.note, g)
     return { action, jobNo, bookingId, shipmentId, state, conflicts: g.conflicts, skippedLockedFields }
   }
 
@@ -368,6 +420,30 @@ export class CommitterService {
   private async syncMilestones(shipmentId: string, g: ReconGroup, state: string) {
     await this.shipments.replaceMilestones(shipmentId, deriveMilestoneRows(shipmentId, g.events, g.fields, state))
     await this.shipments.replaceEmails(shipmentId, deriveEmailRows(shipmentId, g.events))
+  }
+
+  /** de-correction shadow: record "code would have corrected X" WITHOUT changing behavior, so the model's
+   *  error-rate is queryable (count by field/note; distinct entity_id per shipment). changeType='shadow'
+   *  keeps these rows out of every user-facing audit/history read (see AuditRepository.listForEntity). */
+  private writeShadow(
+    shipmentId: string,
+    field: string,
+    oldValue: string | null,
+    newValue: string | null,
+    note: string,
+    g: ReconGroup,
+  ) {
+    return this.audit.write({
+      entityType: 'shipment',
+      entityId: shipmentId,
+      field,
+      oldValue,
+      newValue,
+      changeType: 'shadow',
+      sourceType: 'system',
+      sourceId: g.evidenceIds[0] ?? null,
+      note,
+    })
   }
 
   private writeAudit(

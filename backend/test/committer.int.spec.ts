@@ -1,11 +1,12 @@
 import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest'
-import { eq } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
 import * as schema from '../src/db/contracts'
 import { getTestDb, resetDb, closeTestDb, repos, type TestDB } from './setup-db'
 import { CommitterService, type ReconGroup } from '../src/reconcile/committer.service'
 
 let db: TestDB
 let committer: CommitterService
+let auditRepo: ReturnType<typeof repos>['audit']
 
 const group = (over: Partial<ReconGroup> = {}): ReconGroup => ({
   fields: {},
@@ -24,6 +25,7 @@ beforeAll(async () => {
   const t = await getTestDb()
   db = t.db
   const r = repos(db)
+  auditRepo = r.audit
   committer = new CommitterService(r.masters, r.booking, r.shipment, r.fieldLock, r.audit, r.evidence, r.purchaseOrder)
 })
 afterAll(closeTestDb)
@@ -328,5 +330,101 @@ describe('CommitterService — CVP notification-platform legs → DOCUMENT (inte
     const res = await committer.apply(cvpGroup({ fromPlatform: true, events: [{ emailType: 'Other', receivedAt: '2026-07-01T08:22:00Z' }] }))
     const [leg] = await db.select().from(schema.shipments).where(eq(schema.shipments.id, res.shipmentId))
     expect(leg.kind).toBe('DOCUMENT')
+  })
+})
+
+describe('CommitterService — de-correction (b): PO-enrichment surfaced as review flags (integration)', () => {
+  /** One email_message + N parsed_records sharing its messageId (broadcast detection groups by messageId). */
+  async function seedEmail(graphMessageId: string, receivedAt: string, records: { poNo: string | null; fields: Record<string, unknown>; matchKeys?: Record<string, unknown> }[]) {
+    const [msg] = await db.insert(schema.ingestEmailMessage).values({ graphMessageId, receivedAt: new Date(receivedAt) }).returning()
+    await db.insert(schema.ingestParsedRecord).values(
+      records.map((r, i) => ({ messageId: msg.id, recordIdx: i, poNo: r.poNo, fields: r.fields, matchKeys: r.matchKeys ?? {} })),
+    )
+  }
+  const legFor = async (id: string) => (await db.select().from(schema.shipments).where(eq(schema.shipments.id, id)))[0]
+  const reasons = (leg: { reviewReasons?: string[] | null }) => leg.reviewReasons ?? []
+
+  it('b1: a suspected broadcast total is KEPT on the PO and the leg is flagged (not silently dropped)', async () => {
+    await seedEmail('bcast', '2026-06-30T05:00:00Z', [
+      { poNo: 'PO-BA', fields: { qty: '168', qty_unit: 'cartons' } },
+      { poNo: 'PO-BB', fields: { qty: '168', qty_unit: 'cartons' } },
+      { poNo: 'PO-BC', fields: { qty: '168', qty_unit: 'cartons' } },
+    ])
+    const res = await committer.apply(group({ pos: ['PO-BA', 'PO-BB', 'PO-BC'], matchKeys: { so_no: 'SO-BCAST' } }))
+    const [po] = await db.select().from(schema.purchaseOrders).where(eq(schema.purchaseOrders.poNumber, 'PO-BA'))
+    expect(po.totalQuantity).toBe(168) // KEPT (raw model value), not nulled
+    const leg = await legFor(res.shipmentId)
+    expect(leg.reviewStatus).toBe('provisional')
+    expect(reasons(leg).some((r) => /broadcast total/i.test(r))).toBe(true)
+  })
+
+  it('b2: a per-PO brand conflict keeps the newest value and flags the leg', async () => {
+    await seedEmail('m-old', '2026-06-01T00:00:00Z', [{ poNo: 'PO-CONF', fields: { brand: 'Barbour' } }])
+    await seedEmail('m-new', '2026-06-02T00:00:00Z', [{ poNo: 'PO-CONF', fields: { brand: 'FENIX' } }])
+    const res = await committer.apply(group({ pos: ['PO-CONF'], matchKeys: { so_no: 'SO-CONF' } }))
+    const [po] = await db.select().from(schema.purchaseOrders).where(eq(schema.purchaseOrders.poNumber, 'PO-CONF'))
+    expect(po.brand).toBe('FENIX') // newest still wins (written value unchanged)
+    const leg = await legFor(res.shipmentId)
+    expect(leg.reviewStatus).toBe('provisional')
+    expect(reasons(leg).some((r) => /brand conflict/i.test(r))).toBe(true)
+  })
+
+  it('b2 no-PO: a brand stated with no PO is NOT leaked onto the PO but IS flagged (not silently dropped)', async () => {
+    await seedEmail('m-so', '2026-06-30T05:00:00Z', [{ poNo: null, matchKeys: { so_no: 'SO-UNATTR' }, fields: { brand: 'Barbour' } }])
+    await seedEmail('m-po', '2026-06-30T05:01:00Z', [{ poNo: 'PO-UNATTR', matchKeys: { customer_po: 'PO-UNATTR', so_no: 'SO-UNATTR' }, fields: { item_style_no: 'ABC' } }])
+    const res = await committer.apply(group({ pos: ['PO-UNATTR'], matchKeys: { so_no: 'SO-UNATTR' } }))
+    const [po] = await db.select().from(schema.purchaseOrders).where(eq(schema.purchaseOrders.poNumber, 'PO-UNATTR'))
+    expect(po.brand).toBeNull() // never leaked onto the PO
+    const leg = await legFor(res.shipmentId)
+    expect(reasons(leg).some((r) => /not attributed to any PO/i.test(r))).toBe(true)
+  })
+})
+
+describe('CommitterService — de-correction (c): shadow measurements (integration)', () => {
+  const shadowRowsFor = (id: string) =>
+    db.select().from(schema.changeLog).where(and(eq(schema.changeLog.entityId, id), eq(schema.changeLog.changeType, 'shadow')))
+
+  it('c1: the platform forwarder scrub still fires (forwarderRaw nulled) AND is shadow-recorded', async () => {
+    const res = await committer.apply(group({ pos: [], fields: { forwarder_name: 'TradeLinkOne', so_no: 'SO-SCRUB' }, matchKeys: { so_no: 'SO-SCRUB' } }))
+    const [leg] = await db.select().from(schema.shipments).where(eq(schema.shipments.id, res.shipmentId))
+    expect(leg.forwarderRaw).toBeNull() // behavior unchanged: the scrub wiped the raw forwarder
+    const shadows = await shadowRowsFor(res.shipmentId)
+    expect(shadows.some((r) => r.field === 'forwarder_name' && r.oldValue === 'TradeLinkOne' && r.newValue === null)).toBe(true)
+  })
+
+  it('c2: a platform-only DOCUMENT demotion (rule c) is shadow-recorded', async () => {
+    const res = await committer.apply(group({
+      pos: [], fields: { booking_no: 'FENLPOSHADOW1' }, matchKeys: { booking_no: 'FENLPOSHADOW1' },
+      emailTypes: ['Other'], events: [{ emailType: 'Other', receivedAt: '2026-01-01T00:00:00Z' }], fromPlatform: true,
+    }))
+    const [leg] = await db.select().from(schema.shipments).where(eq(schema.shipments.id, res.shipmentId))
+    expect(leg.kind).toBe('DOCUMENT') // behavior unchanged
+    const shadows = await shadowRowsFor(res.shipmentId)
+    expect(shadows.some((r) => r.field === 'kind' && r.note === 'classifyKind platform_only')).toBe(true)
+  })
+
+  it('c2: a bare-orphan DOCUMENT (rule a) is NOT shadow-recorded (a genuine document, not a model correction)', async () => {
+    const res = await committer.apply(group({
+      pos: [], fields: {}, matchKeys: {}, emailTypes: ['Other'], events: [{ emailType: 'Other', receivedAt: '2026-01-01T00:00:00Z' }],
+    }))
+    const [leg] = await db.select().from(schema.shipments).where(eq(schema.shipments.id, res.shipmentId))
+    expect(leg.kind).toBe('DOCUMENT')
+    expect(await shadowRowsFor(res.shipmentId)).toHaveLength(0)
+  })
+
+  it('c3: a booking# revision fold is shadow-recorded; a clean booking# is not', async () => {
+    const folded = await committer.apply(group({ pos: [], fields: { booking_no: 'BX845666 V3' }, matchKeys: { booking_no: 'BX845666 V3' } }))
+    const foldShadows = await shadowRowsFor(folded.shipmentId)
+    expect(foldShadows.some((r) => r.field === 'booking_no' && r.oldValue === 'BX845666 V3' && r.newValue === 'BX845666')).toBe(true)
+
+    const clean = await committer.apply(group({ pos: [], fields: { booking_no: 'BX999000' }, matchKeys: { booking_no: 'BX999000' } }))
+    expect((await shadowRowsFor(clean.shipmentId)).some((r) => r.field === 'booking_no')).toBe(false)
+  })
+
+  it('shadow rows are EXCLUDED from the user-facing change history (listForEntity)', async () => {
+    const res = await committer.apply(group({ pos: [], fields: { forwarder_name: 'TradeLinkOne', so_no: 'SO-HIST' }, matchKeys: { so_no: 'SO-HIST' } }))
+    expect((await shadowRowsFor(res.shipmentId)).length).toBeGreaterThan(0) // present in the raw log
+    const history = await auditRepo.listForEntity('shipment', res.shipmentId)
+    expect(history.some((r) => r.changeType === 'shadow')).toBe(false) // but never in the history view
   })
 })

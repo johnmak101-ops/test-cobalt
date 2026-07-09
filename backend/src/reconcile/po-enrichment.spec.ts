@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { normKey } from './match-keys'
-import { resolvePoEnrichment, type PoEvidenceInput } from './po-enrichment'
+import { resolvePoEnrichment, conflictingValues, unattributedBrandStyle, type PoEvidenceInput } from './po-enrichment'
 
 /** Build a parsed_record-shaped evidence row. */
 const row = (over: Partial<PoEvidenceInput> & { id: string }): PoEvidenceInput => ({
@@ -23,6 +23,9 @@ describe('resolvePoEnrichment', () => {
       itemStyleNo: '43079',
       totalQuantity: 24,
       quantityUnit: 'cartons',
+      broadcastSuspected: false,
+      brandConflict: null,
+      styleConflict: null,
     })
   })
 
@@ -51,14 +54,14 @@ describe('resolvePoEnrichment', () => {
     const map = resolvePoEnrichment([
       row({ id: 'a', poNo: 'PO-3', receivedAt: at('2026-06-01T00:00:00Z'), fields: { qty: '1,200 CTNS', qty_unit: 'boxes' } }),
     ])
-    expect(map.get(normKey('PO-3'))).toEqual({ brand: null, itemStyleNo: null, totalQuantity: 1200, quantityUnit: null })
+    expect(map.get(normKey('PO-3'))).toEqual({ brand: null, itemStyleNo: null, totalQuantity: 1200, quantityUnit: null, broadcastSuspected: false, brandConflict: null, styleConflict: null })
   })
 
   it('leaves quantityUnit null when there is no qty', () => {
     const map = resolvePoEnrichment([
       row({ id: 'a', poNo: 'PO-4', receivedAt: at('2026-06-01T00:00:00Z'), fields: { brand: 'ACME', qty_unit: 'cartons' } }),
     ])
-    expect(map.get(normKey('PO-4'))).toEqual({ brand: 'ACME', itemStyleNo: null, totalQuantity: null, quantityUnit: null })
+    expect(map.get(normKey('PO-4'))).toEqual({ brand: 'ACME', itemStyleNo: null, totalQuantity: null, quantityUnit: null, broadcastSuspected: false, brandConflict: null, styleConflict: null })
   })
 
   it('falls back to match_keys.customer_po when po_no is null', () => {
@@ -96,11 +99,13 @@ describe('resolvePoEnrichment — shipment-total broadcast guard (the 168×20 bu
   const bcast = (id: string, po: string, qty: string, msg = 'msg-1') =>
     row({ id, poNo: po, messageId: msg, receivedAt: at('2026-06-30T05:00:00Z'), fields: { qty, qty_unit: 'cartons', brand: 'Barbour' } })
 
-  it('one identical qty on ≥3 POs within ONE email is the SHIPMENT total — no PO gets it', () => {
+  it('one identical qty on ≥3 POs within ONE email is a suspected broadcast — kept + FLAGGED, not dropped', () => {
+    // de-correction (b1): the model's value stays on the PO (visible + correctable), flagged for review.
     const map = resolvePoEnrichment([bcast('a', 'PO-A', '168'), bcast('b', 'PO-B', '168'), bcast('c', 'PO-C', '168')])
     for (const po of ['PO-A', 'PO-B', 'PO-C']) {
-      expect(map.get(normKey(po))?.totalQuantity).toBeNull()
-      expect(map.get(normKey(po))?.quantityUnit).toBeNull()
+      expect(map.get(normKey(po))?.totalQuantity).toBe(168)
+      expect(map.get(normKey(po))?.quantityUnit).toBe('cartons')
+      expect(map.get(normKey(po))?.broadcastSuspected).toBe(true)
       expect(map.get(normKey(po))?.brand).toBe('Barbour') // brand/style enrichment unaffected
     }
   })
@@ -141,8 +146,10 @@ describe('resolvePoEnrichment — shipment-total broadcast guard (the 168×20 bu
       bcast('c', 'PO-C', '168'),
       row({ id: 'real', poNo: 'PO-A', messageId: 'msg-2', receivedAt: at('2026-06-29T00:00:00Z'), fields: { qty: '24', qty_unit: 'cartons' } }),
     ])
-    expect(map.get(normKey('PO-A'))?.totalQuantity).toBe(24) // falls through to the per-PO statement
-    expect(map.get(normKey('PO-B'))?.totalQuantity).toBeNull()
+    expect(map.get(normKey('PO-A'))?.totalQuantity).toBe(24) // genuine per-PO statement wins (not flagged)
+    expect(map.get(normKey('PO-A'))?.broadcastSuspected).toBe(false)
+    expect(map.get(normKey('PO-B'))?.totalQuantity).toBe(168) // only a broadcast exists → kept + flagged
+    expect(map.get(normKey('PO-B'))?.broadcastSuspected).toBe(true)
   })
 
   const bkRow = (id: string, po: string, qty: string, booking: string) =>
@@ -158,9 +165,13 @@ describe('resolvePoEnrichment — shipment-total broadcast guard (the 168×20 bu
       bkRow('b2', 'PO-12', '17', '123088'),
     ]
     const map = resolvePoEnrichment(rows)
-    for (let i = 1; i <= 10; i++) expect(map.get(normKey(`PO-${i}`))?.totalQuantity).toBeNull()
-    // the two-PO booking stays below the ≥3 threshold — conservative, kept
+    for (let i = 1; i <= 10; i++) {
+      expect(map.get(normKey(`PO-${i}`))?.totalQuantity).toBe(59) // kept + flagged, not dropped
+      expect(map.get(normKey(`PO-${i}`))?.broadcastSuspected).toBe(true)
+    }
+    // the two-PO booking stays below the ≥3 threshold — a genuine per-PO qty, not flagged
     expect(map.get(normKey('PO-11'))?.totalQuantity).toBe(17)
+    expect(map.get(normKey('PO-11'))?.broadcastSuspected).toBe(false)
   })
 
   it('a mixed-value table within ONE booking keeps its repeated quantities (per-booking 进仓单 regression)', () => {
@@ -182,7 +193,78 @@ describe('resolvePoEnrichment — shipment-total broadcast guard (the 168×20 bu
       bcast('stray', 'FNX-SS26-S0044-01', '17'),
     ]
     const map = resolvePoEnrichment(rows)
-    for (let i = 0; i < 12; i++) expect(map.get(normKey(`GPO-${i}`))?.totalQuantity).toBeNull()
-    expect(map.get(normKey('FNX-SS26-S0044-01'))?.totalQuantity).toBe(17)
+    for (let i = 0; i < 12; i++) {
+      expect(map.get(normKey(`GPO-${i}`))?.totalQuantity).toBe(76) // kept + flagged, not dropped
+      expect(map.get(normKey(`GPO-${i}`))?.broadcastSuspected).toBe(true)
+    }
+    expect(map.get(normKey('FNX-SS26-S0044-01'))?.totalQuantity).toBe(17) // the stray real qty, not flagged
+    expect(map.get(normKey('FNX-SS26-S0044-01'))?.broadcastSuspected).toBe(false)
+  })
+})
+
+describe('resolvePoEnrichment — brand/style conflict surfacing (de-correction b2)', () => {
+  it('flags a per-PO brand conflict (≥2 diverging labels) while still keeping the newest value', () => {
+    const map = resolvePoEnrichment([
+      row({ id: 'old', poNo: 'PO-1', receivedAt: at('2026-06-01T00:00:00Z'), fields: { brand: 'Barbour' } }),
+      row({ id: 'new', poNo: 'PO-1', receivedAt: at('2026-06-02T00:00:00Z'), fields: { brand: 'FENIX' } }),
+    ])
+    const enr = map.get(normKey('PO-1'))
+    expect(enr?.brand).toBe('FENIX') // newest still wins (written value unchanged)
+    expect([...(enr?.brandConflict ?? [])].sort()).toEqual(['Barbour', 'FENIX']) // the competing SET, order-independent
+  })
+
+  it('does NOT flag when a style narrows (subset), only when values genuinely diverge', () => {
+    const narrow = resolvePoEnrichment([
+      row({ id: 'a', poNo: 'PO-2', receivedAt: at('2026-06-01T00:00:00Z'), fields: { item_style_no: '33058,43078' } }),
+      row({ id: 'b', poNo: 'PO-2', receivedAt: at('2026-06-02T00:00:00Z'), fields: { item_style_no: '33058' } }),
+    ])
+    expect(narrow.get(normKey('PO-2'))?.styleConflict).toBeNull() // 33058 ⊂ 33058,43078 → narrowing, not a conflict
+
+    const diverge = resolvePoEnrichment([
+      row({ id: 'a', poNo: 'PO-3', receivedAt: at('2026-06-01T00:00:00Z'), fields: { item_style_no: '111' } }),
+      row({ id: 'b', poNo: 'PO-3', receivedAt: at('2026-06-02T00:00:00Z'), fields: { item_style_no: '222' } }),
+    ])
+    expect([...(diverge.get(normKey('PO-3'))?.styleConflict ?? [])].sort()).toEqual(['111', '222'])
+  })
+
+  it('no conflict when a PO carries one consistent brand', () => {
+    const map = resolvePoEnrichment([
+      row({ id: 'a', poNo: 'PO-4', receivedAt: at('2026-06-01T00:00:00Z'), fields: { brand: 'FENIX' } }),
+      row({ id: 'b', poNo: 'PO-4', receivedAt: at('2026-06-02T00:00:00Z'), fields: { brand: 'FENIX' } }),
+    ])
+    expect(map.get(normKey('PO-4'))?.brandConflict).toBeNull()
+  })
+})
+
+describe('conflictingValues', () => {
+  it('returns null for <2 distinct values', () => {
+    expect(conflictingValues([])).toBeNull()
+    expect(conflictingValues(['A'])).toBeNull()
+    expect(conflictingValues(['A', 'A'])).toBeNull()
+  })
+  it('flags two disjoint labels (both survive, as a set)', () => {
+    expect([...(conflictingValues(['FENIX', 'Barbour']) ?? [])].sort()).toEqual(['Barbour', 'FENIX'])
+  })
+  it('treats a comma-token subset as a narrowing, not a conflict', () => {
+    expect(conflictingValues(['33058,43078', '33058'])).toBeNull()
+  })
+  it('flags equal-size disjoint comma sets (both survive, as a set)', () => {
+    expect([...(conflictingValues(['A,B', 'A,C']) ?? [])].sort()).toEqual(['A,B', 'A,C'])
+  })
+})
+
+describe('unattributedBrandStyle (de-correction b2 — no-PO drop)', () => {
+  it('returns brand/style from records that belong to NO PO, with their match-keys', () => {
+    const out = unattributedBrandStyle([
+      row({ id: 'so', poNo: null, matchKeys: { so_no: 'SO-9' }, fields: { brand: 'Barbour', item_style_no: 'ST1' } }),
+      row({ id: 'po', poNo: 'PO-1', matchKeys: { customer_po: 'PO-1' }, fields: { brand: 'FENIX' } }), // has a PO → excluded
+    ])
+    expect(out).toEqual([
+      { field: 'brand', value: 'Barbour', matchKeys: { so_no: 'SO-9' } },
+      { field: 'item_style_no', value: 'ST1', matchKeys: { so_no: 'SO-9' } },
+    ])
+  })
+  it('ignores a no-PO record that carries no brand/style', () => {
+    expect(unattributedBrandStyle([row({ id: 'x', poNo: null, matchKeys: { so_no: 'SO-1' }, fields: { qty: '5' } })])).toEqual([])
   })
 })

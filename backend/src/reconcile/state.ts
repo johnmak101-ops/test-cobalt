@@ -55,20 +55,34 @@ const SHIPMENT_IDENTITY = ['booking_no', 'hbl_awb_fcr_no', 'mbl', 'container_no'
 /** Carrier-issued identities — booking_no EXCLUDED (the portal leaks an LPO into it, see (c)). */
 const CARRIER_IDENTITY = ['hbl_awb_fcr_no', 'mbl', 'container_no'] as const
 const LIFECYCLE_TYPES = new Set(['Booking Request', 'SO', 'Draft B/L', 'Final B/L', 'Telex Release'])
+/** The rule that classified a leg. 'bare_orphan' (a) is a genuine no-identity document — NOT a model
+ *  correction. 'invoice_so_ref' (b) and 'platform_only' (c) are the load-bearing model-correcting demotions
+ *  that de-correction shadow-measures (kept firing, but recorded so the gap is visible). null = SHIPMENT. */
+export type ClassifyRule = 'bare_orphan' | 'invoice_so_ref' | 'platform_only'
+
+export function classifyKindDetail(
+  emailTypes: Set<string>,
+  fields: Record<string, unknown>,
+  opts: { fromPlatform?: boolean } = {},
+): { kind: 'SHIPMENT' | 'DOCUMENT'; rule: ClassifyRule | null } {
+  const hasIdentity = IDENTITY_FIELDS.some((k) => has(fields[k]))
+  const hasLifecycle = [...emailTypes].some((t) => LIFECYCLE_TYPES.has(t))
+  if (!hasIdentity && !hasLifecycle) return { kind: 'DOCUMENT', rule: 'bare_orphan' } // (a) bare orphan
+  const invoiceOnly = emailTypes.size > 0 && [...emailTypes].every((t) => t === 'Invoice/Billing')
+  const hasShipmentIdentity = SHIPMENT_IDENTITY.some((k) => has(fields[k]))
+  if (invoiceOnly && !hasShipmentIdentity) return { kind: 'DOCUMENT', rule: 'invoice_so_ref' } // (b) CVP invoice-only, SO-ref only
+  const hasCarrierIdentity = CARRIER_IDENTITY.some((k) => has(fields[k]))
+  if (opts.fromPlatform && !hasLifecycle && !hasCarrierIdentity) return { kind: 'DOCUMENT', rule: 'platform_only' } // (c) CVP platform-only notification
+  return { kind: 'SHIPMENT', rule: null }
+}
+
+/** Thin wrapper returning the kind alone — the existing call surface (reclassify script, tests). */
 export function classifyKind(
   emailTypes: Set<string>,
   fields: Record<string, unknown>,
   opts: { fromPlatform?: boolean } = {},
 ): 'SHIPMENT' | 'DOCUMENT' {
-  const hasIdentity = IDENTITY_FIELDS.some((k) => has(fields[k]))
-  const hasLifecycle = [...emailTypes].some((t) => LIFECYCLE_TYPES.has(t))
-  if (!hasIdentity && !hasLifecycle) return 'DOCUMENT' // (a) bare orphan
-  const invoiceOnly = emailTypes.size > 0 && [...emailTypes].every((t) => t === 'Invoice/Billing')
-  const hasShipmentIdentity = SHIPMENT_IDENTITY.some((k) => has(fields[k]))
-  if (invoiceOnly && !hasShipmentIdentity) return 'DOCUMENT' // (b) CVP invoice-only, SO-ref only
-  const hasCarrierIdentity = CARRIER_IDENTITY.some((k) => has(fields[k]))
-  if (opts.fromPlatform && !hasLifecycle && !hasCarrierIdentity) return 'DOCUMENT' // (c) CVP platform-only notification
-  return 'SHIPMENT'
+  return classifyKindDetail(emailTypes, fields, opts).kind
 }
 
 /** Which milestone an email type records (null = no milestone). */

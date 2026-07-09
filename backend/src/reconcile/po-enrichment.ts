@@ -1,12 +1,20 @@
 import { normKey, str, num } from './match-keys'
 import { QTY_UNIT } from '../db/contracts'
 
-/** The per-PO facts pulled from parsed evidence, ready to enrich purchase_orders. */
+/** The per-PO facts pulled from parsed evidence, ready to enrich purchase_orders. The first four fields
+ *  are the enrichment payload (consumed by upsertPo); the trailing flags are de-correction review-signals
+ *  the committer surfaces as leg reviewReasons — they are NOT written to purchase_orders. */
 export interface PoEnrichment {
   brand: string | null
   itemStyleNo: string | null
   totalQuantity: number | null
   quantityUnit: (typeof QTY_UNIT)[number] | null
+  /** the kept total_quantity is a same-value-across-≥3-POs broadcast, not a per-PO fact — flag, don't drop */
+  broadcastSuspected: boolean
+  /** ≥2 diverging brand labels on this PO across the thread (newest kept); the competing values to verify */
+  brandConflict: string[] | null
+  /** ≥2 diverging item_style_no values on this PO (newest kept); the competing values to verify */
+  styleConflict: string[] | null
 }
 
 /** A parsed_record row (structurally a subset of EvidenceRepository.EvidenceRow). */
@@ -96,20 +104,86 @@ export function resolvePoEnrichment(rows: PoEvidenceInput[]): Map<string, PoEnri
       return String(b.id).localeCompare(String(a.id))
     })
 
-    const enr: PoEnrichment = { brand: null, itemStyleNo: null, totalQuantity: null, quantityUnit: null }
+    const enr: PoEnrichment = {
+      brand: null, itemStyleNo: null, totalQuantity: null, quantityUnit: null,
+      broadcastSuspected: false, brandConflict: null, styleConflict: null,
+    }
+    // newest broadcast qty, used ONLY as a fallback when no genuine per-PO qty exists for this PO —
+    // de-correction (b1): keep the model's value + flag it, instead of silently dropping to null.
+    let broadcastFallback: { q: number; unit: PoEnrichment['quantityUnit'] } | null = null
+    const brands: string[] = []
+    const styles: string[] = []
     for (const r of ordered) {
       const f = r.fields ?? {}
-      if (enr.brand == null) enr.brand = str(f.brand)
-      if (enr.itemStyleNo == null) enr.itemStyleNo = str(f.item_style_no)
-      if (enr.totalQuantity == null && !qtyIsBroadcast(r)) {
+      const b = str(f.brand)
+      if (b) brands.push(b)
+      const sty = str(f.item_style_no)
+      if (sty) styles.push(sty)
+      if (enr.brand == null) enr.brand = b
+      if (enr.itemStyleNo == null) enr.itemStyleNo = sty
+      if (enr.totalQuantity == null) {
         const q = num(f.qty)
         if (q != null) {
-          enr.totalQuantity = q
-          enr.quantityUnit = validUnit(f.qty_unit) // bound to the same record as the qty
+          if (!qtyIsBroadcast(r)) {
+            enr.totalQuantity = q
+            enr.quantityUnit = validUnit(f.qty_unit) // bound to the same record as the qty
+          } else if (broadcastFallback == null) {
+            broadcastFallback = { q, unit: validUnit(f.qty_unit) }
+          }
         }
       }
     }
+    // No genuine per-PO qty found, only a broadcast total: keep it (fill purchase_orders.total_quantity)
+    // and flag it for review — the raw model value stays visible instead of being silently nulled.
+    if (enr.totalQuantity == null && broadcastFallback != null) {
+      enr.totalQuantity = broadcastFallback.q
+      enr.quantityUnit = broadcastFallback.unit
+      enr.broadcastSuspected = true
+    }
+    // de-correction (b2): surface a per-PO brand/style CONFLICT instead of silently resolving to newest.
+    enr.brandConflict = conflictingValues(brands)
+    enr.styleConflict = conflictingValues(styles)
     out.set(key, enr)
+  }
+  return out
+}
+
+/**
+ * The distinct competing values a human must reconcile, or null when there is no real conflict. Dedupes,
+ * then drops any value whose comma-token set is a SUBSET of another's, so a narrowing ('33058,43078' →
+ * '33058') is not treated as a conflict while two disjoint labels ('FENIX' vs 'Barbour') are. Order follows
+ * first appearance (the resolve loop feeds it newest-first). >1 survivor ⇒ conflict.
+ */
+export function conflictingValues(values: string[]): string[] | null {
+  const distinct = [...new Set(values)]
+  if (distinct.length < 2) return null
+  const tokens = (v: string): Set<string> => new Set(v.split(',').map((x) => x.trim().toUpperCase()).filter(Boolean))
+  const sets = distinct.map((v) => ({ v, t: tokens(v) }))
+  const subsetOfOther = (s: { v: string; t: Set<string> }): boolean =>
+    sets.some((o) => o !== s && o.t.size > s.t.size && [...s.t].every((x) => o.t.has(x)))
+  const survivors = sets.filter((s) => !subsetOfOther(s)).map((s) => s.v)
+  return survivors.length >= 2 ? survivors : null
+}
+
+/**
+ * Brand / item_style_no stated on a record that belongs to NO PO (no po_no and no customer_po match-key).
+ * The current resolve pass silently drops these (they must not leak onto every PO — the LLM did not say
+ * per-PO). de-correction (b2): return them WITH their match-keys so the committer can flag them for a human
+ * on the shipment whose identity they share, instead of dropping them without a trace. */
+export interface UnattributedStatement {
+  field: 'brand' | 'item_style_no'
+  value: string
+  matchKeys: Record<string, unknown>
+}
+export function unattributedBrandStyle(rows: PoEvidenceInput[]): UnattributedStatement[] {
+  const out: UnattributedStatement[] = []
+  for (const r of rows) {
+    if (poKeyOf(r)) continue // has a PO → attributed (or already broadcast-handled), not a silent no-PO drop
+    const mk = r.matchKeys ?? {}
+    const b = str(r.fields?.brand)
+    if (b) out.push({ field: 'brand', value: b, matchKeys: mk })
+    const s = str(r.fields?.item_style_no)
+    if (s) out.push({ field: 'item_style_no', value: s, matchKeys: mk })
   }
   return out
 }

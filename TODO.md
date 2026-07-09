@@ -16,17 +16,33 @@ soul catches up. Full 3-agent sweep of backend/src on 2026-07-09; ties to `match
 - [x] `qty_unit ?? 'cartons'` default (committer.service) — a missing unit stays null, not guessed.
 - KEPT ON PURPOSE: `dedupeCsv` — dedup of legitimate multi-source aggregation (same style across PO sheets + B/L rider), NOT a model-error mask.
 
-### (b) Silent drops → CONVERT to review-flags (keep the raw model value + surface it)
-- [ ] per-PO qty BROADCAST guard (`po-enrichment.ts:49-111`) — drops the qty from PO-master enrichment; make it FLAG the PO total as a suspected broadcast (keep the value). Distinct from the leg-level `poQtyIssue` flag — this sets `purchase_orders.total_quantity`. Upstream matcher: task_d1d3e8d4 / BX876110.
-- [ ] brand-leak drop + brand/style "latest-wins" (`po-enrichment.ts:28,99`) — surface a per-PO brand/style conflict rather than silently resolving to newest.
+### (b) Silent drops → CONVERT to review-flags (keep the raw model value + surface it) — DONE 2026-07-09
+All three now ride the existing `dataIssues`→`provisional`+`reviewReasons`+audit path (committer.apply). Spec/plan:
+`docs/superpowers/specs/2026-07-09-de-correction-b-c-flags-shadow-design.md`.
+- [x] per-PO qty BROADCAST guard (`po-enrichment.ts`) — no longer nulls the qty: a genuine per-PO qty still
+  wins, but when ONLY a broadcast exists the value is KEPT (`total_quantity` filled) + `broadcastSuspected`;
+  committer flags `PO X: total_quantity N looks like a broadcast total … verify`. Upstream: task_d1d3e8d4 / BX876110.
+- [x] brand/style "latest-wins" (`po-enrichment.ts`) — newest still wins (written value unchanged) but a
+  per-PO ≥2-distinct `brandConflict`/`styleConflict` (comma-subset = narrowing, not a conflict) is surfaced.
+- [x] no-PO drop (`po-enrichment.ts` `poKeyOf`) — per the architect: "LLM decides, human reviews, code only
+  flags". `unattributedBrandStyle` returns no-PO brand/style with match-keys; committer flags it on the
+  shipment whose identity it shares (when no PO there already carries the field) — NOT leaked onto every PO,
+  NOT silently dropped.
 
 ### (c) Classifiers — SOUL-FIRST, then delete (removing now floods phantoms/duplicates — currently load-bearing)
 Plan: (1) SHADOW-FLAG first — keep current behavior BUT record "code would have corrected X" as evidence, so the
 gap (how often the model is wrong) is measurable; (2) fix the soul rule upstream (cobalt-queue parser/matcher +
-Iterator generalization); (3) when the shadow flag stops firing, DELETE the track guard. Items: `forwarder_name`
-platform scrub (`committer.service:105`, also wipes `forwarderRaw`); CVP phantom suppression + `classifyKind`
-DOCUMENT demotions (`state.ts:58`; task_9d91d677 / LPO→booking_no); `normBookingKey` revision folding (`match-keys`
-— move WITH the matcher's mirrored copy; the comment mandates parity).
+Iterator generalization); (3) when the shadow flag stops firing, DELETE the track guard.
+- [x] **STEP 1 (shadow) DONE 2026-07-09.** All three guards STILL FIRE unchanged; each model-correction now
+  writes an `audit.change_log` row with `changeType='shadow'` (excluded from `listForEntity` → never in the
+  history/timeline). Measure: `select field, note, count(distinct entity_id) from audit.change_log where
+  change_type='shadow' group by field, note`. Covered: `forwarder_name` platform scrub (`committer.service` c1,
+  also wipes `forwarderRaw`); `classifyKind` DOCUMENT demotions — only rules (b) `invoice_so_ref` + (c)
+  `platform_only` (CVP phantom, task_9d91d677 / LPO→booking_no), NOT (a) `bare_orphan` (genuine doc) — via new
+  `classifyKindDetail` in `state.ts`; `normBookingKey` revision fold measured committer-side (compare
+  `normBookingKey` vs `normKey`) so the pure fn stays byte-identical to the matcher's mirror (parity intact).
+- [ ] **STEP 2/3 remain:** fix the soul upstream (cobalt-queue), then DELETE each track guard once its shadow
+  goes quiet. `normBookingKey` delete must move WITH the matcher's mirrored copy (comment mandates parity).
 
 ### (d) Legacy reconcile path — same disease, low live impact
 `merge.ts` FIELD_CLASS-allowlist drop + `sameId`/`sameName` folding + higher-rank silent supersede; `reconcile.service`

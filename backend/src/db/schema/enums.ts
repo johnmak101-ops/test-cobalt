@@ -68,7 +68,9 @@ export const FIELD_LOCK_ENTITY = ['booking', 'shipment'] as const
 export const AUDIT_ENTITY = [
   'booking', 'shipment', 'milestone', 'purchase_order', 'alert', 'field_lock', 'booking_po', 'shipment_po',
 ] as const
-export const CHANGE_TYPE = ['create', 'update', 'delete', 'supersede', 'merge'] as const
+// 'shadow' = a de-correction measurement row: "code would have corrected X" recorded WITHOUT changing
+// behavior, so the model's error-rate is queryable. Excluded from every user-facing audit/history read.
+export const CHANGE_TYPE = ['create', 'update', 'delete', 'supersede', 'merge', 'shadow'] as const
 export const SOURCE_TYPE = ['email', 'manual', 'system', 'agent'] as const
 
 // ---- Alerts (Pillar-4) ----

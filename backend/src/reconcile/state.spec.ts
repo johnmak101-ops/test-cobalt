@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { deriveState, normMode, MILESTONE_OF, classifyKind } from './state'
+import { deriveState, normMode, MILESTONE_OF, classifyKind, classifyKindDetail } from './state'
 
 describe('deriveState — 6-state staircase', () => {
   it('defaults to BOOKED', () => {
@@ -82,6 +82,29 @@ describe('classifyKind — SHIPMENT vs DOCUMENT', () => {
   })
   it('platform-flagged BUT with a lifecycle email stays SHIPMENT', () => {
     expect(classifyKind(new Set(['Booking Request']), { booking_no: 'X' }, { fromPlatform: true })).toBe('SHIPMENT')
+  })
+})
+
+describe('classifyKindDetail — exposes the deciding rule (for de-correction shadow)', () => {
+  const invoice = new Set(['Invoice/Billing'])
+  it('bare orphan → rule "bare_orphan" (a genuine document, NOT shadow-recorded)', () => {
+    expect(classifyKindDetail(new Set(['Other']), {})).toEqual({ kind: 'DOCUMENT', rule: 'bare_orphan' })
+  })
+  it('CVP invoice-only SO-ref → rule "invoice_so_ref" (model-correcting demotion b)', () => {
+    expect(classifyKindDetail(invoice, { so_no: 'CMS364079' })).toEqual({ kind: 'DOCUMENT', rule: 'invoice_so_ref' })
+  })
+  it('platform-only portal booking# → rule "platform_only" (model-correcting demotion c)', () => {
+    expect(classifyKindDetail(new Set(['Other']), { booking_no: 'FENLPO003034A' }, { fromPlatform: true })).toEqual({
+      kind: 'DOCUMENT',
+      rule: 'platform_only',
+    })
+  })
+  it('a real shipment → kind SHIPMENT, rule null', () => {
+    expect(classifyKindDetail(invoice, { booking_no: 'BX845666' })).toEqual({ kind: 'SHIPMENT', rule: null })
+  })
+  it('classifyKind wrapper still returns the kind string only (unchanged call surface)', () => {
+    expect(classifyKind(new Set(['Other']), {})).toBe('DOCUMENT')
+    expect(classifyKind(invoice, { booking_no: 'BX845666' })).toBe('SHIPMENT')
   })
 })
 
