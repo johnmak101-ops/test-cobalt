@@ -76,7 +76,7 @@ describe('MastersRepository (SQL Server)', () => {
     expect(byObj?.code).toBe('COLE')
   })
 
-  it('forwarderIdByName resolves an EXACT name (fuzzy tiers are out of scope — return null on no exact match)', async () => {
+  it('forwarderIdByName runs the full staged tiers (exact, alias, stripped-annotation, ambiguity-guarded)', async () => {
     const fwd = await db.insertInto('forwarders').values({ code: 'EXP', name: 'EXPEDITORS INTERNATIONAL' }).output('inserted.id').executeTakeFirstOrThrow()
     await db.insertInto('forwarderAliases').values({ forwarderId: fwd.id, aliasType: 'name', value: 'EXPEDITORS' }).execute()
 
@@ -84,9 +84,20 @@ describe('MastersRepository (SQL Server)', () => {
     expect(await repo.forwarderIdByName('EXPEDITORS INTERNATIONAL')).toBe(fwd.id)
     // exact alias
     expect(await repo.forwarderIdByName('EXPEDITORS')).toBe(fwd.id)
-    // a fuzzy/partial input does NOT resolve (the Postgres fuzzy tiers are not ported — slated for the LLM matcher)
-    expect(await repo.forwarderIdByName('Expeditors (LAX)')).toBeNull()
+    // office annotation stripped → normalized-exact tier ('(LAX)' is not part of the name)
+    expect(await repo.forwarderIdByName('Expeditors International (LAX)')).toBe(fwd.id)
+    // single containment hit resolves (exactly-one guard) — the tiers ARE ported (the LLM matcher
+    // that replaces them is deferred behind this migration)
+    expect(await repo.forwarderIdByName('Expeditors (LAX)')).toBe(fwd.id)
+    // no match → null (an unresolved name surfaces as forwarder_raw)
     expect(await repo.forwarderIdByName('some unrelated name')).toBeNull()
+    // legal-form DANGER pair: two masters that differ ONLY by legal form must NOT resolve
+    // nondeterministically — the exactly-one fold guard returns null
+    await db.insertInto('forwarders').values([
+      { code: 'AGI1', name: 'AGILITY LOGISTICS LTD' },
+      { code: 'AGI2', name: 'AGILITY LOGISTICS LIMITED' },
+    ]).execute()
+    expect(await repo.forwarderIdByName('Agility Logistics')).toBeNull()
   })
 
   it('portByCodeOrName resolves by exact UN/LOCODE and exact IATA', async () => {
