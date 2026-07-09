@@ -1,7 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common'
-import { eq, inArray } from 'drizzle-orm'
-import * as schema from '../contracts'
-import { DRIZZLE, type DrizzleDB } from '../drizzle.provider'
+import { type Kysely } from 'kysely'
+import type { DB } from '../kysely/db'
+import { KYSELY } from '../kysely.provider'
 
 export interface EvidenceRow {
   id: string
@@ -16,54 +16,42 @@ export interface EvidenceRow {
   sender: string | null
 }
 
-/** Read access to the ingest contract (ingest.parsed_record joined with its ingest.email_message). */
+/**
+ * Kysely/SQL Server port of EvidenceRepository — read access to the ingest mirror
+ * (parsed_record joined with email_message). JSON columns (fields/matchKeys) round-trip as objects
+ * via ParseJSONResultsPlugin.
+ */
 @Injectable()
 export class EvidenceRepository {
-  constructor(@Inject(DRIZZLE) private readonly db: DrizzleDB) {}
+  constructor(@Inject(KYSELY) private readonly db: Kysely<DB>) {}
 
   /** Parsed records of specific emails (email_message ids) — the Change History's per-email replay source. */
-  forMessages(messageIds: string[]) {
-    if (!messageIds.length) return Promise.resolve([])
-    return this.db
-      .select({
-        messageId: schema.ingestParsedRecord.messageId,
-        subject: schema.ingestEmailMessage.subject,
-        sender: schema.ingestEmailMessage.sender,
-        receivedAt: schema.ingestEmailMessage.receivedAt,
-        fields: schema.ingestParsedRecord.fields,
-      })
-      .from(schema.ingestParsedRecord)
-      .innerJoin(schema.ingestEmailMessage, eq(schema.ingestParsedRecord.messageId, schema.ingestEmailMessage.id))
-      .where(inArray(schema.ingestParsedRecord.messageId, messageIds))
+  async forMessages(messageIds: string[]) {
+    if (!messageIds.length) return [] as { messageId: string; subject: string | null; sender: string | null; receivedAt: Date | null; fields: Record<string, unknown> | null }[]
+    return this.db.selectFrom('parsedRecord')
+      .innerJoin('emailMessage', 'parsedRecord.messageId', 'emailMessage.id')
+      .where('parsedRecord.messageId', 'in', messageIds)
+      .select(['parsedRecord.messageId', 'emailMessage.subject', 'emailMessage.sender', 'emailMessage.receivedAt', 'parsedRecord.fields'])
+      .execute() as Promise<{ messageId: string; subject: string | null; sender: string | null; receivedAt: Date | null; fields: Record<string, unknown> | null }[]>
   }
 
   allWithMessage(): Promise<EvidenceRow[]> {
-    return this.db
-      .select({
-        id: schema.ingestParsedRecord.id,
-        messageId: schema.ingestParsedRecord.messageId,
-        fields: schema.ingestParsedRecord.fields,
-        matchKeys: schema.ingestParsedRecord.matchKeys,
-        emailType: schema.ingestParsedRecord.emailType,
-        poNo: schema.ingestParsedRecord.poNo,
-        mode: schema.ingestParsedRecord.mode,
-        receivedAt: schema.ingestEmailMessage.receivedAt,
-        conversationId: schema.ingestEmailMessage.conversationId,
-        sender: schema.ingestEmailMessage.sender,
-      })
-      .from(schema.ingestParsedRecord)
-      .innerJoin(schema.ingestEmailMessage, eq(schema.ingestParsedRecord.messageId, schema.ingestEmailMessage.id))
+    return this.db.selectFrom('parsedRecord')
+      .innerJoin('emailMessage', 'parsedRecord.messageId', 'emailMessage.id')
+      .select([
+        'parsedRecord.id', 'parsedRecord.messageId', 'parsedRecord.fields', 'parsedRecord.matchKeys',
+        'parsedRecord.emailType', 'parsedRecord.poNo', 'parsedRecord.mode',
+        'emailMessage.receivedAt', 'emailMessage.conversationId', 'emailMessage.sender',
+      ])
+      .execute() as Promise<EvidenceRow[]>
   }
 
-  /** Senders of the given source emails, keyed by graph_message_id — used to detect a leg built entirely
-   *  from the CVP notification platform (classifyKind rule (c)) on the agent/decisions path, where the DTO
-   *  carries no sender. Best-effort: a 2-VM split where email_message isn't co-located returns fewer rows,
-   *  which the caller treats as "not provably platform-only" (never a false demote). */
-  sendersByGraphIds(graphMessageIds: string[]): Promise<{ graphMessageId: string | null; sender: string | null }[]> {
-    if (!graphMessageIds.length) return Promise.resolve([])
-    return this.db
-      .select({ graphMessageId: schema.ingestEmailMessage.graphMessageId, sender: schema.ingestEmailMessage.sender })
-      .from(schema.ingestEmailMessage)
-      .where(inArray(schema.ingestEmailMessage.graphMessageId, graphMessageIds))
+  /** Senders of the given source emails, keyed by graph_message_id. */
+  async sendersByGraphIds(graphMessageIds: string[]): Promise<{ graphMessageId: string | null; sender: string | null }[]> {
+    if (!graphMessageIds.length) return []
+    return this.db.selectFrom('emailMessage')
+      .where('graphMessageId', 'in', graphMessageIds)
+      .select(['graphMessageId', 'sender'])
+      .execute() as Promise<{ graphMessageId: string | null; sender: string | null }[]>
   }
 }

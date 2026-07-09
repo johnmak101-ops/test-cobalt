@@ -1,6 +1,5 @@
 import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest'
-import { eq, sql } from 'drizzle-orm'
-import * as schema from '../src/db/contracts'
+import { sql } from 'kysely'
 import { getTestDb, closeTestDb, resetDb, repos, type TestDB } from './setup-db'
 import { IngestRepository } from '../src/db/repositories/ingest.repository'
 import { CommitterService } from '../src/reconcile/committer.service'
@@ -37,11 +36,11 @@ describe('IngestRepository.upsertFromDecision (integration)', () => {
     ]
     await ingestRepo.upsertFromDecision(ev)
     await ingestRepo.upsertFromDecision(ev) // re-POST of the identical batch
-    const r = await db.execute(sql`select
-      (select count(*) from ingest.email_message where graph_message_id='g1') m,
-      (select count(*) from ingest.parsed_record where graph_message_id='g1') p,
-      (select count(*) from ingest.email_attachment) a`)
-    const row = (r as unknown as { rows: { m: number; p: number; a: number }[] }).rows[0]!
+    const r = await sql<{ m: number; p: number; a: number }>`select
+      (select count(*) from email_message where graph_message_id = 'g1') m,
+      (select count(*) from parsed_record where graph_message_id = 'g1') p,
+      (select count(*) from email_attachment) a`.execute(db)
+    const row = r.rows[0]!
     expect([Number(row.m), Number(row.p), Number(row.a)]).toEqual([1, 1, 1])
   })
 
@@ -53,10 +52,10 @@ describe('IngestRepository.upsertFromDecision (integration)', () => {
     await ingestRepo.upsertFromDecision(ev)
     await ingestRepo.upsertFromDecision(ev) // re-POST of the same 2-record batch
 
-    const messages = await db.select().from(schema.ingestEmailMessage).where(eq(schema.ingestEmailMessage.graphMessageId, 'g2'))
+    const messages = await db.selectFrom('emailMessage').where('graphMessageId', '=', 'g2').selectAll().execute()
     expect(messages).toHaveLength(1) // one email, upserted not duplicated
 
-    const records = await db.select().from(schema.ingestParsedRecord).where(eq(schema.ingestParsedRecord.graphMessageId, 'g2'))
+    const records = await db.selectFrom('parsedRecord').where('graphMessageId', '=', 'g2').selectAll().execute()
     expect(records).toHaveLength(2) // both recordIdx rows survive — neither clobbered the other
     expect(records.map((r) => r.poNo).sort()).toEqual(['PO-A', 'PO-B'])
   })
@@ -68,15 +67,15 @@ describe('IngestRepository.upsertFromDecision (integration)', () => {
     ]
     await ingestRepo.upsertFromDecision(ev) // a same-batch collision on (graph_message_id, record_idx)
 
-    const records = await db.select().from(schema.ingestParsedRecord).where(eq(schema.ingestParsedRecord.graphMessageId, 'g-dup'))
-    expect(records).toHaveLength(1) // the unique constraint's onConflictDoUpdate collapses the collision, it never inserts twice
+    const records = await db.selectFrom('parsedRecord').where('graphMessageId', '=', 'g-dup').selectAll().execute()
+    expect(records).toHaveLength(1) // the unique constraint's upsert collapses the collision, it never inserts twice
     expect(records[0]!.poNo).toBe('SECOND') // last entry in the batch wins
   })
 
   it('a message upsert refreshes metadata (e.g. subject correction on a follow-up POST)', async () => {
     await ingestRepo.upsertFromDecision([{ graphMessageId: 'g3', subject: 'first cut' }])
     await ingestRepo.upsertFromDecision([{ graphMessageId: 'g3', subject: 'corrected subject' }])
-    const [msg] = await db.select().from(schema.ingestEmailMessage).where(eq(schema.ingestEmailMessage.graphMessageId, 'g3'))
+    const msg = await db.selectFrom('emailMessage').where('graphMessageId', '=', 'g3').selectAll().executeTakeFirst()
     expect(msg?.subject).toBe('corrected subject')
   })
 })
@@ -104,24 +103,24 @@ describe('POST /api/decisions evidence[] wiring (DecisionsService.ingest)', () =
     )
     expect(res.action).not.toBe('skip') // the commit path is unaffected by the evidence side-write
 
-    const [msg] = await db.select().from(schema.ingestEmailMessage).where(eq(schema.ingestEmailMessage.graphMessageId, 'g-ev-1'))
+    const msg = await db.selectFrom('emailMessage').where('graphMessageId', '=', 'g-ev-1').selectAll().executeTakeFirst()
     expect(msg?.subject).toBe('hello')
-    const attachments = await db.select().from(schema.ingestEmailAttachment).where(eq(schema.ingestEmailAttachment.messageId, msg!.id))
+    const attachments = await db.selectFrom('emailAttachment').where('messageId', '=', msg!.id).selectAll().execute()
     expect(attachments).toHaveLength(1)
   })
 
   it('a legacy decision WITHOUT evidence[] writes nothing to ingest.* (additive/back-compat)', async () => {
     const res = await decisions.ingest(decision())
     expect(res.action).not.toBe('skip')
-    expect(await db.select().from(schema.ingestEmailMessage)).toHaveLength(0)
-    expect(await db.select().from(schema.ingestParsedRecord)).toHaveLength(0)
+    expect(await db.selectFrom('emailMessage').selectAll().execute()).toHaveLength(0)
+    expect(await db.selectFrom('parsedRecord').selectAll().execute()).toHaveLength(0)
   })
 
   it('re-POSTing the SAME decision + evidence[] stays idempotent end-to-end', async () => {
     const dto = decision({ evidence: [{ graphMessageId: 'g-ev-2', subject: 's2', fields: { so_no: 'SO-EV' } }] })
     await decisions.ingest(dto)
     await decisions.ingest(dto)
-    expect(await db.select().from(schema.ingestEmailMessage).where(eq(schema.ingestEmailMessage.graphMessageId, 'g-ev-2'))).toHaveLength(1)
-    expect(await db.select().from(schema.ingestParsedRecord).where(eq(schema.ingestParsedRecord.graphMessageId, 'g-ev-2'))).toHaveLength(1)
+    expect(await db.selectFrom('emailMessage').where('graphMessageId', '=', 'g-ev-2').selectAll().execute()).toHaveLength(1)
+    expect(await db.selectFrom('parsedRecord').where('graphMessageId', '=', 'g-ev-2').selectAll().execute()).toHaveLength(1)
   })
 })

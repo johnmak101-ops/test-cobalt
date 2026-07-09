@@ -1,5 +1,4 @@
 import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest'
-import * as schema from '../src/db/contracts'
 import { getTestDb, resetDb, closeTestDb, repos, type TestDB } from './setup-db'
 import { MastersSyncService } from '../src/masters/mesh/masters-sync.service'
 import type { MeshMasterSource } from '../src/masters/mesh/mesh.types'
@@ -24,13 +23,13 @@ const source = (over: Partial<MeshMasterSource> = {}): MeshMasterSource => ({
 
 describe('MastersSyncService (integration)', () => {
   it('inserts new, updates changed, and NEVER deletes a local row missing from the pull', async () => {
-    await db.insert(schema.customers).values([{ code: 'OLD', name: 'Old Name' }, { code: 'GONE', name: 'Not In ERP' }])
+    await db.insertInto('customers').values([{ code: 'OLD', name: 'Old Name' }, { code: 'GONE', name: 'Not In ERP' }]).execute()
     const svc = new MastersSyncService(source({
       customers: async () => [{ code: 'OLD', name: 'New Name' }, { code: 'NEW', name: 'Fresh' }],
     }), repo)
     const [cust] = await svc.sync()
     expect(cust).toMatchObject({ type: 'customers', fetched: 2, inserted: 1, updated: 1 })
-    const rows = await db.select().from(schema.customers)
+    const rows = await db.selectFrom('customers').selectAll().execute()
     expect(rows.map((r) => `${r.code}:${r.name}`).sort()).toEqual(['GONE:Not In ERP', 'NEW:Fresh', 'OLD:New Name'])
   })
 
@@ -49,7 +48,7 @@ describe('MastersSyncService (integration)', () => {
       ],
     }), repo)
     await svc.sync()
-    const rows = await db.select().from(schema.vendors)
+    const rows = await db.selectFrom('vendors').selectAll().execute()
     expect(rows.map((r) => `${r.code}:${r.type}`).sort()).toEqual(['F1:factory', 'G1:agent'])
   })
 
@@ -61,6 +60,6 @@ describe('MastersSyncService (integration)', () => {
     const summary = await svc.sync()
     expect(summary.find((s) => s.type === 'customers')).toMatchObject({ inserted: 1 })
     expect(summary.find((s) => s.type === 'vendors')?.error).toMatch(/mesh 500/)
-    expect(await db.select().from(schema.customers)).toHaveLength(1)
+    expect(await db.selectFrom('customers').selectAll().execute()).toHaveLength(1)
   })
 })

@@ -1,6 +1,6 @@
 import bcrypt from 'bcryptjs'
-import * as schema from './contracts'
-import type { DrizzleDB } from './drizzle.provider'
+import type { Kysely } from 'kysely'
+import type { DB } from './kysely/db'
 
 /** Seed passwords are dev placeholders; in production they MUST come from env (fail otherwise). */
 function seedPassword(envVar: string, devFallback: string): string {
@@ -24,19 +24,26 @@ const AGENT_PASSWORD = seedPassword('TRACKING_AGENT_PASSWORD', 'cobalt')
  *     (a machine login can't do an interactive password change).
  * Returns the inserted rows so callers can attribute demo data to a real user id.
  */
-export async function seedAuthUsers(db: DrizzleDB) {
+export async function seedAuthUsers(db: Kysely<DB>) {
   const initialPw = await bcrypt.hash(INITIAL_PASSWORD, 10)
   const agentPw = await bcrypt.hash(AGENT_PASSWORD, 10)
-  // Idempotent: the seed no longer truncates `users` (that CASCADE would wipe master_resolution), so a
-  // reseed must not duplicate the demo accounts. Existing accounts (incl. a changed password) are left as-is;
-  // drop + recreate the DB for a fully pristine demo.
-  return db
-    .insert(schema.users)
-    .values([
-      { email: 'super@cobalt.hk', name: 'Sue Super', passwordHash: initialPw, role: 'SUPERADMIN', avatarInitials: 'SS', mustReset: true },
-      { email: 'admin@cobalt.hk', name: 'Amon Admin', passwordHash: initialPw, role: 'ADMIN', avatarInitials: 'AA', mustReset: true },
-      { email: 'agent@cobalt.hk', name: 'Cobalt Agent', passwordHash: agentPw, role: 'EDITOR', avatarInitials: 'AG', mustReset: false },
-    ])
-    .onConflictDoNothing({ target: schema.users.email })
-    .returning()
+  const accounts = [
+    { email: 'super@cobalt.hk', name: 'Sue Super', passwordHash: initialPw, role: 'SUPERADMIN', avatarInitials: 'SS', mustReset: true },
+    { email: 'admin@cobalt.hk', name: 'Amon Admin', passwordHash: initialPw, role: 'ADMIN', avatarInitials: 'AA', mustReset: true },
+    { email: 'agent@cobalt.hk', name: 'Cobalt Agent', passwordHash: agentPw, role: 'EDITOR', avatarInitials: 'AG', mustReset: false },
+  ]
+  // Idempotent: the seed must not duplicate or overwrite existing accounts (incl. a changed password) — a
+  // reseed leaves them as-is; drop + recreate the DB for a fully pristine demo. MSSQL has no
+  // ON CONFLICT DO NOTHING → check-then-insert per email (the unique index absorbs the concurrent race).
+  const inserted: Array<{ id: string; email: string }> = []
+  for (const a of accounts) {
+    const exists = await db.selectFrom('users').where('email', '=', a.email).select('id').executeTakeFirst()
+    if (exists) continue
+    try {
+      inserted.push(await db.insertInto('users').values(a).outputAll('inserted').executeTakeFirstOrThrow())
+    } catch (e) {
+      if (!/unique|duplicate/i.test((e as Error).message)) throw e // duplicate = concurrent seed — idempotent
+    }
+  }
+  return inserted
 }

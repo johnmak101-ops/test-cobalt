@@ -1,6 +1,4 @@
 import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest'
-import { and, eq } from 'drizzle-orm'
-import * as schema from '../src/db/contracts'
 import { getTestDb, resetDb, closeTestDb, repos, type TestDB } from './setup-db'
 import { CommitterService, type ReconGroup } from '../src/reconcile/committer.service'
 
@@ -31,15 +29,15 @@ beforeAll(async () => {
 afterAll(closeTestDb)
 beforeEach(() => resetDb(db))
 
-describe('CommitterService (integration, real Postgres)', () => {
+describe('CommitterService (integration, real SQL Server)', () => {
   it('creates a booking + leg from a group, mapping fields and deriving state', async () => {
     const res = await committer.apply(group({ fields: { so_no: 'SO-1', hbl_awb_fcr_no: 'H-1' }, emailTypes: ['SO'] }))
     expect(res.action).toBe('create_booking')
     expect(res.state).toBe('CONFIRMED')
-    const [leg] = await db.select().from(schema.shipments).where(eq(schema.shipments.id, res.shipmentId))
+    const leg = await db.selectFrom('shipments').where('id', '=', res.shipmentId).selectAll().executeTakeFirstOrThrow()
     expect(leg.soNo).toBe('SO-1')
     expect(leg.mode).toBe('SEA_LCL')
-    expect(await db.select().from(schema.bookings)).toHaveLength(1)
+    expect(await db.selectFrom('bookings').selectAll().execute()).toHaveLength(1)
   })
 
   it('is idempotent: the same group twice updates one leg (no duplicate booking)', async () => {
@@ -48,8 +46,8 @@ describe('CommitterService (integration, real Postgres)', () => {
     const b = await committer.apply(g)
     expect(b.action).toBe('amend_fields')
     expect(b.bookingId).toBe(a.bookingId)
-    expect(await db.select().from(schema.bookings)).toHaveLength(1)
-    expect(await db.select().from(schema.shipments)).toHaveLength(1)
+    expect(await db.selectFrom('bookings').selectAll().execute()).toHaveLength(1)
+    expect(await db.selectFrom('shipments').selectAll().execute()).toHaveLength(1)
   })
 
   it('persists identifier history (cross-type dedup + is_current) and is idempotent on re-apply', async () => {
@@ -65,7 +63,7 @@ describe('CommitterService (integration, real Postgres)', () => {
     })
     const res = await committer.apply(g)
     const idRows = () =>
-      db.select().from(schema.shipmentIdentifiers).where(eq(schema.shipmentIdentifiers.shipmentId, res.shipmentId))
+      db.selectFrom('shipmentIdentifiers').where('shipmentId', '=', res.shipmentId).selectAll().execute()
     const rows1 = await idRows()
     // BK-1 kept ONLY under booking_no (so_no:BK-1 dropped by cross-type dedup); so_no:SO-1 + container_no:CT-1 survive
     expect(rows1.map((r) => `${r.type}:${r.value}`).sort()).toEqual(['booking_no:BK-1', 'container_no:CT-1', 'so_no:SO-1'])
@@ -79,13 +77,14 @@ describe('CommitterService (integration, real Postgres)', () => {
 
   it('human-wins: a locked field is never overwritten by the agent', async () => {
     const a = await committer.apply(group({ fields: { so_no: 'AGENT-SO' } }))
-    await db.update(schema.shipments).set({ soNo: 'HUMAN-SO' }).where(eq(schema.shipments.id, a.shipmentId))
+    await db.updateTable('shipments').set({ soNo: 'HUMAN-SO' }).where('id', '=', a.shipmentId).execute()
     await db
-      .insert(schema.fieldLocks)
+      .insertInto('fieldLocks')
       .values({ entityType: 'shipment', entityId: a.shipmentId, field: 'soNo', lockedValue: 'HUMAN-SO' })
+      .execute()
     const b = await committer.apply(group({ fields: { so_no: 'AGENT-SO-2' } }))
     expect(b.skippedLockedFields).toContain('soNo')
-    const [leg] = await db.select().from(schema.shipments).where(eq(schema.shipments.id, a.shipmentId))
+    const leg = await db.selectFrom('shipments').where('id', '=', a.shipmentId).selectAll().executeTakeFirstOrThrow()
     expect(leg.soNo).toBe('HUMAN-SO')
   })
 
@@ -93,12 +92,12 @@ describe('CommitterService (integration, real Postgres)', () => {
     await committer.apply(group({ pos: ['PO-A'], matchKeys: { so_no: 'SAME' } }))
     const res = await committer.apply(group({ pos: ['PO-B'], matchKeys: { so_no: 'SAME' } }))
     expect(res.action).toBe('create_booking')
-    expect(await db.select().from(schema.bookings)).toHaveLength(2)
+    expect(await db.selectFrom('bookings').selectAll().execute()).toHaveLength(2)
   })
 
   it('writes an audit row on create', async () => {
     await committer.apply(group())
-    const audit = await db.select().from(schema.changeLog)
+    const audit = await db.selectFrom('changeLog').selectAll().execute()
     expect(audit.length).toBeGreaterThan(0)
     expect(audit.some((a) => a.changeType === 'create' && a.sourceType === 'agent')).toBe(true)
   })
@@ -109,18 +108,18 @@ describe('CommitterService (integration, real Postgres)', () => {
     const a = await committer.apply(group({ fields: { so_no: 'SO-BR' }, matchKeys: { so_no: 'SO-BR' } }))
     const b = await committer.apply(group({ fields: { so_no: 'SO-BR', brand: 'FENIX' }, matchKeys: { so_no: 'SO-BR' } }))
     expect(b.shipmentId).toBe(a.shipmentId) // same leg (amend)
-    const brandRow = (await db.select().from(schema.changeLog).where(eq(schema.changeLog.entityId, a.shipmentId)))
+    const brandRow = (await db.selectFrom('changeLog').where('entityId', '=', a.shipmentId).selectAll().execute())
       .find((r) => r.field === 'brand')
     expect(brandRow?.newValue).toBe('FENIX')
     expect(brandRow?.changeType).toBe('update')
     // and it actually landed on the booking
-    const [bk] = await db.select().from(schema.bookings).where(eq(schema.bookings.id, a.bookingId))
+    const bk = await db.selectFrom('bookings').where('id', '=', a.bookingId).selectAll().executeTakeFirstOrThrow()
     expect(bk.brand).toBe('FENIX')
   })
 })
 
 describe('CommitterService — per-PO enrichment from parsed evidence (integration)', () => {
-  /** Seed one parsed_record (email × PO) with its ingest.email_message received time. */
+  /** Seed one parsed_record (email × PO) with its email_message received time. */
   async function seedRecord(over: {
     graphMessageId: string
     receivedAt: string
@@ -129,23 +128,28 @@ describe('CommitterService — per-PO enrichment from parsed evidence (integrati
     matchKeys?: Record<string, unknown>
     recordIdx?: number
   }) {
-    const [msg] = await db
-      .insert(schema.ingestEmailMessage)
+    const msg = await db
+      .insertInto('emailMessage')
       .values({ graphMessageId: over.graphMessageId, receivedAt: new Date(over.receivedAt) })
-      .returning()
-    await db.insert(schema.ingestParsedRecord).values({
-      messageId: msg.id,
-      recordIdx: over.recordIdx ?? 0,
-      poNo: over.poNo,
-      fields: over.fields,
-      matchKeys: over.matchKeys ?? {},
-    })
+      .outputAll('inserted')
+      .executeTakeFirstOrThrow()
+    // graphMessageId is set like production ingest does (SQL Server UNIQUE (gmid, record_idx) treats NULLs
+    // as equal, so NULL-gmid rows — fine on Postgres — would collide here)
+    await db
+      .insertInto('parsedRecord')
+      .values({
+        messageId: msg.id,
+        graphMessageId: over.graphMessageId,
+        recordIdx: over.recordIdx ?? 0,
+        poNo: over.poNo,
+        fields: JSON.stringify(over.fields),
+        matchKeys: JSON.stringify(over.matchKeys ?? {}),
+      })
+      .execute()
   }
 
-  const poRow = async (poNumber: string) => {
-    const [po] = await db.select().from(schema.purchaseOrders).where(eq(schema.purchaseOrders.poNumber, poNumber))
-    return po
-  }
+  const poRow = (poNumber: string) =>
+    db.selectFrom('purchaseOrders').where('poNumber', '=', poNumber).selectAll().executeTakeFirstOrThrow()
 
   it('enriches the PO with per-PO brand/item_style_no/total_quantity(+unit) from the matching parsed_record', async () => {
     await seedRecord({ graphMessageId: 'g-1', receivedAt: '2026-06-30T05:00:00Z', poNo: 'PO-ENR', fields: { brand: 'FENIX', item_style_no: '43079', qty: '24', qty_unit: 'cartons' } })
@@ -179,7 +183,7 @@ describe('CommitterService — per-PO enrichment from parsed evidence (integrati
     await committer.apply(group({ pos: ['PO-HUMAN'], matchKeys: { so_no: 'SO-H1' } }))
     expect((await poRow('PO-HUMAN')).brand).toBe('FENIX') // first commit enriches the empty column
     // a human corrects the brand, then a fresh (newer) email restates the parsed brand
-    await db.update(schema.purchaseOrders).set({ brand: 'HUMAN BRAND' }).where(eq(schema.purchaseOrders.poNumber, 'PO-HUMAN'))
+    await db.updateTable('purchaseOrders').set({ brand: 'HUMAN BRAND' }).where('poNumber', '=', 'PO-HUMAN').execute()
     await seedRecord({ graphMessageId: 'g-h2', receivedAt: '2026-06-30T06:00:00Z', poNo: 'PO-HUMAN', fields: { brand: 'FENIX-NEW', item_style_no: 'S2' } })
     await committer.apply(group({ pos: ['PO-HUMAN'], matchKeys: { so_no: 'SO-H2' } }))
     const po = await poRow('PO-HUMAN')
@@ -189,20 +193,26 @@ describe('CommitterService — per-PO enrichment from parsed evidence (integrati
 })
 
 describe('CommitterService — co-valid customer parties (integration)', () => {
-  // master_resolution is NOT in resetDb's truncate list → clear it + seed customers per test
+  // resolution facts + customers are seeded per test (resetDb wipes every table between tests)
   async function seedAEGroup(extraCustomers: { code: string; name: string }[] = []) {
-    await db.delete(schema.masterResolution)
-    await db.insert(schema.customers).values([
-      { code: 'AEOW', name: 'AEO MANAGEMENT CO.' },
-      { code: 'BLUI', name: 'BLUE STAR IMPORTS L.P.' },
-      ...extraCustomers,
-    ])
-    await db.insert(schema.masterResolution).values([
-      { kind: 'customer_group', lhs: 'AEOW', rhs: 'AMERICAN_EAGLE', status: 'approved', source: 'seed' },
-      { kind: 'customer_group', lhs: 'BLUI', rhs: 'AMERICAN_EAGLE', status: 'approved', source: 'seed' },
-      { kind: 'customer_role', lhs: 'AEOW', rhs: 'bill_to', status: 'approved', source: 'seed' },
-      { kind: 'customer_role', lhs: 'BLUI', rhs: 'importer_of_record', status: 'approved', source: 'seed' },
-    ])
+    await db.deleteFrom('masterResolution').execute()
+    await db
+      .insertInto('customers')
+      .values([
+        { code: 'AEOW', name: 'AEO MANAGEMENT CO.' },
+        { code: 'BLUI', name: 'BLUE STAR IMPORTS L.P.' },
+        ...extraCustomers,
+      ])
+      .execute()
+    await db
+      .insertInto('masterResolution')
+      .values([
+        { kind: 'customer_group', lhs: 'AEOW', rhs: 'AMERICAN_EAGLE', status: 'approved', source: 'seed' },
+        { kind: 'customer_group', lhs: 'BLUI', rhs: 'AMERICAN_EAGLE', status: 'approved', source: 'seed' },
+        { kind: 'customer_role', lhs: 'AEOW', rhs: 'bill_to', status: 'approved', source: 'seed' },
+        { kind: 'customer_role', lhs: 'BLUI', rhs: 'importer_of_record', status: 'approved', source: 'seed' },
+      ])
+      .execute()
   }
 
   it('persists bill-to + IOR as parties, primary = bill_to, and DROPS an unrelated party', async () => {
@@ -216,13 +226,13 @@ describe('CommitterService — co-valid customer parties (integration)', () => {
         { type: 'customer_code', value: 'FENIX', role: 'other', isPrimary: false, docType: 'Customs', rank: 1 }, // UNRELATED → dropped
       ],
     }))
-    const parties = await db.select().from(schema.shipmentParties).where(eq(schema.shipmentParties.shipmentId, res.shipmentId))
+    const parties = await db.selectFrom('shipmentParties').where('shipmentId', '=', res.shipmentId).selectAll().execute()
     expect(parties.map((p) => p.customerCode).sort()).toEqual(['AEOW', 'BLUI']) // FENIX dropped (no shared group)
     expect(parties.find((p) => p.customerCode === 'AEOW')?.isPrimary).toBe(true)
     expect(parties.find((p) => p.customerCode === 'BLUI')?.isPrimary).toBe(false)
     // booking.customer_id = the bill_to primary (AEOW), never the IOR
-    const [bk] = await db.select().from(schema.bookings).where(eq(schema.bookings.id, res.bookingId))
-    const [aeow] = await db.select().from(schema.customers).where(eq(schema.customers.code, 'AEOW'))
+    const bk = await db.selectFrom('bookings').where('id', '=', res.bookingId).selectAll().executeTakeFirstOrThrow()
+    const aeow = await db.selectFrom('customers').where('code', '=', 'AEOW').selectAll().executeTakeFirstOrThrow()
     expect(bk.customerId).toBe(aeow.id)
   })
 
@@ -238,27 +248,28 @@ describe('CommitterService — co-valid customer parties (integration)', () => {
     })
     const a = await committer.apply(g)
     await committer.apply(g)
-    const parties = await db.select().from(schema.shipmentParties).where(eq(schema.shipmentParties.shipmentId, a.shipmentId))
+    const parties = await db.selectFrom('shipmentParties').where('shipmentId', '=', a.shipmentId).selectAll().execute()
     expect(parties).toHaveLength(2)
   })
 
   it('folds an alias (COLEB→COLE) onto booking.customer_id via canonical resolution', async () => {
-    await db.delete(schema.masterResolution)
-    await db.insert(schema.customers).values([{ code: 'COLE', name: 'COLE BUXTON LTD' }])
-    await db.insert(schema.masterResolution).values([
-      { kind: 'customer_canonical', lhs: 'COLEB', rhs: 'COLE', status: 'approved', source: 'seed' },
-    ])
+    await db.deleteFrom('masterResolution').execute()
+    await db.insertInto('customers').values([{ code: 'COLE', name: 'COLE BUXTON LTD' }]).execute()
+    await db
+      .insertInto('masterResolution')
+      .values([{ kind: 'customer_canonical', lhs: 'COLEB', rhs: 'COLE', status: 'approved', source: 'seed' }])
+      .execute()
     const res = await committer.apply(group({ fields: { customer_code: 'COLEB', so_no: 'SO-COLE' }, matchKeys: { so_no: 'SO-COLE' } }))
-    const [bk] = await db.select().from(schema.bookings).where(eq(schema.bookings.id, res.bookingId))
-    const [cole] = await db.select().from(schema.customers).where(eq(schema.customers.code, 'COLE'))
+    const bk = await db.selectFrom('bookings').where('id', '=', res.bookingId).selectAll().executeTakeFirstOrThrow()
+    const cole = await db.selectFrom('customers').where('code', '=', 'COLE').selectAll().executeTakeFirstOrThrow()
     expect(bk.customerId).toBe(cole.id) // COLEB resolved to COLE's id
   })
 
   it('writes no parties when the decision carries none (legacy/single-customer)', async () => {
-    await db.delete(schema.masterResolution)
-    await db.insert(schema.customers).values([{ code: 'DOCC', name: 'DOCLASSE' }])
+    await db.deleteFrom('masterResolution').execute()
+    await db.insertInto('customers').values([{ code: 'DOCC', name: 'DOCLASSE' }]).execute()
     const res = await committer.apply(group({ fields: { customer_code: 'DOCC', so_no: 'SO-SINGLE' }, matchKeys: { so_no: 'SO-SINGLE' } }))
-    const parties = await db.select().from(schema.shipmentParties).where(eq(schema.shipmentParties.shipmentId, res.shipmentId))
+    const parties = await db.selectFrom('shipmentParties').where('shipmentId', '=', res.shipmentId).selectAll().execute()
     expect(parties).toHaveLength(0)
   })
 })
@@ -275,7 +286,7 @@ describe('CommitterService — empty-cargo review flag (integration)', () => {
       pos: ['PO-CARGO1'],
       fields: { booking_no: 'BKCARGO1', qty_unit: 'cartons' },
     }))
-    const [leg] = await db.select().from(schema.shipments).where(eq(schema.shipments.id, res.shipmentId))
+    const leg = await db.selectFrom('shipments').where('id', '=', res.shipmentId).selectAll().executeTakeFirstOrThrow()
     expect(leg.reviewStatus).toBe('provisional')
     expect(hasCargoFlag(leg)).toBe(true)
   })
@@ -286,7 +297,7 @@ describe('CommitterService — empty-cargo review flag (integration)', () => {
       pos: ['PO-CARGO2'],
       fields: { booking_no: 'BKCARGO2', qty: 100, qty_unit: 'cartons' },
     }))
-    const [leg] = await db.select().from(schema.shipments).where(eq(schema.shipments.id, res.shipmentId))
+    const leg = await db.selectFrom('shipments').where('id', '=', res.shipmentId).selectAll().executeTakeFirstOrThrow()
     expect(hasCargoFlag(leg)).toBe(false)
   })
 
@@ -296,18 +307,19 @@ describe('CommitterService — empty-cargo review flag (integration)', () => {
       pos: ['PO-CARGO3'],
       fields: { booking_no: 'BKCARGO3' },
     }))
-    const [leg] = await db.select().from(schema.shipments).where(eq(schema.shipments.id, res.shipmentId))
+    const leg = await db.selectFrom('shipments').where('id', '=', res.shipmentId).selectAll().executeTakeFirstOrThrow()
     expect(hasCargoFlag(leg)).toBe(false)
   })
 })
 
 describe('CommitterService — CVP notification-platform legs → DOCUMENT (integration)', () => {
-  /** Seed an ingest.email_message (the source email) with a graph id + sender, so the committer can
+  /** Seed an email_message (the source email) with a graph id + sender, so the committer can
    *  resolve whether the leg was built entirely from the notification platform on the agent path. */
   async function seedEmail(graphMessageId: string, sender: string) {
     await db
-      .insert(schema.ingestEmailMessage)
+      .insertInto('emailMessage')
       .values({ graphMessageId, sender, receivedAt: new Date('2026-07-01T08:22:00Z') })
+      .execute()
   }
 
   const cvpGroup = (over: Partial<ReconGroup> = {}): ReconGroup =>
@@ -323,27 +335,27 @@ describe('CommitterService — CVP notification-platform legs → DOCUMENT (inte
   it("agent path: a leg built entirely from the CVP platform's emails commits as kind=DOCUMENT", async () => {
     await seedEmail('cvp-1', 'notify.noreply2@tradelinkone.com')
     const res = await committer.apply(cvpGroup()) // fromPlatform unset → committer resolves it from the sender
-    const [leg] = await db.select().from(schema.shipments).where(eq(schema.shipments.id, res.shipmentId))
+    const leg = await db.selectFrom('shipments').where('id', '=', res.shipmentId).selectAll().executeTakeFirstOrThrow()
     expect(leg.kind).toBe('DOCUMENT')
   })
 
   it('the SAME leg from a real forwarder sender stays kind=SHIPMENT (booking# is a booked move)', async () => {
     await seedEmail('cvp-1', 'ops@realforwarder.com')
     const res = await committer.apply(cvpGroup())
-    const [leg] = await db.select().from(schema.shipments).where(eq(schema.shipments.id, res.shipmentId))
+    const leg = await db.selectFrom('shipments').where('id', '=', res.shipmentId).selectAll().executeTakeFirstOrThrow()
     expect(leg.kind).toBe('SHIPMENT')
   })
 
   it('a platform leg that also carries a real MBL stays kind=SHIPMENT (a booked move the notice reports)', async () => {
     await seedEmail('cvp-1', 'notify.noreply2@tradelinkone.com')
     const res = await committer.apply(cvpGroup({ fields: { booking_no: 'FENLPO003034A', mbl: 'WHLC12345' } }))
-    const [leg] = await db.select().from(schema.shipments).where(eq(schema.shipments.id, res.shipmentId))
+    const leg = await db.selectFrom('shipments').where('id', '=', res.shipmentId).selectAll().executeTakeFirstOrThrow()
     expect(leg.kind).toBe('SHIPMENT')
   })
 
   it('rebuild path: an explicit fromPlatform=true demotes without needing to resolve senders', async () => {
     const res = await committer.apply(cvpGroup({ fromPlatform: true, events: [{ emailType: 'Other', receivedAt: '2026-07-01T08:22:00Z' }] }))
-    const [leg] = await db.select().from(schema.shipments).where(eq(schema.shipments.id, res.shipmentId))
+    const leg = await db.selectFrom('shipments').where('id', '=', res.shipmentId).selectAll().executeTakeFirstOrThrow()
     expect(leg.kind).toBe('DOCUMENT')
   })
 })
@@ -351,12 +363,26 @@ describe('CommitterService — CVP notification-platform legs → DOCUMENT (inte
 describe('CommitterService — de-correction (b): PO-enrichment surfaced as review flags (integration)', () => {
   /** One email_message + N parsed_records sharing its messageId (broadcast detection groups by messageId). */
   async function seedEmail(graphMessageId: string, receivedAt: string, records: { poNo: string | null; fields: Record<string, unknown>; matchKeys?: Record<string, unknown> }[]) {
-    const [msg] = await db.insert(schema.ingestEmailMessage).values({ graphMessageId, receivedAt: new Date(receivedAt) }).returning()
-    await db.insert(schema.ingestParsedRecord).values(
-      records.map((r, i) => ({ messageId: msg.id, recordIdx: i, poNo: r.poNo, fields: r.fields, matchKeys: r.matchKeys ?? {} })),
-    )
+    const msg = await db
+      .insertInto('emailMessage')
+      .values({ graphMessageId, receivedAt: new Date(receivedAt) })
+      .outputAll('inserted')
+      .executeTakeFirstOrThrow()
+    await db
+      .insertInto('parsedRecord')
+      .values(
+        records.map((r, i) => ({
+          messageId: msg.id,
+          graphMessageId, // as production ingest writes it (NULL gmids collide on the SQL Server unique key)
+          recordIdx: i,
+          poNo: r.poNo,
+          fields: JSON.stringify(r.fields),
+          matchKeys: JSON.stringify(r.matchKeys ?? {}),
+        })),
+      )
+      .execute()
   }
-  const legFor = async (id: string) => (await db.select().from(schema.shipments).where(eq(schema.shipments.id, id)))[0]
+  const legFor = (id: string) => db.selectFrom('shipments').where('id', '=', id).selectAll().executeTakeFirstOrThrow()
   const reasons = (leg: { reviewReasons?: string[] | null }) => leg.reviewReasons ?? []
 
   it('b1: a suspected broadcast total is KEPT on the PO and the leg is flagged (not silently dropped)', async () => {
@@ -366,7 +392,7 @@ describe('CommitterService — de-correction (b): PO-enrichment surfaced as revi
       { poNo: 'PO-BC', fields: { qty: '168', qty_unit: 'cartons' } },
     ])
     const res = await committer.apply(group({ pos: ['PO-BA', 'PO-BB', 'PO-BC'], matchKeys: { so_no: 'SO-BCAST' } }))
-    const [po] = await db.select().from(schema.purchaseOrders).where(eq(schema.purchaseOrders.poNumber, 'PO-BA'))
+    const po = await db.selectFrom('purchaseOrders').where('poNumber', '=', 'PO-BA').selectAll().executeTakeFirstOrThrow()
     expect(po.totalQuantity).toBe(168) // KEPT (raw model value), not nulled
     const leg = await legFor(res.shipmentId)
     expect(leg.reviewStatus).toBe('provisional')
@@ -377,7 +403,7 @@ describe('CommitterService — de-correction (b): PO-enrichment surfaced as revi
     await seedEmail('m-old', '2026-06-01T00:00:00Z', [{ poNo: 'PO-CONF', fields: { brand: 'Barbour' } }])
     await seedEmail('m-new', '2026-06-02T00:00:00Z', [{ poNo: 'PO-CONF', fields: { brand: 'FENIX' } }])
     const res = await committer.apply(group({ pos: ['PO-CONF'], matchKeys: { so_no: 'SO-CONF' } }))
-    const [po] = await db.select().from(schema.purchaseOrders).where(eq(schema.purchaseOrders.poNumber, 'PO-CONF'))
+    const po = await db.selectFrom('purchaseOrders').where('poNumber', '=', 'PO-CONF').selectAll().executeTakeFirstOrThrow()
     expect(po.brand).toBe('FENIX') // newest still wins (written value unchanged)
     const leg = await legFor(res.shipmentId)
     expect(leg.reviewStatus).toBe('provisional')
@@ -388,7 +414,7 @@ describe('CommitterService — de-correction (b): PO-enrichment surfaced as revi
     await seedEmail('m-so', '2026-06-30T05:00:00Z', [{ poNo: null, matchKeys: { so_no: 'SO-UNATTR' }, fields: { brand: 'Barbour' } }])
     await seedEmail('m-po', '2026-06-30T05:01:00Z', [{ poNo: 'PO-UNATTR', matchKeys: { customer_po: 'PO-UNATTR', so_no: 'SO-UNATTR' }, fields: { item_style_no: 'ABC' } }])
     const res = await committer.apply(group({ pos: ['PO-UNATTR'], matchKeys: { so_no: 'SO-UNATTR' } }))
-    const [po] = await db.select().from(schema.purchaseOrders).where(eq(schema.purchaseOrders.poNumber, 'PO-UNATTR'))
+    const po = await db.selectFrom('purchaseOrders').where('poNumber', '=', 'PO-UNATTR').selectAll().executeTakeFirstOrThrow()
     expect(po.brand).toBeNull() // never leaked onto the PO
     const leg = await legFor(res.shipmentId)
     expect(reasons(leg).some((r) => /not attributed to any PO/i.test(r))).toBe(true)
@@ -397,11 +423,11 @@ describe('CommitterService — de-correction (b): PO-enrichment surfaced as revi
 
 describe('CommitterService — de-correction (c): shadow measurements (integration)', () => {
   const shadowRowsFor = (id: string) =>
-    db.select().from(schema.changeLog).where(and(eq(schema.changeLog.entityId, id), eq(schema.changeLog.changeType, 'shadow')))
+    db.selectFrom('changeLog').where('entityId', '=', id).where('changeType', '=', 'shadow').selectAll().execute()
 
   it('c1: the platform forwarder scrub still fires (forwarderRaw nulled) AND is shadow-recorded', async () => {
     const res = await committer.apply(group({ pos: [], fields: { forwarder_name: 'TradeLinkOne', so_no: 'SO-SCRUB' }, matchKeys: { so_no: 'SO-SCRUB' } }))
-    const [leg] = await db.select().from(schema.shipments).where(eq(schema.shipments.id, res.shipmentId))
+    const leg = await db.selectFrom('shipments').where('id', '=', res.shipmentId).selectAll().executeTakeFirstOrThrow()
     expect(leg.forwarderRaw).toBeNull() // behavior unchanged: the scrub wiped the raw forwarder
     const shadows = await shadowRowsFor(res.shipmentId)
     expect(shadows.some((r) => r.field === 'forwarder_name' && r.oldValue === 'TradeLinkOne' && r.newValue === null)).toBe(true)
@@ -412,7 +438,7 @@ describe('CommitterService — de-correction (c): shadow measurements (integrati
       pos: [], fields: { booking_no: 'FENLPOSHADOW1' }, matchKeys: { booking_no: 'FENLPOSHADOW1' },
       emailTypes: ['Other'], events: [{ emailType: 'Other', receivedAt: '2026-01-01T00:00:00Z' }], fromPlatform: true,
     }))
-    const [leg] = await db.select().from(schema.shipments).where(eq(schema.shipments.id, res.shipmentId))
+    const leg = await db.selectFrom('shipments').where('id', '=', res.shipmentId).selectAll().executeTakeFirstOrThrow()
     expect(leg.kind).toBe('DOCUMENT') // behavior unchanged
     const shadows = await shadowRowsFor(res.shipmentId)
     expect(shadows.some((r) => r.field === 'kind' && r.note === 'classifyKind platform_only')).toBe(true)
@@ -422,7 +448,7 @@ describe('CommitterService — de-correction (c): shadow measurements (integrati
     const res = await committer.apply(group({
       pos: [], fields: {}, matchKeys: {}, emailTypes: ['Other'], events: [{ emailType: 'Other', receivedAt: '2026-01-01T00:00:00Z' }],
     }))
-    const [leg] = await db.select().from(schema.shipments).where(eq(schema.shipments.id, res.shipmentId))
+    const leg = await db.selectFrom('shipments').where('id', '=', res.shipmentId).selectAll().executeTakeFirstOrThrow()
     expect(leg.kind).toBe('DOCUMENT')
     expect(await shadowRowsFor(res.shipmentId)).toHaveLength(0)
   })

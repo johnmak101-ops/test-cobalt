@@ -1,9 +1,9 @@
 import { Inject, Injectable } from '@nestjs/common'
-import { and, eq } from 'drizzle-orm'
-import * as schema from '../contracts'
-import { DRIZZLE, type DrizzleDB } from '../drizzle.provider'
+import { sql, type Kysely } from 'kysely'
+import type { DB } from '../kysely/db'
+import { KYSELY } from '../kysely.provider'
 
-/** Raised when a mutation would leave zero active SUPERADMINs. HTTP-agnostic — the service maps it. */
+/** Raised when a mutation would leave zero active SUPERADMINs. */
 export class LastActiveSuperadminError extends Error {
   constructor() {
     super('cannot deactivate or demote the last active superadmin')
@@ -11,65 +11,57 @@ export class LastActiveSuperadminError extends Error {
   }
 }
 
-/** Data access for auth users. */
+type UserInsert = {
+  email: string
+  name: string
+  passwordHash: string
+  role: string
+  avatarInitials?: string | null
+  active?: boolean
+  mustReset?: boolean
+}
+
+/** Kysely/SQL Server port of UsersRepository. */
 @Injectable()
 export class UsersRepository {
-  constructor(@Inject(DRIZZLE) private readonly db: DrizzleDB) {}
+  constructor(@Inject(KYSELY) private readonly db: Kysely<DB>) {}
 
   async findByEmail(email: string) {
-    const [u] = await this.db.select().from(schema.users).where(eq(schema.users.email, email.toLowerCase()))
+    const u = await this.db.selectFrom('users').where('email', '=', email.toLowerCase()).selectAll().executeTakeFirst()
     return u ?? null
   }
   async findById(id: string) {
-    const [u] = await this.db.select().from(schema.users).where(eq(schema.users.id, id))
+    const u = await this.db.selectFrom('users').where('id', '=', id).selectAll().executeTakeFirst()
     return u ?? null
   }
-  async create(values: typeof schema.users.$inferInsert) {
-    const [u] = await this.db.insert(schema.users).values(values).returning()
+  async create(values: UserInsert) {
+    const u = await this.db.insertInto('users').values(values).outputAll('inserted').executeTakeFirstOrThrow()
     return u
   }
   list() {
-    return this.db.select().from(schema.users).orderBy(schema.users.createdAt)
+    return this.db.selectFrom('users').orderBy('createdAt').selectAll().execute()
   }
-  async update(id: string, patch: Partial<typeof schema.users.$inferInsert>) {
-    const [u] = await this.db
-      .update(schema.users)
-      .set({ ...patch, updatedAt: new Date() })
-      .where(eq(schema.users.id, id))
-      .returning()
+  async update(id: string, patch: Partial<UserInsert>) {
+    const u = await this.db.updateTable('users').set({ ...patch, updatedAt: new Date() }).where('id', '=', id).outputAll('inserted').executeTakeFirst()
     return u ?? null
   }
   async countActiveByRole(role: string) {
-    const rows = await this.db
-      .select({ id: schema.users.id })
-      .from(schema.users)
-      .where(and(eq(schema.users.role, role as never), eq(schema.users.active, true)))
+    const rows = await this.db.selectFrom('users').select('id').where('role', '=', role).where('active', '=', true).execute()
     return rows.length
   }
 
   /**
    * Apply `patch` to user `id` inside a transaction that FIRST locks every active SUPERADMIN row
-   * (`FOR UPDATE`) and re-counts. Two concurrent deactivations/demotions of the final superadmins
-   * therefore serialize on those row locks instead of both reading a stale "2 active" and both
-   * committing (check-then-act → zero active). Throws {@link LastActiveSuperadminError} when the
-   * change would leave fewer than one active superadmin.
-   *
-   * Precondition (enforced by the caller): `id` is itself an active superadmin being deactivated or
-   * demoted, so it is in the locked set and "≤1 remaining" means "this is the last one".
+   * (MSSQL: `WITH (UPDLOCK, HOLDLOCK)`) and re-counts. Throws when the change would leave fewer than
+   * one active superadmin. Mirrors the Drizzle `FOR UPDATE` guard.
    */
-  async updateGuardingLastActiveSuperadmin(id: string, patch: Partial<typeof schema.users.$inferInsert>) {
-    return this.db.transaction(async (tx) => {
-      const activeSupers = await tx
-        .select({ id: schema.users.id })
-        .from(schema.users)
-        .where(and(eq(schema.users.role, 'SUPERADMIN' as never), eq(schema.users.active, true)))
-        .for('update')
-      if (activeSupers.length <= 1) throw new LastActiveSuperadminError()
-      const [u] = await tx
-        .update(schema.users)
-        .set({ ...patch, updatedAt: new Date() })
-        .where(eq(schema.users.id, id))
-        .returning()
+  async updateGuardingLastActiveSuperadmin(id: string, patch: Partial<UserInsert>) {
+    return this.db.transaction().execute(async (tx) => {
+      // MSSQL row lock: WITH (UPDLOCK, HOLDLOCK) — the MSSQL equivalent of Postgres FOR UPDATE.
+      // Kysely's forUpdate() emits `FOR UPDATE` which MSSQL rejects ( DECLARE CURSOR only).
+      const locked = await sql<{ id: string }>`SELECT id FROM users WITH (UPDLOCK, HOLDLOCK) WHERE role = 'SUPERADMIN' AND active = 1`.execute(tx)
+      if (locked.rows.length <= 1) throw new LastActiveSuperadminError()
+      const u = await tx.updateTable('users').set({ ...patch, updatedAt: new Date() }).where('id', '=', id).outputAll('inserted').executeTakeFirst()
       return u ?? null
     })
   }

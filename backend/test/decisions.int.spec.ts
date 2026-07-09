@@ -1,6 +1,4 @@
 import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest'
-import { eq } from 'drizzle-orm'
-import * as schema from '../src/db/contracts'
 import { getTestDb, resetDb, closeTestDb, repos, type TestDB } from './setup-db'
 import { CommitterService } from '../src/reconcile/committer.service'
 import { DecisionsService } from '../src/decisions/decisions.service'
@@ -43,7 +41,7 @@ describe('DecisionsService (integration)', () => {
     expect(res.action).toBe('create_booking')
     expect(res.reviewStatus).toBe('confirmed')
 
-    const legs = await db.select().from(schema.shipments)
+    const legs = await db.selectFrom('shipments').selectAll().execute()
     expect(legs).toHaveLength(1)
     expect(legs[0].reviewStatus).toBe('confirmed')
     expect(legs[0].confidence).toBe(92)
@@ -53,7 +51,7 @@ describe('DecisionsService (integration)', () => {
   it('routes a low-confidence decision to provisional', async () => {
     const res = await decisions.ingest(decision({ confidence: 50 }))
     expect(res.reviewStatus).toBe('provisional')
-    const [leg] = await db.select().from(schema.shipments)
+    const [leg] = await db.selectFrom('shipments').selectAll().execute()
     expect(leg.reviewStatus).toBe('provisional')
     expect(leg.confidence).toBe(50)
   })
@@ -67,7 +65,7 @@ describe('DecisionsService (integration)', () => {
   it('the agent review gate VETOES an auto-confirm the score alone would allow (autoApply:false → provisional)', async () => {
     const res = await decisions.ingest(decision({ confidence: 92, autoApply: false, reviewReasons: ['backend leg matched on PO only'] }))
     expect(res.reviewStatus).toBe('provisional') // high score, but the deterministic gate withheld it
-    const [leg] = await db.select().from(schema.shipments)
+    const [leg] = await db.selectFrom('shipments').selectAll().execute()
     expect(leg.reviewStatus).toBe('provisional')
     expect(leg.reviewReasons).toEqual(['backend leg matched on PO only']) // gate reasons surface ahead of conflicts
   })
@@ -92,26 +90,26 @@ describe('DecisionsService (integration)', () => {
     expect(res.action).toBe('skip')
     // a skip is not a shipment: NO leg (so it never appears in legsForTracker/activeLegs) and NO booking
     // (so it never burns a JOB-XXXX number) — even at a high confidence that would otherwise auto-confirm.
-    expect(await db.select().from(schema.shipments)).toHaveLength(0)
-    expect(await db.select().from(schema.bookings)).toHaveLength(0)
+    expect(await db.selectFrom('shipments').selectAll().execute()).toHaveLength(0)
+    expect(await db.selectFrom('bookings').selectAll().execute()).toHaveLength(0)
     // re-POSTing the same notification stays a no-op (no duplicate contentless legs)
     await decisions.ingest(decision({ confidence: 92, disposition: 'skip' }))
-    expect(await db.select().from(schema.shipments)).toHaveLength(0)
-    expect(await db.select().from(schema.bookings)).toHaveLength(0)
+    expect(await db.selectFrom('shipments').selectAll().execute()).toHaveLength(0)
+    expect(await db.selectFrom('bookings').selectAll().execute()).toHaveLength(0)
   })
 
   it('a PO-only decision is idempotent BY PO — a re-POST amends, never a duplicate leg', async () => {
     const po = (eta: string) => decision({ matchKey: { customer_po: 'PO-DUP' }, pos: ['PO-DUP'], fields: { customer_po: 'PO-DUP', eta } })
     await decisions.ingest(po('2026-03-01'))
     await decisions.ingest(po('2026-04-01')) // re-send / follow-up of the same PO-only email
-    expect(await db.select().from(schema.shipments)).toHaveLength(1) // NOT two phantom legs
-    expect(await db.select().from(schema.bookings)).toHaveLength(1)
+    expect(await db.selectFrom('shipments').selectAll().execute()).toHaveLength(1) // NOT two phantom legs
+    expect(await db.selectFrom('bookings').selectAll().execute()).toHaveLength(1)
   })
 
   it('a PO-only leg is UPGRADED (not duplicated) when its first strong id arrives sharing the PO', async () => {
     await decisions.ingest(decision({ matchKey: { customer_po: 'PO-UP' }, pos: ['PO-UP'], fields: { customer_po: 'PO-UP' } }))
     await decisions.ingest(decision({ matchKey: { booking_no: 'BK-UP', customer_po: 'PO-UP' }, pos: ['PO-UP'], fields: { booking_no: 'BK-UP', customer_po: 'PO-UP' } }))
-    const legs = await db.select().from(schema.shipments)
+    const legs = await db.selectFrom('shipments').selectAll().execute()
     expect(legs).toHaveLength(1) // the nascent PO-only leg gained BK-UP — not a second shipment
     expect(legs[0].bookingNo).toBe('BK-UP')
   })
@@ -126,30 +124,32 @@ describe('DecisionsService (integration)', () => {
         events: [{ emailType: 'Final B/L', receivedAt: '2026-02-05T00:00:00Z', graphId: 'g-bl-1' }],
       }),
     )
-    const legs = await db.select().from(schema.shipments)
+    const legs = await db.selectFrom('shipments').selectAll().execute()
     expect(legs).toHaveLength(1) // matched on so_no + PO, not duplicated
     expect(legs[0].hblAwbFcrNo).toBe('HBL-9')
   })
 
   it('never overwrites a human-locked field', async () => {
     const first = await decisions.ingest(decision({ confidence: 90 }))
-    await db.update(schema.shipments).set({ bookingNo: 'BK-LOCKED' }).where(eq(schema.shipments.id, first.shipmentId))
+    await db.updateTable('shipments').set({ bookingNo: 'BK-LOCKED' }).where('id', '=', first.shipmentId).execute()
     await db
-      .insert(schema.fieldLocks)
+      .insertInto('fieldLocks')
       .values({ entityType: 'shipment', entityId: first.shipmentId, field: 'bookingNo', lockedValue: 'BK-LOCKED' })
+      .execute()
 
     const res = await decisions.ingest(decision({ confidence: 90, fields: { so_no: 'SO-1', booking_no: 'BK-NEW' } }))
     expect(res.skippedLockedFields).toContain('bookingNo')
-    const [leg] = await db.select().from(schema.shipments)
+    const [leg] = await db.selectFrom('shipments').selectAll().execute()
     expect(leg.bookingNo).toBe('BK-LOCKED') // human edit survives the agent
   })
 
   it('stamps the milestone with the source graph id (for view-original)', async () => {
     const res = await decisions.ingest(decision({ confidence: 90 }))
     const ms = await db
-      .select()
-      .from(schema.shipmentMilestones)
-      .where(eq(schema.shipmentMilestones.shipmentId, res.shipmentId))
+      .selectFrom('shipmentMilestones')
+      .where('shipmentId', '=', res.shipmentId)
+      .selectAll()
+      .execute()
     const so = ms.find((m) => m.milestoneType === 'SO_RECEIVED')
     expect(so?.emailMessageId).toBe('g-so-1')
   })
@@ -160,7 +160,7 @@ describe('DecisionsService review policy (integration)', () => {
     await settings.setReviewPolicy(['conflict'], null)
     const res = await decisions.ingest(decision({ autoApply: true, confidence: 95, conflicts: ['SO number disagreement'] }))
     expect(res.reviewStatus).toBe('provisional') // downgraded even though the agent auto-confirmed
-    const [leg] = await db.select().from(schema.shipments)
+    const [leg] = await db.selectFrom('shipments').selectAll().execute()
     expect(leg.reviewStatus).toBe('provisional')
     expect(leg.reviewReasons).toContain("there's an unresolved conflict") // reason surfaced in the review queue
   })

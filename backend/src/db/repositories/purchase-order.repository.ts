@@ -1,202 +1,137 @@
 import { Inject, Injectable } from '@nestjs/common'
-import { and, eq, inArray, sql } from 'drizzle-orm'
-import { alias } from 'drizzle-orm/pg-core'
-import * as schema from '../contracts'
-import { DRIZZLE, type DrizzleDB } from '../drizzle.provider'
+import { sql, type Kysely } from 'kysely'
+import type { DB } from '../kysely/db'
+import { KYSELY } from '../kysely.provider'
 
-/** The subset of PO columns enriched from parsed evidence at commit (types derived from the schema). */
-export type PoEnrichInput = Partial<
-  Pick<typeof schema.purchaseOrders.$inferInsert, 'brand' | 'itemStyleNo' | 'totalQuantity' | 'quantityUnit'>
->
+export type PoEnrichInput = Partial<{ brand: string | null; itemStyleNo: string | null; totalQuantity: number | null; quantityUnit: string | null }>
 
-/** Data access for purchase_orders + shipment_pos (PO master reads, PO CRUD, and PO↔shipment links).
- *  Extracted from BookingRepository so the PO domain has its own repository. */
+/** Kysely/SQL Server port of PurchaseOrderRepository. PO master reads + CRUD + PO↔shipment links. */
 @Injectable()
 export class PurchaseOrderRepository {
-  constructor(@Inject(DRIZZLE) private readonly db: DrizzleDB) {}
+  constructor(@Inject(KYSELY) private readonly db: Kysely<DB>) {}
 
-  /** PO master with customer/vendor codes resolved (for the Matcher). When `openOnly`, drops POs
-   *  whose linked bookings are all terminal (CLOSED/CANCELLED). */
+  /** PO master with customer/vendor codes resolved + shipped-qty/shipment-count/furthest-status aggregates. */
   async listPos(openOnly = false) {
-    const rows = await this.db
-      .select({
-        id: schema.purchaseOrders.id,
-        poNumber: schema.purchaseOrders.poNumber,
-        customerCode: schema.customers.code,
-        customerName: schema.customers.name,
-        vendorCode: schema.vendors.code,
-        vendorName: schema.vendors.name,
-        brand: schema.purchaseOrders.brand,
-        itemStyleNo: schema.purchaseOrders.itemStyleNo,
-        totalQuantity: schema.purchaseOrders.totalQuantity,
-        quantityUnit: schema.purchaseOrders.quantityUnit,
-        crd: schema.purchaseOrders.crd,
-        customerId: schema.purchaseOrders.customerId,
-        vendorId: schema.purchaseOrders.vendorId,
-        notes: schema.purchaseOrders.notes,
-        createdAt: schema.purchaseOrders.createdAt,
-        updatedAt: schema.purchaseOrders.updatedAt,
-      })
-      .from(schema.purchaseOrders)
-      .leftJoin(schema.customers, eq(schema.purchaseOrders.customerId, schema.customers.id))
-      .leftJoin(schema.vendors, eq(schema.purchaseOrders.vendorId, schema.vendors.id))
-      .orderBy(schema.purchaseOrders.poNumber)
+    const rows = await this.db.selectFrom('purchaseOrders')
+      .leftJoin('customers', 'purchaseOrders.customerId', 'customers.id')
+      .leftJoin('vendors', 'purchaseOrders.vendorId', 'vendors.id')
+      .orderBy('purchaseOrders.poNumber')
+      .select([
+        'purchaseOrders.id as id', 'purchaseOrders.poNumber as poNumber', 'customers.code as customerCode',
+        'customers.name as customerName', 'vendors.code as vendorCode', 'vendors.name as vendorName',
+        'purchaseOrders.brand as brand', 'purchaseOrders.itemStyleNo as itemStyleNo',
+        'purchaseOrders.totalQuantity as totalQuantity', 'purchaseOrders.quantityUnit as quantityUnit',
+        'purchaseOrders.crd as crd', 'purchaseOrders.customerId as customerId', 'purchaseOrders.vendorId as vendorId',
+        'purchaseOrders.notes as notes', 'purchaseOrders.createdAt as createdAt', 'purchaseOrders.updatedAt as updatedAt',
+      ])
+      .execute()
 
-    // shipped qty + how many shipments each PO rides on (the leg-level split)
-    const agg = await this.db
-      .select({
-        poId: schema.shipmentPos.poId,
-        shipped: sql<number>`coalesce(sum(${schema.shipmentPos.quantity}), 0)::float`,
-        shipments: sql<number>`count(distinct ${schema.shipmentPos.shipmentId})::int`,
-        unit: sql<string | null>`max(${schema.shipmentPos.quantityUnit})`,
-        // the furthest lifecycle state across this PO's shipments — Progress without an ERP order qty
-        status: sql<
-          string | null
-        >`(array_agg(${schema.shipments.state} ORDER BY (case ${schema.shipments.state} when 'DELIVERED' then 6 when 'RELEASED' then 5 when 'SAILED' then 4 when 'AT_WAREHOUSE' then 3 when 'CONFIRMED' then 2 else 1 end) desc))[1]`,
-      })
-      .from(schema.shipmentPos)
-      .innerJoin(schema.shipments, eq(schema.shipmentPos.shipmentId, schema.shipments.id))
-      .groupBy(schema.shipmentPos.poId)
+    // aggregates: shipped qty (sum), shipment count (distinct), furthest state (MAX of the state-rank)
+    const agg = await this.db.selectFrom('shipmentPos')
+      .innerJoin('shipments', 'shipmentPos.shipmentId', 'shipments.id')
+      .groupBy('shipmentPos.poId')
+      .select([
+        'shipmentPos.poId as poId',
+        sql<number>`coalesce(sum(${sql.ref('shipmentPos.quantity')}), 0)`.as('shipped'),
+        sql<number>`count(distinct ${sql.ref('shipmentPos.shipmentId')})`.as('shipments'),
+        sql<string | null>`max(${sql.ref('shipmentPos.quantityUnit')})`.as('unit'),
+        sql<string | null>`max(case ${sql.ref('shipments.state')} when 'DELIVERED' then 6 when 'RELEASED' then 5 when 'SAILED' then 4 when 'AT_WAREHOUSE' then 3 when 'CONFIRMED' then 2 else 1 end)`.as('statusRank'),
+      ])
+      .execute()
+    // map statusRank back to the state string
+    const rankToState: Record<number, string> = { 1: 'BOOKED', 2: 'CONFIRMED', 3: 'AT_WAREHOUSE', 4: 'SAILED', 5: 'RELEASED', 6: 'DELIVERED' }
     const aggMap = new Map(agg.map((a) => [a.poId, a]))
-    const enriched = rows.map((r) => ({
-      ...r,
-      shippedQuantity: aggMap.get(r.id)?.shipped ?? 0,
-      shipmentCount: aggMap.get(r.id)?.shipments ?? 0,
-      shippedUnit: aggMap.get(r.id)?.unit ?? null,
-      status: aggMap.get(r.id)?.status ?? null,
-    }))
+    const enriched = rows.map((r) => {
+      const a = aggMap.get(r.id)
+      const rank = a?.statusRank != null ? Number(a.statusRank) : null
+      return {
+        ...r,
+        shippedQuantity: a ? Number(a.shipped) : 0,
+        shipmentCount: a ? Number(a.shipments) : 0,
+        shippedUnit: a?.unit ?? null,
+        status: rank != null ? (rankToState[rank] ?? null) : null,
+      }
+    })
 
     if (!openOnly) return enriched
-    const closedLinks = await this.db
-      .select({ poId: schema.bookingPos.poId })
-      .from(schema.bookingPos)
-      .innerJoin(schema.bookings, eq(schema.bookingPos.bookingId, schema.bookings.id))
-      .where(inArray(schema.bookings.status, ['CLOSED', 'CANCELLED']))
+    const closedLinks = await this.db.selectFrom('bookingPos')
+      .innerJoin('bookings', 'bookingPos.bookingId', 'bookings.id')
+      .where('bookings.status', 'in', ['CLOSED', 'CANCELLED'])
+      .select('bookingPos.poId as poId')
+      .execute()
     const closed = new Set(closedLinks.map((r) => r.poId))
     return enriched.filter((r) => !closed.has(r.id))
   }
 
-  /** A single PO with the shipments (legs) it rides on — for the PO detail page. */
+  /** A single PO with the shipments (legs) it rides on. */
   async poDetail(poId: string) {
-    const [po] = await this.db
-      .select({
-        id: schema.purchaseOrders.id,
-        poNumber: schema.purchaseOrders.poNumber,
-        brand: schema.purchaseOrders.brand,
-        itemStyleNo: schema.purchaseOrders.itemStyleNo,
-        totalQuantity: schema.purchaseOrders.totalQuantity,
-        quantityUnit: schema.purchaseOrders.quantityUnit,
-        crd: schema.purchaseOrders.crd,
-        customerId: schema.purchaseOrders.customerId,
-        vendorId: schema.purchaseOrders.vendorId,
-        notes: schema.purchaseOrders.notes,
-        customerCode: schema.customers.code,
-        customerName: schema.customers.name,
-        vendorCode: schema.vendors.code,
-        vendorName: schema.vendors.name,
-        createdAt: schema.purchaseOrders.createdAt,
-        updatedAt: schema.purchaseOrders.updatedAt,
-      })
-      .from(schema.purchaseOrders)
-      .leftJoin(schema.customers, eq(schema.purchaseOrders.customerId, schema.customers.id))
-      .leftJoin(schema.vendors, eq(schema.purchaseOrders.vendorId, schema.vendors.id))
-      .where(eq(schema.purchaseOrders.id, poId))
+    const po = await this.db.selectFrom('purchaseOrders')
+      .leftJoin('customers', 'purchaseOrders.customerId', 'customers.id')
+      .leftJoin('vendors', 'purchaseOrders.vendorId', 'vendors.id')
+      .where('purchaseOrders.id', '=', poId)
+      .select([
+        'purchaseOrders.id as id', 'purchaseOrders.poNumber as poNumber', 'purchaseOrders.brand as brand',
+        'purchaseOrders.itemStyleNo as itemStyleNo', 'purchaseOrders.totalQuantity as totalQuantity',
+        'purchaseOrders.quantityUnit as quantityUnit', 'purchaseOrders.crd as crd',
+        'purchaseOrders.customerId as customerId', 'purchaseOrders.vendorId as vendorId',
+        'purchaseOrders.notes as notes', 'customers.code as customerCode', 'customers.name as customerName',
+        'vendors.code as vendorCode', 'vendors.name as vendorName',
+        'purchaseOrders.createdAt as createdAt', 'purchaseOrders.updatedAt as updatedAt',
+      ])
+      .executeTakeFirst()
     if (!po) return null
 
-    const pol = alias(schema.ports, 'po_pol')
-    const pod = alias(schema.ports, 'po_pod')
-    const links = await this.db
-      .select({
-        linkId: schema.shipmentPos.id,
-        shipmentId: schema.shipmentPos.shipmentId,
-        linkedQuantity: schema.shipmentPos.quantity,
-        status: schema.shipments.state,
-        legStatus: schema.shipments.legStatus,
-        reviewStatus: schema.shipments.reviewStatus,
-        bookingNo: schema.shipments.bookingNo,
-        hbl: schema.shipments.hblAwbFcrNo,
-        so: schema.shipments.soNo,
-        etd: schema.shipments.etd,
-        eta: schema.shipments.eta,
-        mode: schema.shipments.mode,
-        polCode: pol.unlocode,
-        podCode: pod.unlocode,
-        polIata: pol.iata,
-        podIata: pod.iata,
-        linkedAt: schema.shipmentPos.createdAt,
-        containerNo: schema.shipments.containerNo,
-        mbl: schema.shipments.mbl,
-        scacCode: schema.shipments.scacCode,
-        vesselName: schema.shipments.vesselName,
-      })
-      .from(schema.shipmentPos)
-      .innerJoin(schema.shipments, eq(schema.shipmentPos.shipmentId, schema.shipments.id))
-      .leftJoin(pol, eq(schema.shipments.polId, pol.id))
-      .leftJoin(pod, eq(schema.shipments.podId, pod.id))
-      .where(eq(schema.shipmentPos.poId, poId))
+    const links = await this.db.selectFrom('shipmentPos')
+      .innerJoin('shipments', 'shipmentPos.shipmentId', 'shipments.id')
+      .leftJoin('ports as pol', 'shipments.polId', 'pol.id')
+      .leftJoin('ports as pod', 'shipments.podId', 'pod.id')
+      .where('shipmentPos.poId', '=', poId)
+      .select([
+        'shipmentPos.id as linkId', 'shipmentPos.shipmentId as shipmentId', 'shipmentPos.quantity as linkedQuantity',
+        'shipments.state as status', 'shipments.legStatus as legStatus', 'shipments.reviewStatus as reviewStatus',
+        'shipments.bookingNo as bookingNo', 'shipments.hblAwbFcrNo as hbl', 'shipments.soNo as so',
+        'shipments.etd as etd', 'shipments.eta as eta', 'shipments.mode as mode',
+        'pol.unlocode as polCode', 'pod.unlocode as podCode', 'pol.iata as polIata', 'pod.iata as podIata',
+        'shipmentPos.createdAt as linkedAt', 'shipments.containerNo as containerNo', 'shipments.mbl as mbl',
+        'shipments.scacCode as scacCode', 'shipments.vesselName as vesselName',
+      ])
+      .execute()
     return { po, links }
   }
 
-  /** One batched query: every PO's linked shipments with the fields the PO-list search needs
-   *  (container/SCAC/booking#/vessel/HBL/MBL). Grouped by poId in the service. */
+  /** Every PO's linked shipments with the PO-list search fields, batched. */
   async shipmentSummariesByPo() {
-    const pol = alias(schema.ports, 'sum_pol')
-    const pod = alias(schema.ports, 'sum_pod')
-    return this.db
-      .select({
-        poId: schema.shipmentPos.poId,
-        shipmentId: schema.shipmentPos.shipmentId,
-        linkedQuantity: schema.shipmentPos.quantity,
-        bookingNo: schema.shipments.bookingNo,
-        status: schema.shipments.state,
-        legStatus: schema.shipments.legStatus,
-        reviewStatus: schema.shipments.reviewStatus,
-        containerNo: schema.shipments.containerNo,
-        hbl: schema.shipments.hblAwbFcrNo,
-        mbl: schema.shipments.mbl,
-        scacCode: schema.shipments.scacCode,
-        vesselName: schema.shipments.vesselName,
-        mode: schema.shipments.mode,
-        polCode: pol.unlocode,
-        podCode: pod.unlocode,
-        polIata: pol.iata,
-        podIata: pod.iata,
-      })
-      .from(schema.shipmentPos)
-      .innerJoin(schema.shipments, eq(schema.shipmentPos.shipmentId, schema.shipments.id))
-      .leftJoin(pol, eq(schema.shipments.polId, pol.id))
-      .leftJoin(pod, eq(schema.shipments.podId, pod.id))
+    return this.db.selectFrom('shipmentPos')
+      .innerJoin('shipments', 'shipmentPos.shipmentId', 'shipments.id')
+      .leftJoin('ports as pol', 'shipments.polId', 'pol.id')
+      .leftJoin('ports as pod', 'shipments.podId', 'pod.id')
+      .select([
+        'shipmentPos.poId as poId', 'shipmentPos.shipmentId as shipmentId', 'shipmentPos.quantity as linkedQuantity',
+        'shipments.bookingNo as bookingNo', 'shipments.state as status', 'shipments.legStatus as legStatus',
+        'shipments.reviewStatus as reviewStatus', 'shipments.containerNo as containerNo',
+        'shipments.hblAwbFcrNo as hbl', 'shipments.mbl as mbl', 'shipments.scacCode as scacCode',
+        'shipments.vesselName as vesselName', 'shipments.mode as mode',
+        'pol.unlocode as polCode', 'pod.unlocode as podCode', 'pol.iata as polIata', 'pod.iata as podIata',
+      ])
+      .execute()
   }
 
-  /**
-   * Find-or-create a PO by its (unique) number. Optionally enrich brand / item_style_no / total_quantity(+unit)
-   * from the parsed evidence — set on INSERT, and FILL-IF-NULL on an existing row (only empty columns are
-   * written, so a human/ERP-set value is never overwritten). This mirrors fillBooking's human-wins semantics;
-   * the deterministic per-PO source + latest-received tie-break live upstream in resolvePoEnrichment.
-   */
+  /** Find-or-create a PO by number; enrich brand/style/qty on INSERT, fill-if-null on existing (human-wins). */
   async upsertPo(poNumber: string, customerId: string | null, vendorId: string | null, enrich?: PoEnrichInput) {
-    // Atomic find-or-create: INSERT ... ON CONFLICT (po_number) DO NOTHING, read back on conflict. Closes the
-    // read-then-write race where two concurrent emails carrying the same NEW po_number both miss a prior
-    // SELECT and both INSERT (→ unique violation, one email 500s). Enrichment is set on INSERT and
-    // FILL-IF-NULL on an existing row (human/ERP values never overwritten) — same human-wins semantics.
-    const [inserted] = await this.db
-      .insert(schema.purchaseOrders)
-      .values({
-        poNumber,
-        customerId,
-        vendorId,
-        brand: enrich?.brand ?? null,
-        itemStyleNo: enrich?.itemStyleNo ?? null,
-        totalQuantity: enrich?.totalQuantity ?? null,
-        quantityUnit: enrich?.quantityUnit ?? null,
-      })
-      .onConflictDoNothing({ target: schema.purchaseOrders.poNumber })
-      .returning()
-    if (inserted) return inserted.id
-
-    // Conflict → the row exists (ours from before, or a concurrent insert that has since committed). Read
-    // it and fill-if-null the enrichment.
-    const [existing] = await this.db.select().from(schema.purchaseOrders).where(eq(schema.purchaseOrders.poNumber, poNumber))
+    // check-then-insert (MSSQL has no ON CONFLICT DO NOTHING). A unique-index violation from a concurrent
+    // insert is caught → fall through to the read + fill-if-null path.
+    try {
+      const inserted = await this.db.insertInto('purchaseOrders').values({
+        poNumber, customerId, vendorId,
+        brand: enrich?.brand ?? null, itemStyleNo: enrich?.itemStyleNo ?? null,
+        totalQuantity: enrich?.totalQuantity ?? null, quantityUnit: enrich?.quantityUnit ?? null,
+      }).output('inserted.id').executeTakeFirst()
+      if (inserted) return inserted.id
+    } catch (e) {
+      // unique violation (po_number) — fall through to read + fill-if-null
+      if (!/unique|duplicate/i.test((e as Error).message)) throw e
+    }
+    const existing = await this.db.selectFrom('purchaseOrders').where('poNumber', '=', poNumber).selectAll().executeTakeFirst()
     if (!existing) throw new Error(`upsertPo: purchase_order ${poNumber} conflicted but was not found`)
     if (enrich) {
       const patch: PoEnrichInput = {}
@@ -204,63 +139,56 @@ export class PurchaseOrderRepository {
       if (existing.itemStyleNo == null && enrich.itemStyleNo != null) patch.itemStyleNo = enrich.itemStyleNo
       if (existing.totalQuantity == null && enrich.totalQuantity != null) patch.totalQuantity = enrich.totalQuantity
       if (existing.quantityUnit == null && enrich.quantityUnit != null) patch.quantityUnit = enrich.quantityUnit
-      if (Object.keys(patch).length)
-        await this.db.update(schema.purchaseOrders).set({ ...patch, updatedAt: new Date() }).where(eq(schema.purchaseOrders.id, existing.id))
+      if (Object.keys(patch).length) {
+        await this.db.updateTable('purchaseOrders').set({ ...patch, updatedAt: new Date() }).where('id', '=', existing.id).execute()
+      }
     }
     return existing.id
   }
 
-  // ---- PO CRUD (app-owned; master refs are validated, never created) ----
-
   async poById(id: string) {
-    const [row] = await this.db.select().from(schema.purchaseOrders).where(eq(schema.purchaseOrders.id, id))
+    const row = await this.db.selectFrom('purchaseOrders').where('id', '=', id).selectAll().executeTakeFirst()
     return row ?? null
   }
   async findPoByNumber(poNumber: string) {
-    const [row] = await this.db.select().from(schema.purchaseOrders).where(eq(schema.purchaseOrders.poNumber, poNumber))
+    const row = await this.db.selectFrom('purchaseOrders').where('poNumber', '=', poNumber).selectAll().executeTakeFirst()
     return row ?? null
   }
-  async createPo(values: typeof schema.purchaseOrders.$inferInsert) {
-    const [row] = await this.db.insert(schema.purchaseOrders).values(values).returning()
+  async createPo(values: {
+    poNumber: string
+    customerId?: string | null
+    vendorId?: string | null
+    brand?: string | null
+    itemStyleNo?: string | null
+    totalQuantity?: number | null
+    quantityUnit?: string | null
+    notes?: string | null
+  }) {
+    const row = await this.db.insertInto('purchaseOrders').values(values).outputAll('inserted').executeTakeFirstOrThrow()
     return row
   }
   async updatePo(id: string, patch: Record<string, unknown>) {
-    const [row] = await this.db
-      .update(schema.purchaseOrders)
-      .set({ ...patch, updatedAt: new Date() })
-      .where(eq(schema.purchaseOrders.id, id))
-      .returning()
+    const row = await this.db.updateTable('purchaseOrders').set({ ...patch, updatedAt: new Date() }).where('id', '=', id).outputAll('inserted').executeTakeFirst()
     return row ?? null
   }
-  /** How many shipment-legs and bookings this PO is linked to (delete-safety + FK RESTRICT). */
   async poLinkCounts(id: string) {
-    const [s] = await this.db
-      .select({ n: sql<number>`count(*)::int` })
-      .from(schema.shipmentPos)
-      .where(eq(schema.shipmentPos.poId, id))
-    const [b] = await this.db
-      .select({ n: sql<number>`count(*)::int` })
-      .from(schema.bookingPos)
-      .where(eq(schema.bookingPos.poId, id))
-    return { shipments: s?.n ?? 0, bookings: b?.n ?? 0 }
+    const s = await this.db.selectFrom('shipmentPos').where('poId', '=', id).select(sql<number>`count(*)`.as('n')).executeTakeFirst()
+    const b = await this.db.selectFrom('bookingPos').where('poId', '=', id).select(sql<number>`count(*)`.as('n')).executeTakeFirst()
+    return { shipments: Number(s?.n ?? 0), bookings: Number(b?.n ?? 0) }
   }
   async deletePo(id: string) {
-    const [row] = await this.db.delete(schema.purchaseOrders).where(eq(schema.purchaseOrders.id, id)).returning()
+    const row = await this.db.deleteFrom('purchaseOrders').where('id', '=', id).outputAll('deleted').executeTakeFirst()
     return row ?? null
   }
   async linkShipmentPo(poId: string, shipmentId: string, quantity: number | null, quantityUnit: string | null) {
-    const [row] = await this.db
-      .insert(schema.shipmentPos)
-      .values({ poId, shipmentId, quantity, quantityUnit: quantityUnit as never })
-      .onConflictDoNothing()
-      .returning()
+    // check-then-insert (the unique (shipment_id, po_id) absorbs replays)
+    const existing = await this.db.selectFrom('shipmentPos').where('poId', '=', poId).where('shipmentId', '=', shipmentId).select('id').executeTakeFirst()
+    if (existing) return null
+    const row = await this.db.insertInto('shipmentPos').values({ poId, shipmentId, quantity, quantityUnit }).outputAll('inserted').executeTakeFirst()
     return row ?? null
   }
   async unlinkShipmentPo(poId: string, linkId: string) {
-    const [row] = await this.db
-      .delete(schema.shipmentPos)
-      .where(and(eq(schema.shipmentPos.id, linkId), eq(schema.shipmentPos.poId, poId)))
-      .returning()
+    const row = await this.db.deleteFrom('shipmentPos').where('id', '=', linkId).where('poId', '=', poId).outputAll('deleted').executeTakeFirst()
     return row ?? null
   }
 }

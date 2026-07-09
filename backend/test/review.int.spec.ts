@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest'
-import { eq } from 'drizzle-orm'
-import * as schema from '../src/db/contracts'
+import type { Insertable } from 'kysely'
 import { getTestDb, resetDb, closeTestDb, repos, type TestDB } from './setup-db'
+import type { DB } from '../src/db/kysely/db'
 import { ReviewService } from '../src/review/review.service'
 import { QueueLearningClient } from '../src/review/queue-learning.client'
 import { SettingsService } from '../src/settings/settings.service'
@@ -21,19 +21,28 @@ beforeAll(async () => {
 afterAll(closeTestDb)
 beforeEach(async () => {
   await resetDb(db)
-  const [u] = await db
-    .insert(schema.users)
+  const u = await db
+    .insertInto('users')
     .values({ email: 'r@cobalt.hk', name: 'Reviewer', passwordHash: 'x', role: 'EDITOR' })
-    .returning()
+    .outputAll('inserted')
+    .executeTakeFirstOrThrow()
   reviewerId = u.id
 })
 
-async function seedProvisional(jobNo: string, confidence: number, over: Partial<typeof schema.shipments.$inferInsert> = {}) {
-  const [bk] = await db.insert(schema.bookings).values({ jobNo }).returning()
-  const [leg] = await db
-    .insert(schema.shipments)
-    .values({ bookingId: bk.id, legNo: 1, reviewStatus: 'provisional', confidence, reviewReasons: ['conflict: hbl A vs B'], ...over })
-    .returning()
+async function seedProvisional(jobNo: string, confidence: number, over: Partial<Insertable<DB['shipments']>> = {}) {
+  const bk = await db.insertInto('bookings').values({ jobNo }).outputAll('inserted').executeTakeFirstOrThrow()
+  const leg = await db
+    .insertInto('shipments')
+    .values({
+      bookingId: bk.id,
+      legNo: 1,
+      reviewStatus: 'provisional',
+      confidence,
+      reviewReasons: JSON.stringify(['conflict: hbl A vs B']),
+      ...over,
+    })
+    .outputAll('inserted')
+    .executeTakeFirstOrThrow()
   return { bk, leg }
 }
 
@@ -41,8 +50,8 @@ describe('ReviewService (integration)', () => {
   it('lists only provisional shipments, lowest confidence first', async () => {
     await seedProvisional('JOB-R-1', 60)
     await seedProvisional('JOB-R-2', 20)
-    const [okBk] = await db.insert(schema.bookings).values({ jobNo: 'JOB-OK' }).returning()
-    await db.insert(schema.shipments).values({ bookingId: okBk.id, legNo: 1, reviewStatus: 'confirmed', confidence: 95 })
+    const okBk = await db.insertInto('bookings').values({ jobNo: 'JOB-OK' }).outputAll('inserted').executeTakeFirstOrThrow()
+    await db.insertInto('shipments').values({ bookingId: okBk.id, legNo: 1, reviewStatus: 'confirmed', confidence: 95 }).execute()
 
     const q = await review.queue()
     expect(q).toHaveLength(2)
@@ -54,10 +63,10 @@ describe('ReviewService (integration)', () => {
   it('pairs each queued leg with its OWN booking jobNo and POs (no cross-leg bleed when batching)', async () => {
     const { bk: bkA } = await seedProvisional('JOB-RA', 30)
     const { bk: bkB } = await seedProvisional('JOB-RB', 10)
-    const [poA] = await db.insert(schema.purchaseOrders).values({ poNumber: 'PO-RA' }).returning()
-    const [poB] = await db.insert(schema.purchaseOrders).values({ poNumber: 'PO-RB' }).returning()
-    await db.insert(schema.bookingPos).values({ bookingId: bkA.id, poId: poA.id })
-    await db.insert(schema.bookingPos).values({ bookingId: bkB.id, poId: poB.id })
+    const poA = await db.insertInto('purchaseOrders').values({ poNumber: 'PO-RA' }).outputAll('inserted').executeTakeFirstOrThrow()
+    const poB = await db.insertInto('purchaseOrders').values({ poNumber: 'PO-RB' }).outputAll('inserted').executeTakeFirstOrThrow()
+    await db.insertInto('bookingPos').values({ bookingId: bkA.id, poId: poA.id }).execute()
+    await db.insertInto('bookingPos').values({ bookingId: bkB.id, poId: poB.id }).execute()
 
     const q = await review.queue()
     const posByJob = Object.fromEntries(q.map((r) => [r.jobNo, r.pos]))
@@ -70,12 +79,12 @@ describe('ReviewService (integration)', () => {
     const res = await review.confirm(leg.id, reviewerId)
     expect(res.reviewStatus).toBe('confirmed')
 
-    const [updated] = await db.select().from(schema.shipments).where(eq(schema.shipments.id, leg.id))
+    const updated = await db.selectFrom('shipments').where('id', '=', leg.id).selectAll().executeTakeFirstOrThrow()
     expect(updated.reviewStatus).toBe('confirmed')
     expect(updated.reviewedBy).toBe(reviewerId)
     expect(updated.reviewedAt).not.toBeNull()
 
-    const audit = await db.select().from(schema.changeLog).where(eq(schema.changeLog.entityId, leg.id))
+    const audit = await db.selectFrom('changeLog').where('entityId', '=', leg.id).selectAll().execute()
     expect(audit.some((a) => a.sourceType === 'manual' && a.actorUserId === reviewerId)).toBe(true)
   })
 
@@ -88,16 +97,16 @@ describe('ReviewService (integration)', () => {
     )
     expect(res.corrected).toEqual(expect.arrayContaining(['eta', 'soNo']))
 
-    const [updated] = await db.select().from(schema.shipments).where(eq(schema.shipments.id, leg.id))
+    const updated = await db.selectFrom('shipments').where('id', '=', leg.id).selectAll().executeTakeFirstOrThrow()
     expect(updated.reviewStatus).toBe('confirmed')
     expect(updated.soNo).toBe('FIXED-SO')
     expect(updated.eta?.toISOString().slice(0, 10)).toBe('2026-06-01')
 
-    const locks = await db.select().from(schema.fieldLocks).where(eq(schema.fieldLocks.entityId, leg.id))
+    const locks = await db.selectFrom('fieldLocks').where('entityId', '=', leg.id).selectAll().execute()
     expect(locks.map((l) => l.field)).toEqual(expect.arrayContaining(['eta', 'soNo']))
     expect(locks.find((l) => l.field === 'soNo')?.lockedBy).toBe(reviewerId)
 
-    const audit = await db.select().from(schema.changeLog).where(eq(schema.changeLog.entityId, leg.id))
+    const audit = await db.selectFrom('changeLog').where('entityId', '=', leg.id).selectAll().execute()
     expect(audit.some((a) => a.note === 'forwarder confirmed' && a.field === 'soNo')).toBe(true)
   })
 

@@ -11,8 +11,8 @@ const envSchema = z
     CORS_ORIGINS: z.string().optional(),
   })
   // ConfigModule.forRoot({ validate }) uses this function's RETURN VALUE as the new process.env —
-  // without .passthrough(), safeParse() strips every key not in the schema (e.g. DATABASE_URL),
-  // so anything read bare off process.env (drizzle.provider.ts, main.ts) would go missing at boot.
+  // without .passthrough(), safeParse() strips every key not in the schema (e.g. SQL_SERVER_URL),
+  // so anything read bare off process.env (kysely.provider.ts, main.ts) would go missing at boot.
   .passthrough()
 export type Env = z.infer<typeof envSchema>
 

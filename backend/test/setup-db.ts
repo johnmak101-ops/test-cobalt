@@ -1,9 +1,8 @@
-import { Pool } from 'pg'
-import { drizzle, type NodePgDatabase } from 'drizzle-orm/node-postgres'
-import { sql } from 'drizzle-orm'
-import * as schema from '../src/db/contracts'
-import { readFileSync, readdirSync } from 'node:fs'
+import { Kysely, sql } from 'kysely'
 import { join } from 'node:path'
+import { createKysely, parseMssqlConnectionString } from '../src/db/kysely/mssql-dialect'
+import { runMigrations } from '../src/db/kysely/migrate'
+import type { DB } from '../src/db/kysely/db'
 import { MastersRepository } from '../src/db/repositories/masters.repository'
 import { BookingRepository } from '../src/db/repositories/booking.repository'
 import { PurchaseOrderRepository } from '../src/db/repositories/purchase-order.repository'
@@ -16,68 +15,50 @@ import { UsersRepository } from '../src/db/repositories/users.repository'
 import { SettingsRepository } from '../src/db/repositories/settings.repository'
 import { IngestRepository } from '../src/db/repositories/ingest.repository'
 
-const ADMIN_URL = process.env.TEST_ADMIN_URL ?? 'postgres://postgres:postgres@localhost:5432/postgres'
-const TEST_URL = process.env.TEST_DATABASE_URL ?? 'postgres://postgres:postgres@localhost:5432/cobalt_test'
+const TEST_URL =
+  process.env.SQL_SERVER_TEST_URL ??
+  'Server=localhost,1433;Database=cobalt_test;User Id=sa;Password=YourStrong!Passw0rd;Encrypt=false;TrustServerCertificate=true'
 
-export type TestDB = NodePgDatabase<typeof schema>
+export type TestDB = Kysely<DB>
 
-let pool: Pool | null = null
+let db: TestDB | null = null
 
-/** Lazily create + migrate a dedicated `cobalt_test` database (separate from dev data). */
-export async function getTestDb(): Promise<{ db: TestDB; pool: Pool }> {
-  if (pool) return { db: drizzle(pool, { schema }), pool }
-  const admin = new Pool({ connectionString: ADMIN_URL })
-  if ((await admin.query("select 1 from pg_database where datname = 'cobalt_test'")).rowCount === 0)
-    await admin.query('create database cobalt_test')
-
-  let p = new Pool({ connectionString: TEST_URL })
-  const dbName = (await p.query('select current_database() as db')).rows[0].db as string
-  const hasLedger = (await p.query("select to_regclass('public._test_migrations') as t")).rows[0].t != null
-  const hasSchema = ((await p.query("select 1 from information_schema.schemata where schema_name = 'tracking'")).rowCount ?? 0) > 0
-  // Transition: a pre-ledger test DB (its schema was built by the old apply-once path) → recreate it clean ONCE
-  // so the migration ledger below becomes the single source of truth. Guarded to a DB literally named
-  // `cobalt_test` (never a mispointed real DB) and race-free (int specs run serially, fileParallelism:false).
-  if (hasSchema && !hasLedger && dbName === 'cobalt_test') {
-    await p.end()
-    await admin.query('drop database cobalt_test')
-    await admin.query('create database cobalt_test')
-    p = new Pool({ connectionString: TEST_URL })
-  }
-  await admin.end()
-
-  // Apply only migrations not yet recorded, and record each — so a NEWLY-ADDED migration auto-applies on the
-  // next run with NO manual `DROP DATABASE cobalt_test`. (The old code skipped ALL migrations whenever the
-  // `tracking` schema already existed, so a new migration silently never ran → the tests saw a stale schema.)
-  await p.query(
-    'create table if not exists _test_migrations (filename text primary key, applied_at timestamptz not null default now())',
-  )
-  const applied = new Set((await p.query('select filename from _test_migrations')).rows.map((row) => row.filename as string))
-  const dir = join(process.cwd(), 'drizzle')
-  for (const file of readdirSync(dir).filter((f) => f.endsWith('.sql')).sort()) {
-    if (applied.has(file)) continue
-    await p.query(readFileSync(join(dir, file), 'utf8'))
-    await p.query('insert into _test_migrations (filename) values ($1)', [file])
-  }
-  pool = p
-  return { db: drizzle(pool, { schema }), pool }
+/** Lazily create + migrate the dedicated `cobalt_test` SQL Server database (separate from dev data).
+ *  Kysely's own `kysely_migration` ledger makes migrations incremental — a newly-added migration
+ *  auto-applies on the next run, no manual DROP DATABASE needed. */
+export async function getTestDb(): Promise<{ db: TestDB }> {
+  if (db) return { db }
+  const dbName = parseMssqlConnectionString(TEST_URL).database
+  const master = createKysely<unknown>(TEST_URL.replace(/Database=[^;]+/i, 'Database=master'))
+  await sql.raw(`IF DB_ID('${dbName}') IS NULL CREATE DATABASE [${dbName}]`).execute(master)
+  await master.destroy()
+  const handle = createKysely<DB>(TEST_URL)
+  await runMigrations(handle, join(process.cwd(), 'src/db/kysely-migrations'))
+  db = handle
+  return { db }
 }
 
+/** Wipe every row (all tables, FK-safe via NOCHECK, identity reseeded) except the migration ledger —
+ *  the SQL Server analogue of the old `truncate … restart identity cascade`. */
 export async function resetDb(db: TestDB) {
-  await db.execute(sql`truncate table
-    tracking.shipment_pos, tracking.shipment_milestones, tracking.shipments,
-    tracking.booking_pos, tracking.bookings, tracking.purchase_orders,
-    tracking.field_locks, tracking.app_settings, tracking.forwarder_aliases, tracking.consignees,
-    tracking.forwarders, tracking.vendors, tracking.customers, tracking.ports,
-    audit.change_log,
-    alerts.alerts, alerts.alert_rules, tracking.users, tracking.refresh_tokens,
-    ingest.parsed_record, ingest.email_attachment, ingest.email_message, ingest.ingest_state
-    restart identity cascade`)
+  await sql.raw(`EXEC sp_MSforeachtable 'ALTER TABLE ? NOCHECK CONSTRAINT ALL'`).execute(db)
+  await sql
+    .raw(
+      `EXEC sp_MSforeachtable @command1='IF OBJECT_NAME(object_id(''?'')) NOT IN (''kysely_migration'',''kysely_migration_lock'') DELETE FROM ?'`,
+    )
+    .execute(db)
+  await sql.raw(`EXEC sp_MSforeachtable 'ALTER TABLE ? WITH CHECK CHECK CONSTRAINT ALL'`).execute(db)
+  await sql
+    .raw(
+      `EXEC sp_MSforeachtable 'IF OBJECTPROPERTY(object_id(''?''), ''TableHasIdentity'') = 1 DBCC CHECKIDENT (''?'', RESEED, 0)'`,
+    )
+    .execute(db)
 }
 
 export async function closeTestDb() {
-  if (pool) {
-    await pool.end()
-    pool = null
+  if (db) {
+    await db.destroy()
+    db = null
   }
 }
 

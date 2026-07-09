@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest'
+import { sql } from 'kysely'
 import { getTestDb, resetDb, closeTestDb, repos, type TestDB } from './setup-db'
 import { UsersService } from '../src/users/users.service'
 import { verifyPassword } from '../src/auth/password'
@@ -112,36 +113,33 @@ describe('UsersService (integration)', () => {
 
   it('refuses to deactivate the last superadmin even under a concurrent superadmin mutation (transactional guard)', async () => {
     // Deterministic version of the check-then-act race: a *side* transaction grabs the whole
-    // active-superadmin set FOR UPDATE (standing in for a concurrent deactivation in flight), then
-    // retires s1 and commits. The guarded remove(s2) must serialize behind that lock, re-read, and
-    // refuse — because only s2 would remain. A check-then-act guard instead reads a stale "2 active"
-    // and deactivates s2 anyway, reaching zero.
-    const { pool } = await getTestDb()
+    // active-superadmin set with UPDLOCK+HOLDLOCK — the MSSQL analogue of FOR UPDATE and the very
+    // lock the guard takes (standing in for a concurrent deactivation in flight) — then retires s1
+    // and commits. The guarded remove(s2) must serialize behind that lock, re-read, and refuse —
+    // because only s2 would remain. A check-then-act guard instead reads a stale "2 active" and
+    // deactivates s2 anyway, reaching zero.
     const s1 = await mk({ email: 's1@cobalt.hk', role: 'SUPERADMIN' })
     const s2 = await mk({ email: 's2@cobalt.hk', role: 'SUPERADMIN' })
 
-    const client = await pool.connect()
     let removeRejected = false
-    try {
-      await client.query('BEGIN')
+    let removal: Promise<unknown> = Promise.resolve()
+    await db.transaction().execute(async (side) => {
       // Hold the lock the guard needs, so remove(s2) is forced to wait for us (and re-read after).
-      await client.query("SELECT id FROM tracking.users WHERE role = 'SUPERADMIN' AND active = true FOR UPDATE")
+      await sql`SELECT id FROM users WITH (UPDLOCK, HOLDLOCK) WHERE role = 'SUPERADMIN' AND active = 1`.execute(side)
 
-      const removal = users.remove(s2.id, 'other-id').catch((e: Error) => {
+      removal = users.remove(s2.id, 'other-id').catch((e: Error) => {
         removeRejected = true
         return e
       })
-      // Give remove(s2) time to reach + block on the lock, then retire s1 and release it.
+      // Give remove(s2) time to reach + block on the lock, then retire s1 and release it (the
+      // transaction commits when this callback returns).
       await new Promise((r) => setTimeout(r, 100))
-      await client.query('UPDATE tracking.users SET active = false WHERE id = $1', [s1.id])
-      await client.query('COMMIT')
+      await side.updateTable('users').set({ active: false }).where('id', '=', s1.id).execute()
+    })
 
-      const result = await removal
-      expect(removeRejected).toBe(true)
-      expect((result as Error).message).toMatch(/last active superadmin/i)
-    } finally {
-      client.release()
-    }
+    const result = await removal
+    expect(removeRejected).toBe(true)
+    expect((result as Error).message).toMatch(/last active superadmin/i)
 
     // Invariant the guard protects: exactly one active superadmin remains (s2). Check-then-act → 0.
     expect(await repos(db).users.countActiveByRole('SUPERADMIN')).toBe(1)

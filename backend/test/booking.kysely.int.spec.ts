@@ -2,22 +2,20 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { sql } from 'kysely'
 import { createKysely } from '../src/db/kysely/mssql-dialect'
 import { runMigrations } from '../src/db/kysely/migrate'
-import { KyselyBookingRepository } from '../src/db/repositories/booking.repository.kysely'
+import { BookingRepository } from '../src/db/repositories/booking.repository'
 import { JOB_NO_PREFIX } from '../src/common/job-no'
 import { join } from 'node:path'
 import type { Kysely } from 'kysely'
-import type { DB } from '../src/db/kysely/db.generated'
+import type { DB } from '../src/db/kysely/db'
 
 const URL =
   process.env.SQL_SERVER_TEST_URL ??
   'Server=localhost,1433;Database=cobalt_test;User Id=sa;Password=YourStrong!Passw0rd;Encrypt=false;TrustServerCertificate=true'
-const RUN = process.env.FABRIC_FOUNDATION === '1'
 
 let db: Kysely<DB>
-let repo: KyselyBookingRepository
+let repo: BookingRepository
 
 beforeAll(async () => {
-  if (!RUN) return
   db = createKysely<DB>(URL)
   await sql`
 DECLARE @sql NVARCHAR(MAX) = N''
@@ -31,11 +29,10 @@ FROM sys.tables t WHERE schema_name(t.schema_id) = 'dbo'
 EXEC sp_executesql @sql`.execute(db).catch(() => {})
   await sql`DROP TABLE IF EXISTS kysely_migration`.execute(db).catch(() => {})
   await sql`DROP TABLE IF EXISTS kysely_migration_lock`.execute(db).catch(() => {})
-  await runMigrations(db, join(process.cwd(), 'kysely-migrations'))
-  repo = new KyselyBookingRepository(db)
+  await runMigrations(db, join(process.cwd(), 'src/db/kysely-migrations'))
+  repo = new BookingRepository(db)
 })
 afterAll(async () => {
-  if (!RUN) return
   await db.destroy()
 })
 
@@ -43,7 +40,7 @@ async function seedPo(poNumber = `PO-${Math.random()}`) {
   return (await db.insertInto('purchaseOrders').values({ poNumber }).output('inserted.id').executeTakeFirstOrThrow()).id
 }
 
-describe.runIf(RUN)('KyselyBookingRepository (SQL Server)', () => {
+describe('BookingRepository (SQL Server)', () => {
   it('create + findById + listOrdered (newest-created first)', async () => {
     const a = await repo.create({ jobNo: `${JOB_NO_PREFIX}0001` })
     await sleep(10)

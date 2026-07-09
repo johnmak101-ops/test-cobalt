@@ -6,7 +6,7 @@ import { ServeStaticModule } from '@nestjs/serve-static'
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler'
 import { validateEnv } from './config/env.validation'
 import { loggerParams } from './logging/logging.options'
-import { DrizzleModule } from './db/drizzle.module'
+import { KyselyModule } from './db/kysely.module'
 import { HealthModule } from './health/health.module'
 import { MastersModule } from './masters/masters.module'
 import { BookingsModule } from './bookings/bookings.module'
@@ -37,7 +37,7 @@ import { AccessModule } from './access/access.module'
     ...(process.env.STATIC_ROOT
       ? [ServeStaticModule.forRoot({ rootPath: process.env.STATIC_ROOT, exclude: ['/api/{*splat}'] })]
       : []),
-    DrizzleModule,
+    KyselyModule,
     RepositoriesModule,
     PresentationModule,
     AuthModule,

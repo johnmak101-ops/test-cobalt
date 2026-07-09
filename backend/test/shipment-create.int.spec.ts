@@ -1,6 +1,4 @@
 import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest'
-import { eq } from 'drizzle-orm'
-import * as schema from '../src/db/contracts'
 import { getTestDb, resetDb, closeTestDb, repos, type TestDB } from './setup-db'
 import { CommitterService, type ReconGroup } from '../src/reconcile/committer.service'
 import { ShipmentsService } from '../src/shipments/shipments.service'
@@ -39,13 +37,13 @@ describe('ShipmentsService.createManual — human-created shipments (integration
       { bookingNo: 'MAN-1', qty: 286, qtyUnit: 'cartons', grossWeight: 2965.4, measurement: 20.54, pos: ['PO-M1'] },
       null,
     )
-    const [leg] = await db.select().from(schema.shipments).where(eq(schema.shipments.id, res.id))
+    const [leg] = await db.selectFrom('shipments').where('id', '=', res.id).selectAll().execute()
     expect(leg.kind).toBe('SHIPMENT')
     expect(leg.reviewStatus).toBe('provisional') // human-created → lands in the Review queue
     expect(leg.bookingNo).toBe('MAN-1')
     expect(leg.qty).toBe(286)
     // human-entered fields are locked (human-wins)
-    const locks = await db.select().from(schema.fieldLocks).where(eq(schema.fieldLocks.entityId, res.id))
+    const locks = await db.selectFrom('fieldLocks').where('entityId', '=', res.id).selectAll().execute()
     const locked = new Set(locks.map((l) => l.field))
     expect(locked.has('bookingNo')).toBe(true)
     expect(locked.has('qty')).toBe(true)
@@ -60,10 +58,10 @@ describe('ShipmentsService.createManual — human-created shipments (integration
     expect(res.shipmentId).toBe(created.id) // found the human leg by strong key → amended, not duplicated
     expect(res.action).toBe('amend_fields')
     expect(res.skippedLockedFields).toContain('qty')
-    const [leg] = await db.select().from(schema.shipments).where(eq(schema.shipments.id, created.id))
+    const [leg] = await db.selectFrom('shipments').where('id', '=', created.id).selectAll().execute()
     expect(leg.etd).not.toBeNull() // agent FILLED the gap
     expect(leg.qty).toBe(100) // human value PRESERVED — never overwritten to 999
-    expect(await db.select().from(schema.shipments)).toHaveLength(1) // no duplicate leg
+    expect(await db.selectFrom('shipments').selectAll().execute()).toHaveLength(1) // no duplicate leg
   })
 
   it('rejects a create with neither an identity nor a PO', async () => {

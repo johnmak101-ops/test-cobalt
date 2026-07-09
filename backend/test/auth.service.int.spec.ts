@@ -1,6 +1,5 @@
 import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest'
 import { JwtService } from '@nestjs/jwt'
-import * as schema from '../src/db/contracts'
 import { getTestDb, resetDb, closeTestDb, type TestDB } from './setup-db'
 import { UsersRepository } from '../src/db/repositories/users.repository'
 import { AuthService } from '../src/auth/auth.service'
@@ -18,12 +17,15 @@ afterAll(closeTestDb)
 beforeEach(() => resetDb(db))
 
 async function seedUser(role = 'EDITOR') {
-  await db.insert(schema.users).values({
-    email: 'eddie@cobalt.hk',
-    name: 'Eddie',
-    passwordHash: await hashPassword('cobalt'),
-    role: role as never,
-  })
+  await db
+    .insertInto('users')
+    .values({
+      email: 'eddie@cobalt.hk',
+      name: 'Eddie',
+      passwordHash: await hashPassword('cobalt'),
+      role,
+    })
+    .execute()
 }
 
 describe('AuthService (integration)', () => {

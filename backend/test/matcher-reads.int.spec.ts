@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest'
-import * as schema from '../src/db/contracts'
 import { getTestDb, resetDb, closeTestDb, repos, type TestDB } from './setup-db'
 import { ShipmentsService } from '../src/shipments/shipments.service'
 import { PosService } from '../src/pos/pos.service'
+import { CommitterService } from '../src/reconcile/committer.service'
 
 let db: TestDB
 let shipments: ShipmentsService
@@ -12,7 +12,8 @@ beforeAll(async () => {
   const t = await getTestDb()
   db = t.db
   const r = repos(db)
-  shipments = new ShipmentsService(r.shipment, r.booking, r.fieldLock)
+  const committer = new CommitterService(r.masters, r.booking, r.shipment, r.fieldLock, r.audit, r.evidence, r.purchaseOrder)
+  shipments = new ShipmentsService(r.shipment, r.booking, r.fieldLock, r.audit, committer)
   pos = new PosService(r.purchaseOrder)
 })
 afterAll(closeTestDb)
@@ -22,14 +23,19 @@ async function seedLeg(
   matchKeys: Record<string, unknown>,
   opts: { jobNo?: string; status?: 'ACTIVE' | 'CLOSED' | 'CANCELLED'; po?: string } = {},
 ) {
-  const [bk] = await db
-    .insert(schema.bookings)
+  const bk = await db
+    .insertInto('bookings')
     .values({ jobNo: opts.jobNo ?? 'JOB-B-1', status: opts.status ?? 'ACTIVE' })
-    .returning()
-  const [leg] = await db.insert(schema.shipments).values({ bookingId: bk.id, legNo: 1, matchKeys }).returning()
+    .outputAll('inserted')
+    .executeTakeFirstOrThrow()
+  const leg = await db
+    .insertInto('shipments')
+    .values({ bookingId: bk.id, legNo: 1, matchKeys: JSON.stringify(matchKeys) })
+    .outputAll('inserted')
+    .executeTakeFirstOrThrow()
   if (opts.po) {
-    const [po] = await db.insert(schema.purchaseOrders).values({ poNumber: opts.po }).returning()
-    await db.insert(schema.bookingPos).values({ bookingId: bk.id, poId: po.id })
+    const po = await db.insertInto('purchaseOrders').values({ poNumber: opts.po }).outputAll('inserted').executeTakeFirstOrThrow()
+    await db.insertInto('bookingPos').values({ bookingId: bk.id, poId: po.id }).execute()
   }
   return { bk, leg }
 }
@@ -73,8 +79,9 @@ describe('Matcher read-APIs (integration)', () => {
   it('surfaces human-locked fields so the agent does not propose to overwrite them', async () => {
     const { leg } = await seedLeg({ so_no: 'SO-3' }, { jobNo: 'JOB-B-3' })
     await db
-      .insert(schema.fieldLocks)
+      .insertInto('fieldLocks')
       .values({ entityType: 'shipment', entityId: leg.id, field: 'eta', lockedValue: '2026-05-01' })
+      .execute()
     const res = await shipments.lookupByMatchKey({ so_no: 'SO-3' })
     expect((res.candidates[0] as any).lockedFields).toContain('eta')
   })
@@ -87,15 +94,15 @@ describe('Matcher read-APIs (integration)', () => {
   // the agent's `backendDiff` silently goes inert — every update forced to review, or unsafe auto-applies —
   // with no other failing test. This pins the wire shape the adapter depends on.
   it('returns candidates in the shape the Agent VM adapter consumes (mode + camelCase columns + matchKeys)', async () => {
-    const [bk] = await db.insert(schema.bookings).values({ jobNo: 'JOB-CT', status: 'ACTIVE' }).returning()
-    await db.insert(schema.shipments).values({
+    const bk = await db.insertInto('bookings').values({ jobNo: 'JOB-CT', status: 'ACTIVE' }).outputAll('inserted').executeTakeFirstOrThrow()
+    await db.insertInto('shipments').values({
       bookingId: bk.id,
       legNo: 1,
       mode: 'AIR', // uppercase SHIPMENT_MODE enum — must arrive verbatim, NOT lowercased
       soNo: 'SO-CT',
       hblAwbFcrNo: 'HAWB-CT',
-      matchKeys: { so_no: 'SO-CT' },
-    })
+      matchKeys: JSON.stringify({ so_no: 'SO-CT' }),
+    }).execute()
     const res = await shipments.lookupByMatchKey({ so_no: 'SO-CT' })
     const c = res.candidates[0] as any
     expect(c).toBeTruthy()
@@ -115,17 +122,17 @@ describe('Matcher read-APIs (integration)', () => {
   })
 
   it('lists the PO master with customer/vendor codes resolved', async () => {
-    const [cust] = await db.insert(schema.customers).values({ code: 'WYSE', name: 'Wyse London' }).returning()
-    await db.insert(schema.purchaseOrders).values({ poNumber: 'PO-OPEN', customerId: cust.id })
+    const cust = await db.insertInto('customers').values({ code: 'WYSE', name: 'Wyse London' }).outputAll('inserted').executeTakeFirstOrThrow()
+    await db.insertInto('purchaseOrders').values({ poNumber: 'PO-OPEN', customerId: cust.id }).execute()
     const list = (await pos.list()) as any[]
     expect(list.find((p) => p.poNumber === 'PO-OPEN')?.customerCode).toBe('WYSE')
   })
 
   it('open=true excludes POs whose bookings are terminal (CLOSED/CANCELLED)', async () => {
-    const [poClosed] = await db.insert(schema.purchaseOrders).values({ poNumber: 'PO-CLOSED' }).returning()
-    const [bkClosed] = await db.insert(schema.bookings).values({ jobNo: 'JOB-CL', status: 'CLOSED' }).returning()
-    await db.insert(schema.bookingPos).values({ bookingId: bkClosed.id, poId: poClosed.id })
-    await db.insert(schema.purchaseOrders).values({ poNumber: 'PO-ACTIVE' })
+    const poClosed = await db.insertInto('purchaseOrders').values({ poNumber: 'PO-CLOSED' }).outputAll('inserted').executeTakeFirstOrThrow()
+    const bkClosed = await db.insertInto('bookings').values({ jobNo: 'JOB-CL', status: 'CLOSED' }).outputAll('inserted').executeTakeFirstOrThrow()
+    await db.insertInto('bookingPos').values({ bookingId: bkClosed.id, poId: poClosed.id }).execute()
+    await db.insertInto('purchaseOrders').values({ poNumber: 'PO-ACTIVE' }).execute()
 
     const all = ((await pos.list(false)) as any[]).map((p) => p.poNumber)
     const open = ((await pos.list(true)) as any[]).map((p) => p.poNumber)

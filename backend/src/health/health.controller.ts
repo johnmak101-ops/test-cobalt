@@ -1,19 +1,19 @@
 import { Controller, Get, Inject } from '@nestjs/common'
-import { sql } from 'drizzle-orm'
-import { DRIZZLE, type DrizzleDB } from '../db/drizzle.provider'
+import { sql } from 'kysely'
+import { KYSELY, type KyselyDB } from '../db/kysely.provider'
 import { Public } from '../auth/decorators'
 
 @Controller('health')
 export class HealthController {
-  constructor(@Inject(DRIZZLE) private readonly db: DrizzleDB) {}
+  constructor(@Inject(KYSELY) private readonly db: KyselyDB) {}
 
   @Public()
   @Get()
   async health() {
     let dbUp = false
     try {
-      const r = await this.db.execute(sql`select 1 as ok`)
-      dbUp = (r.rows?.[0] as { ok?: number } | undefined)?.ok === 1
+      const r = await sql<{ ok: number }>`select 1 as ok`.execute(this.db)
+      dbUp = r.rows[0]?.ok === 1
     } catch {
       dbUp = false
     }
