@@ -25,37 +25,33 @@ a live data migration:
 
 ---
 
-## Phase 0 — Lock two decisions + spike them on the real Fabric DB  **(gates everything; ~1–3 days)**
+## Phase 0 — Spike the two hard swaps on the real Fabric DB  **(gates everything; ~1–3 days)**
 
-Two choices shape all later work. Prove both on the empty Fabric DB before committing.
+Decisions are **LOCKED (2026-07-09)** — Kysely (both apps) · Azure Service Bus · local SQL Server 2022 (see
+"Locked decisions" below). Phase 0 now just *proves* them before the bulk work.
 
-### Decision 1 — the data-access layer (Drizzle `pg-core` has no SQL Server dialect)
-- **Recommended: Kysely** (typed SQL query builder; MSSQL via `tedious`). Closest to the current SQL-first
-  style (the repos lean on hand-tuned SQL — window fns, aggregates, the N+1 fixes); keeps full SQL control;
-  types via `kysely-codegen`; migrations = hand-written T-SQL (the team already writes raw SQL migrations).
-- **Alt: Prisma** — schema-as-code + generated client + managed migrations, mature MSSQL; better managed-
-  migration DX, but a bigger paradigm shift and awkward for the complex/raw SQL this codebase uses.
-- **Do NOT** bet on Drizzle's experimental MSSQL support for a mandated migration.
-- **Note:** the "schema-as-truth → zod contracts" model (Drizzle today) changes: with Kysely the source of
-  truth becomes the T-SQL migrations (DDL) + generated types; zod contracts are hand-kept or regenerated.
+### Spike 1 — Kysely on Fabric SQL (the data-access layer for BOTH apps)
+- **Kysely** (typed SQL query builder; MSSQL via `tedious`) replaces Drizzle in both apps — chosen because
+  both are SQL-forward (track-system's hand-tuned window-fn/aggregate/N+1 queries; cobalt-queue's ~39 raw
+  SQL calls) and share one Fabric DB (one stack = one provider/migration-runner/test-harness).
+- **Schema-of-truth changes:** with Kysely the truth becomes the T-SQL migrations (DDL) + `kysely-codegen`
+  types; the Drizzle "schema → zod contracts" link is replaced by hand-kept (or codegen'd) zod.
 - **Spike:** port ~3 representative track-system tables (with `json`, a uuid-default PK, an FK, an enum-as-
-  CHECK, one window-fn query, one transaction) to the chosen ORM on Fabric SQL; run that slice of tests green.
+  CHECK, one window-fn query, one transaction) to Kysely on Fabric SQL; run that slice of tests green.
 
-### Decision 2 — the job queue (pg-boss is Postgres-only)
-- **Recommended: a SQL-table queue in the Fabric DB** — keeps everything in one DB (matches the mandate), no
-  new infra. A `queue.job` table + lease pattern (`UPDATE TOP(n) … OUTPUT` or `WITH (UPDLOCK, READPAST)`), a
-  polling worker, a dead-letter table, and a retention/cleanup job — reproduces pg-boss's work / retry /
-  dead-letter / archive (all of which cobalt-queue configures today).
-- **Alt: Azure Service Bus** — managed, built-in DLQ + retries, but adds infra + a non-DB dependency (breaks
-  "one MS SQL"). Choose this only if the SQL-queue proves too fiddly.
+### Spike 2 — Azure Service Bus (replaces pg-boss, which is Postgres-only)
+- **Azure Service Bus** (managed queue: native dead-letter, retries, scheduling) replaces pg-boss. Adds an
+  Azure dependency (a Service Bus namespace + connection string in env) — accepted for robustness over a
+  hand-rolled SQL-table queue.
 - **Leverage the seam:** cobalt-queue already wraps the queue behind a `PgBoss`-typed boundary
-  (`src/consumer/worker.ts` `registerWorker(boss)`, `src/consumer/index.ts`) — swap the impl there, not the
-  business logic.
-- **Spike:** prove enqueue → lease(batch) → complete / retry / dead-letter → cleanup on Fabric SQL, wired
-  into the worker seam.
+  (`src/consumer/worker.ts` `registerWorker(boss)`, `src/consumer/index.ts`) — swap **only the adapter** there
+  (map `boss.work` → receiver `receiveMessages`/`completeMessage`/`abandonMessage`; DLQ + retries are native),
+  not the business logic.
+- **Spike:** prove enqueue → receive(batch) → complete / abandon → dead-letter via the Service Bus SDK, wired
+  into the worker seam; confirm the config knobs (retention/max-delivery) map to Service Bus settings.
 
-**Phase 0 exit:** ORM + queue chosen and **spike-proven on the real Fabric DB**; a T-SQL migration runner + a
-shared `db` provider pattern established; the dev/CI test-engine decided (below).
+**Phase 0 exit:** both spikes green on the real Fabric DB + a Service Bus namespace; a T-SQL migration runner +
+a shared Kysely `db` provider pattern established.
 
 ---
 
@@ -63,11 +59,10 @@ shared `db` provider pattern established; the dev/CI test-engine decided (below)
 
 - **DB provider:** connection (Entra SP / SQL auth, pooling via `tedious`/`mssql`), a migration runner, and a
   fresh `0000_init` T-SQL schema per app.
-- **Test-engine decision (important):** int tests need a throwaway SQL DB per run; Fabric SQL is a poor fit for
-  ephemeral per-run DBs. **Recommend dev + CI run on a local SQL Server 2022 (or Azure SQL Edge) container**
-  (same T-SQL engine family), with **Fabric SQL as the deploy target**. Verify anything Fabric-specific against
-  a Fabric dev DB before deploy. Rework `backend/test/setup-db.ts` (and cobalt-queue's equivalent) to
-  create+migrate a `*_test` SQL DB.
+- **Test engine — DECIDED: local SQL Server 2022 container** for dev + CI (same T-SQL engine family, fast
+  ephemeral per-run DBs), with **Fabric SQL as the deploy target**. Verify anything Fabric-specific against a
+  Fabric dev DB before deploy. Rework `backend/test/setup-db.ts` (and cobalt-queue's equivalent) to
+  create+migrate a `*_test` SQL DB on the container.
 
 ## Phase 2 — track-system data layer → SQL  **(the bigger app; first — it has no queue)**
 
@@ -84,7 +79,9 @@ shared `db` provider pattern established; the dev/CI test-engine decided (below)
 ## Phase 3 — cobalt-queue data layer + queue → SQL
 
 - Port the **8-table** schema (queue/evidence) to T-SQL on the new ORM.
-- Replace pg-boss with the Phase-0 queue impl behind the existing worker/consumer seam (+ retention/DLQ).
+- Replace pg-boss with **Azure Service Bus** behind the existing worker/consumer seam (`boss.work` → receiver
+  loop; complete/abandon; Service Bus provides DLQ + retries natively). Map the pgboss config knobs
+  (max-connections/archive/retention) to Service Bus equivalents.
 - Port its migrations + dev scripts (`reparse-all`, etc.). **Green gate:** cobalt-queue's suite passes on SQL.
 
 ## Phase 4 — Integration + dev cutover
@@ -117,10 +114,12 @@ Phase 0 (decide + spike) → 1 (foundation) → 2 (track-system, green) → 3 (c
 4 (integrate + cutover) → 5 (follow-ups). **Each app phase ends only when its full test suite is green on SQL
 Server / Fabric — that is the objective gate, and dev-stage means there's no data or cutover to get wrong.**
 
-## Decisions needed now (architect)
+## Locked decisions (2026-07-09)
 
-1. **ORM:** Kysely (recommended, SQL-first) vs Prisma (schema-as-code + managed migrations)?
-2. **Queue:** SQL-table queue in Fabric (recommended, one-DB) vs Azure Service Bus?
-3. **Dev/CI test engine:** local SQL Server 2022 / Azure SQL Edge container (recommended) vs a Fabric dev DB?
+1. **ORM: Kysely for BOTH apps** — SQL-first, MSSQL via `tedious`; both codebases are raw-SQL/JSON-forward, and
+   one shared Fabric DB argues for one stack. (Prisma rejected: complex/raw SQL → `$queryRaw` + a Rust engine.)
+2. **Queue: Azure Service Bus** — replaces pg-boss, behind cobalt-queue's existing worker seam; native DLQ +
+   retries. (SQL-table queue was the one-DB alt; Service Bus chosen for robustness.)
+3. **Test engine: local SQL Server 2022 container** for dev + CI; Fabric SQL is the deploy target.
 
-Confirm these three and Phase 0 (the spike) can start; the rest of the plan is robust to the choices.
+Phase 0 (the two spikes) can start. The rest of the plan follows from these.
