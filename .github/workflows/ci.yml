@@ -116,4 +116,4 @@ jobs:
       - name: Backend — foundation + SQL Server specs
         # Only the SQL Server-gated specs (foundation + ported repos). The full Postgres suite runs
         # in the build-and-test job. These specs skip when FABRIC_FOUNDATION is unset; here it IS set.
-        run: pnpm --filter backend exec vitest run test/foundation.int.spec.ts test/masters.kysely.int.spec.ts test/leaf-repos.kysely.int.spec.ts test/ingest.kysely.int.spec.ts
+        run: pnpm --filter backend exec vitest run test/foundation.int.spec.ts test/masters.kysely.int.spec.ts test/leaf-repos.kysely.int.spec.ts test/ingest.kysely.int.spec.ts test/evidence.kysely.int.spec.ts
