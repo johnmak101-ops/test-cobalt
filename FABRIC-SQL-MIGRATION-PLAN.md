@@ -27,8 +27,10 @@ a live data migration:
 
 ## Phase 0 — Spike the two hard swaps on the real Fabric DB  **(gates everything; ~1–3 days)**
 
-Decisions are **LOCKED (2026-07-09)** — Kysely (both apps) · Azure Service Bus · local SQL Server 2022 (see
-"Locked decisions" below). Phase 0 now just *proves* them before the bulk work.
+Decisions are **LOCKED (2026-07-09, updated)** — Kysely (both apps) · **RabbitMQ** (replaces pg-boss;
+no Azure dependency) · local SQL Server 2022 (see "Locked decisions" below). Phase 0 now just *proves* them
+before the bulk work. (Original choice was Azure Service Bus; switched to RabbitMQ 2026-07-09 because no
+Azure namespace is available — RabbitMQ runs locally in Docker with the same DLQ/retry/scheduling properties.)
 
 ### Spike 1 — Kysely on Fabric SQL (the data-access layer for BOTH apps)
 - **Kysely** (typed SQL query builder; MSSQL via `tedious`) replaces Drizzle in both apps — chosen because
@@ -39,19 +41,20 @@ Decisions are **LOCKED (2026-07-09)** — Kysely (both apps) · Azure Service Bu
 - **Spike:** port ~3 representative track-system tables (with `json`, a uuid-default PK, an FK, an enum-as-
   CHECK, one window-fn query, one transaction) to Kysely on Fabric SQL; run that slice of tests green.
 
-### Spike 2 — Azure Service Bus (replaces pg-boss, which is Postgres-only)
-- **Azure Service Bus** (managed queue: native dead-letter, retries, scheduling) replaces pg-boss. Adds an
-  Azure dependency (a Service Bus namespace + connection string in env) — accepted for robustness over a
-  hand-rolled SQL-table queue.
+### Spike 2 — RabbitMQ (replaces pg-boss, which is Postgres-only)
+- **RabbitMQ** (self-hosted message broker; runs in Docker locally, managed offering / Service Bus in prod
+later) replaces pg-boss. Native dead-letter queues, retries (via TTL + DLX), and scheduling — the same
+properties pg-boss provided, without a Postgres dependency and without requiring an Azure namespace.
 - **Leverage the seam:** cobalt-queue already wraps the queue behind a `PgBoss`-typed boundary
   (`src/consumer/worker.ts` `registerWorker(boss)`, `src/consumer/index.ts`) — swap **only the adapter** there
-  (map `boss.work` → receiver `receiveMessages`/`completeMessage`/`abandonMessage`; DLQ + retries are native),
+  (map `boss.work` → AMQP consumer `consume`/`ack`/`nack`; DLQ via a dead-letter exchange + retry via TTL),
   not the business logic.
-- **Spike:** prove enqueue → receive(batch) → complete / abandon → dead-letter via the Service Bus SDK, wired
-  into the worker seam; confirm the config knobs (retention/max-delivery) map to Service Bus settings.
+- **Spike:** prove enqueue → consume(batch) → ack / nack → dead-letter via `amqplib`, wired into the worker
+  seam; confirm the config knobs (prefetch, retry TTL, max-delivery before DLQ) map to RabbitMQ settings.
 
-**Phase 0 exit:** both spikes green on the real Fabric DB + a Service Bus namespace; a T-SQL migration runner +
-a shared Kysely `db` provider pattern established.
+**Phase 0 exit:** both spikes green on the local SQL Server 2022 container + a local RabbitMQ container; a
+T-SQL migration runner + a shared Kysely `db` provider pattern established. (Fabric SQL + prod broker are
+the deploy targets — verified later.)
 
 ---
 
@@ -79,9 +82,9 @@ a shared Kysely `db` provider pattern established.
 ## Phase 3 — cobalt-queue data layer + queue → SQL
 
 - Port the **8-table** schema (queue/evidence) to T-SQL on the new ORM.
-- Replace pg-boss with **Azure Service Bus** behind the existing worker/consumer seam (`boss.work` → receiver
-  loop; complete/abandon; Service Bus provides DLQ + retries natively). Map the pgboss config knobs
-  (max-connections/archive/retention) to Service Bus equivalents.
+- Replace pg-boss with **RabbitMQ** behind the existing worker/consumer seam (`boss.work` → AMQP consumer
+  loop; ack/nack; RabbitMQ provides DLQ + retries natively via a dead-letter exchange + TTL). Map the pgboss
+  config knobs (max-connections/archive/retention) to RabbitMQ equivalents (prefetch, DLX policy, message TTL).
 - Port its migrations + dev scripts (`reparse-all`, etc.). **Green gate:** cobalt-queue's suite passes on SQL.
 
 ## Phase 4 — Integration + dev cutover
@@ -114,12 +117,15 @@ Phase 0 (decide + spike) → 1 (foundation) → 2 (track-system, green) → 3 (c
 4 (integrate + cutover) → 5 (follow-ups). **Each app phase ends only when its full test suite is green on SQL
 Server / Fabric — that is the objective gate, and dev-stage means there's no data or cutover to get wrong.**
 
-## Locked decisions (2026-07-09)
+## Locked decisions (2026-07-09; queue updated)
 
 1. **ORM: Kysely for BOTH apps** — SQL-first, MSSQL via `tedious`; both codebases are raw-SQL/JSON-forward, and
    one shared Fabric DB argues for one stack. (Prisma rejected: complex/raw SQL → `$queryRaw` + a Rust engine.)
-2. **Queue: Azure Service Bus** — replaces pg-boss, behind cobalt-queue's existing worker seam; native DLQ +
-   retries. (SQL-table queue was the one-DB alt; Service Bus chosen for robustness.)
-3. **Test engine: local SQL Server 2022 container** for dev + CI; Fabric SQL is the deploy target.
+2. **Queue: RabbitMQ** — replaces pg-boss, behind cobalt-queue's existing worker seam; native DLQ (dead-letter
+   exchange) + retries (TTL). Runs in Docker locally; a managed offering / Azure Service Bus is the prod option.
+   (Original choice was Azure Service Bus; switched because no Azure namespace is available. SQL-table queue was
+   the one-DB alternative; RabbitMQ chosen for being a dedicated, mature broker over a hand-rolled SQL queue.)
+3. **Test engine: local SQL Server 2022 container** for dev + CI; Fabric SQL is the deploy target. **Running**
+   (`mssql-2022` container on `localhost:1433`).
 
 Phase 0 (the two spikes) can start. The rest of the plan follows from these.

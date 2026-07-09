@@ -79,12 +79,17 @@ masters.repository: `PORT_ALIASES` / `IATA_TO_UNLOCODE` / `ABBREV_OVERRIDE {HCM:
   demo dataset gated behind `SEED_DEMO`. So `MACAU FUNG TAI → MACFUN` etc. arrive as real vendor masters from
   the ERP (no hand-seeding). `master_resolution` curated facts stay seeded (prod config). consignees/brands/
   carriers not synced (no local master / no endpoint). See the `cobalt-mesh-masters-sync` memory.
-- [ ] `[queue]` **LLM name→master matcher (planned next piece, own spec).** Resolve extracted party NAMES →
-  masters via retrieve-then-match: cheap candidates (`pg_trgm`/embeddings over the now-fresh master list) →
-  LLM picks best/none + confidence → low-confidence to review → human correction feeds the soul. Replaces the
-  code-bound name tables (`PORT_ALIASES`/`NAME_CONTAINS`/…) + the ALIAS facts (`vendor_alias`/`forwarder_ref`/
-  `customer_canonical`). RELATIONSHIP facts (`customer_group`/`role`/`vendor_group`) stay curated (not
-  name-inferable). Lives cobalt-queue-side; the Mesh sync (#47) is its prerequisite candidate set.
+- [~] `[queue]` **LLM name→master matcher — design APPROVED 2026-07-09, DEFERRED behind the Fabric SQL migration.**
+  Design: `docs/superpowers/specs/2026-07-09-llm-master-matcher-design.md` (LLM-only resolution: delete the
+  deterministic name→code fast-path; parser soul resolves clear cases, an LLM `MasterMatcherAgent`
+  disambiguates the rest via a `POST /api/masters/candidates` retrieve-then-match endpoint; corrections feed
+  back as a retrieval boost + Iterator soul rules, never a deterministic fast-path). Phase 0 plan written:
+  `docs/superpowers/plans/2026-07-09-phase0-masters-enrichment.md`.
+  **On hold because:** Phase 0 adds `pg_trgm` + GIN trigram indexes (Postgres-only) to track-system, but the
+  Fabric SQL migration (`FABRIC-SQL-MIGRATION-PLAN.md`) drops Postgres + regenerates a fresh T-SQL schema →
+  that work would be thrown away. Resume AFTER the Fabric migration lands; re-spec the retrieval approach for
+  T-SQL (Full-Text Search / similarity UDF instead of `pg_trgm`) — see migration plan Phase 5 follow-up.
+  Original spec: `LLM-MASTER-MATCHER-SPEC.md` (superseded by the design doc).
 - [ ] **Keep party/shipper fixes deterministic.** The reliable consignee fix is the `validate.ts`
   "consignee-resolves-to-a-vendor → replace with the customer's real consignee" rule + a masters
   alias — NOT parser-prompt edits (the LLM ignored the explicit per-customer guidance). Route new
