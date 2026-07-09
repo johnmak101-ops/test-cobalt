@@ -1,5 +1,13 @@
 /** Mesh master rows mapped to the local upsert shape (active-only; see mesh.client mappers). */
-export interface MeshCustomerRow { code: string; name: string }
+export interface MeshCustomerRow {
+  code: string
+  name: string
+  // Matcher Phase 0 enrichment (retrieval signals: region + email-domain). Mesh already returns
+  // these fields; they were previously fetched-and-dropped.
+  country: string | null
+  contactEmail: string | null
+  address: string | null
+}
 export interface MeshVendorRow {
   code: string
   name: string

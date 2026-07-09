@@ -102,6 +102,10 @@ export class MastersRepository {
     const r = await this.db.selectFrom('forwarders').selectAll().where('id', '=', id).executeTakeFirst()
     return r ?? null
   }
+  /** All forwarder aliases (name / domain / chinese_name rows) — retrieval signals for the candidates endpoint. */
+  async listForwarderAliases() {
+    return this.db.selectFrom('forwarderAliases').select(['forwarderId', 'aliasType', 'value']).execute()
+  }
 
   /**
    * Staged, ambiguity-guarded forwarder resolution (faithful port of the Drizzle tiers): containment →
@@ -360,7 +364,7 @@ export class MastersRepository {
 
   // --- master resolution (curated facts + proposals) ---
   async listResolution(status: 'approved' | 'proposed' | 'rejected') {
-    return this.db.selectFrom('masterResolution').where('status', '=', status).where('active', '=', true).orderBy('createdAt desc').selectAll().execute()
+    return this.db.selectFrom('masterResolution').where('status', '=', status).where('active', '=', true).orderBy('createdAt', 'desc').selectAll().execute()
   }
   async listResolutionManage() {
     return this.db.selectFrom('masterResolution').where('status', '=', 'approved').orderBy('kind').orderBy('lhs').selectAll().execute()

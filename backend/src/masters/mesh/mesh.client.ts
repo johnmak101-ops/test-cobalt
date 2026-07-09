@@ -10,7 +10,13 @@ export function mapCustomer(raw: Record<string, unknown>): MeshCustomerRow | nul
   if (raw?.IsActive !== true) return null
   const code = str(raw.CustomerCode)
   if (!code) return null
-  return { code, name: str(raw.FullNameEn) ?? str(raw.FullNameCh) ?? code }
+  return {
+    code,
+    name: str(raw.FullNameEn) ?? str(raw.FullNameCh) ?? code,
+    country: str(raw.CountryName),
+    contactEmail: str(raw.Email),
+    address: str(raw.Address),
+  }
 }
 export function mapVendor(raw: Record<string, unknown>, type: 'factory' | 'agent', codeKey: string): MeshVendorRow | null {
   if (raw?.IsActive !== true) return null
