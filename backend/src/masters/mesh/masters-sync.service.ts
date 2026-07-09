@@ -1,12 +1,12 @@
-import type { MeshMasterSource, MeshVendorRow } from './mesh.types'
+import type { MeshCustomerRow, MeshMasterSource, MeshVendorRow } from './mesh.types'
 
 export interface SyncSummary { type: 'customers' | 'vendors' | 'forwarders'; fetched: number; inserted: number; updated: number; error?: string }
 
 /** The masters-write surface the sync needs. MastersRepository satisfies it structurally. */
 export interface MastersSyncRepo {
-  listCustomers(): Promise<{ id: string; code: string; name: string }[]>
-  insertCustomers(rows: { code: string; name: string; erpSyncedAt: Date }[]): Promise<void>
-  updateCustomer(id: string, patch: { name?: string; erpSyncedAt: Date }): Promise<void>
+  listCustomers(): Promise<{ id: string; code: string; name: string; country: string | null; contactEmail: string | null; address: string | null }[]>
+  insertCustomers(rows: (MeshCustomerRow & { erpSyncedAt: Date })[]): Promise<void>
+  updateCustomer(id: string, patch: { name?: string; country?: string | null; contactEmail?: string | null; address?: string | null; erpSyncedAt: Date }): Promise<void>
   listVendors(): Promise<{ id: string; code: string | null; name: string; type: string; location: string | null; contactEmail: string | null; contactPhone: string | null }[]>
   insertVendors(rows: (MeshVendorRow & { erpSyncedAt: Date })[]): Promise<void>
   updateVendor(id: string, patch: { name?: string; type?: 'factory' | 'agent'; location?: string | null; contactEmail?: string | null; contactPhone?: string | null; erpSyncedAt: Date }): Promise<void>
@@ -32,12 +32,17 @@ export class MastersSyncService {
       const fetched = await this.source.customers()
       const existing = new Map((await this.repo.listCustomers()).map((r) => [U(r.code), r]))
       const now = this.now()
-      const toInsert: { code: string; name: string; erpSyncedAt: Date }[] = []
+      const toInsert: (MeshCustomerRow & { erpSyncedAt: Date })[] = []
       let updated = 0
-      for (const row of fetched) {
+      for (const raw of fetched) {
+        // normalize enrichment to null so a source omitting a field diffs stably against DB NULLs
+        const row = { ...raw, country: raw.country ?? null, contactEmail: raw.contactEmail ?? null, address: raw.address ?? null }
         const cur = existing.get(U(row.code))
-        if (!cur) toInsert.push({ code: row.code, name: row.name, erpSyncedAt: now })
-        else if (cur.name !== row.name) { await this.repo.updateCustomer(cur.id, { name: row.name, erpSyncedAt: now }); updated++ }
+        if (!cur) toInsert.push({ ...row, erpSyncedAt: now })
+        else if (cur.name !== row.name || cur.country !== row.country || cur.contactEmail !== row.contactEmail || cur.address !== row.address) {
+          await this.repo.updateCustomer(cur.id, { name: row.name, country: row.country, contactEmail: row.contactEmail, address: row.address, erpSyncedAt: now })
+          updated++
+        }
       }
       await this.repo.insertCustomers(toInsert)
       return { type: 'customers', fetched: fetched.length, inserted: toInsert.length, updated }

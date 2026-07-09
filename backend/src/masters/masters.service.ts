@@ -83,8 +83,10 @@ export class MastersService {
   }
 
   // --- master resolution: curated facts + proposals (the loop) ---
-  resolution() {
-    return this.repo.listResolution('approved')
+  async resolution() {
+    // prior_correction rows are a RETRIEVAL signal for /masters/candidates, not a resolution rule —
+    // the parser soul must never see them as facts (matcher design decision D: nothing bypasses the LLM).
+    return (await this.repo.listResolution('approved')).filter((f) => f.kind !== 'prior_correction')
   }
   /** Admin management view — all approved facts incl. deactivated. */
   resolutionManage() {

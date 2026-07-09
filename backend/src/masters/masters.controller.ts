@@ -1,5 +1,6 @@
 import { Body, Controller, Get, Param, Patch, Post } from '@nestjs/common'
 import { MastersService } from './masters.service'
+import { CandidatesService } from './candidates.service'
 import { Roles, CurrentUser } from '../auth/decorators'
 import { PageRead, PageWrite } from '../access/page-access.decorators'
 import type { AuthUser } from '../auth/auth.service'
@@ -12,11 +13,12 @@ import {
   UpdateConsigneeDto,
   CreateResolutionFactDto,
   PatchResolutionFactDto,
+  MasterCandidatesDto,
 } from './dto'
 
 @Controller('masters')
 export class MastersController {
-  constructor(private readonly masters: MastersService) {}
+  constructor(private readonly masters: MastersService, private readonly candidatesService: CandidatesService) {}
 
   // Reads — any authenticated user.
   @Get('customers') customers() { return this.masters.customers() }
@@ -24,6 +26,10 @@ export class MastersController {
   @Get('forwarders') forwarders() { return this.masters.forwarders() }
   @Get('ports') ports() { return this.masters.ports() }
   @Get('consignees') consignees() { return this.masters.consignees() }
+
+  // Candidate retrieval for the LLM Master Matcher — agent-consumed (cobalt-queue Bearer service
+  // account), same ungated surface as the consumer `GET resolution` below. Deterministic + LLM-free.
+  @Post('candidates') candidates(@Body() dto: MasterCandidatesDto) { return this.candidatesService.candidates(dto) }
 
   // Master resolution (curated facts) + the curator loop.
   @Get('resolution') resolution() { return this.masters.resolution() }

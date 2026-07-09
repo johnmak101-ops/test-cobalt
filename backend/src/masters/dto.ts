@@ -1,4 +1,4 @@
-import { IsIn, IsOptional, IsString, MinLength } from 'class-validator'
+import { IsIn, IsInt, IsOptional, IsString, Max, Min, MinLength } from 'class-validator'
 import { MASTER_RESOLUTION_KIND } from '../db/enums'
 
 const PORT_MODES = ['sea', 'air']
@@ -47,4 +47,13 @@ export class CreateResolutionFactDto {
 }
 export class PatchResolutionFactDto {
   @IsOptional() @IsString() reason?: string
+}
+
+// Candidate retrieval for the LLM Master Matcher (agent-consumed; deterministic, recall-oriented).
+export class MasterCandidatesDto {
+  @IsIn(['customer', 'vendor', 'forwarder', 'consignee']) type!: 'customer' | 'vendor' | 'forwarder' | 'consignee'
+  @IsOptional() @IsString() name?: string
+  @IsOptional() @IsString() emailDomain?: string
+  @IsOptional() @IsString() country?: string
+  @IsOptional() @IsInt() @Min(1) @Max(50) limit?: number
 }

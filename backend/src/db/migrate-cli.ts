@@ -15,9 +15,11 @@ import { createKysely, parseMssqlConnectionString } from './kysely/mssql-dialect
 import { sql } from 'kysely'
 import type { DB } from './kysely/db'
 import * as m0000_init from './kysely-migrations/0000_init'
+import * as m0001_prior_correction_kind from './kysely-migrations/0001_prior_correction_kind'
 
 const MIGRATIONS = {
   '0000_init': m0000_init,
+  '0001_prior_correction_kind': m0001_prior_correction_kind,
 }
 
 const URL =

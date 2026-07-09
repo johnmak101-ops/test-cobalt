@@ -40,6 +40,25 @@ describe('MastersSyncService (integration)', () => {
     expect(second).toMatchObject({ inserted: 0, updated: 0 })
   })
 
+  it('persists + refreshes customer country/contactEmail/address (matcher Phase 0 enrichment)', async () => {
+    const v1 = { code: 'ENR', name: 'Enriched Ltd', country: 'Hong Kong', contactEmail: 'ops@enriched.hk', address: '9 Queen Rd' }
+    const svc1 = new MastersSyncService(source({ customers: async () => [v1] }), repo)
+    await svc1.sync()
+    let row = await db.selectFrom('customers').selectAll().where('code', '=', 'ENR').executeTakeFirstOrThrow()
+    expect(row).toMatchObject({ country: 'Hong Kong', contactEmail: 'ops@enriched.hk', address: '9 Queen Rd' })
+
+    // an enrichment-only change (same name) must count as an update and refresh the row
+    const svc2 = new MastersSyncService(source({ customers: async () => [{ ...v1, contactEmail: 'buy@enriched.hk' }] }), repo)
+    const [cust] = await svc2.sync()
+    expect(cust).toMatchObject({ inserted: 0, updated: 1 })
+    row = await db.selectFrom('customers').selectAll().where('code', '=', 'ENR').executeTakeFirstOrThrow()
+    expect(row.contactEmail).toBe('buy@enriched.hk')
+
+    // and it stays idempotent afterwards
+    const [again] = await svc2.sync()
+    expect(again).toMatchObject({ inserted: 0, updated: 0 })
+  })
+
   it('lands factories + gmtsuppliers in vendors with the right type', async () => {
     const svc = new MastersSyncService(source({
       vendors: async () => [
