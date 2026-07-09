@@ -95,4 +95,34 @@ describe('mergeShipment — Critic merge policy', () => {
     ])
     expect(r.fields.etd).toBe('2026-03-01') // latest by receivedAt
   })
+
+  // Coverage parity with cobalt-queue critic/merge FIELD_CLASS: fields the parser now extracts must merge
+  // through on the reconcile path, not be silently dropped.
+  it('schedule: ata merges (latest wins) — was dropped', () => {
+    const r = mergeShipment([
+      e('2026-01-01', 'Draft B/L', { ata: '2026-03-01' }),
+      e('2026-01-05', 'Final B/L', { ata: '2026-03-03' }),
+    ])
+    expect(r.fields.ata).toBe('2026-03-03')
+  })
+
+  it('text: the "extract all info" fields (vessel/scac/weight/pol …) merge, best doc wins — were dropped', () => {
+    const r = mergeShipment([
+      e('2026-01-01', 'Booking Request', { vessel_name: 'GUESS', scac_code: 'ONEY', gross_weight: '100', pol: 'CNSHK' }),
+      e('2026-01-02', 'Final B/L', { vessel_name: 'EVER GIVEN', scac_code: 'EGLV', gross_weight: '120', pol: 'CNYTN' }),
+    ])
+    expect(r.fields.vessel_name).toBe('EVER GIVEN')
+    expect(r.fields.scac_code).toBe('EGLV')
+    expect(r.fields.gross_weight).toBe('120')
+    expect(r.fields.pol).toBe('CNYTN')
+  })
+
+  it('list: item_style_no / hts_code UNION across records (deduped, order-preserving)', () => {
+    const r = mergeShipment([
+      e('2026-01-01', 'Booking Request', { item_style_no: 'A100, A200', hts_code: '6109' }),
+      e('2026-01-02', 'SO', { item_style_no: 'A200, A300', hts_code: '6110' }),
+    ])
+    expect(r.fields.item_style_no).toBe('A100,A200,A300')
+    expect(r.fields.hts_code).toBe('6109,6110')
+  })
 })

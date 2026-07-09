@@ -80,8 +80,12 @@ displays** — the mock's own `extractor.ts` is reference, not used. Disposition
 - [ ] `[track]` **Update/identifier coverage (rule 5: "update = change in any tracked field").** Make the
   change-history + `shipment_identifiers` paths cover the FULL field set (incl. crd, atd, scac, qty_unit,
   brand, pol/pod) — not a stale subset.
-- [ ] `[track]` **Sync `reconcile/merge.ts` FIELD_CLASS** with the new fields added to cobalt-queue's
-  `critic/merge.ts` (the two are hand-kept-in-sync): `ata`(schedule) + `vessel_name/voyage_no/flight_no/mawb/scac/brand/qty_unit`(text). Without this the tracking-side merge silently drops them.
+- [x] `[track]` **`reconcile/merge.ts` FIELD_CLASS coverage — DONE 2026-07-09.** Added the parser's "extract all
+  info" fields so the reconcile-from-evidence path (`POST /reconcile`) stops dropping them: `ata`(schedule);
+  `pol`/`vessel_name`/`voyage_no`/`flight_no`/`mawb`/`scac_code`/`brand`/`qty_unit`/`gross_weight`/`measurement`(text);
+  + a new `list` class (UNION of comma-lists) for `item_style_no`+`hts_code`. NOTE: full parity with queue's
+  `critic/merge.ts` is infeasible (it imports queue-only masters/match-keys + runs poQty/identifiers/coherence/
+  over-merge passes); track's is a deliberate lightweight subset — this closes the field-coverage gap only.
 - [ ] `[track]` **cfs_cutoff vs warehouse_end_date** — confirm distinct vs redundant (cheat sheet groups
   截仓/CFS cut-off = warehouse end). Decide the mapping so the parser fills the right column(s).
 - [ ] `[track]` **Email disposition (matcher gates review, not the parser).** New PO+known customer→auto;
@@ -183,18 +187,24 @@ The `SettingsPage` + `PresentationService` god-components were already decompose
   (devDep) + `seed` (ts-node + source) need reworking to a prod-only path first, so it's not a safe
   drop-in. `docker build` verified.
 ### Structural
-- [ ] `[track]` **`CommitterService` god file (~696 LOC).** `apply()` accretes resolution/matching/qty-guard/
-  enrichment/identifiers/milestones with `BUG N` comments. Extract collaborators (MasterResolver, LegMatcher,
-  PoQtyReconciler, MilestoneSynchronizer); leave `apply()` an orchestrator.
-- [ ] `[track]` **PO domain is homeless.** `pos` vs `purchase-orders` overlap (two read surfaces + duplicate
-  mappers), and POs have no repository (~12 methods live inside `BookingRepository`). Confirm the FE no longer
-  calls `/api/pos`, delete the orphaned `pos` module, extract a `PurchaseOrderRepository`.
-- [ ] `[track]` **Stringly-typed core.** `ReconGroup.fields: Record<string,unknown>` + ~106 `as`-casts thread
-  through committer/presentation; a renamed field escapes tsc. Define a typed `ParsedFields` at the decisions
-  DTO boundary.
-- [ ] `[track]` **Ingest full-table scans / N+1.** `committer.apply()` does `allLegs()` + whole
-  `parsed_record⋈queue_message` per commit; `lookupByMatchKey` is a triple N+1 over a full scan. Push candidate
-  filtering into indexed SQL.
+- [~] `[track]` **`CommitterService` god file — PARTIALLY DONE 2026-07-09.** Pure helpers extracted:
+  `committer-helpers.ts` (dedupeCsv/scacFromMbl/countryToIso2, PR #26) + `committer-leg-mapping.ts`
+  (`mapFieldsToLegColumns`/`deriveOriginCountry`, PR #28); `LegMatcher` (`findExistingLeg`) already pure.
+  **Remaining:** extract the stateful collaborators (MasterResolver, PoQtyReconciler, MilestoneSynchronizer)
+  so `apply()` reads as a thin orchestrator.
+- [~] `[track]` **PO domain — `PurchaseOrderRepository` extracted (PR #27, 2026-07-09).** The ~12 PO methods
+  moved out of `BookingRepository` into their own `PurchaseOrderRepository`. **Remaining:** confirm the FE no
+  longer calls `/api/pos` and delete the orphaned `pos` module (the `pos` vs `purchase-orders` read overlap).
+- [x] `[track]` **Stringly-typed core — DECIDED NOT TO DO 2026-07-09.** Typed `ParsedFields` was evaluated and
+  declined: the `fields` bag is a generic agent→app wire boundary read with DYNAMIC keys (`fields[k]`) in
+  merge/state/the derived-milestone loop, which forces an index signature `[key:string]:unknown` — and that
+  cancels typo-safety anyway. `Record<string,unknown>` at the boundary + `str`/`num`/`date` coercion in the
+  committer is the correct split (loose in, strict at point-of-use). Do not re-propose.
+- [~] `[track]` **Ingest N+1 — per-item round-trips DONE 2026-07-09, full-scans remain.** Killed the per-item
+  N+1s: `lookupByMatchKey` + committer match loop (`poNumbersByBooking`, PR #29), `review.queue` (`findByIds`,
+  PR #30), `presentation` alert summaries (PR #31), `posFor` (single query, PR #32), alert-evaluator
+  milestones+emails+evidence (PR #33). **Remaining:** `committer.apply()` still `allLegs()` full-scans + loads
+  whole `evidence.allWithMessage()` per commit — push candidate filtering into indexed SQL.
 - [ ] `[track]` **Review-queue apply-back** (`emails/review-queue.service.ts:56`, `TODO(apply-back)`). A
   `correct` verdict is stored to `review_email` but never re-applied to the shipment via the committer + field-locks.
 ### Hygiene

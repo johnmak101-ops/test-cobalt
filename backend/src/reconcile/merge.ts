@@ -9,20 +9,26 @@
  *   entity   CODES (customer/vendor) match exactly, any clash = conflict. NAMES (forwarder/consignee)
  *            match by containment ignoring resolver annotations; the most authoritative doc's name
  *            wins (Final B/L consignee beats a lower-rank mis-extraction), only an EQUAL-rank clash.
- *   schedule (cargo_ready/warehouse/etd/atd/eta/in_dc) — LATEST email wins (schedules re-quoted).
- *   quantity (qty) + text (address/item_style/poi/pod) — most authoritative doc wins, ties→newest.
+ *   schedule (cargo_ready/warehouse/etd/atd/eta/ata/in_dc) — LATEST email wins (schedules re-quoted).
+ *   quantity (qty) + text (address/poi/pol/pod/vessel/voyage/scac/…) — most authoritative doc wins, ties→newest.
+ *   list     (item_style_no/hts_code) — UNION of every stated comma-list across the thread (deduped).
  *   po       (customer_po) — union across the thread.
  */
-export type FieldClass = 'identity' | 'entity' | 'schedule' | 'quantity' | 'text' | 'po'
+export type FieldClass = 'identity' | 'entity' | 'schedule' | 'quantity' | 'text' | 'po' | 'list'
 
 export const FIELD_CLASS: Record<string, FieldClass> = {
   customer_po: 'po',
   so_no: 'identity', hbl_awb_fcr_no: 'identity', mbl: 'identity', booking_no: 'identity', container_no: 'identity',
   customer_code: 'entity', vendor_code: 'entity', forwarder_name: 'entity', consignee_name: 'entity',
   cargo_ready_date: 'schedule', warehouse_start_date: 'schedule', warehouse_end_date: 'schedule',
-  etd: 'schedule', atd: 'schedule', eta: 'schedule', in_dc_date: 'schedule',
+  etd: 'schedule', atd: 'schedule', eta: 'schedule', ata: 'schedule', in_dc_date: 'schedule',
   qty: 'quantity',
-  consignee_address: 'text', item_style_no: 'text', poi: 'text', pod: 'text',
+  poi: 'text', pol: 'text', pod: 'text', consignee_address: 'text',
+  // "extract all info" fields — MUST be listed or mergeShipment silently DROPS them on the reconcile-from-
+  // evidence path (they never reach the rebuilt shipment). Mirrors cobalt-queue critic/merge FIELD_CLASS coverage.
+  vessel_name: 'text', voyage_no: 'text', flight_no: 'text', mawb: 'text', scac_code: 'text', brand: 'text',
+  qty_unit: 'text', gross_weight: 'text', measurement: 'text',
+  item_style_no: 'list', hts_code: 'list',
 }
 
 export const DOC_RANK: Record<string, number> = {
@@ -86,6 +92,20 @@ export function mergeShipment(emails: CriticEmail[]): MergeResult {
     let kept = stated[0]
     if (cls === 'schedule') {
       kept = stated[stated.length - 1] // latest statement supersedes
+    } else if (cls === 'list') {
+      // union EVERY stated comma-list across records (styles/HTS pile up per PO sheet + B/L rider);
+      // order-preserving, case-insensitive dedup. Keeping one record's value lost the rest.
+      const seen = new Set<string>()
+      const parts: string[] = []
+      for (const c of stated)
+        for (const t of String(c.value ?? '').split(',').map((s) => s.trim()).filter(Boolean)) {
+          const k = t.toUpperCase()
+          if (!seen.has(k)) {
+            seen.add(k)
+            parts.push(t)
+          }
+        }
+      kept = { ...kept, value: parts.length ? parts.join(',') : kept.value }
     } else if (cls === 'quantity' || cls === 'text') {
       for (const c of stated) if (c.rank >= kept.rank) kept = c // best rank, ties → newest
     } else {
