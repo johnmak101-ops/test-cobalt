@@ -27,19 +27,38 @@ let pool: Pool | null = null
 export async function getTestDb(): Promise<{ db: TestDB; pool: Pool }> {
   if (pool) return { db: drizzle(pool, { schema }), pool }
   const admin = new Pool({ connectionString: ADMIN_URL })
-  const r = await admin.query("select 1 from pg_database where datname = 'cobalt_test'")
-  if (r.rowCount === 0) await admin.query('create database cobalt_test')
+  if ((await admin.query("select 1 from pg_database where datname = 'cobalt_test'")).rowCount === 0)
+    await admin.query('create database cobalt_test')
+
+  let p = new Pool({ connectionString: TEST_URL })
+  const dbName = (await p.query('select current_database() as db')).rows[0].db as string
+  const hasLedger = (await p.query("select to_regclass('public._test_migrations') as t")).rows[0].t != null
+  const hasSchema = ((await p.query("select 1 from information_schema.schemata where schema_name = 'tracking'")).rowCount ?? 0) > 0
+  // Transition: a pre-ledger test DB (its schema was built by the old apply-once path) → recreate it clean ONCE
+  // so the migration ledger below becomes the single source of truth. Guarded to a DB literally named
+  // `cobalt_test` (never a mispointed real DB) and race-free (int specs run serially, fileParallelism:false).
+  if (hasSchema && !hasLedger && dbName === 'cobalt_test') {
+    await p.end()
+    await admin.query('drop database cobalt_test')
+    await admin.query('create database cobalt_test')
+    p = new Pool({ connectionString: TEST_URL })
+  }
   await admin.end()
 
-  pool = new Pool({ connectionString: TEST_URL })
-  const present = await pool.query("select 1 from information_schema.schemata where schema_name = 'tracking'")
-  if (present.rowCount === 0) {
-    const dir = join(process.cwd(), 'drizzle')
-    const files = readdirSync(dir)
-      .filter((f) => f.endsWith('.sql'))
-      .sort()
-    for (const file of files) await pool.query(readFileSync(join(dir, file), 'utf8'))
+  // Apply only migrations not yet recorded, and record each — so a NEWLY-ADDED migration auto-applies on the
+  // next run with NO manual `DROP DATABASE cobalt_test`. (The old code skipped ALL migrations whenever the
+  // `tracking` schema already existed, so a new migration silently never ran → the tests saw a stale schema.)
+  await p.query(
+    'create table if not exists _test_migrations (filename text primary key, applied_at timestamptz not null default now())',
+  )
+  const applied = new Set((await p.query('select filename from _test_migrations')).rows.map((row) => row.filename as string))
+  const dir = join(process.cwd(), 'drizzle')
+  for (const file of readdirSync(dir).filter((f) => f.endsWith('.sql')).sort()) {
+    if (applied.has(file)) continue
+    await p.query(readFileSync(join(dir, file), 'utf8'))
+    await p.query('insert into _test_migrations (filename) values ($1)', [file])
   }
+  pool = p
   return { db: drizzle(pool, { schema }), pool }
 }
 
