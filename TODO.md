@@ -144,8 +144,12 @@ displays** — the mock's own `extractor.ts` is reference, not used. Disposition
   + a new `list` class (UNION of comma-lists) for `item_style_no`+`hts_code`. NOTE: full parity with queue's
   `critic/merge.ts` is infeasible (it imports queue-only masters/match-keys + runs poQty/identifiers/coherence/
   over-merge passes); track's is a deliberate lightweight subset — this closes the field-coverage gap only.
-- [ ] `[track]` **cfs_cutoff vs warehouse_end_date** — confirm distinct vs redundant (cheat sheet groups
-  截仓/CFS cut-off = warehouse end). Decide the mapping so the parser fills the right column(s).
+- [x] `[track]` **cfs_cutoff vs warehouse_end_date — SAME (architect-confirmed 2026-07-09).** The parser only
+  ever fills `warehouse_end_date` (截倉時間 = CFS cut-off, soul field 12); `cfs_cutoff` fills solely from a
+  human edit. The presentation mapper already displays `cfsCutoff ?? warehouseEndDate`; the fix extended the
+  same equating to the **alert evaluator** (`buildFacts`) so cutoff-anchored alerts (A3) fire off the
+  parser's warehouse_end_date instead of silently never firing. No schema change (kept both columns; human
+  cfs_cutoff still wins). +1 int test.
 - [ ] `[track]` **Email disposition (matcher gates review, not the parser).** New PO+known customer→auto;
   new customer / mode-change / moved-shipment / late-PO / dup-number→review; no status update→不需處理
   (store, no human review). All emails parsed; sender-type tagged post-parse for field-trust.

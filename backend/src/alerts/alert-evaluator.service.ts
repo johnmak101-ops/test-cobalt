@@ -125,7 +125,10 @@ export class AlertEvaluatorService {
       state: leg.state,
       originCountry: leg.originCountry ?? null,
       bookingRequestAt: at('BOOKING_SENT'),
-      cfsCutoff: leg.cfsCutoff,
+      // CFS cut-off ≡ 截倉時間 ≡ warehouse_end_date (soul field 12): the parser only ever fills
+      // warehouse_end_date; cfs_cutoff fills solely from a human edit. A cutoff-anchored alert must see
+      // either, so fall back to the warehouse end date — mirrors the presentation mapper's equating.
+      cfsCutoff: leg.cfsCutoff ?? leg.warehouseEndDate,
       atd: leg.atd,
       etd: leg.etd,
       warehouseInAt: at('AT_WAREHOUSE') ?? leg.warehouseStartDate,

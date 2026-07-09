@@ -65,6 +65,18 @@ describe('AlertEvaluatorService (integration)', () => {
     expect(await db.select().from(schema.alertInstances)).toHaveLength(1)
   })
 
+  it('fires A3 off warehouse_end_date when cfs_cutoff is unset (parser vocab: CFS cut-off ≡ 截倉 ≡ warehouse end)', async () => {
+    // The parser never emits cfs_cutoff — it fills warehouse_end_date for 截倉时间 (soul field 12); the
+    // cfs_cutoff column only fills from a human edit. So a cutoff-anchored alert must see warehouse_end_date.
+    await seedA3()
+    await seedLeg({ cfsCutoff: null, warehouseEndDate: new Date('2026-02-01') })
+    const r = await evaluator.evaluate(new Date('2026-02-05'))
+    expect(r.fired).toBe(1)
+    const alerts = await db.select().from(schema.alertInstances)
+    expect(alerts).toHaveLength(1)
+    expect(alerts[0].ruleId).toBe('A3')
+  })
+
   it('skips provisional (low-confidence) legs — commit-first never alerts on unreviewed data', async () => {
     await seedA3()
     await seedLeg({ cfsCutoff: new Date('2026-02-01'), reviewStatus: 'provisional' })
