@@ -47,7 +47,13 @@ interface SpikeDB {
 
 let db: Kysely<SpikeDB>
 
+// These are local-spike tests, not part of the regression suite — they must not block CI (which has no
+// SQL Server container). Set KYSELY_SPIKE=1 locally (with the mssql-2022 container running) to run them.
+// describe.runIf gates the whole suite, so beforeAll/afterAll only run when the env var is set.
+const RUN = process.env.KYSELY_SPIKE === '1'
+
 beforeAll(async () => {
+  if (!RUN) return
   db = createKysely<SpikeDB>(URL)
   // reset deterministically: drop the spike tables (FK order) + Kysely's migration ledger so migrations
   // re-run clean. SQL Server has no DROP TABLE CASCADE; drop children first.
@@ -59,10 +65,11 @@ beforeAll(async () => {
   await runMigrations(db, join(process.cwd(), 'kysely-migrations'))
 })
 afterAll(async () => {
+  if (!RUN) return
   await db.destroy()
 })
 
-describe('Kysely MSSQL spike', () => {
+describe.runIf(RUN)('Kysely MSSQL spike', () => {
   it('inserts a customer + booking + shipment with uuid PKs, a FK, a CHECK enum, and a json column', async () => {
     const customer = await db
       .insertInto('customers')
