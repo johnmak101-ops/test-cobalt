@@ -1,7 +1,6 @@
 import { Injectable } from '@nestjs/common'
 import { formatJobNo } from '../common/job-no'
 import type * as schema from '../db/contracts'
-import type { QTY_UNIT } from '../db/contracts'
 import { keysOverlap, strongKeys, normKey, str, num, date } from './match-keys'
 import { guardVendorForwarder, isPlatformNotForwarder, isNotificationPlatformSender } from './vendor-forwarder-guard'
 import { deriveState, classifyKind, MILESTONE_OF, DERIVED_MILESTONE_OF, normMode } from './state'
@@ -14,7 +13,7 @@ import { AuditRepository } from '../db/repositories/audit.repository'
 import { EvidenceRepository } from '../db/repositories/evidence.repository'
 import { resolvePoEnrichment } from './po-enrichment'
 import { poQtyIssue, describePoQtyIssue } from './po-qty-consistency'
-import { dedupeCsv, scacFromMbl, countryToIso2 } from './committer-helpers'
+import { mapFieldsToLegColumns, deriveOriginCountry } from './committer-leg-mapping'
 
 /** One reconciled shipment picture, ready to commit. */
 export interface ReconGroup {
@@ -111,18 +110,8 @@ export class CommitterService {
       this.resolvePort(f.pod),
     ])
     const polId = pol?.id ?? null
-    // origin_country prefers the resolved port's country; but when the POL is UNSEEDED (pol is null) and the
-    // raw value is a UN/LOCODE shape (2 ISO-country letters + 3 alnum, e.g. CNPVG → CN), derive the country
-    // from its prefix. Guarded to that exact shape so a 3-letter IATA (CKG) or free text never triggers it.
-    const originCountry =
-      pol?.country ??
-      (() => {
-        const rawPol = (str(f.poi ?? (f as Record<string, unknown>).pol) ?? '').toUpperCase()
-        if (/^[A-Z]{2}[A-Z0-9]{3}$/.test(rawPol)) return rawPol.slice(0, 2)
-        // free-text POL that spells out the origin country in its trailing segment
-        const tail = (rawPol.split(',').pop() ?? '').replace(/[^A-Z ]+/g, ' ').replace(/\s+/g, ' ').trim()
-        return countryToIso2(tail)
-      })()
+    // origin_country: the resolved port's country, else derived from an unseeded LOCODE-shaped/free-text POL.
+    const originCountry = deriveOriginCountry(pol?.country, str(f.poi ?? (f as Record<string, unknown>).pol))
 
     // Phase-4 guard: a forwarder mislabeled as the vendor must never land in the vendor slot.
     // If flagged, the vendor link is dropped, the (empty) forwarder slot is filled, and the leg
@@ -154,42 +143,14 @@ export class CommitterService {
     const fromPlatform = g.fromPlatform ?? (await this.allSourceEmailsFromPlatform(g))
     const kind = classifyKind(emailTypes, f, { fromPlatform })
     const legValues: Record<string, unknown> = {
+      ...mapFieldsToLegColumns(f), // direct field→column mapping (raws, cargo, dates, scac fallback, CSV dedupe)
       mode: normMode(g.mode),
       state,
       kind,
       forwarderId: effForwarderId,
-      forwarderRaw: str(f.forwarder_name), // raw — surfaced when forwarderId doesn't resolve
       polId,
       podId,
       originCountry,
-      polRaw: str(f.poi ?? (f as Record<string, unknown>).pol), // raw — surfaced when polId doesn't resolve
-      podRaw: str(f.pod),
-      bookingNo: str(f.booking_no),
-      soNo: str(f.so_no),
-      hblAwbFcrNo: str(f.hbl_awb_fcr_no),
-      mbl: str(f.mbl),
-      containerNo: str(f.container_no),
-      scacCode: str(f.scac_code ?? (f as Record<string, unknown>).scac) ?? scacFromMbl(str(f.mbl)), // alias `scac`; fall back to MBL prefix
-      vesselName: str(f.vessel_name),
-      voyageNo: str(f.voyage_no),
-      flightNo: str(f.flight_no),
-      mawb: str(f.mawb),
-      cargoReadyDate: date(f.cargo_ready_date),
-      warehouseStartDate: date(f.warehouse_start_date),
-      warehouseEndDate: date(f.warehouse_end_date),
-      etd: date(f.etd),
-      atd: date(f.atd),
-      eta: date(f.eta),
-      ata: date(f.ata),
-      inDcDate: date(f.in_dc_date),
-      qty: num(f.qty),
-      qtyUnit: str(f.qty_unit) as (typeof QTY_UNIT)[number] | null,
-      grossWeight: num(f.gross_weight),
-      measurement: num(f.measurement),
-      htsCode: dedupeCsv(str(f.hts_code)),
-      itemStyleNo: dedupeCsv(str(f.item_style_no)),
-      consigneeName: str(f.consignee_name),
-      consigneeAddress: str(f.consignee_address),
       // persist the conversationId so a zero-identity (keyless, PO-less) leg has a cross-run handle (A2).
       matchKeys: g.conversationId ? { ...g.matchKeys, conversation_id: g.conversationId } : g.matchKeys,
     }
