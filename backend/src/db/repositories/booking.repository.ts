@@ -17,6 +17,14 @@ export class BookingRepository {
     const [b] = await this.db.select().from(schema.bookings).where(eq(schema.bookings.id, id))
     return b ?? null
   }
+  /** Fetch many bookings in ONE query (id -> booking) — replaces per-leg findById in read loops (review queue). */
+  async findByIds(ids: string[]): Promise<Map<string, typeof schema.bookings.$inferSelect>> {
+    const map = new Map<string, typeof schema.bookings.$inferSelect>()
+    if (!ids.length) return map
+    const rows = await this.db.select().from(schema.bookings).where(inArray(schema.bookings.id, ids))
+    for (const b of rows) map.set(b.id, b)
+    return map
+  }
   async create(values: typeof schema.bookings.$inferInsert) {
     const [b] = await this.db.insert(schema.bookings).values(values).returning()
     return b

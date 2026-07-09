@@ -51,6 +51,20 @@ describe('ReviewService (integration)', () => {
     expect(q[0].reviewReasons).toContain('conflict: hbl A vs B')
   })
 
+  it('pairs each queued leg with its OWN booking jobNo and POs (no cross-leg bleed when batching)', async () => {
+    const { bk: bkA } = await seedProvisional('JOB-RA', 30)
+    const { bk: bkB } = await seedProvisional('JOB-RB', 10)
+    const [poA] = await db.insert(schema.purchaseOrders).values({ poNumber: 'PO-RA' }).returning()
+    const [poB] = await db.insert(schema.purchaseOrders).values({ poNumber: 'PO-RB' }).returning()
+    await db.insert(schema.bookingPos).values({ bookingId: bkA.id, poId: poA.id })
+    await db.insert(schema.bookingPos).values({ bookingId: bkB.id, poId: poB.id })
+
+    const q = await review.queue()
+    const posByJob = Object.fromEntries(q.map((r) => [r.jobNo, r.pos]))
+    expect(posByJob['JOB-RA']).toEqual(['PO-RA'])
+    expect(posByJob['JOB-RB']).toEqual(['PO-RB'])
+  })
+
   it('confirm flips to confirmed and records the reviewer + a manual audit', async () => {
     const { leg } = await seedProvisional('JOB-R-1', 40)
     const res = await review.confirm(leg.id, reviewerId)

@@ -45,13 +45,18 @@ export class ReviewService {
   /** Provisional shipments awaiting review, lowest confidence first, with booking context. */
   async queue() {
     const legs = await this.shipments.provisionalLegs()
-    return Promise.all(
-      legs.map(async (leg) => {
-        const booking = await this.bookings.findById(leg.bookingId)
-        const pos = await this.bookings.poNumbersFor(leg.bookingId)
-        return { ...leg, jobNo: booking?.jobNo ?? null, pos }
-      }),
-    )
+    // Two bulk loads (bookings + PO numbers) keyed by bookingId instead of a findById + poNumbersFor per
+    // leg — the review queue was 2N round-trips; now 2, regardless of how many legs await review.
+    const bookingIds = legs.map((l) => l.bookingId)
+    const [bookingsById, posByBooking] = await Promise.all([
+      this.bookings.findByIds(bookingIds),
+      this.bookings.poNumbersByBooking(bookingIds),
+    ])
+    return legs.map((leg) => ({
+      ...leg,
+      jobNo: bookingsById.get(leg.bookingId)?.jobNo ?? null,
+      pos: posByBooking.get(leg.bookingId) ?? [],
+    }))
   }
 
   /** Accept a provisional shipment as-is. An optional reviewer note is audited (soul feedback). */
