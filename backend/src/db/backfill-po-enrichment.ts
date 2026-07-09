@@ -12,7 +12,7 @@ import { Pool } from 'pg'
 import { drizzle, type NodePgDatabase } from 'drizzle-orm/node-postgres'
 import * as schema from './contracts'
 import { EvidenceRepository } from './repositories/evidence.repository'
-import { BookingRepository } from './repositories/booking.repository'
+import { PurchaseOrderRepository } from './repositories/purchase-order.repository'
 import { resolvePoEnrichment } from '../reconcile/po-enrichment'
 import { normKey } from '../reconcile/match-keys'
 
@@ -28,7 +28,7 @@ async function main() {
   const pool = new Pool({ connectionString: databaseUrl() })
   const db = drizzle(pool, { schema }) as NodePgDatabase<typeof schema>
   const evidence = new EvidenceRepository(db)
-  const booking = new BookingRepository(db)
+  const purchaseOrders = new PurchaseOrderRepository(db)
 
   const enrichment = resolvePoEnrichment(await evidence.allWithMessage())
   const pos = await db.select().from(schema.purchaseOrders)
@@ -39,7 +39,7 @@ async function main() {
     const enr = enrichment.get(normKey(po.poNumber))
     if (!enr) continue
     // fill-if-null via the production upsertPo (existing PO → only empty enrichment columns are written)
-    await booking.upsertPo(po.poNumber, po.customerId, po.vendorId, enr)
+    await purchaseOrders.upsertPo(po.poNumber, po.customerId, po.vendorId, enr)
     touched++
   }
   console.log(`Backfilled (fill-if-null) across ${touched} matched POs.`)

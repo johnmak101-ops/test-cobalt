@@ -13,7 +13,7 @@ interface Over {
 function harness(over: Over = {}) {
   const calls: Array<{ method: string; args: unknown[] }> = []
   const log = (method: string, ...args: unknown[]) => calls.push({ method, args })
-  const bookings = {
+  const pos = {
     async findPoByNumber(n: string) {
       log('findPoByNumber', n)
       return over.poByNumber ?? null
@@ -62,8 +62,8 @@ function harness(over: Over = {}) {
       log('audit.write', row)
     },
   }
-   
-  const svc = new PurchaseOrdersService(bookings as any, masters as any, audit as any)
+
+  const svc = new PurchaseOrdersService(pos as any, masters as any, audit as any)
   return { svc, calls }
 }
 

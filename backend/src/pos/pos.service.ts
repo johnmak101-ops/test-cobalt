@@ -1,19 +1,19 @@
 import { Injectable } from '@nestjs/common'
-import { BookingRepository } from '../db/repositories/booking.repository'
+import { PurchaseOrderRepository } from '../db/repositories/purchase-order.repository'
 
 /** PO master read for the Matcher + the Purchase Orders UI. */
 @Injectable()
 export class PosService {
-  constructor(private readonly bookings: BookingRepository) {}
+  constructor(private readonly pos: PurchaseOrderRepository) {}
 
   /** open=true drops POs whose linked bookings are all terminal (CLOSED/CANCELLED). */
   list(open = false) {
-    return this.bookings.listPos(open)
+    return this.pos.listPos(open)
   }
 
   /** A single PO + the shipments it rides on (for the PO detail page). */
   async detail(id: string) {
-    const res = await this.bookings.poDetail(id)
+    const res = await this.pos.poDetail(id)
     if (!res) return null
     const { po, links } = res
     return {

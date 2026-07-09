@@ -7,6 +7,7 @@ import { guardVendorForwarder, isPlatformNotForwarder, isNotificationPlatformSen
 import { deriveState, classifyKind, MILESTONE_OF, DERIVED_MILESTONE_OF, normMode } from './state'
 import { MastersRepository } from '../db/repositories/masters.repository'
 import { BookingRepository } from '../db/repositories/booking.repository'
+import { PurchaseOrderRepository } from '../db/repositories/purchase-order.repository'
 import { ShipmentRepository } from '../db/repositories/shipment.repository'
 import { FieldLockRepository } from '../db/repositories/field-lock.repository'
 import { AuditRepository } from '../db/repositories/audit.repository'
@@ -90,6 +91,7 @@ export class CommitterService {
     private readonly fieldLocks: FieldLockRepository,
     private readonly audit: AuditRepository,
     private readonly evidence: EvidenceRepository,
+    private readonly purchaseOrders: PurchaseOrderRepository,
   ) {}
 
   async apply(g: ReconGroup): Promise<CommitResult> {
@@ -274,7 +276,7 @@ export class CommitterService {
       const qctx = { legQty: perPoQty, legUnit: perPoUnit, poTotal: enr?.totalQuantity ?? null, poUnit: enr?.quantityUnit ?? null }
       const issue = poQtyIssue(qctx)
       if (issue) poQtyIssues.push(`PO ${poNo}: ${describePoQtyIssue(issue, qctx)}`)
-      const poId = await this.bookings.upsertPo(poNo, customerId, effVendorId, enr)
+      const poId = await this.purchaseOrders.upsertPo(poNo, customerId, effVendorId, enr)
       await this.bookings.linkPo(bookingId, poId)
       await this.shipments.linkPo(shipmentId, poId, perPoQty, perPoUnit)
     }

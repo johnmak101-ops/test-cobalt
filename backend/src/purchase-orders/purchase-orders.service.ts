@@ -1,6 +1,6 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common'
 import { QTY_UNIT } from '../db/contracts'
-import { BookingRepository } from '../db/repositories/booking.repository'
+import { PurchaseOrderRepository } from '../db/repositories/purchase-order.repository'
 import { MastersRepository } from '../db/repositories/masters.repository'
 import { AuditRepository } from '../db/repositories/audit.repository'
 
@@ -21,7 +21,7 @@ export interface CreatePoInput {
 @Injectable()
 export class PurchaseOrdersService {
   constructor(
-    private readonly bookings: BookingRepository,
+    private readonly pos: PurchaseOrderRepository,
     private readonly masters: MastersRepository,
     private readonly audit: AuditRepository,
   ) {}
@@ -43,10 +43,10 @@ export class PurchaseOrdersService {
   async create(input: CreatePoInput, actorId: string) {
     const poNumber = (input.poNumber ?? '').trim()
     if (!poNumber) throw new BadRequestException('poNumber is required')
-    if (await this.bookings.findPoByNumber(poNumber)) throw new ConflictException(`PO ${poNumber} already exists`)
+    if (await this.pos.findPoByNumber(poNumber)) throw new ConflictException(`PO ${poNumber} already exists`)
     const quantityUnit = this.normalizeUnit(input.quantityUnit)
     await this.assertMasters(input.customerId, input.vendorId)
-    const po = await this.bookings.createPo({
+    const po = await this.pos.createPo({
       poNumber,
       customerId: input.customerId ?? null,
       vendorId: input.vendorId ?? null,
@@ -66,14 +66,14 @@ export class PurchaseOrdersService {
   }
 
   async update(id: string, patch: Record<string, unknown>, actorId: string) {
-    const existing = await this.bookings.poById(id)
+    const existing = await this.pos.poById(id)
     if (!existing) throw new NotFoundException('purchase order not found')
     const next: Record<string, unknown> = {}
     if ('poNumber' in patch) {
       const n = String(patch.poNumber ?? '').trim()
       if (!n) throw new BadRequestException('poNumber cannot be blank')
       if (n !== existing.poNumber) {
-        const clash = await this.bookings.findPoByNumber(n)
+        const clash = await this.pos.findPoByNumber(n)
         if (clash && clash.id !== id) throw new ConflictException(`PO ${n} already exists`)
         next.poNumber = n
       }
@@ -84,7 +84,7 @@ export class PurchaseOrdersService {
     for (const k of ['customerId', 'vendorId', 'totalQuantity', 'notes', 'brand', 'itemStyleNo'] as const) {
       if (k in patch) next[k] = patch[k]
     }
-    const row = await this.bookings.updatePo(id, next)
+    const row = await this.pos.updatePo(id, next)
     await this.audit.write({
       entityType: 'purchase_order',
       entityId: id,
@@ -97,14 +97,14 @@ export class PurchaseOrdersService {
   }
 
   async remove(id: string, actorId: string) {
-    const existing = await this.bookings.poById(id)
+    const existing = await this.pos.poById(id)
     if (!existing) throw new NotFoundException('purchase order not found')
-    const links = await this.bookings.poLinkCounts(id)
+    const links = await this.pos.poLinkCounts(id)
     if (links.shipments > 0 || links.bookings > 0)
       throw new ConflictException(
         `PO is linked to ${links.shipments} shipment(s) and ${links.bookings} booking(s) — unlink first`,
       )
-    await this.bookings.deletePo(id)
+    await this.pos.deletePo(id)
     await this.audit.write({
       entityType: 'purchase_order',
       entityId: id,
@@ -118,9 +118,9 @@ export class PurchaseOrdersService {
 
   async link(poId: string, shipmentId: string, quantity: number | null, actorId: string) {
     if (!shipmentId) throw new BadRequestException('shipmentId is required')
-    const po = await this.bookings.poById(poId)
+    const po = await this.pos.poById(poId)
     if (!po) throw new NotFoundException('purchase order not found')
-    const row = await this.bookings.linkShipmentPo(poId, shipmentId, quantity ?? null, null)
+    const row = await this.pos.linkShipmentPo(poId, shipmentId, quantity ?? null, null)
     if (row)
       await this.audit.write({
         entityType: 'shipment_po',
@@ -134,7 +134,7 @@ export class PurchaseOrdersService {
   }
 
   async unlink(poId: string, linkId: string, actorId: string) {
-    const row = await this.bookings.unlinkShipmentPo(poId, linkId)
+    const row = await this.pos.unlinkShipmentPo(poId, linkId)
     if (!row) throw new NotFoundException('link not found')
     await this.audit.write({
       entityType: 'shipment_po',

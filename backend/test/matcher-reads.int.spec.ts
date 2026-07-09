@@ -13,7 +13,7 @@ beforeAll(async () => {
   db = t.db
   const r = repos(db)
   shipments = new ShipmentsService(r.shipment, r.booking, r.fieldLock)
-  pos = new PosService(r.booking)
+  pos = new PosService(r.purchaseOrder)
 })
 afterAll(closeTestDb)
 beforeEach(() => resetDb(db))

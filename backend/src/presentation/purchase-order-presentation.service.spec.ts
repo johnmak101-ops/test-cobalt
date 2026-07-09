@@ -4,7 +4,7 @@ import { PurchaseOrderPresentationService } from './purchase-order-presentation.
 const D = (s: string) => new Date(s)
 
 const build = (over: Record<string, unknown> = {}) => {
-  const bookingRepo = {
+  const poRepo = {
     listPos: async () => [
       {
         id: 'po1', poNumber: 'PO-1', customerId: 'c1', vendorId: 'v1', totalQuantity: 5000, quantityUnit: 'pieces',
@@ -23,7 +23,7 @@ const build = (over: Record<string, unknown> = {}) => {
     poDetail: async (id: string) => (id === 'po1' ? { po: { id: 'po1', poNumber: 'PO-1', createdAt: D('2026-02-01T00:00:00.000Z'), updatedAt: D('2026-02-01T00:00:00.000Z') }, links: [] } : null),
     ...over,
   }
-  return new PurchaseOrderPresentationService(bookingRepo as any)
+  return new PurchaseOrderPresentationService(poRepo as any)
 }
 
 describe('PurchaseOrderPresentationService.purchaseOrders', () => {

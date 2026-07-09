@@ -6,6 +6,7 @@ import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { MastersRepository } from '../src/db/repositories/masters.repository'
 import { BookingRepository } from '../src/db/repositories/booking.repository'
+import { PurchaseOrderRepository } from '../src/db/repositories/purchase-order.repository'
 import { ShipmentRepository } from '../src/db/repositories/shipment.repository'
 import { FieldLockRepository } from '../src/db/repositories/field-lock.repository'
 import { AuditRepository } from '../src/db/repositories/audit.repository'
@@ -66,6 +67,7 @@ export function repos(db: TestDB) {
   return {
     masters: new MastersRepository(db),
     booking: new BookingRepository(db),
+    purchaseOrder: new PurchaseOrderRepository(db),
     shipment: new ShipmentRepository(db),
     fieldLock: new FieldLockRepository(db),
     audit: new AuditRepository(db),

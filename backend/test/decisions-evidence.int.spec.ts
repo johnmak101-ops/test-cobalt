@@ -16,7 +16,7 @@ beforeAll(async () => {
   db = (await getTestDb()).db
   const r = repos(db)
   ingestRepo = r.ingest
-  const committer = new CommitterService(r.masters, r.booking, r.shipment, r.fieldLock, r.audit, r.evidence)
+  const committer = new CommitterService(r.masters, r.booking, r.shipment, r.fieldLock, r.audit, r.evidence, r.purchaseOrder)
   const settings = new SettingsService(r.settings)
   decisions = new DecisionsService(committer, settings, ingestRepo)
 })

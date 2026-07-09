@@ -3,7 +3,7 @@
  * summary rows (container/SCAC/booking#/vessel + lifecycle-weighted progress). Read-only.
  */
 import { Injectable, NotFoundException } from '@nestjs/common'
-import { BookingRepository } from '../db/repositories/booking.repository'
+import { PurchaseOrderRepository } from '../db/repositories/purchase-order.repository'
 import { toUiPurchaseOrder, toUiPurchaseOrderDetail } from './mappers/po.mapper'
 import { type ShipmentMapperInput, type ShipmentLegRow } from './mappers/shipment.mapper'
 import { deriveRoute, portLabel } from './adapters/derive'
@@ -11,7 +11,7 @@ import { stateToUiStatus } from './adapters/enums'
 
 @Injectable()
 export class PurchaseOrderPresentationService {
-  constructor(private readonly bookingRepo: BookingRepository) {}
+  constructor(private readonly poRepo: PurchaseOrderRepository) {}
 
   // PO → one linked-shipment row, in the shape the PO list/detail search over (container/SCAC/booking#/vessel).
   // linkedQuantity + cancelled-aware status feed the UI's lifecycle-weighted PO progress.
@@ -50,8 +50,8 @@ export class PurchaseOrderPresentationService {
 
   async purchaseOrders(filter?: { customerId?: string; open?: boolean }) {
     const [rows, summaryRows] = await Promise.all([
-      this.bookingRepo.listPos(filter?.open ?? false),
-      this.bookingRepo.shipmentSummariesByPo(),
+      this.poRepo.listPos(filter?.open ?? false),
+      this.poRepo.shipmentSummariesByPo(),
     ])
     const summariesByPo = new Map<string, unknown[]>()
     for (const s of summaryRows) {
@@ -81,7 +81,7 @@ export class PurchaseOrderPresentationService {
   }
 
   async purchaseOrder(id: string) {
-    const detail = await this.bookingRepo.poDetail(id)
+    const detail = await this.poRepo.poDetail(id)
     if (!detail) throw new NotFoundException('purchase order not found')
     const { po, links } = detail
     return toUiPurchaseOrderDetail({

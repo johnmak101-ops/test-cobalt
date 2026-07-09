@@ -1,6 +1,7 @@
 import { Global, Module } from '@nestjs/common'
 import { MastersRepository } from './repositories/masters.repository'
 import { BookingRepository } from './repositories/booking.repository'
+import { PurchaseOrderRepository } from './repositories/purchase-order.repository'
 import { ShipmentRepository } from './repositories/shipment.repository'
 import { FieldLockRepository } from './repositories/field-lock.repository'
 import { AuditRepository } from './repositories/audit.repository'
@@ -15,6 +16,7 @@ import { IngestRepository } from './repositories/ingest.repository'
 const repositories = [
   MastersRepository,
   BookingRepository,
+  PurchaseOrderRepository,
   ShipmentRepository,
   FieldLockRepository,
   AuditRepository,

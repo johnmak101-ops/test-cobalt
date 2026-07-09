@@ -18,6 +18,7 @@ import { FieldLockRepository } from './repositories/field-lock.repository'
 import { AuditRepository } from './repositories/audit.repository'
 import { EvidenceRepository } from './repositories/evidence.repository'
 import { CommitterService } from '../reconcile/committer.service'
+import { PurchaseOrderRepository } from './repositories/purchase-order.repository'
 import { ShipmentsService } from '../shipments/shipments.service'
 
 const SHIPMENT_ID = 'bf489ecc-c010-4427-9a32-a9f20da837d9' // S2600240871A
@@ -34,7 +35,7 @@ async function main() {
   const booking = new BookingRepository(db)
   const fieldLock = new FieldLockRepository(db)
   const audit = new AuditRepository(db)
-  const committer = new CommitterService(new MastersRepository(db), booking, shipment, fieldLock, audit, new EvidenceRepository(db))
+  const committer = new CommitterService(new MastersRepository(db), booking, shipment, fieldLock, audit, new EvidenceRepository(db), new PurchaseOrderRepository(db))
   const svc = new ShipmentsService(shipment, booking, fieldLock, audit, committer)
 
   const res = await svc.editFields(
