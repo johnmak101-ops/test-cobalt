@@ -183,9 +183,13 @@ masters.repository: `PORT_ALIASES` / `IATA_TO_UNLOCODE` / `ABBREV_OVERRIDE {HCM:
   resolution indexes + alias-kind overlay reads + `customerResolvedFuzzy` are GONE (value-correcting
   drops converted to pure flags per de-correction). Verified: revalidate 33→0 silent rewrites; gate
   auto 79→102 with unknown-customer count unchanged; live openpave probe resolved MACFUN conf 0.95.
-  **Remaining phases:** Phase 2 (co-occurrence/brand signals, tuned scoring, multi-domain table),
-  Phase 3 (automatic `prior_correction` writes from review corrections + Iterator soul generalization,
-  scheduled re-match of provisional legs). Follow-ups: Resolution Rules UI still offers the retired
+  **Phase 2+3 SHIPPED 2026-07-10 (track PR #66 + queue PR #54):** candidates `context{customerCode,
+  poNumbers,brand}` → `cooccur:po`/`cooccur:customer`/`related:customer_vendor`/`brand:match` boosts
+  (never filters; context-only hits qualify); review-queue `correct` verdicts auto-write
+  `prior_correction` facts (supersede-on-same-raw, never-throws); the matcher-consumer fingerprint
+  probes the facts set so a new fact re-triggers matching over existing evidence (the re-match loop).
+  Deliberately NOT built: multi-domain table (YAGNI), semantic embeddings (no Fabric extension story —
+  escape hatch is a persisted trigram table). Follow-ups: Resolution Rules UI still offers the retired
   alias kinds (rows are audit history — hide/deprecate in UI); short-name forwarder trigram recall
   ("DSV AIR AND SEA" → 0 candidates on a sparse master set) worth a track-side look.
 - [x] ~~**Keep party/shipper fixes deterministic.**~~ SUPERSEDED 2026-07-10 by the matcher decision D
