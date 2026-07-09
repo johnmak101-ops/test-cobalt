@@ -62,3 +62,38 @@ describe('ShipmentsService.editFields — the human note feeds agent-soul iterat
     expect(audit.find((a) => a.field === 'soNo')?.note).toBe('edited on shipment detail')
   })
 })
+
+describe('ShipmentsService.applyExtractionCorrection — review-queue apply-back', () => {
+  it('maps parser fields → leg columns, writes + locks (human-wins) + audits with the note', async () => {
+    const leg = await seedLeg()
+    const res = await service.applyExtractionCorrection(
+      leg.id,
+      { booking_no: 'CORRECTED-BK', so_no: 'CORRECTED-SO', customer_code: 'IGNORED' },
+      actorId,
+      'booking# was truncated in the reply — use the confirmation',
+    )
+    // customer_code is master-resolved (no direct editable leg column) → skipped
+    expect(res.edited.sort()).toEqual(['bookingNo', 'soNo'])
+
+    const [updated] = await db.select().from(schema.shipments).where(eq(schema.shipments.id, leg.id))
+    expect(updated.bookingNo).toBe('CORRECTED-BK')
+    expect(updated.soNo).toBe('CORRECTED-SO')
+
+    // human-wins: each corrected field is locked so the agent can't overwrite it later
+    const locks = await db.select().from(schema.fieldLocks).where(eq(schema.fieldLocks.entityId, leg.id))
+    expect(locks.map((l) => l.field).sort()).toEqual(['bookingNo', 'soNo'])
+
+    // the reviewer's note rides each audit row (the agent-soul iteration signal)
+    const audit = await db.select().from(schema.changeLog).where(eq(schema.changeLog.entityId, leg.id))
+    expect(audit.find((a) => a.field === 'bookingNo')?.note).toBe('booking# was truncated in the reply — use the confirmation')
+    expect(audit.find((a) => a.field === 'bookingNo')?.sourceType).toBe('manual')
+  })
+
+  it('coerces typed fields (dates/numbers) through the same path as a manual edit', async () => {
+    const leg = await seedLeg()
+    await service.applyExtractionCorrection(leg.id, { etd: '2026-03-01', qty: '250' }, actorId, 'from the booking confirmation')
+    const [updated] = await db.select().from(schema.shipments).where(eq(schema.shipments.id, leg.id))
+    expect(updated.etd?.toISOString().slice(0, 10)).toBe('2026-03-01')
+    expect(updated.qty).toBe(250)
+  })
+})

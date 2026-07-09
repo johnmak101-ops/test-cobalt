@@ -263,8 +263,12 @@ The `SettingsPage` + `PresentationService` god-components were already decompose
   PR #30), `presentation` alert summaries (PR #31), `posFor` (single query, PR #32), alert-evaluator
   milestones+emails+evidence (PR #33). **Remaining:** `committer.apply()` still `allLegs()` full-scans + loads
   whole `evidence.allWithMessage()` per commit — push candidate filtering into indexed SQL.
-- [ ] `[track]` **Review-queue apply-back** (`emails/review-queue.service.ts:56`, `TODO(apply-back)`). A
-  `correct` verdict is stored to `review_email` but never re-applied to the shipment via the committer + field-locks.
+- [x] `[track]` **Review-queue apply-back — DONE 2026-07-09.** A `correct` verdict now re-applies to the linked
+  shipment via `ShipmentsService.applyExtractionCorrection` (new): parser fields (`booking_no`) → leg columns
+  (`bookingNo`) via `PARSER_TO_LEG`, routed through the existing `editFields` (write + human-wins field-lock +
+  audit-with-note → feeds soul iteration). Master-resolved fields (customer/forwarder/ports) skipped; unmatched
+  emails (no `shipmentId`) record the verdict without touching a shipment. Wiring: `ShipmentsModule` exports
+  `ShipmentsService`, `EmailsModule` imports it (acyclic; DI boot-verified). +5 int tests.
 ### Hygiene
 - [x] `[track]` **Untrack `tmp/*.png` — DONE 2026-07-09.** `git rm --cached` on the 4 tracked screenshots
   (committed before `tmp/` was gitignored). `pave.log` is already gone from the working tree + gitignored.

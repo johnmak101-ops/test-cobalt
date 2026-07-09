@@ -53,6 +53,13 @@ const CREATE_FIELD_MAP: { dto: keyof ManualShipmentInput; parser: string; leg: s
 ]
 const STRONG_DTO = new Set(['bookingNo', 'soNo', 'hblAwbFcrNo', 'mbl', 'containerNo'])
 
+// parser field (email-extraction vocabulary, e.g. `booking_no`) → editable leg column (`bookingNo`). Built
+// from CREATE_FIELD_MAP's non-null legs, so master-resolved fields (customer/vendor/forwarder/ports — leg=null)
+// are intentionally absent: they need resolution, not a direct column write, and are skipped by apply-back.
+const PARSER_TO_LEG: Record<string, string> = Object.fromEntries(
+  CREATE_FIELD_MAP.filter((m) => m.leg).map((m) => [m.parser, m.leg as string]),
+)
+
 // Human-editable leg columns (DB names). Excludes computed/master-resolved fields (customer/forwarder/route/
 // ports) which need lookups, and identity plumbing. Same coercion the review flow uses.
 const DATE_FIELDS = new Set(['cargoReadyDate', 'cfsCutoff', 'warehouseStartDate', 'warehouseEndDate', 'etd', 'atd', 'eta', 'ata', 'inDcDate'])
@@ -167,6 +174,23 @@ export class ShipmentsService {
       edited.push(field)
     }
     return { id, edited }
+  }
+
+  /**
+   * Apply a reviewer's CORRECTED email extraction back onto its shipment. The review queue stored the
+   * correction but never reached tracking — this closes that loop. Parser-vocabulary fields (`booking_no`)
+   * are mapped to leg columns (`bookingNo`) and routed through editFields, so the correction is written,
+   * LOCKED (human-wins — the agent can fill gaps later but never overwrites it), and audited with the
+   * reviewer's note (the agent-soul iteration signal). Master-resolved fields (customer/forwarder/ports) are
+   * skipped — they need resolution, not a direct write. Returns the edited leg columns.
+   */
+  async applyExtractionCorrection(shipmentId: string, extraction: Record<string, unknown>, actorId: string | null, note?: string | null) {
+    const legFields: Record<string, unknown> = {}
+    for (const [k, v] of Object.entries(extraction ?? {})) {
+      const leg = PARSER_TO_LEG[k]
+      if (leg) legFields[leg] = v
+    }
+    return this.editFields(shipmentId, legFields, actorId, note)
   }
 
   /** A single leg, enriched like the tracker list (customer / forwarder / route / linked POs) + timeline. */

@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common'
 import { ReviewEmailRepository } from '../db/repositories/review-email.repository'
+import { ShipmentsService } from '../shipments/shipments.service'
 import { stateToUiStatus } from '../presentation/adapters/enums'
 import type { ReviewEmailDto } from './review-queue.dto'
 
@@ -11,7 +12,10 @@ import type { ReviewEmailDto } from './review-queue.dto'
  */
 @Injectable()
 export class ReviewQueueService {
-  constructor(private readonly reviewEmails: ReviewEmailRepository) {}
+  constructor(
+    private readonly reviewEmails: ReviewEmailRepository,
+    private readonly shipments: ShipmentsService,
+  ) {}
 
   /** Emails in one review state (default: the pending NEEDS_REVIEW tab). The repo returns the linked
    *  shipment FLAT (jobNo/shipmentState); the UI reads a nested `shipment` + isMatched/processingStatus. */
@@ -53,7 +57,11 @@ export class ReviewQueueService {
 
     if (dto.action === 'correct') {
       const corrected = dto.corrections?.extractedData ?? row.extractedData ?? {}
-      // TODO(apply-back): re-apply corrected fields to row.shipmentId via the committer + field-locks.
+      // apply-back: the correction must reach tracking, not just the review row. Re-apply the corrected
+      // fields to the linked shipment via the human-wins edit path (write + field-lock + audit-with-note),
+      // so the agent can never re-clobber the human's value and the note feeds soul iteration. Only when the
+      // email is matched to a shipment (an unmatched email has nothing to apply onto).
+      if (row.shipmentId) await this.shipments.applyExtractionCorrection(row.shipmentId, corrected, actorId, dto.notes)
       return this.reviewEmails.update(id, {
         ...base,
         reviewStatus: 'REVIEWED_CORRECTED',
