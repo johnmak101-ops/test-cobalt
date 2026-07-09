@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common'
-import { desc, eq, sql } from 'drizzle-orm'
+import { desc, eq, inArray, sql } from 'drizzle-orm'
 import * as schema from '../contracts'
 import { DRIZZLE, type DrizzleDB } from '../drizzle.provider'
 
@@ -170,6 +170,34 @@ export class EmailRepository {
       .innerJoin(schema.ingestEmailMessage, eq(schema.shipmentEmails.graphMessageId, schema.ingestEmailMessage.graphMessageId))
       .where(eq(schema.shipmentEmails.shipmentId, shipmentId))
       .orderBy(desc(schema.ingestEmailMessage.receivedAt))
+  }
+
+  /** emailsForShipment for many shipments in ONE query (shipmentId -> emails, newest first) — replaces the
+   *  per-leg emailsForShipment in the alert evaluator's A7 loop. */
+  async emailsForShipments(shipmentIds: string[]) {
+    const rows = shipmentIds.length
+      ? await this.db
+          .select({
+            shipmentId: schema.shipmentEmails.shipmentId,
+            id: schema.ingestEmailMessage.id,
+            graphMessageId: schema.ingestEmailMessage.graphMessageId,
+            subject: schema.ingestEmailMessage.subject,
+            sender: schema.ingestEmailMessage.sender,
+            receivedAt: schema.ingestEmailMessage.receivedAt,
+            milestoneType: schema.shipmentEmails.emailType,
+          })
+          .from(schema.shipmentEmails)
+          .innerJoin(schema.ingestEmailMessage, eq(schema.shipmentEmails.graphMessageId, schema.ingestEmailMessage.graphMessageId))
+          .where(inArray(schema.shipmentEmails.shipmentId, shipmentIds))
+          .orderBy(desc(schema.ingestEmailMessage.receivedAt))
+      : []
+    const map = new Map<string, Array<Omit<(typeof rows)[number], 'shipmentId'>>>()
+    for (const { shipmentId, ...email } of rows) {
+      const arr = map.get(shipmentId)
+      if (arr) arr.push(email)
+      else map.set(shipmentId, [email])
+    }
+    return map
   }
 
   /** Emails awaiting human review — the actionable "new" count for the dashboard KPI. */

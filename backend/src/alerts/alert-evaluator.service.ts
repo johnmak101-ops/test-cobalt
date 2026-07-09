@@ -38,10 +38,11 @@ export class AlertEvaluatorService {
   async evaluate(now: Date = new Date()): Promise<{ evaluated: number; fired: number }> {
     const rules = await this.alerts.enabledRules()
     const legs = await this.shipments.activeConfirmedLegs() // commit-first: never alert on provisional legs
+    const milestonesByShipment = await this.shipments.milestonesForShipments(legs.map((l) => l.id))
 
     let fired = 0
     for (const leg of legs) {
-      const facts = await this.buildFacts(leg)
+      const facts = this.buildFacts(leg, milestonesByShipment.get(leg.id) ?? [])
       for (const rule of rules) {
         if (!isFiring(rule, facts, now)) continue
         const isNew = await this.alerts.insertDeduped({
@@ -66,13 +67,26 @@ export class AlertEvaluatorService {
     now: Date,
   ): Promise<number> {
     await this.alerts.ensureRule(A7_RULE as never)
+    const candidates = legs.filter((leg) => leg.cargoReadyDate && !SAILED_STATES.has(leg.state))
+    if (!candidates.length) return 0
+    // Bulk: emails for every candidate leg, then ONE evidence load for all their messages grouped by
+    // messageId — was emailsForShipment + forMessages PER leg.
+    const emailsByShipment = await this.emails.emailsForShipments(candidates.map((l) => l.id))
+    const evidenceRows = await this.evidence.forMessages([
+      ...new Set([...emailsByShipment.values()].flat().map((e) => e.id)),
+    ])
+    const evidenceByMessage = new Map<string, (typeof evidenceRows)[number][]>()
+    for (const ev of evidenceRows) {
+      const arr = evidenceByMessage.get(ev.messageId)
+      if (arr) arr.push(ev)
+      else evidenceByMessage.set(ev.messageId, [ev])
+    }
     const norm = (v: unknown) => String(v ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '')
     let fired = 0
-    for (const leg of legs) {
-      if (!leg.cargoReadyDate || SAILED_STATES.has(leg.state)) continue
-      const related = await this.emails.emailsForShipment(leg.id)
+    for (const leg of candidates) {
+      const related = emailsByShipment.get(leg.id) ?? []
       if (related.length < 2) continue
-      const evidence = await this.evidence.forMessages(related.map((r) => r.id))
+      const evidence = related.flatMap((r) => evidenceByMessage.get(r.id) ?? [])
       // a multi-booking email's sibling records must not speak for this leg
       const ids: Array<[string, string | null]> = [
         ['booking_no', leg.bookingNo], ['so_no', leg.soNo], ['hbl_awb_fcr_no', leg.hblAwbFcrNo],
@@ -102,8 +116,10 @@ export class AlertEvaluatorService {
     return fired
   }
 
-  private async buildFacts(leg: typeof schema.shipments.$inferSelect): Promise<LegFacts> {
-    const ms = await this.shipments.milestonesFor(leg.id)
+  private buildFacts(
+    leg: typeof schema.shipments.$inferSelect,
+    ms: (typeof schema.shipmentMilestones.$inferSelect)[],
+  ): LegFacts {
     const at = (t: string) => ms.find((m) => m.milestoneType === t)?.occurredAt ?? null
     return {
       state: leg.state,

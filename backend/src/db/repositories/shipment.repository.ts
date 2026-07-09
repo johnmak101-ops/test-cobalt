@@ -253,6 +253,22 @@ export class ShipmentRepository {
       .where(eq(schema.shipmentMilestones.shipmentId, shipmentId))
       .orderBy(schema.shipmentMilestones.occurredAt)
   }
+  /** milestonesFor many shipments in ONE query (shipmentId -> milestones, occurredAt order). */
+  async milestonesForShipments(ids: string[]): Promise<Map<string, (typeof schema.shipmentMilestones.$inferSelect)[]>> {
+    const map = new Map<string, (typeof schema.shipmentMilestones.$inferSelect)[]>()
+    if (!ids.length) return map
+    const rows = await this.db
+      .select()
+      .from(schema.shipmentMilestones)
+      .where(inArray(schema.shipmentMilestones.shipmentId, ids))
+      .orderBy(schema.shipmentMilestones.occurredAt)
+    for (const m of rows) {
+      const arr = map.get(m.shipmentId)
+      if (arr) arr.push(m)
+      else map.set(m.shipmentId, [m])
+    }
+    return map
+  }
   async replaceMilestones(shipmentId: string, rows: (typeof schema.shipmentMilestones.$inferInsert)[]) {
     await this.db.delete(schema.shipmentMilestones).where(eq(schema.shipmentMilestones.shipmentId, shipmentId))
     if (rows.length) await this.db.insert(schema.shipmentMilestones).values(rows)
