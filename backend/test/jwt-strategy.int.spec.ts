@@ -1,6 +1,5 @@
 import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest'
 import { ConfigService } from '@nestjs/config'
-import * as schema from '../src/db/contracts'
 import { getTestDb, resetDb, closeTestDb, type TestDB } from './setup-db'
 import { UsersRepository } from '../src/db/repositories/users.repository'
 import { JwtStrategy } from '../src/auth/jwt.strategy'
@@ -18,17 +17,17 @@ afterAll(closeTestDb)
 beforeEach(() => resetDb(db))
 
 async function seed(mustReset: boolean) {
-  const [u] = await db
-    .insert(schema.users)
+  return db
+    .insertInto('users')
     .values({
       email: 'x@cobalt.hk',
       name: 'X',
       passwordHash: await hashPassword('p'),
-      role: 'ADMIN' as never,
+      role: 'ADMIN',
       mustReset,
     })
-    .returning()
-  return u
+    .outputAll('inserted')
+    .executeTakeFirstOrThrow()
 }
 
 describe('JwtStrategy.validate — attaches mustReset to req.user (so /auth/me survives reload)', () => {

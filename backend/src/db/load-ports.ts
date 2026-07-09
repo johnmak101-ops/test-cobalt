@@ -16,9 +16,13 @@
  *   npx ts-node --transpile-only -P tsconfig.json src/db/load-ports.ts <unlocode.csv> <airports.csv>
  */
 import { readFileSync } from 'fs'
-import { Client } from 'pg'
+import { sql } from 'kysely'
+import { createKysely } from './kysely/mssql-dialect'
+import type { DB } from './kysely/db'
 
-const url = process.env.DATABASE_URL ?? 'postgres://postgres:postgres@localhost:5432/cobalt'
+const url =
+  process.env.SQL_SERVER_URL ??
+  'Server=localhost,1433;Database=cobalt;User Id=sa;Password=YourStrong!Passw0rd;Encrypt=false;TrustServerCertificate=true'
 
 /** Minimal CSV line parser (handles quoted fields with embedded commas/quotes). */
 function parseCsvLine(line: string): string[] {
@@ -101,35 +105,34 @@ async function main() {
   }
   console.log(`UN/LOCODE: ${ports.size} sea/air locations (${airCount} with a verified IATA code)`)
 
-  const c = new Client({ connectionString: url })
-  await c.connect()
+  const db = createKysely<DB>(url)
   const rows = [...ports.values()]
-  const BATCH = 1000
+  // tedious caps a statement at 2100 parameters → 5 params/row → 400 rows/batch stays under it.
+  const BATCH = 400
   let done = 0
   for (let i = 0; i < rows.length; i += BATCH) {
     const chunk = rows.slice(i, i + BATCH)
-    const values: unknown[] = []
-    const tuples = chunk.map((p, j) => {
-      values.push(p.unlocode, p.name, p.country, p.mode, p.iata)
-      const b = j * 5
-      return `($${b + 1}, $${b + 2}, $${b + 3}, $${b + 4}, $${b + 5})`
-    })
-    await c.query(
-      `insert into tracking.ports (unlocode, name, country, mode, iata)
-       values ${tuples.join(', ')}
-       on conflict (unlocode) do update
-         set name = excluded.name, country = excluded.country,
-             mode = excluded.mode, iata = excluded.iata`,
-      values,
-    )
+    const tuples = chunk.map((p) => sql`(${p.unlocode}, ${p.name}, ${p.country}, ${p.mode}, ${p.iata})`)
+    // upsert by unlocode — MERGE is the T-SQL 'on conflict do update'
+    await sql`
+      merge ports as t
+      using (values ${sql.join(tuples)}) as s (unlocode, name, country, mode, iata)
+      on t.unlocode = s.unlocode
+      when matched then update set name = s.name, country = s.country, mode = s.mode, iata = s.iata
+      when not matched then insert (unlocode, name, country, mode, iata)
+        values (s.unlocode, s.name, s.country, s.mode, s.iata);
+    `.execute(db)
     done += chunk.length
     if (done % 10000 < BATCH) console.log(`upserted ${done}/${rows.length}`)
   }
-  const stat = await c.query(
-    `select count(*) total, count(iata) with_iata, count(*) filter (where mode = 'air') air, count(*) filter (where mode = 'both') both from tracking.ports`,
-  )
+  const stat = await sql`
+    select count(*) total, count(iata) with_iata,
+      sum(case when mode = 'air' then 1 else 0 end) air,
+      sum(case when mode = 'both' then 1 else 0 end) [both]
+    from ports
+  `.execute(db)
   console.log('ports master:', JSON.stringify(stat.rows[0]))
-  await c.end()
+  await db.destroy()
 }
 
 main().catch((e) => { console.error(e); process.exit(1) })

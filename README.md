@@ -7,8 +7,8 @@ a human review queue.
 ## Stack
 
 - **Frontend**: React 19 + TypeScript + Vite + Zustand + TanStack Query + Tailwind
-- **Backend**: NestJS 11 (Node) + TypeScript + Drizzle ORM
-- **Database**: PostgreSQL
+- **Backend**: NestJS 11 (Node) + TypeScript + Kysely (T-SQL query builder)
+- **Database**: SQL Server (local `mssql-2022` container in dev/CI; Microsoft Fabric SQL in production)
 - **Auth**: JWT in an httpOnly cookie (Bearer accepted for service accounts)
 - **Package manager**: pnpm (workspace)
 
@@ -20,15 +20,16 @@ the built SPA from the same origin. The upstream AI agent (**cobalt-queue**, a s
 
 ```bash
 pnpm install                      # one clean workspace install
-# start Postgres with a `cobalt` database on :5432, then:
-pnpm --filter backend db:push     # apply the Drizzle schema
+# start SQL Server on :1433, e.g.:
+#   docker run -d --name mssql-2022 -e ACCEPT_EULA=Y -e 'MSSQL_SA_PASSWORD=YourStrong!Passw0rd' -p 1433:1433 mcr.microsoft.com/mssql/server:2022-latest
+pnpm --filter backend db:migrate  # create the `cobalt` DB (if missing) + apply the T-SQL schema
 pnpm dev                          # frontend (:5173) + backend (:3000)
 ```
 
 - Frontend: <http://localhost:5173> (Vite dev server; proxies `/api` → backend)
 - Backend API: <http://localhost:3000/api>
 
-Backend env (`backend/.env`): `DATABASE_URL`, `JWT_SECRET` (≥ 32 chars), plus optional `CORS_ORIGINS`,
+Backend env (`backend/.env`): `SQL_SERVER_URL`, `JWT_SECRET` (≥ 32 chars), plus optional `CORS_ORIGINS`,
 `SESSION_TTL_HOURS`, `STATIC_ROOT` (prod SPA serving), and `GRAPH_*` (Microsoft Graph email ingestion).
 
 ## Project structure
@@ -38,8 +39,8 @@ Backend env (`backend/.env`): `DATABASE_URL`, `JWT_SECRET` (≥ 32 chars), plus 
 ├── frontend/            # React SPA (Vite)
 │   └── src/
 ├── backend/             # NestJS API (serves /api; serves the SPA in prod)
-│   ├── src/
-│   └── drizzle/         # PostgreSQL migrations (.sql)
+│   └── src/
+│       └── db/kysely-migrations/   # T-SQL migrations (Kysely Migrator modules)
 ├── .github/workflows/   # CI: lint + typecheck + tests + build
 └── package.json         # pnpm workspace root
 ```
@@ -51,10 +52,12 @@ Backend env (`backend/.env`): `DATABASE_URL`, `JWT_SECRET` (≥ 32 chars), plus 
 - `pnpm lint` — ESLint (workspace, enforced in CI)
 - `pnpm format` / `pnpm format:check` — Prettier
 - `pnpm --filter backend run test` / `pnpm --filter frontend run test` — vitest
-- `pnpm --filter backend db:generate` / `db:push` — Drizzle migrations
+- `pnpm --filter backend db:migrate` — create DB (if missing) + apply the T-SQL migrations
+- `pnpm --filter backend db:codegen` — regenerate Kysely row types from the live schema
 
 ## Tests & CI
 
-Vitest. The backend integration specs (`backend/test/*.int.spec.ts`) need Postgres — they create and migrate
-a `cobalt_test` database on first connect (`backend/test/setup-db.ts`). CI runs lint + both typechecks +
-both suites + both builds on push to `main` and every PR (`.github/workflows/ci.yml`).
+Vitest. The backend integration specs (`backend/test/*.int.spec.ts`) need SQL Server on `localhost:1433` —
+they create and migrate a `cobalt_test` database on first connect (`backend/test/setup-db.ts`). CI runs
+lint + both typechecks + both suites + both builds on push to `main` and every PR
+(`.github/workflows/ci.yml`, with an `mssql-2022` service container).

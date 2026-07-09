@@ -1,267 +1,315 @@
 import { Inject, Injectable } from '@nestjs/common'
-import { and, desc, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm'
-import { alias } from 'drizzle-orm/pg-core'
-import * as schema from '../contracts'
-import { DRIZZLE, type DrizzleDB } from '../drizzle.provider'
+import { sql, type Kysely } from 'kysely'
+import type { DB } from '../kysely/db'
+import { KYSELY } from '../kysely.provider'
+import type { SHIPMENT_STATE } from '../enums'
 
-/** Data access for the Shipment aggregate: shipments, shipment_pos, shipment_milestones. */
+/** Minimal query-builder surface shared by Kysely<DB> and a Transaction<DB> — lets the link helper
+ *  upsert rows on either the main connection or inside a tx. */
+type DbLike = Pick<Kysely<DB>, 'selectFrom' | 'insertInto' | 'updateTable' | 'deleteFrom'>
+
+/** Insert/patch shape for a shipment leg row. */
+export type ShipmentInsert = Partial<{
+  bookingId: string
+  legNo: number
+  kind: string
+  linkedShipmentId: string | null
+  dismissedAt: Date | null
+  mode: string | null
+  state: string
+  legStatus: string
+  supersededById: string | null
+  riskLevel: string
+  reviewStatus: string
+  confidence: number | null
+  reviewReasons: string | null
+  reviewedBy: string | null
+  reviewedAt: Date | null
+  confirmedByEmail: boolean
+  forwarderId: string | null
+  forwarderRaw: string | null
+  consigneeId: string | null
+  bookingNo: string | null
+  soNo: string | null
+  hblAwbFcrNo: string | null
+  mbl: string | null
+  containerNo: string | null
+  vesselName: string | null
+  voyageNo: string | null
+  scacCode: string | null
+  flightNo: string | null
+  mawb: string | null
+  polId: string | null
+  podId: string | null
+  polRaw: string | null
+  podRaw: string | null
+  originCountry: string | null
+  cargoReadyDate: Date | null
+  cfsCutoff: Date | null
+  warehouseStartDate: Date | null
+  warehouseEndDate: Date | null
+  etd: Date | null
+  atd: Date | null
+  eta: Date | null
+  ata: Date | null
+  inDcDate: Date | null
+  qty: number | null
+  qtyUnit: string | null
+  grossWeight: number | null
+  measurement: number | null
+  htsCode: string | null
+  itemStyleNo: string | null
+  consigneeName: string | null
+  consigneeAddress: string | null
+  matchKeys: Record<string, unknown> | null
+}>
+
+/** Kysely/SQL Server port of ShipmentRepository. The Shipment aggregate: shipments, shipment_pos,
+ *  shipment_milestones, shipment_emails, shipment_identifiers, shipment_parties.
+ *
+ *  Postgres → MSSQL notes:
+ *  - `returning` → `OUTPUT` (.output/.outputAll).
+ *  - `onConflictDoNothing` → check-then-insert (the (shipment,po) / (shipment,graph_id) unique keys).
+ *  - `count(*)::int` / `array_agg` / `string_agg` → count(*) (number cast) / STRING_AGG.
+ *  - Postgres-qualified `tracking.` / `ingest.` schema refs → unqualified (one `dbo` schema in T-SQL).
+ *  - `order by … nulls last` → `case when x is null then 1 else 0 end` ascending tiebreak (SQL Server
+ *    puts NULLs first in ASC; we push them last explicitly).
+ *  - `poNumbers` (Postgres `text[]`) → STRING_AGG(',') split in TS (the consumer treats it as string[]).
+ *  - `updateLeg` / `dismissDocument` / `linkPo` returns are not read by callers (verified) — return void/null. */
 @Injectable()
 export class ShipmentRepository {
-  constructor(@Inject(DRIZZLE) private readonly db: DrizzleDB) {}
+  constructor(@Inject(KYSELY) private readonly db: Kysely<DB>) {}
 
   allLegs() {
-    return this.db.select().from(schema.shipments)
+    return this.db.selectFrom('shipments').selectAll().execute()
   }
-  /** Legs for the tracker/dashboard: ACTIVE plus CANCELLED (so a cancelled booking still surfaces, shown as
-   *  Cancelled). Only SUPERSEDED legs are hidden. */
+  /** Legs for the tracker/dashboard: ACTIVE plus CANCELLED. Only SUPERSEDED legs are hidden. */
   activeLegs() {
-    return this.db.select().from(schema.shipments).where(inArray(schema.shipments.legStatus, ['ACTIVE', 'CANCELLED']))
+    return this.db.selectFrom('shipments').where('legStatus', 'in', ['ACTIVE', 'CANCELLED']).selectAll().execute()
   }
   /** Active AND confirmed — provisional (low-confidence) legs are excluded from alerts/automation. */
   activeConfirmedLegs() {
     return this.db
-      .select()
-      .from(schema.shipments)
-      .where(and(eq(schema.shipments.legStatus, 'ACTIVE'), eq(schema.shipments.reviewStatus, 'confirmed')))
+      .selectFrom('shipments')
+      .where('legStatus', '=', 'ACTIVE')
+      .where('reviewStatus', '=', 'confirmed')
+      .selectAll()
+      .execute()
   }
   /** Provisional legs awaiting human review (lowest confidence first). */
   provisionalLegs() {
-    return this.db
-      .select()
-      .from(schema.shipments)
-      .where(eq(schema.shipments.reviewStatus, 'provisional'))
-      .orderBy(schema.shipments.confidence)
+    return this.db.selectFrom('shipments').where('reviewStatus', '=', 'provisional').orderBy('confidence', 'asc').selectAll().execute()
   }
+
   /**
-   * The shipment-based Review Queue: provisional (low-confidence) real shipments awaiting human
-   * approval — kind='SHIPMENT', review_status='provisional', not SUPERSEDED. Enriched with booking
-   * customer / forwarder / route / po-count, mirroring the tracker list joins. Lowest confidence first.
+   * The shipment-based Review Queue: provisional real shipments awaiting human approval — kind='SHIPMENT',
+   * review_status='provisional', not SUPERSEDED. Enriched with booking customer / forwarder / route / po-count.
+   * Lowest confidence first.
    */
   reviewQueue() {
-    const pol = alias(schema.ports, 'pol')
-    const pod = alias(schema.ports, 'pod')
     return this.db
-      .select({
-        id: schema.shipments.id,
-        bookingNo: schema.shipments.bookingNo,
-        soNo: schema.shipments.soNo,
-        state: schema.shipments.state,
-        legStatus: schema.shipments.legStatus,
-        reviewReasons: schema.shipments.reviewReasons,
-        confidence: schema.shipments.confidence,
-        createdAt: schema.shipments.createdAt,
-        customerId: schema.customers.id,
-        customerName: schema.customers.name,
-        customerCode: schema.customers.code,
-        forwarderId: schema.forwarders.id,
-        forwarderName: schema.forwarders.name,
-        forwarderRaw: schema.shipments.forwarderRaw,
-        mode: schema.shipments.mode,
-        polCode: pol.unlocode,
-        podCode: pod.unlocode,
-        polIata: pol.iata,
-        podIata: pod.iata,
-        polRaw: schema.shipments.polRaw,
-        podRaw: schema.shipments.podRaw,
-        poCount: sql<number>`(
-          select count(*)::int
-          from tracking.booking_pos bp
-          where bp.booking_id = ${schema.shipments.bookingId}
-        )`,
-      })
-      .from(schema.shipments)
-      .innerJoin(schema.bookings, eq(schema.shipments.bookingId, schema.bookings.id))
-      .leftJoin(schema.customers, eq(schema.bookings.customerId, schema.customers.id))
-      .leftJoin(schema.forwarders, eq(schema.shipments.forwarderId, schema.forwarders.id))
-      .leftJoin(pol, eq(schema.shipments.polId, pol.id))
-      .leftJoin(pod, eq(schema.shipments.podId, pod.id))
-      .where(
-        and(
-          eq(schema.shipments.kind, 'SHIPMENT'),
-          eq(schema.shipments.reviewStatus, 'provisional'),
-          sql`${schema.shipments.legStatus} <> 'SUPERSEDED'`,
-        ),
-      )
-      .orderBy(schema.shipments.confidence, desc(schema.shipments.createdAt))
+      .selectFrom('shipments')
+      .innerJoin('bookings', 'shipments.bookingId', 'bookings.id')
+      .leftJoin('customers', 'bookings.customerId', 'customers.id')
+      .leftJoin('forwarders', 'shipments.forwarderId', 'forwarders.id')
+      .leftJoin('ports as pol', 'shipments.polId', 'pol.id')
+      .leftJoin('ports as pod', 'shipments.podId', 'pod.id')
+      .where('shipments.kind', '=', 'SHIPMENT')
+      .where('shipments.reviewStatus', '=', 'provisional')
+      .where('shipments.legStatus', '<>', 'SUPERSEDED')
+      .orderBy('shipments.confidence', 'asc')
+      .orderBy('shipments.createdAt', 'desc')
+      .select([
+        'shipments.id as id', 'shipments.bookingNo as bookingNo', 'shipments.soNo as soNo', 'shipments.state as state',
+        'shipments.legStatus as legStatus', 'shipments.reviewReasons as reviewReasons', 'shipments.confidence as confidence',
+        'shipments.createdAt as createdAt', 'customers.id as customerId', 'customers.name as customerName',
+        'customers.code as customerCode', 'forwarders.id as forwarderId', 'forwarders.name as forwarderName',
+        'shipments.forwarderRaw as forwarderRaw', 'shipments.mode as mode', 'pol.unlocode as polCode', 'pod.unlocode as podCode',
+        'pol.iata as polIata', 'pod.iata as podIata', 'shipments.polRaw as polRaw', 'shipments.podRaw as podRaw',
+        sql<number>`(select count(*) from booking_pos bp where bp.booking_id = ${sql.ref('shipments.bookingId')})`.as('poCount'),
+      ])
+      .execute()
   }
 
   /** Count of provisional shipments awaiting review — the nav badge. */
   async reviewQueueCount(): Promise<number> {
-    const [r] = await this.db
-      .select({ n: sql<number>`count(*)::int` })
-      .from(schema.shipments)
-      .where(
-        and(
-          eq(schema.shipments.kind, 'SHIPMENT'),
-          eq(schema.shipments.reviewStatus, 'provisional'),
-          sql`${schema.shipments.legStatus} <> 'SUPERSEDED'`,
-        ),
-      )
-    return r?.n ?? 0
+    const row = await this.db
+      .selectFrom('shipments')
+      .where('kind', '=', 'SHIPMENT')
+      .where('reviewStatus', '=', 'provisional')
+      .where('legStatus', '<>', 'SUPERSEDED')
+      .select(sql<number>`count(*)`.as('n'))
+      .executeTakeFirst()
+    return Number(row?.n ?? 0)
   }
 
   legsForBooking(bookingId: string) {
-    return this.db.select().from(schema.shipments).where(eq(schema.shipments.bookingId, bookingId)).orderBy(schema.shipments.legNo)
+    return this.db.selectFrom('shipments').where('bookingId', '=', bookingId).orderBy('legNo', 'asc').selectAll().execute()
   }
+
   async findById(id: string) {
-    const [s] = await this.db.select().from(schema.shipments).where(eq(schema.shipments.id, id))
-    return s ?? null
+    const row = await this.db.selectFrom('shipments').where('id', '=', id).selectAll().executeTakeFirst()
+    return row ?? null
   }
+
   /** Fetch many legs in ONE query (id -> leg) — replaces per-item findById in read loops (alert summaries). */
-  async findByIds(ids: string[]): Promise<Map<string, typeof schema.shipments.$inferSelect>> {
-    const map = new Map<string, typeof schema.shipments.$inferSelect>()
+  async findByIds(ids: string[]): Promise<Map<string, NonNullable<Awaited<ReturnType<ShipmentRepository['findById']>>>>> {
+    const map = new Map<string, NonNullable<Awaited<ReturnType<ShipmentRepository['findById']>>>>()
     if (!ids.length) return map
-    const rows = await this.db.select().from(schema.shipments).where(inArray(schema.shipments.id, ids))
+    const rows = await this.db.selectFrom('shipments').where('id', 'in', ids).selectAll().execute()
     for (const s of rows) map.set(s.id, s)
     return map
   }
-  async insertLeg(values: typeof schema.shipments.$inferInsert) {
-    const [s] = await this.db.insert(schema.shipments).values(values).returning()
-    return s
+
+  /** matchKeys + reviewReasons are JSON nvarchar(max) columns — stringify when present (callers pass
+   *  raw objects/arrays like they did to Drizzle jsonb; tedious rejects non-strings). */
+  private jsonifyLegColumns(values: Record<string, unknown>): Record<string, unknown> {
+    const payload: Record<string, unknown> = { ...values }
+    for (const k of ['matchKeys', 'reviewReasons']) {
+      if (k in payload) payload[k] = payload[k] != null ? JSON.stringify(payload[k]) : null
+    }
+    return payload
   }
-  updateLeg(id: string, patch: Record<string, unknown>) {
-    return this.db.update(schema.shipments).set({ ...patch, updatedAt: new Date() }).where(eq(schema.shipments.id, id))
+
+  async insertLeg(values: Record<string, unknown>) {
+    const payload = this.jsonifyLegColumns(values)
+    if (!('matchKeys' in payload)) payload.matchKeys = null
+    const row = await this.db
+      .insertInto('shipments')
+      .values(payload as never)
+      .outputAll('inserted')
+      .executeTakeFirstOrThrow()
+    return row
+  }
+
+  async updateLeg(id: string, patch: Record<string, unknown>) {
+    const row = await this.db
+      .updateTable('shipments')
+      .set({ ...this.jsonifyLegColumns(patch), updatedAt: new Date() })
+      .where('id', '=', id)
+      .outputAll('inserted')
+      .executeTakeFirst()
+    return row ?? null
   }
 
   /** Active legs enriched with booking + customer + forwarder + route, for the Shipment Tracker list. */
   legsForTracker(status?: string) {
-    const pol = alias(schema.ports, 'pol')
-    const pod = alias(schema.ports, 'pod')
-    const conds = [eq(schema.shipments.legStatus, 'ACTIVE')]
-    if (status) conds.push(eq(schema.shipments.state, status as (typeof schema.shipments.$inferSelect)['state']))
-    return this.db
-      .select({
-        id: schema.shipments.id,
-        bookingId: schema.shipments.bookingId,
-        jobNo: schema.bookings.jobNo,
-        bookingNo: schema.shipments.bookingNo,
-        soNo: schema.shipments.soNo,
-        hblAwbFcrNo: schema.shipments.hblAwbFcrNo,
-        mbl: schema.shipments.mbl,
-        containerNo: schema.shipments.containerNo,
-        mode: schema.shipments.mode,
-        status: schema.shipments.state,
-        riskLevel: schema.shipments.riskLevel,
-        reviewStatus: schema.shipments.reviewStatus,
-        confidence: schema.shipments.confidence,
-        etd: schema.shipments.etd,
-        eta: schema.shipments.eta,
-        updatedAt: schema.shipments.updatedAt,
-        customerId: schema.customers.id,
-        customerName: schema.customers.name,
-        customerCode: schema.customers.code,
-        forwarderId: schema.forwarders.id,
-        forwarderName: schema.forwarders.name,
-        forwarderRaw: schema.shipments.forwarderRaw,
-        polCode: pol.unlocode,
-        podCode: pod.unlocode,
-        polIata: pol.iata,
-        podIata: pod.iata,
-        polRaw: schema.shipments.polRaw,
-        podRaw: schema.shipments.podRaw,
-      })
-      .from(schema.shipments)
-      .innerJoin(schema.bookings, eq(schema.shipments.bookingId, schema.bookings.id))
-      .leftJoin(schema.customers, eq(schema.bookings.customerId, schema.customers.id))
-      .leftJoin(schema.forwarders, eq(schema.shipments.forwarderId, schema.forwarders.id))
-      .leftJoin(pol, eq(schema.shipments.polId, pol.id))
-      .leftJoin(pod, eq(schema.shipments.podId, pod.id))
-      .where(and(...conds))
-      .orderBy(desc(schema.shipments.updatedAt))
+    let q = this.db
+      .selectFrom('shipments')
+      .innerJoin('bookings', 'shipments.bookingId', 'bookings.id')
+      .leftJoin('customers', 'bookings.customerId', 'customers.id')
+      .leftJoin('forwarders', 'shipments.forwarderId', 'forwarders.id')
+      .leftJoin('ports as pol', 'shipments.polId', 'pol.id')
+      .leftJoin('ports as pod', 'shipments.podId', 'pod.id')
+      .where('shipments.legStatus', '=', 'ACTIVE')
+      .orderBy('shipments.updatedAt', 'desc')
+      .select([
+        'shipments.id as id', 'shipments.bookingId as bookingId', 'bookings.jobNo as jobNo',
+        'shipments.bookingNo as bookingNo', 'shipments.soNo as soNo', 'shipments.hblAwbFcrNo as hblAwbFcrNo',
+        'shipments.mbl as mbl', 'shipments.containerNo as containerNo', 'shipments.mode as mode',
+        'shipments.state as status', 'shipments.riskLevel as riskLevel', 'shipments.reviewStatus as reviewStatus',
+        'shipments.confidence as confidence', 'shipments.etd as etd', 'shipments.eta as eta',
+        'shipments.updatedAt as updatedAt', 'customers.id as customerId', 'customers.name as customerName',
+        'customers.code as customerCode', 'forwarders.id as forwarderId', 'forwarders.name as forwarderName',
+        'shipments.forwarderRaw as forwarderRaw', 'pol.unlocode as polCode', 'pod.unlocode as podCode',
+        'pol.iata as polIata', 'pod.iata as podIata', 'shipments.polRaw as polRaw', 'shipments.podRaw as podRaw',
+      ])
+    if (status) q = q.where('shipments.state', '=', status as (typeof SHIPMENT_STATE)[number])
+    return q.execute()
   }
 
   /** One leg enriched like the tracker list (customer / forwarder / route) — any legStatus, for the detail page. */
   async legDetailById(id: string) {
-    const pol = alias(schema.ports, 'pol')
-    const pod = alias(schema.ports, 'pod')
-    const [row] = await this.db
-      .select({
-        id: schema.shipments.id,
-        bookingId: schema.shipments.bookingId,
-        jobNo: schema.bookings.jobNo,
-        bookingNo: schema.shipments.bookingNo,
-        soNo: schema.shipments.soNo,
-        hblAwbFcrNo: schema.shipments.hblAwbFcrNo,
-        mbl: schema.shipments.mbl,
-        containerNo: schema.shipments.containerNo,
-        mode: schema.shipments.mode,
-        state: schema.shipments.state,
-        legStatus: schema.shipments.legStatus,
-        riskLevel: schema.shipments.riskLevel,
-        reviewStatus: schema.shipments.reviewStatus,
-        confidence: schema.shipments.confidence,
-        reviewReasons: schema.shipments.reviewReasons,
-        etd: schema.shipments.etd,
-        atd: schema.shipments.atd,
-        eta: schema.shipments.eta,
-        updatedAt: schema.shipments.updatedAt,
-        customerId: schema.customers.id,
-        customerName: schema.customers.name,
-        customerCode: schema.customers.code,
-        forwarderId: schema.forwarders.id,
-        forwarderName: schema.forwarders.name,
-        forwarderRaw: schema.shipments.forwarderRaw,
-        polCode: pol.unlocode,
-        podCode: pod.unlocode,
-        polIata: pol.iata,
-        podIata: pod.iata,
-        polRaw: schema.shipments.polRaw,
-        podRaw: schema.shipments.podRaw,
-      })
-      .from(schema.shipments)
-      .innerJoin(schema.bookings, eq(schema.shipments.bookingId, schema.bookings.id))
-      .leftJoin(schema.customers, eq(schema.bookings.customerId, schema.customers.id))
-      .leftJoin(schema.forwarders, eq(schema.shipments.forwarderId, schema.forwarders.id))
-      .leftJoin(pol, eq(schema.shipments.polId, pol.id))
-      .leftJoin(pod, eq(schema.shipments.podId, pod.id))
-      .where(eq(schema.shipments.id, id))
+    const row = await this.db
+      .selectFrom('shipments')
+      .innerJoin('bookings', 'shipments.bookingId', 'bookings.id')
+      .leftJoin('customers', 'bookings.customerId', 'customers.id')
+      .leftJoin('forwarders', 'shipments.forwarderId', 'forwarders.id')
+      .leftJoin('ports as pol', 'shipments.polId', 'pol.id')
+      .leftJoin('ports as pod', 'shipments.podId', 'pod.id')
+      .where('shipments.id', '=', id)
+      .select([
+        'shipments.id as id', 'shipments.bookingId as bookingId', 'bookings.jobNo as jobNo',
+        'shipments.bookingNo as bookingNo', 'shipments.soNo as soNo', 'shipments.hblAwbFcrNo as hblAwbFcrNo',
+        'shipments.mbl as mbl', 'shipments.containerNo as containerNo', 'shipments.mode as mode',
+        'shipments.state as state', 'shipments.legStatus as legStatus', 'shipments.riskLevel as riskLevel',
+        'shipments.reviewStatus as reviewStatus', 'shipments.confidence as confidence',
+        'shipments.reviewReasons as reviewReasons', 'shipments.etd as etd', 'shipments.atd as atd',
+        'shipments.eta as eta', 'shipments.updatedAt as updatedAt', 'customers.id as customerId',
+        'customers.name as customerName', 'customers.code as customerCode', 'forwarders.id as forwarderId',
+        'forwarders.name as forwarderName', 'shipments.forwarderRaw as forwarderRaw',
+        'pol.unlocode as polCode', 'pod.unlocode as podCode', 'pol.iata as polIata', 'pod.iata as podIata',
+        'shipments.polRaw as polRaw', 'shipments.podRaw as podRaw',
+      ])
+      .executeTakeFirst()
     return row ?? null
   }
 
   /** A booking's POs (number + vendor + qty) — the expandable child rows on a shipment. */
   linkedPosForBooking(bookingId: string) {
     return this.db
-      .select({
-        id: schema.purchaseOrders.id,
-        poNumber: schema.purchaseOrders.poNumber,
-        totalQuantity: schema.purchaseOrders.totalQuantity,
-        quantityUnit: schema.purchaseOrders.quantityUnit,
-        vendorName: schema.vendors.name,
-      })
-      .from(schema.bookingPos)
-      .innerJoin(schema.purchaseOrders, eq(schema.bookingPos.poId, schema.purchaseOrders.id))
-      .leftJoin(schema.vendors, eq(schema.purchaseOrders.vendorId, schema.vendors.id))
-      .where(eq(schema.bookingPos.bookingId, bookingId))
+      .selectFrom('bookingPos')
+      .innerJoin('purchaseOrders', 'bookingPos.poId', 'purchaseOrders.id')
+      .leftJoin('vendors', 'purchaseOrders.vendorId', 'vendors.id')
+      .where('bookingPos.bookingId', '=', bookingId)
+      .select([
+        'purchaseOrders.id as id', 'purchaseOrders.poNumber as poNumber',
+        'purchaseOrders.totalQuantity as totalQuantity', 'purchaseOrders.quantityUnit as quantityUnit',
+        'vendors.name as vendorName',
+      ])
+      .execute()
   }
 
   // --- shipment_pos ---
-  linkPo(shipmentId: string, poId: string, quantity: number | null, unit: string | null) {
-    return this.db
-      .insert(schema.shipmentPos)
-      .values({ shipmentId, poId, quantity, quantityUnit: unit as never })
-      .onConflictDoNothing()
+
+  /** Idempotently link a shipment to a PO (the `uq_shipment_pos` unique absorbs replays). */
+  async linkPo(shipmentId: string, poId: string, quantity: number | null, unit: string | null) {
+    const existing = await this.db
+      .selectFrom('shipmentPos')
+      .where('shipmentId', '=', shipmentId)
+      .where('poId', '=', poId)
+      .select('id')
+      .executeTakeFirst()
+    if (existing) return null
+    try {
+      const row = await this.db
+        .insertInto('shipmentPos')
+        .values({ shipmentId, poId, quantity, quantityUnit: unit })
+        .outputAll('inserted')
+        .executeTakeFirst()
+      return row ?? null
+    } catch (e) {
+      // unique violation (shipment_id, po_id) — a concurrent insert won the race; idempotent
+      if (!/unique|duplicate/i.test((e as Error).message)) throw e
+      return null
+    }
   }
+
   posFor(shipmentId: string) {
-    return this.db.select().from(schema.shipmentPos).where(eq(schema.shipmentPos.shipmentId, shipmentId))
+    return this.db.selectFrom('shipmentPos').where('shipmentId', '=', shipmentId).selectAll().execute()
   }
 
   // --- shipment_milestones ---
+
   milestonesFor(shipmentId: string) {
     return this.db
-      .select()
-      .from(schema.shipmentMilestones)
-      .where(eq(schema.shipmentMilestones.shipmentId, shipmentId))
-      .orderBy(schema.shipmentMilestones.occurredAt)
+      .selectFrom('shipmentMilestones')
+      .where('shipmentId', '=', shipmentId)
+      .orderBy('occurredAt', 'asc')
+      .selectAll()
+      .execute()
   }
+
   /** milestonesFor many shipments in ONE query (shipmentId -> milestones, occurredAt order). */
-  async milestonesForShipments(ids: string[]): Promise<Map<string, (typeof schema.shipmentMilestones.$inferSelect)[]>> {
-    const map = new Map<string, (typeof schema.shipmentMilestones.$inferSelect)[]>()
+  async milestonesForShipments(ids: string[]) {
+    const map = new Map<string, Awaited<ReturnType<ShipmentRepository['milestonesFor']>>>()
     if (!ids.length) return map
     const rows = await this.db
-      .select()
-      .from(schema.shipmentMilestones)
-      .where(inArray(schema.shipmentMilestones.shipmentId, ids))
-      .orderBy(schema.shipmentMilestones.occurredAt)
+      .selectFrom('shipmentMilestones')
+      .where('shipmentId', 'in', ids)
+      .orderBy('occurredAt', 'asc')
+      .selectAll()
+      .execute()
     for (const m of rows) {
       const arr = map.get(m.shipmentId)
       if (arr) arr.push(m)
@@ -269,207 +317,231 @@ export class ShipmentRepository {
     }
     return map
   }
-  async replaceMilestones(shipmentId: string, rows: (typeof schema.shipmentMilestones.$inferInsert)[]) {
-    await this.db.delete(schema.shipmentMilestones).where(eq(schema.shipmentMilestones.shipmentId, shipmentId))
-    if (rows.length) await this.db.insert(schema.shipmentMilestones).values(rows)
+
+  async replaceMilestones(shipmentId: string, rows: Record<string, unknown>[]) {
+    await this.db.deleteFrom('shipmentMilestones').where('shipmentId', '=', shipmentId).execute()
+    if (rows.length) await this.db.insertInto('shipmentMilestones').values(rows as never).execute()
   }
 
   /** Every source email that contributed to this shipment (the Related Emails list). */
-  async replaceEmails(shipmentId: string, rows: (typeof schema.shipmentEmails.$inferInsert)[]) {
-    await this.db.delete(schema.shipmentEmails).where(eq(schema.shipmentEmails.shipmentId, shipmentId))
-    if (rows.length) await this.db.insert(schema.shipmentEmails).values(rows).onConflictDoNothing()
+  async replaceEmails(shipmentId: string, rows: Record<string, unknown>[]) {
+    await this.db.deleteFrom('shipmentEmails').where('shipmentId', '=', shipmentId).execute()
+    if (!rows.length) return
+    // insert idempotently on (shipment_id, graph_message_id) — check-then-insert per row
+    for (const r of rows) {
+      const graphMessageId = r.graphMessageId as string | null
+      if (!graphMessageId) continue
+      const existing = await this.db
+        .selectFrom('shipmentEmails')
+        .where('shipmentId', '=', shipmentId)
+        .where('graphMessageId', '=', graphMessageId)
+        .select('id')
+        .executeTakeFirst()
+      if (existing) continue
+      try {
+        await this.db.insertInto('shipmentEmails').values(r as never).execute()
+      } catch (e) {
+        if (!/unique|duplicate/i.test((e as Error).message)) throw e
+      }
+    }
   }
 
-  /** The graph message id of the most recent source email for this shipment — used to attribute a review
-   *  correction back to its parsed record in the queue learning feed. Null when no source email is linked. */
+  /** The graph message id of the most recent source email for this shipment. Null when none linked. */
   async sourceGraphIdFor(shipmentId: string): Promise<string | null> {
-    const rows = await this.db
-      .select({ g: schema.shipmentEmails.graphMessageId })
-      .from(schema.shipmentEmails)
-      .where(and(eq(schema.shipmentEmails.shipmentId, shipmentId), isNotNull(schema.shipmentEmails.graphMessageId)))
-      .orderBy(desc(schema.shipmentEmails.receivedAt))
-      .limit(1)
-    return rows[0]?.g ?? null
+    // Kysely MSSQL emits `limit` verbatim → use TOP 1 via modifyFront.
+    const row = await this.db
+      .selectFrom('shipmentEmails')
+      .where('shipmentId', '=', shipmentId)
+      .where('graphMessageId', 'is not', null)
+      .orderBy('receivedAt', 'desc')
+      .modifyFront(sql`top ${sql.lit(1)}`)
+      .select('graphMessageId as g')
+      .executeTakeFirst()
+    return row?.g ?? null
   }
 
   // --- shipment_identifiers (every value each identity field ever held — current first) ---
+
   identifiersFor(shipmentId: string) {
     return this.db
-      .select()
-      .from(schema.shipmentIdentifiers)
-      .where(eq(schema.shipmentIdentifiers.shipmentId, shipmentId))
-      .orderBy(desc(schema.shipmentIdentifiers.isCurrent), desc(schema.shipmentIdentifiers.rank))
+      .selectFrom('shipmentIdentifiers')
+      .where('shipmentId', '=', shipmentId)
+      .orderBy('isCurrent', 'desc')
+      .orderBy('rank', 'desc')
+      .selectAll()
+      .execute()
   }
-  async replaceIdentifiers(shipmentId: string, rows: (typeof schema.shipmentIdentifiers.$inferInsert)[]) {
-    await this.db.delete(schema.shipmentIdentifiers).where(eq(schema.shipmentIdentifiers.shipmentId, shipmentId))
-    if (rows.length) await this.db.insert(schema.shipmentIdentifiers).values(rows)
+
+  async replaceIdentifiers(shipmentId: string, rows: Record<string, unknown>[]) {
+    await this.db.deleteFrom('shipmentIdentifiers').where('shipmentId', '=', shipmentId).execute()
+    if (rows.length) await this.db.insertInto('shipmentIdentifiers').values(rows as never).execute()
   }
 
   // --- shipment_parties (co-valid customer entities with roles — the primary first) ---
+
   partiesFor(shipmentId: string) {
     return this.db
-      .select()
-      .from(schema.shipmentParties)
-      .where(eq(schema.shipmentParties.shipmentId, shipmentId))
-      .orderBy(desc(schema.shipmentParties.isPrimary), desc(schema.shipmentParties.rank))
+      .selectFrom('shipmentParties')
+      .where('shipmentId', '=', shipmentId)
+      .orderBy('isPrimary', 'desc')
+      .orderBy('rank', 'desc')
+      .selectAll()
+      .execute()
   }
-  async replaceParties(shipmentId: string, rows: (typeof schema.shipmentParties.$inferInsert)[]) {
-    await this.db.delete(schema.shipmentParties).where(eq(schema.shipmentParties.shipmentId, shipmentId))
-    if (rows.length) await this.db.insert(schema.shipmentParties).values(rows)
+
+  async replaceParties(shipmentId: string, rows: Record<string, unknown>[]) {
+    await this.db.deleteFrom('shipmentParties').where('shipmentId', '=', shipmentId).execute()
+    if (rows.length) await this.db.insertInto('shipmentParties').values(rows as never).execute()
   }
 
   // --- documents (kind='DOCUMENT' orphan legs — the Unlinked Documents view) ---
 
+  private static poNumbersSubquery(tableAlias = 'shipments') {
+    // Postgres array_agg → STRING_AGG(','); split in TS (the consumer treats it as string[]).
+    // (SQL Server STRING_AGG has no DISTINCT — distinct is applied to the inner SELECT here.)
+    return sql<string>`coalesce((select string_agg(po.po_number, ',') from (select distinct p2.po_number from shipment_pos sp join purchase_orders p2 on p2.id = sp.po_id where sp.shipment_id = ${sql.ref(tableAlias)}.id) po), '')`.as('poNumbers')
+  }
+
+  private static receivedAtMaxExpr(tableAlias = 'shipments') {
+    return sql<Date | null>`(select max(se.received_at) from shipment_emails se where se.shipment_id = ${sql.ref(tableAlias)}.id)`
+  }
+
   /**
-   * Unlinked documents: kind='DOCUMENT' legs not yet linked onto a real shipment. Each row is enriched
-   * with the booking's customer name, its distinct email type(s), a best-effort sender type (joined from
-   * ingest.parsed_record on graph_message_id), the PO numbers it carries, and the newest received-at.
-   * Ordered newest-first (nulls last). Single query; the per-row lists are aggregated in Postgres.
+   * Unlinked documents: kind='DOCUMENT' legs not yet linked onto a real shipment. Enriched with the
+   * booking's customer name, distinct email type(s), a best-effort sender type, the PO numbers it carries,
+   * and the newest received-at. Ordered newest-first (nulls last). Single query.
    */
   async documents() {
     const rows = await this.db
-      .select({
-        id: schema.shipments.id,
-        customerName: schema.customers.name,
-        qty: schema.shipments.qty,
-        qtyUnit: schema.shipments.qtyUnit,
-        emailType: sql<string | null>`(
-          select string_agg(distinct se.email_type, ', ')
-          from tracking.shipment_emails se
-          where se.shipment_id = ${schema.shipments.id} and se.email_type is not null
-        )`,
-        senderType: sql<string | null>`(
-          select pr.sender_type
-          from tracking.shipment_emails se
-          join ingest.parsed_record pr on pr.graph_message_id = se.graph_message_id
-          where se.shipment_id = ${schema.shipments.id} and pr.sender_type is not null
-          limit 1
-        )`,
-        poNumbers: sql<string[]>`coalesce((
-          select array_agg(po.po_number order by po.po_number)
-          from tracking.shipment_pos sp
-          join tracking.purchase_orders po on po.id = sp.po_id
-          where sp.shipment_id = ${schema.shipments.id}
-        ), '{}')`,
-        receivedAt: sql<Date | null>`(
-          select max(se.received_at)
-          from tracking.shipment_emails se
-          where se.shipment_id = ${schema.shipments.id}
-        )`,
-      })
-      .from(schema.shipments)
-      .leftJoin(schema.bookings, eq(schema.shipments.bookingId, schema.bookings.id))
-      .leftJoin(schema.customers, eq(schema.bookings.customerId, schema.customers.id))
-      .where(and(eq(schema.shipments.kind, 'DOCUMENT'), isNull(schema.shipments.linkedShipmentId), isNull(schema.shipments.dismissedAt)))
-      .orderBy(sql`(
-        select max(se.received_at)
-        from tracking.shipment_emails se
-        where se.shipment_id = ${schema.shipments.id}
-      ) desc nulls last`)
-    return rows
+      .selectFrom('shipments')
+      .leftJoin('bookings', 'shipments.bookingId', 'bookings.id')
+      .leftJoin('customers', 'bookings.customerId', 'customers.id')
+      .where('shipments.kind', '=', 'DOCUMENT')
+      .where('shipments.linkedShipmentId', 'is', null)
+      .where('shipments.dismissedAt', 'is', null)
+      .orderBy(sql`case when ${ShipmentRepository.receivedAtMaxExpr()} is null then 1 else 0 end`, 'asc')
+      .orderBy(ShipmentRepository.receivedAtMaxExpr(), 'desc')
+      .select([
+        'shipments.id as id', 'customers.name as customerName', 'shipments.qty as qty', 'shipments.qtyUnit as qtyUnit',
+        sql<string | null>`(select string_agg(se.email_type, ', ') from (select distinct se2.email_type from shipment_emails se2 where se2.shipment_id = ${sql.ref('shipments.id')} and se2.email_type is not null) se)`.as('emailType'),
+        sql<string | null>`(select top 1 pr.sender_type from shipment_emails se join parsed_record pr on pr.graph_message_id = se.graph_message_id where se.shipment_id = ${sql.ref('shipments.id')} and pr.sender_type is not null)`.as('senderType'),
+        ShipmentRepository.poNumbersSubquery(),
+        ShipmentRepository.receivedAtMaxExpr().as('receivedAt'),
+      ])
+      .execute()
+    return rows.map((r) => ({ ...r, poNumbers: splitPoNumbers(r.poNumbers) }))
   }
 
   /**
    * One unlinked document's detail (the detail panel): booking customer + email type(s) + sender type +
    * PO numbers + qty + newest received-at, plus the email_message id of its most-recent source email
-   * (joined shipment_emails.graph_message_id → ingest.email_message.graph_message_id) so the UI can open the
-   * source email pop-up. Null when the id isn't a document.
+   * (joined shipment_emails.graph_message_id → email_message.graph_message_id). Null when not a document.
    */
   async documentDetail(id: string) {
-    const [row] = await this.db
-      .select({
-        id: schema.shipments.id,
-        customerName: schema.customers.name,
-        qty: schema.shipments.qty,
-        qtyUnit: schema.shipments.qtyUnit,
-        emailType: sql<string | null>`(
-          select string_agg(distinct se.email_type, ', ')
-          from tracking.shipment_emails se
-          where se.shipment_id = ${schema.shipments.id} and se.email_type is not null
-        )`,
-        senderType: sql<string | null>`(
-          select pr.sender_type
-          from tracking.shipment_emails se
-          join ingest.parsed_record pr on pr.graph_message_id = se.graph_message_id
-          where se.shipment_id = ${schema.shipments.id} and pr.sender_type is not null
-          limit 1
-        )`,
-        poNumbers: sql<string[]>`coalesce((
-          select array_agg(po.po_number order by po.po_number)
-          from tracking.shipment_pos sp
-          join tracking.purchase_orders po on po.id = sp.po_id
-          where sp.shipment_id = ${schema.shipments.id}
-        ), '{}')`,
-        receivedAt: sql<Date | null>`(
-          select max(se.received_at)
-          from tracking.shipment_emails se
-          where se.shipment_id = ${schema.shipments.id}
-        )`,
-        // email_message id of the newest source email (for the /email/:emailId pop-up)
-        emailId: sql<string | null>`(
-          select qm.id
-          from tracking.shipment_emails se
-          join ingest.email_message qm on qm.graph_message_id = se.graph_message_id
-          where se.shipment_id = ${schema.shipments.id}
-          order by se.received_at desc nulls last
-          limit 1
-        )`,
-      })
-      .from(schema.shipments)
-      .leftJoin(schema.bookings, eq(schema.shipments.bookingId, schema.bookings.id))
-      .leftJoin(schema.customers, eq(schema.bookings.customerId, schema.customers.id))
-      .where(and(eq(schema.shipments.id, id), eq(schema.shipments.kind, 'DOCUMENT')))
-    return row ?? null
+    const row = await this.db
+      .selectFrom('shipments')
+      .leftJoin('bookings', 'shipments.bookingId', 'bookings.id')
+      .leftJoin('customers', 'bookings.customerId', 'customers.id')
+      .where('shipments.id', '=', id)
+      .where('shipments.kind', '=', 'DOCUMENT')
+      .select([
+        'shipments.id as id', 'customers.name as customerName', 'shipments.qty as qty', 'shipments.qtyUnit as qtyUnit',
+        sql<string | null>`(select string_agg(se.email_type, ', ') from (select distinct se2.email_type from shipment_emails se2 where se2.shipment_id = ${sql.ref('shipments.id')} and se2.email_type is not null) se)`.as('emailType'),
+        sql<string | null>`(select top 1 pr.sender_type from shipment_emails se join parsed_record pr on pr.graph_message_id = se.graph_message_id where se.shipment_id = ${sql.ref('shipments.id')} and pr.sender_type is not null)`.as('senderType'),
+        ShipmentRepository.poNumbersSubquery(),
+        ShipmentRepository.receivedAtMaxExpr().as('receivedAt'),
+        sql<string | null>`(select top 1 qm.id from shipment_emails se join email_message qm on qm.graph_message_id = se.graph_message_id where se.shipment_id = ${sql.ref('shipments.id')} order by case when se.received_at is null then 1 else 0 end asc, se.received_at desc)`.as('emailId'),
+      ])
+      .executeTakeFirst()
+    if (!row) return null
+    return { ...row, poNumbers: splitPoNumbers(row.poNumbers) }
   }
 
   /** Mark an unlinked document dismissed (idempotent) — it drops off the Unlinked Documents list. */
-  dismissDocument(id: string) {
-    return this.db
-      .update(schema.shipments)
+  async dismissDocument(id: string) {
+    await this.db
+      .updateTable('shipments')
       .set({ dismissedAt: new Date(), updatedAt: new Date() })
-      .where(and(eq(schema.shipments.id, id), eq(schema.shipments.kind, 'DOCUMENT')))
+      .where('id', '=', id)
+      .where('kind', '=', 'DOCUMENT')
+      .execute()
   }
 
   /** kind lookup for a leg (null when the id doesn't exist) — link-validation. */
   async kindOf(id: string): Promise<'SHIPMENT' | 'DOCUMENT' | null> {
-    const [r] = await this.db
-      .select({ kind: schema.shipments.kind })
-      .from(schema.shipments)
-      .where(eq(schema.shipments.id, id))
-    return (r?.kind as 'SHIPMENT' | 'DOCUMENT' | undefined) ?? null
+    const row = await this.db.selectFrom('shipments').where('id', '=', id).select('kind as kind').executeTakeFirst()
+    return (row?.kind as 'SHIPMENT' | 'DOCUMENT' | undefined) ?? null
   }
 
   /**
    * Link a DOCUMENT onto a target SHIPMENT in one transaction: copy its POs and source-emails onto the
-   * target (idempotent — ON CONFLICT DO NOTHING against the (shipment,po) / (shipment,graph_id) unique
-   * keys), then stamp the document's linked_shipment_id so it leaves the Unlinked Documents view.
+   * target (idempotent against the (shipment,po) / (shipment,graph_id) unique keys), then stamp the
+   * document's linked_shipment_id so it leaves the Unlinked Documents view.
    */
   async linkDocument(documentId: string, targetShipmentId: string) {
-    await this.db.transaction(async (tx) => {
+    await this.db.transaction().execute(async (tx) => {
       const poRows = await tx
-        .select({ poId: schema.shipmentPos.poId, quantity: schema.shipmentPos.quantity, quantityUnit: schema.shipmentPos.quantityUnit })
-        .from(schema.shipmentPos)
-        .where(eq(schema.shipmentPos.shipmentId, documentId))
-      if (poRows.length) {
-        await tx
-          .insert(schema.shipmentPos)
-          .values(poRows.map((r) => ({ shipmentId: targetShipmentId, poId: r.poId, quantity: r.quantity, quantityUnit: r.quantityUnit })))
-          .onConflictDoNothing()
+        .selectFrom('shipmentPos')
+        .where('shipmentId', '=', documentId)
+        .select(['poId', 'quantity', 'quantityUnit'])
+        .execute()
+      for (const r of poRows) {
+        await upsertShipmentPo(tx, targetShipmentId, r.poId, r.quantity, r.quantityUnit)
       }
       const emailRows = await tx
-        .select({ graphMessageId: schema.shipmentEmails.graphMessageId, emailType: schema.shipmentEmails.emailType, receivedAt: schema.shipmentEmails.receivedAt })
-        .from(schema.shipmentEmails)
-        .where(eq(schema.shipmentEmails.shipmentId, documentId))
-      if (emailRows.length) {
-        await tx
-          .insert(schema.shipmentEmails)
-          .values(emailRows.map((r) => ({ shipmentId: targetShipmentId, graphMessageId: r.graphMessageId, emailType: r.emailType, receivedAt: r.receivedAt })))
-          .onConflictDoNothing()
+        .selectFrom('shipmentEmails')
+        .where('shipmentId', '=', documentId)
+        .select(['graphMessageId', 'emailType', 'receivedAt'])
+        .execute()
+      for (const r of emailRows) {
+        await upsertShipmentEmail(tx, targetShipmentId, r.graphMessageId, r.emailType, r.receivedAt)
       }
       await tx
-        .update(schema.shipments)
+        .updateTable('shipments')
         .set({ linkedShipmentId: targetShipmentId, updatedAt: new Date() })
-        .where(eq(schema.shipments.id, documentId))
+        .where('id', '=', documentId)
+        .execute()
     })
+  }
+}
+
+/** Split the STRING_AGG'd po_numbers column into the string[] the consumer expects ('' → []). */
+function splitPoNumbers(s: string | null | undefined): string[] {
+  if (!s) return []
+  return s.split(',').filter(Boolean)
+}
+
+/** Idempotent upsert of a (shipment, po) link — check-then-insert, `uq_shipment_pos` absorbs replays. */
+async function upsertShipmentPo(
+  tx: DbLike,
+  shipmentId: string,
+  poId: string,
+  quantity: number | null,
+  quantityUnit: string | null,
+) {
+  const existing = await tx.selectFrom('shipmentPos').where('shipmentId', '=', shipmentId).where('poId', '=', poId).select('id').executeTakeFirst()
+  if (existing) return
+  try {
+    await tx.insertInto('shipmentPos').values({ shipmentId, poId, quantity, quantityUnit }).execute()
+  } catch (e) {
+    if (!/unique|duplicate/i.test((e as Error).message)) throw e
+  }
+}
+
+/** Idempotent upsert of a (shipment, graph_message_id) email link. */
+async function upsertShipmentEmail(
+  tx: DbLike,
+  shipmentId: string,
+  graphMessageId: string | null,
+  emailType: string | null,
+  receivedAt: Date | null,
+) {
+  if (!graphMessageId) return
+  const existing = await tx.selectFrom('shipmentEmails').where('shipmentId', '=', shipmentId).where('graphMessageId', '=', graphMessageId).select('id').executeTakeFirst()
+  if (existing) return
+  try {
+    await tx.insertInto('shipmentEmails').values({ shipmentId, graphMessageId, emailType, receivedAt }).execute()
+  } catch (e) {
+    if (!/unique|duplicate/i.test((e as Error).message)) throw e
   }
 }

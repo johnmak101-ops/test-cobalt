@@ -12,11 +12,8 @@
     "test:watch": "vitest",
     "test:unit": "vitest run src",
     "smoke": "node test/smoke.mjs",
-    "db:generate": "drizzle-kit generate",
-    "db:migrate": "drizzle-kit migrate",
-    "db:push": "drizzle-kit push",
-    "db:codegen": "kysely-codegen --dialect mssql --url \"Server=localhost,1433;Database=cobalt_test;User Id=sa;Password=YourStrong!Passw0rd;Encrypt=false;TrustServerCertificate=true\" --out-file src/db/kysely/db.generated.ts --camel-case --exclude-pattern \"kysely_*\"",
-    "db:studio": "drizzle-kit studio"
+    "db:migrate": "ts-node -P tsconfig.json src/db/migrate-cli.ts",
+    "db:codegen": "kysely-codegen --dialect mssql --url \"Server=localhost,1433;Database=cobalt_test;User Id=sa;Password=YourStrong!Passw0rd;Encrypt=false;TrustServerCertificate=true\" --out-file src/db/kysely/db.generated.ts --camel-case --exclude-pattern \"kysely_*\""
   },
   "dependencies": {
     "@nestjs/common": "^11.1.27",

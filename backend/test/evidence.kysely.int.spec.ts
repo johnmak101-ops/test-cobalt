@@ -2,21 +2,19 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { sql } from 'kysely'
 import { createKysely } from '../src/db/kysely/mssql-dialect'
 import { runMigrations } from '../src/db/kysely/migrate'
-import { KyselyEvidenceRepository } from '../src/db/repositories/evidence.repository.kysely'
+import { EvidenceRepository } from '../src/db/repositories/evidence.repository'
 import { join } from 'node:path'
 import type { Kysely } from 'kysely'
-import type { DB } from '../src/db/kysely/db.generated'
+import type { DB } from '../src/db/kysely/db'
 
 const URL =
   process.env.SQL_SERVER_TEST_URL ??
   'Server=localhost,1433;Database=cobalt_test;User Id=sa;Password=YourStrong!Passw0rd;Encrypt=false;TrustServerCertificate=true'
-const RUN = process.env.FABRIC_FOUNDATION === '1'
 
 let db: Kysely<DB>
-let repo: KyselyEvidenceRepository
+let repo: EvidenceRepository
 
 beforeAll(async () => {
-  if (!RUN) return
   db = createKysely<DB>(URL)
   await sql`
 DECLARE @sql NVARCHAR(MAX) = N''
@@ -30,11 +28,10 @@ FROM sys.tables t WHERE schema_name(t.schema_id) = 'dbo'
 EXEC sp_executesql @sql`.execute(db).catch(() => {})
   await sql`DROP TABLE IF EXISTS kysely_migration`.execute(db).catch(() => {})
   await sql`DROP TABLE IF EXISTS kysely_migration_lock`.execute(db).catch(() => {})
-  await runMigrations(db, join(process.cwd(), 'kysely-migrations'))
-  repo = new KyselyEvidenceRepository(db)
+  await runMigrations(db, join(process.cwd(), 'src/db/kysely-migrations'))
+  repo = new EvidenceRepository(db)
 })
 afterAll(async () => {
-  if (!RUN) return
   await db.destroy()
 })
 
@@ -46,7 +43,7 @@ async function seedRec(messageId: string, gmid: string, fields: Record<string, u
   await db.insertInto('parsedRecord').values({ messageId, graphMessageId: gmid, fields: JSON.stringify(fields), poNo }).execute()
 }
 
-describe.runIf(RUN)('KyselyEvidenceRepository (SQL Server)', () => {
+describe('EvidenceRepository (SQL Server)', () => {
   it('forMessages joins parsed_record → email_message and returns the selected columns', async () => {
     const id1 = await seedMsg('gm1', 'subj-1', 'a@b.c')
     const id2 = await seedMsg('gm2', 'subj-2', 'x@y.z')

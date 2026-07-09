@@ -2,21 +2,19 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { sql } from 'kysely'
 import { createKysely } from '../src/db/kysely/mssql-dialect'
 import { runMigrations } from '../src/db/kysely/migrate'
-import { KyselyIngestRepository, type EvidenceInput } from '../src/db/repositories/ingest.repository.kysely'
+import { IngestRepository, type EvidenceInput } from '../src/db/repositories/ingest.repository'
 import { join } from 'node:path'
 import type { Kysely } from 'kysely'
-import type { DB } from '../src/db/kysely/db.generated'
+import type { DB } from '../src/db/kysely/db'
 
 const URL =
   process.env.SQL_SERVER_TEST_URL ??
   'Server=localhost,1433;Database=cobalt_test;User Id=sa;Password=YourStrong!Passw0rd;Encrypt=false;TrustServerCertificate=true'
-const RUN = process.env.FABRIC_FOUNDATION === '1'
 
 let db: Kysely<DB>
-let repo: KyselyIngestRepository
+let repo: IngestRepository
 
 beforeAll(async () => {
-  if (!RUN) return
   db = createKysely<DB>(URL)
   await sql`
 DECLARE @sql NVARCHAR(MAX) = N''
@@ -30,15 +28,14 @@ FROM sys.tables t WHERE schema_name(t.schema_id) = 'dbo'
 EXEC sp_executesql @sql`.execute(db).catch(() => {})
   await sql`DROP TABLE IF EXISTS kysely_migration`.execute(db).catch(() => {})
   await sql`DROP TABLE IF EXISTS kysely_migration_lock`.execute(db).catch(() => {})
-  await runMigrations(db, join(process.cwd(), 'kysely-migrations'))
-  repo = new KyselyIngestRepository(db)
+  await runMigrations(db, join(process.cwd(), 'src/db/kysely-migrations'))
+  repo = new IngestRepository(db)
 })
 afterAll(async () => {
-  if (!RUN) return
   await db.destroy()
 })
 
-describe.runIf(RUN)('KyselyIngestRepository (SQL Server)', () => {
+describe('IngestRepository (SQL Server)', () => {
   it('upserts email_message + parsed_record + attachments; idempotent on re-POST', async () => {
     const ev: EvidenceInput = {
       graphMessageId: 'gmsg-1', subject: 'hi', sender: 'a@b.c', receivedAt: '2026-01-01T00:00:00Z',

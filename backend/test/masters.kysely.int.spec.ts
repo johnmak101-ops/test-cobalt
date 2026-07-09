@@ -2,24 +2,22 @@ import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest'
 import { sql } from 'kysely'
 import { createKysely } from '../src/db/kysely/mssql-dialect'
 import { runMigrations } from '../src/db/kysely/migrate'
-import { KyselyMastersRepository } from '../src/db/repositories/masters.repository.kysely'
+import { MastersRepository } from '../src/db/repositories/masters.repository'
 import { join } from 'node:path'
 import type { Kysely } from 'kysely'
-import type { DB } from '../src/db/kysely/db.generated'
+import type { DB } from '../src/db/kysely/db'
 
 const URL =
   process.env.SQL_SERVER_TEST_URL ??
   'Server=localhost,1433;Database=cobalt_test;User Id=sa;Password=YourStrong!Passw0rd;Encrypt=false;TrustServerCertificate=true'
 
-const RUN = process.env.FABRIC_FOUNDATION === '1'
 
 let db: Kysely<DB>
-let repo: KyselyMastersRepository
+let repo: MastersRepository
 
 beforeAll(async () => {
-  if (!RUN) return
   db = createKysely<DB>(URL)
-  repo = new KyselyMastersRepository(db)
+  repo = new MastersRepository(db)
   // reset dbo (drop FKs, tables, ledger) + migrate
   await sql`
 DECLARE @sql NVARCHAR(MAX) = N''
@@ -34,10 +32,9 @@ FROM sys.tables t WHERE schema_name(t.schema_id) = 'dbo'
 EXEC sp_executesql @sql`.execute(db).catch(() => {})
   await sql`DROP TABLE IF EXISTS kysely_migration`.execute(db).catch(() => {})
   await sql`DROP TABLE IF EXISTS kysely_migration_lock`.execute(db).catch(() => {})
-  await runMigrations(db, join(process.cwd(), 'kysely-migrations'))
+  await runMigrations(db, join(process.cwd(), 'src/db/kysely-migrations'))
 })
 afterAll(async () => {
-  if (!RUN) return
   await db.destroy()
 })
 
@@ -53,9 +50,8 @@ async function reset() {
   await db.deleteFrom('users').execute()
 }
 
-describe.runIf(RUN)('KyselyMastersRepository (SQL Server)', () => {
+describe('MastersRepository (SQL Server)', () => {
   beforeEach(async () => {
-    if (!RUN) return
     await reset()
   })
 
@@ -80,7 +76,7 @@ describe.runIf(RUN)('KyselyMastersRepository (SQL Server)', () => {
     expect(byObj?.code).toBe('COLE')
   })
 
-  it('forwarderIdByName resolves an EXACT name (fuzzy tiers are out of scope — return null on no exact match)', async () => {
+  it('forwarderIdByName runs the full staged tiers (exact, alias, stripped-annotation, ambiguity-guarded)', async () => {
     const fwd = await db.insertInto('forwarders').values({ code: 'EXP', name: 'EXPEDITORS INTERNATIONAL' }).output('inserted.id').executeTakeFirstOrThrow()
     await db.insertInto('forwarderAliases').values({ forwarderId: fwd.id, aliasType: 'name', value: 'EXPEDITORS' }).execute()
 
@@ -88,9 +84,20 @@ describe.runIf(RUN)('KyselyMastersRepository (SQL Server)', () => {
     expect(await repo.forwarderIdByName('EXPEDITORS INTERNATIONAL')).toBe(fwd.id)
     // exact alias
     expect(await repo.forwarderIdByName('EXPEDITORS')).toBe(fwd.id)
-    // a fuzzy/partial input does NOT resolve (the Postgres fuzzy tiers are not ported — slated for the LLM matcher)
-    expect(await repo.forwarderIdByName('Expeditors (LAX)')).toBeNull()
+    // office annotation stripped → normalized-exact tier ('(LAX)' is not part of the name)
+    expect(await repo.forwarderIdByName('Expeditors International (LAX)')).toBe(fwd.id)
+    // single containment hit resolves (exactly-one guard) — the tiers ARE ported (the LLM matcher
+    // that replaces them is deferred behind this migration)
+    expect(await repo.forwarderIdByName('Expeditors (LAX)')).toBe(fwd.id)
+    // no match → null (an unresolved name surfaces as forwarder_raw)
     expect(await repo.forwarderIdByName('some unrelated name')).toBeNull()
+    // legal-form DANGER pair: two masters that differ ONLY by legal form must NOT resolve
+    // nondeterministically — the exactly-one fold guard returns null
+    await db.insertInto('forwarders').values([
+      { code: 'AGI1', name: 'AGILITY LOGISTICS LTD' },
+      { code: 'AGI2', name: 'AGILITY LOGISTICS LIMITED' },
+    ]).execute()
+    expect(await repo.forwarderIdByName('Agility Logistics')).toBeNull()
   })
 
   it('portByCodeOrName resolves by exact UN/LOCODE and exact IATA', async () => {

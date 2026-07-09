@@ -8,12 +8,10 @@ const URL =
   process.env.SQL_SERVER_TEST_URL ??
   'Server=localhost,1433;Database=cobalt_test;User Id=sa;Password=YourStrong!Passw0rd;Encrypt=false;TrustServerCertificate=true'
 
-const RUN = process.env.FABRIC_FOUNDATION === '1'
 
 let db: Kysely<unknown>
 
 beforeAll(async () => {
-  if (!RUN) return
   db = createKysely<unknown>(URL)
   // reset: drop all tables in dbo that belong to our schema, then the migration ledger.
   // SQL Server has no CASCADE — drop FKs first, then tables.
@@ -32,10 +30,9 @@ WHERE schema_name(t.schema_id) = 'dbo'
 EXEC sp_executesql @sql`.execute(db).catch(() => {})
   await sql`DROP TABLE IF EXISTS kysely_migration`.execute(db).catch(() => {})
   await sql`DROP TABLE IF EXISTS kysely_migration_lock`.execute(db).catch(() => {})
-  await runMigrations(db, join(process.cwd(), 'kysely-migrations'))
+  await runMigrations(db, join(process.cwd(), 'src/db/kysely-migrations'))
 })
 afterAll(async () => {
-  if (!RUN) return
   await db.destroy()
 })
 
@@ -55,7 +52,7 @@ const EXPECTED: Record<string, string[]> = {
 // flatten into one list for the dbo check
 const ALL_TABLES = Object.values(EXPECTED).flat()
 
-describe.runIf(RUN)('Foundation — 0000_init creates all 29 tables', () => {
+describe('Foundation — 0000_init creates all 29 tables', () => {
   for (const table of ALL_TABLES) {
     it(`creates dbo.${table}`, async () => {
       const result = await sql`SELECT CASE WHEN OBJECT_ID(${sql.lit(table)}) IS NOT NULL THEN 1 ELSE 0 END AS cnt`

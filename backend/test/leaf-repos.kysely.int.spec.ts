@@ -2,25 +2,23 @@ import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest'
 import { sql } from 'kysely'
 import { createKysely } from '../src/db/kysely/mssql-dialect'
 import { runMigrations } from '../src/db/kysely/migrate'
-import { KyselySettingsRepository } from '../src/db/repositories/settings.repository.kysely'
-import { KyselyUsersRepository, LastActiveSuperadminError } from '../src/db/repositories/users.repository.kysely'
-import { KyselyAuditRepository } from '../src/db/repositories/audit.repository.kysely'
+import { SettingsRepository } from '../src/db/repositories/settings.repository'
+import { UsersRepository, LastActiveSuperadminError } from '../src/db/repositories/users.repository'
+import { AuditRepository } from '../src/db/repositories/audit.repository'
 import { join } from 'node:path'
 import type { Kysely } from 'kysely'
-import type { DB } from '../src/db/kysely/db.generated'
+import type { DB } from '../src/db/kysely/db'
 
 const URL =
   process.env.SQL_SERVER_TEST_URL ??
   'Server=localhost,1433;Database=cobalt_test;User Id=sa;Password=YourStrong!Passw0rd;Encrypt=false;TrustServerCertificate=true'
-const RUN = process.env.FABRIC_FOUNDATION === '1'
 
 let db: Kysely<DB>
-let settings: KyselySettingsRepository
-let users: KyselyUsersRepository
-let audit: KyselyAuditRepository
+let settings: SettingsRepository
+let users: UsersRepository
+let audit: AuditRepository
 
 beforeAll(async () => {
-  if (!RUN) return
   db = createKysely<DB>(URL)
   await sql`
 DECLARE @sql NVARCHAR(MAX) = N''
@@ -34,13 +32,12 @@ FROM sys.tables t WHERE schema_name(t.schema_id) = 'dbo'
 EXEC sp_executesql @sql`.execute(db).catch(() => {})
   await sql`DROP TABLE IF EXISTS kysely_migration`.execute(db).catch(() => {})
   await sql`DROP TABLE IF EXISTS kysely_migration_lock`.execute(db).catch(() => {})
-  await runMigrations(db, join(process.cwd(), 'kysely-migrations'))
-  settings = new KyselySettingsRepository(db)
-  users = new KyselyUsersRepository(db)
-  audit = new KyselyAuditRepository(db)
+  await runMigrations(db, join(process.cwd(), 'src/db/kysely-migrations'))
+  settings = new SettingsRepository(db)
+  users = new UsersRepository(db)
+  audit = new AuditRepository(db)
 })
 afterAll(async () => {
-  if (!RUN) return
   await db.destroy()
 })
 
@@ -50,9 +47,8 @@ async function reset() {
   await db.deleteFrom('users').execute()
 }
 
-describe.runIf(RUN)('Kysely leaf repos (SQL Server)', () => {
+describe('Kysely leaf repos (SQL Server)', () => {
   beforeEach(async () => {
-    if (!RUN) return
     await reset()
   })
 

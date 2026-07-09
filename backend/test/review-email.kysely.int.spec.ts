@@ -2,21 +2,19 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { sql } from 'kysely'
 import { createKysely } from '../src/db/kysely/mssql-dialect'
 import { runMigrations } from '../src/db/kysely/migrate'
-import { KyselyReviewEmailRepository } from '../src/db/repositories/review-email.repository.kysely'
+import { ReviewEmailRepository } from '../src/db/repositories/review-email.repository'
 import { join } from 'node:path'
 import type { Kysely } from 'kysely'
-import type { DB } from '../src/db/kysely/db.generated'
+import type { DB } from '../src/db/kysely/db'
 
 const URL =
   process.env.SQL_SERVER_TEST_URL ??
   'Server=localhost,1433;Database=cobalt_test;User Id=sa;Password=YourStrong!Passw0rd;Encrypt=false;TrustServerCertificate=true'
-const RUN = process.env.FABRIC_FOUNDATION === '1'
 
 let db: Kysely<DB>
-let repo: KyselyReviewEmailRepository
+let repo: ReviewEmailRepository
 
 beforeAll(async () => {
-  if (!RUN) return
   db = createKysely<DB>(URL)
   await sql`
 DECLARE @sql NVARCHAR(MAX) = N''
@@ -30,11 +28,10 @@ FROM sys.tables t WHERE schema_name(t.schema_id) = 'dbo'
 EXEC sp_executesql @sql`.execute(db).catch(() => {})
   await sql`DROP TABLE IF EXISTS kysely_migration`.execute(db).catch(() => {})
   await sql`DROP TABLE IF EXISTS kysely_migration_lock`.execute(db).catch(() => {})
-  await runMigrations(db, join(process.cwd(), 'kysely-migrations'))
-  repo = new KyselyReviewEmailRepository(db)
+  await runMigrations(db, join(process.cwd(), 'src/db/kysely-migrations'))
+  repo = new ReviewEmailRepository(db)
 })
 afterAll(async () => {
-  if (!RUN) return
   await db.destroy()
 })
 
@@ -70,7 +67,7 @@ async function seedBookingShipment(state = 'BOOKED') {
   return { bookingId, shipmentId }
 }
 
-describe.runIf(RUN)('KyselyReviewEmailRepository (SQL Server)', () => {
+describe('ReviewEmailRepository (SQL Server)', () => {
   it('listByStatus defaults to NEEDS_REVIEW, ordered lowest-confidence-first then newest-received', async () => {
     // three pending: conf 0.9 (older), 0.5, 0.9 (newer)
     await seedReviewEmail({ confidence: 0.9, receivedAt: new Date('2026-07-01T00:00:00Z') })

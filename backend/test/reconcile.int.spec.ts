@@ -1,5 +1,4 @@
 import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest'
-import * as schema from '../src/db/contracts'
 import { getTestDb, resetDb, closeTestDb, repos, type TestDB } from './setup-db'
 import { CommitterService } from '../src/reconcile/committer.service'
 import { ReconcileService } from '../src/reconcile/reconcile.service'
@@ -28,13 +27,28 @@ async function seedEmail(
   poNo: string,
   conversationId = 'thread-1',
 ) {
-  const [msg] = await db
-    .insert(schema.ingestEmailMessage)
+  const msg = await db
+    .insertInto('emailMessage')
     .values({ graphMessageId: graphId, conversationId, receivedAt: new Date(receivedAt), status: 'DONE' })
-    .returning()
+    .outputAll('inserted')
+    .executeTakeFirstOrThrow()
+  // graphMessageId is set (the real writer, IngestRepository.upsertFromDecision, always populates it).
+  // It also matters here: SQL Server's uq_ingest_parsed_record_gmid_idx treats NULL as a value, so two
+  // seeded rows with (NULL, 0) would collide — unlike Postgres, where NULLs are distinct in UNIQUE.
   await db
-    .insert(schema.ingestParsedRecord)
-    .values({ messageId: msg.id, recordIdx: 0, poNo, emailType, mode: 'Sea-LCL', fields, matchKeys, confidence: 'high' })
+    .insertInto('parsedRecord')
+    .values({
+      messageId: msg.id,
+      graphMessageId: graphId,
+      recordIdx: 0,
+      poNo,
+      emailType,
+      mode: 'Sea-LCL',
+      fields: JSON.stringify(fields),
+      matchKeys: JSON.stringify(matchKeys),
+      confidence: 'high',
+    })
+    .execute()
 }
 
 describe('ReconcileService (integration)', () => {
@@ -47,12 +61,12 @@ describe('ReconcileService (integration)', () => {
     expect(res.evidence).toBe(3)
     expect(res.groups).toBe(1) // PO threads them despite booking#->SO#->HBL# rotation
 
-    expect(await db.select().from(schema.bookings)).toHaveLength(1)
-    const legs = await db.select().from(schema.shipments)
+    expect(await db.selectFrom('bookings').selectAll().execute()).toHaveLength(1)
+    const legs = await db.selectFrom('shipments').selectAll().execute()
     expect(legs).toHaveLength(1)
-    expect(legs[0].state).toBe('AT_WAREHOUSE') // Draft B/L reached
-    expect(legs[0].soNo).toBe('SO-1')
-    expect(legs[0].hblAwbFcrNo).toBe('HBL-1')
+    expect(legs[0]!.state).toBe('AT_WAREHOUSE') // Draft B/L reached
+    expect(legs[0]!.soNo).toBe('SO-1')
+    expect(legs[0]!.hblAwbFcrNo).toBe('HBL-1')
   })
 
   it('keeps two unrelated PO threads as two bookings', async () => {
@@ -60,6 +74,6 @@ describe('ReconcileService (integration)', () => {
     await seedEmail('b1', '2026-01-01T00:00:00Z', 'SO', { so_no: 'SO-B' }, { so_no: 'SO-B', customer_po: 'PO-B' }, 'PO-B', 'thread-B')
     const res = await reconcile.run()
     expect(res.groups).toBe(2)
-    expect(await db.select().from(schema.bookings)).toHaveLength(2)
+    expect(await db.selectFrom('bookings').selectAll().execute()).toHaveLength(2)
   })
 })

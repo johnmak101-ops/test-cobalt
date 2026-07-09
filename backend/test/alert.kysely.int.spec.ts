@@ -2,21 +2,19 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { sql } from 'kysely'
 import { createKysely } from '../src/db/kysely/mssql-dialect'
 import { runMigrations } from '../src/db/kysely/migrate'
-import { KyselyAlertRepository } from '../src/db/repositories/alert.repository.kysely'
+import { AlertRepository } from '../src/db/repositories/alert.repository'
 import { join } from 'node:path'
 import type { Kysely } from 'kysely'
-import type { DB } from '../src/db/kysely/db.generated'
+import type { DB } from '../src/db/kysely/db'
 
 const URL =
   process.env.SQL_SERVER_TEST_URL ??
   'Server=localhost,1433;Database=cobalt_test;User Id=sa;Password=YourStrong!Passw0rd;Encrypt=false;TrustServerCertificate=true'
-const RUN = process.env.FABRIC_FOUNDATION === '1'
 
 let db: Kysely<DB>
-let repo: KyselyAlertRepository
+let repo: AlertRepository
 
 beforeAll(async () => {
-  if (!RUN) return
   db = createKysely<DB>(URL)
   await sql`
 DECLARE @sql NVARCHAR(MAX) = N''
@@ -30,11 +28,10 @@ FROM sys.tables t WHERE schema_name(t.schema_id) = 'dbo'
 EXEC sp_executesql @sql`.execute(db).catch(() => {})
   await sql`DROP TABLE IF EXISTS kysely_migration`.execute(db).catch(() => {})
   await sql`DROP TABLE IF EXISTS kysely_migration_lock`.execute(db).catch(() => {})
-  await runMigrations(db, join(process.cwd(), 'kysely-migrations'))
-  repo = new KyselyAlertRepository(db)
+  await runMigrations(db, join(process.cwd(), 'src/db/kysely-migrations'))
+  repo = new AlertRepository(db)
 })
 afterAll(async () => {
-  if (!RUN) return
   await db.destroy()
 })
 
@@ -46,7 +43,7 @@ async function seedRule(id = 'A1', severity = 'CRITICAL') {
   })
 }
 
-describe.runIf(RUN)('KyselyAlertRepository (SQL Server)', () => {
+describe('AlertRepository (SQL Server)', () => {
   it('enabledRules / allRules: returns rules, enabled filter narrows', async () => {
     await seedRule('B1', 'WARNING')
     await seedRule('B2', 'INFO')

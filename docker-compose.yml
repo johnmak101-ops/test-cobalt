@@ -1,22 +1,21 @@
-# ShipTrack — self-contained stack: Postgres + the app image (backend serves API + SPA on :3000).
+# ShipTrack — self-contained stack: SQL Server + the app image (backend serves API + SPA on :3000).
 #   docker compose up --build       # build the image + run everything
 #   open http://localhost:3000       # login admin@cobalt.hk / cobalt
 services:
   db:
-    image: postgres:16-alpine
+    image: mcr.microsoft.com/mssql/server:2022-latest
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: cobalt
+      ACCEPT_EULA: 'Y'
+      MSSQL_SA_PASSWORD: 'YourStrong!Passw0rd' # dev/demo only — rotate for anything shared
     ports:
-      - "${DB_PORT:-5433}:5432" # host 5433 -> avoids clashing with a local Postgres on 5432
+      - "${DB_PORT:-1433}:1433"
     volumes:
-      - shiptrack_pgdata:/var/lib/postgresql/data
+      - shiptrack_mssqldata:/var/opt/mssql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d cobalt"]
+      test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -C -S localhost -U sa -P 'YourStrong!Passw0rd' -Q 'SELECT 1' -b"]
       interval: 5s
       timeout: 5s
-      retries: 20
+      retries: 30
 
   app:
     build: .
@@ -25,7 +24,8 @@ services:
       db:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgres://postgres:postgres@db:5432/cobalt
+      # migrate-cli creates the `cobalt` database on first boot if it doesn't exist.
+      SQL_SERVER_URL: "Server=db,1433;Database=cobalt;User Id=sa;Password=YourStrong!Passw0rd;Encrypt=false;TrustServerCertificate=true"
       PORT: "3000"
       STATIC_ROOT: /app/frontend/dist
       # Demo secret only — set a real 32+ char JWT_SECRET in production.
@@ -37,4 +37,4 @@ services:
       - "${APP_PORT:-3000}:3000"
 
 volumes:
-  shiptrack_pgdata:
+  shiptrack_mssqldata:

@@ -1,6 +1,4 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest'
-import { eq } from 'drizzle-orm'
-import * as schema from '../src/db/contracts'
 import { getTestDb, resetDb, closeTestDb, repos, type TestDB } from './setup-db'
 import type { MastersRepository } from '../src/db/repositories/masters.repository'
 
@@ -31,13 +29,13 @@ beforeAll(async () => {
 afterAll(closeTestDb)
 beforeEach(async () => {
   await resetDb(db)
-  await db.insert(schema.ports).values(PORTS)
+  await db.insertInto('ports').values(PORTS).execute()
 })
 
 const codeOf = async (input: string): Promise<string | null> => {
   const r = await masters.portByCodeOrName(input)
   if (!r) return null
-  const [p] = await db.select().from(schema.ports).where(eq(schema.ports.id, r.id))
+  const p = await db.selectFrom('ports').selectAll().where('id', '=', r.id).executeTakeFirst()
   return p?.unlocode ?? null
 }
 

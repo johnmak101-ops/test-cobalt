@@ -2,22 +2,20 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { sql } from 'kysely'
 import { createKysely } from '../src/db/kysely/mssql-dialect'
 import { runMigrations } from '../src/db/kysely/migrate'
-import { KyselyShipmentRepository } from '../src/db/repositories/shipment.repository.kysely'
+import { ShipmentRepository } from '../src/db/repositories/shipment.repository'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import type { Kysely } from 'kysely'
-import type { DB } from '../src/db/kysely/db.generated'
+import type { DB } from '../src/db/kysely/db'
 
 const URL =
   process.env.SQL_SERVER_TEST_URL ??
   'Server=localhost,1433;Database=cobalt_test;User Id=sa;Password=YourStrong!Passw0rd;Encrypt=false;TrustServerCertificate=true'
-const RUN = process.env.FABRIC_FOUNDATION === '1'
 
 let db: Kysely<DB>
-let repo: KyselyShipmentRepository
+let repo: ShipmentRepository
 
 beforeAll(async () => {
-  if (!RUN) return
   db = createKysely<DB>(URL)
   await sql`
 DECLARE @sql NVARCHAR(MAX) = N''
@@ -31,11 +29,10 @@ FROM sys.tables t WHERE schema_name(t.schema_id) = 'dbo'
 EXEC sp_executesql @sql`.execute(db).catch(() => {})
   await sql`DROP TABLE IF EXISTS kysely_migration`.execute(db).catch(() => {})
   await sql`DROP TABLE IF EXISTS kysely_migration_lock`.execute(db).catch(() => {})
-  await runMigrations(db, join(process.cwd(), 'kysely-migrations'))
-  repo = new KyselyShipmentRepository(db)
+  await runMigrations(db, join(process.cwd(), 'src/db/kysely-migrations'))
+  repo = new ShipmentRepository(db)
 })
 afterAll(async () => {
-  if (!RUN) return
   await db.destroy()
 })
 
@@ -88,7 +85,7 @@ async function seedPo(poNumber = `PO-${mark}-${Math.random()}`) {
   return { id, poNumber }
 }
 
-describe.runIf(RUN)('KyselyShipmentRepository (SQL Server)', () => {
+describe('ShipmentRepository (SQL Server)', () => {
   it('allLegs / activeLegs / activeConfirmedLegs / provisionalLegs filter correctly', async () => {
     const b = await seedBooking()
     await seedLeg({ bookingId: b, legNo: 11, legStatus: 'ACTIVE', reviewStatus: 'confirmed' })

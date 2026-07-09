@@ -2,22 +2,20 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { sql } from 'kysely'
 import { createKysely } from '../src/db/kysely/mssql-dialect'
 import { runMigrations } from '../src/db/kysely/migrate'
-import { KyselyEmailRepository } from '../src/db/repositories/email.repository.kysely'
+import { EmailRepository } from '../src/db/repositories/email.repository'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import type { Kysely } from 'kysely'
-import type { DB } from '../src/db/kysely/db.generated'
+import type { DB } from '../src/db/kysely/db'
 
 const URL =
   process.env.SQL_SERVER_TEST_URL ??
   'Server=localhost,1433;Database=cobalt_test;User Id=sa;Password=YourStrong!Passw0rd;Encrypt=false;TrustServerCertificate=true'
-const RUN = process.env.FABRIC_FOUNDATION === '1'
 
 let db: Kysely<DB>
-let repo: KyselyEmailRepository
+let repo: EmailRepository
 
 beforeAll(async () => {
-  if (!RUN) return
   db = createKysely<DB>(URL)
   await sql`
 DECLARE @sql NVARCHAR(MAX) = N''
@@ -31,11 +29,10 @@ FROM sys.tables t WHERE schema_name(t.schema_id) = 'dbo'
 EXEC sp_executesql @sql`.execute(db).catch(() => {})
   await sql`DROP TABLE IF EXISTS kysely_migration`.execute(db).catch(() => {})
   await sql`DROP TABLE IF EXISTS kysely_migration_lock`.execute(db).catch(() => {})
-  await runMigrations(db, join(process.cwd(), 'kysely-migrations'))
-  repo = new KyselyEmailRepository(db)
+  await runMigrations(db, join(process.cwd(), 'src/db/kysely-migrations'))
+  repo = new EmailRepository(db)
 })
 afterAll(async () => {
-  if (!RUN) return
   await db.destroy()
 })
 
@@ -77,7 +74,7 @@ async function seedShipment() {
   return (await db.insertInto('shipments').values({ bookingId }).output('inserted.id').executeTakeFirstOrThrow()).id
 }
 
-describe.runIf(RUN)('KyselyEmailRepository (SQL Server)', () => {
+describe('EmailRepository (SQL Server)', () => {
   it('findIngested finds by graph_message_id, returns null on miss', async () => {
     const m = await seedMessage({ subject: 'findme' })
     const found = await repo.findIngested(m.graphMessageId)

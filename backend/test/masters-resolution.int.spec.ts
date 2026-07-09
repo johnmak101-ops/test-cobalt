@@ -1,5 +1,4 @@
 import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest'
-import * as schema from '../src/db/contracts'
 import { getTestDb, resetDb, closeTestDb, repos, type TestDB } from './setup-db'
 import { MastersService } from '../src/masters/masters.service'
 
@@ -15,20 +14,20 @@ beforeAll(async () => {
   repo = r.masters
   masters = new MastersService(r.masters)
 })
-// resetDb intentionally spares tracking.master_resolution (runtime edits survive a reseed) — so clear it
-// ourselves for isolation, and again on teardown so we don't leak facts into other int specs. created_by is a
-// real users FK, so seed an admin each test (resetDb truncates users).
+// master_resolution facts must never leak into other int specs — clear explicitly (and on teardown), on top
+// of resetDb's full wipe. created_by is a real users FK, so seed an admin each test (resetDb truncates users).
 beforeEach(async () => {
   await resetDb(db)
-  await db.delete(schema.masterResolution)
-  const [u] = await db
-    .insert(schema.users)
+  await db.deleteFrom('masterResolution').execute()
+  const u = await db
+    .insertInto('users')
     .values({ email: 'admin@cobalt.hk', name: 'Admin', passwordHash: 'x', role: 'ADMIN' })
-    .returning()
+    .outputAll('inserted')
+    .executeTakeFirstOrThrow()
   adminId = u.id
 })
 afterAll(async () => {
-  await db.delete(schema.masterResolution)
+  await db.deleteFrom('masterResolution').execute()
   await closeTestDb()
 })
 

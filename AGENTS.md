@@ -8,8 +8,9 @@ Orientation for AI coding agents working in this repo.
 ## Stack (the real one)
 
 - **Monorepo**: pnpm workspace — `backend/` (NestJS 11, Node) + `frontend/` (React 19 + Vite).
-- **Backend**: NestJS 11 on the standard **Node** runtime + Drizzle ORM over **PostgreSQL**. `fs`,
-  `process.env`, native modules, and long-running work are all fine (this is not an edge/Workers runtime).
+- **Backend**: NestJS 11 on the standard **Node** runtime + **Kysely over SQL Server** (local
+  `mssql-2022` container in dev/CI; **Microsoft Fabric SQL** is the deploy target). `fs`, `process.env`,
+  native modules, and long-running work are all fine (this is not an edge/Workers runtime).
   Serves the REST API under `/api`, and the built SPA when `STATIC_ROOT` is set (single origin).
 - **Frontend**: React 19 + TypeScript + Vite + Zustand + TanStack Query + Tailwind.
 - **Auth**: JWT in an httpOnly `session` cookie; `Authorization: Bearer` for service/agent accounts.
@@ -19,7 +20,11 @@ Orientation for AI coding agents working in this repo.
 
 ## Where things live
 
-- Drizzle schema (source of truth): `backend/src/db/schema/*.ts`; migrations: `backend/drizzle/*.sql`.
+- Schema source of truth: the T-SQL migrations in `backend/src/db/kysely-migrations/*.ts` (applied by
+  Kysely's Migrator; `pnpm --filter backend run db:migrate` also creates the DB if missing). Generated row
+  types: `backend/src/db/kysely/db.generated.ts` (`pnpm --filter backend run db:codegen`), curated
+  JSON/enum overrides in `backend/src/db/kysely/db.ts` (import `DB` from there, never from the generated file).
+  Shared enum value arrays: `backend/src/db/enums.ts`.
 - Runtime config/tunables: the `app_settings` table + the Settings UI (review policy, page access, …).
 - Decisions ingest → commit: `backend/src/decisions/` + `backend/src/reconcile/committer.service.ts`.
 - Presentation/adapters (flat UI shapes): `backend/src/presentation/`.
@@ -43,11 +48,14 @@ Orientation for AI coding agents working in this repo.
 ## Build / test / lint
 
 - Install: `pnpm install --frozen-lockfile` — ONE workspace install at the repo root. Never
-  `pnpm -C <pkg> ...` (it nests a divergent `drizzle-orm` and breaks the backend typecheck).
+  `pnpm -C <pkg> ...` (it nests divergent deps and breaks the backend typecheck).
 - Typecheck: `pnpm --filter backend exec tsc --noEmit -p tsconfig.json` (and the frontend equivalent).
 - Test: `pnpm --filter backend run test` / `pnpm --filter frontend run test` (vitest). Backend
-  integration specs need **Postgres** on `localhost:5432`; `backend/test/setup-db.ts` creates + migrates
-  a `cobalt_test` database on first connect.
+  integration specs need **SQL Server** on `localhost:1433` (the `mssql-2022` container, sa /
+  `YourStrong!Passw0rd`); `backend/test/setup-db.ts` creates + migrates a `cobalt_test` database on
+  first connect (override with `SQL_SERVER_TEST_URL`). SQL Server gotchas (TOP-not-LIMIT, OUTPUT,
+  check-then-insert upserts, JSON nvarchar, uppercase GUIDs, single-NULL uniques) are catalogued in
+  `TODO.md` under "Fabric SQL migration".
 - Lint: `pnpm lint` (ESLint flat config, `eslint.config.mjs`) — enforced in CI, keep it at 0 errors.
   `pnpm format` (Prettier) is advisory (the repo isn't fully Prettier-formatted).
 - CI (`.github/workflows/ci.yml`) runs all of the above on push to `main` and every PR.
