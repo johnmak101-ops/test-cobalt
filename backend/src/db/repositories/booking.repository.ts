@@ -53,14 +53,13 @@ export class BookingRepository {
     return this.db.insert(schema.bookingPos).values({ bookingId, poId }).onConflictDoNothing()
   }
   async posFor(bookingId: string) {
-    const links = await this.db.select().from(schema.bookingPos).where(eq(schema.bookingPos.bookingId, bookingId))
-    const pos = await Promise.all(
-      links.map(async (l) => {
-        const [po] = await this.db.select().from(schema.purchaseOrders).where(eq(schema.purchaseOrders.id, l.poId))
-        return po
-      }),
-    )
-    return pos.filter(Boolean)
+    // One links query + one bulk PO query (was 1 + N per-link PO round-trips).
+    const links = await this.db
+      .select({ poId: schema.bookingPos.poId })
+      .from(schema.bookingPos)
+      .where(eq(schema.bookingPos.bookingId, bookingId))
+    if (!links.length) return []
+    return this.db.select().from(schema.purchaseOrders).where(inArray(schema.purchaseOrders.id, links.map((l) => l.poId)))
   }
   async poNumbersFor(bookingId: string): Promise<string[]> {
     const rows = await this.db
