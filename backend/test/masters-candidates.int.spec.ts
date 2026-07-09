@@ -85,3 +85,44 @@ describe('POST /masters/candidates retrieval (integration)', () => {
     expect(manage.map((f) => f.kind).sort()).toEqual(['customer_group', 'prior_correction'])
   })
 })
+
+describe('Phase 2 co-occurrence / brand signals', () => {
+  it('cooccur:po — a context PO pins its buyer above a same-name competitor', async () => {
+    const c1 = await db.insertInto('customers').values({ code: 'ACMHK', name: 'ACME TRADING', country: null, contactEmail: null }).output('inserted.id').executeTakeFirstOrThrow()
+    await db.insertInto('customers').values({ code: 'ACMVN', name: 'ACME TRADING', country: null, contactEmail: null }).execute()
+    await db.insertInto('purchaseOrders').values({ poNumber: 'PO-777', customerId: c1.id }).execute()
+    const { candidates } = await svc().candidates({ type: 'customer', name: 'ACME TRADING', context: { poNumbers: ['PO-777'] } })
+    expect(candidates[0]).toMatchObject({ code: 'ACMHK' })
+    expect(candidates[0]!.signals).toContain('cooccur:po')
+    expect(candidates.map((c) => c.code)).toContain('ACMVN') // boost, never a filter
+  })
+
+  it('cooccur:customer + related:customer_vendor — history and curated facts lift a vendor', async () => {
+    const cust = await db.insertInto('customers').values({ code: 'WYSE', name: 'WYSE GROUP', country: null, contactEmail: null }).output('inserted.id').executeTakeFirstOrThrow()
+    const v1 = await db.insertInto('vendors').values({ code: 'MACFUN', name: 'GOLDEN GARMENTS FTY', type: 'factory', location: null }).output('inserted.id').executeTakeFirstOrThrow()
+    await db.insertInto('vendors').values({ code: 'OTHER', name: 'GOLDEN GARMENTS FTY', type: 'factory', location: null }).execute()
+    await db.insertInto('bookings').values({ jobNo: 'JOB-CO-1', customerId: cust.id, vendorId: v1.id }).execute()
+    await masters.insertOpsFact({ kind: 'customer_vendor', lhs: 'WYSE', rhs: 'MACFUN', reason: null, createdBy: null })
+    const { candidates } = await svc().candidates({ type: 'vendor', name: 'GOLDEN GARMENTS FTY', context: { customerCode: 'WYSE' } })
+    expect(candidates[0]).toMatchObject({ code: 'MACFUN' })
+    expect(candidates[0]!.signals).toEqual(expect.arrayContaining(['cooccur:customer', 'related:customer_vendor']))
+    expect(candidates.map((c) => c.code)).toContain('OTHER')
+  })
+
+  it('brand:match — a context brand lifts the customer whose POs carry it', async () => {
+    const c1 = await db.insertInto('customers').values({ code: 'PRIM', name: 'GLOBAL RETAIL', country: null, contactEmail: null }).output('inserted.id').executeTakeFirstOrThrow()
+    await db.insertInto('customers').values({ code: 'GLOB', name: 'GLOBAL RETAIL', country: null, contactEmail: null }).execute()
+    await db.insertInto('purchaseOrders').values({ poNumber: 'PO-BR-1', customerId: c1.id, brand: 'Primark' }).execute()
+    const { candidates } = await svc().candidates({ type: 'customer', name: 'GLOBAL RETAIL', context: { brand: 'primark' } })
+    expect(candidates[0]).toMatchObject({ code: 'PRIM' })
+    expect(candidates[0]!.signals).toContain('brand:match')
+  })
+
+  it('a context-only hit (no name/domain signal) still surfaces as a candidate', async () => {
+    const cust = await db.insertInto('customers').values({ code: 'WYSE', name: 'WYSE GROUP', country: null, contactEmail: null }).output('inserted.id').executeTakeFirstOrThrow()
+    const v1 = await db.insertInto('vendors').values({ code: 'MACFUN', name: 'MACAU FUNG TAI CO LTD', type: 'factory', location: null }).output('inserted.id').executeTakeFirstOrThrow()
+    await db.insertInto('bookings').values({ jobNo: 'JOB-CO-2', customerId: cust.id, vendorId: v1.id }).execute()
+    const { candidates } = await svc().candidates({ type: 'vendor', name: 'COMPLETELY UNRELATED NAME', context: { customerCode: 'WYSE' } })
+    expect(candidates.map((c) => c.code)).toContain('MACFUN')
+  })
+})

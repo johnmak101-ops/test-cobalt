@@ -107,6 +107,77 @@ export class MastersRepository {
     return this.db.selectFrom('forwarderAliases').select(['forwarderId', 'aliasType', 'value']).execute()
   }
 
+  // ---- co-occurrence signals for the candidates endpoint (matcher Phase 2) ----
+
+  /** Customer codes owning any of the given PO numbers — a PO in the request context pins its buyer. */
+  async customerCodesByPoNumbers(poNumbers: string[]): Promise<Set<string>> {
+    if (!poNumbers.length) return new Set()
+    const rows = await this.db
+      .selectFrom('purchaseOrders')
+      .innerJoin('customers', 'purchaseOrders.customerId', 'customers.id')
+      .where('purchaseOrders.poNumber', 'in', poNumbers)
+      .select('customers.code as code')
+      .execute()
+    return new Set(rows.map((r) => r.code.toUpperCase()))
+  }
+
+  /** Vendor + forwarder codes historically co-occurring with a customer (via its bookings and their
+   *  shipments) — history makes a candidate more plausible, never decisive (a boost, not a filter). */
+  async cooccurringPartyCodes(customerCode: string): Promise<{ vendors: Set<string>; forwarders: Set<string> }> {
+    const vendors = new Set<string>()
+    const forwarders = new Set<string>()
+    const code = customerCode.toUpperCase()
+    const v = await this.db
+      .selectFrom('bookings')
+      .innerJoin('customers', 'bookings.customerId', 'customers.id')
+      .innerJoin('vendors', 'bookings.vendorId', 'vendors.id')
+      .where('customers.code', '=', code)
+      .select('vendors.code as code')
+      .distinct()
+      .execute()
+    for (const r of v) if (r.code) vendors.add(r.code.toUpperCase())
+    const fb = await this.db
+      .selectFrom('bookings')
+      .innerJoin('customers', 'bookings.customerId', 'customers.id')
+      .innerJoin('forwarders', 'bookings.forwarderId', 'forwarders.id')
+      .where('customers.code', '=', code)
+      .select('forwarders.code as code')
+      .distinct()
+      .execute()
+    const fs = await this.db
+      .selectFrom('shipments')
+      .innerJoin('bookings', 'shipments.bookingId', 'bookings.id')
+      .innerJoin('customers', 'bookings.customerId', 'customers.id')
+      .innerJoin('forwarders', 'shipments.forwarderId', 'forwarders.id')
+      .where('customers.code', '=', code)
+      .select('forwarders.code as code')
+      .distinct()
+      .execute()
+    for (const r of [...fb, ...fs]) if (r.code) forwarders.add(r.code.toUpperCase())
+    return { vendors, forwarders }
+  }
+
+  /** Customer codes whose POs/bookings carry the given brand — brand names travel with the buyer. */
+  async customerCodesByBrand(brand: string): Promise<Set<string>> {
+    const b = brand.trim()
+    if (!b) return new Set()
+    const po = await this.db
+      .selectFrom('purchaseOrders')
+      .innerJoin('customers', 'purchaseOrders.customerId', 'customers.id')
+      .where(sql<boolean>`LOWER(${sql.ref('purchase_orders.brand')}) = ${b.toLowerCase()}`)
+      .select('customers.code as code')
+      .distinct()
+      .execute()
+    const bk = await this.db
+      .selectFrom('bookings')
+      .innerJoin('customers', 'bookings.customerId', 'customers.id')
+      .where(sql<boolean>`LOWER(${sql.ref('bookings.brand')}) = ${b.toLowerCase()}`)
+      .select('customers.code as code')
+      .distinct()
+      .execute()
+    return new Set([...po, ...bk].map((r) => r.code.toUpperCase()))
+  }
+
   /**
    * Staged, ambiguity-guarded forwarder resolution (faithful port of the Drizzle tiers): containment →
    * normalized-exact (name, alias; raw + office/email-stripped) → alias containment → org-token

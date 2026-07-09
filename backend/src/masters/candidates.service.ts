@@ -25,6 +25,12 @@ export interface CandidatesRequest {
   emailDomain?: string | null
   country?: string | null
   limit?: number | null
+  /** Phase 2 co-occurrence context from the matcher's shipment group — boosts, never filters. */
+  context?: {
+    customerCode?: string | null
+    poNumbers?: string[] | null
+    brand?: string | null
+  } | null
 }
 
 export interface Candidate {
@@ -69,6 +75,7 @@ export class CandidatesService {
     const limit = Math.max(1, Math.min(50, req.limit ?? DEFAULT_LIMIT))
     const rows = await this.rowsFor(req.type)
     const priors = await this.priorCorrections(req)
+    const cooccur = await this.cooccurrence(req)
 
     const inputName = String(req.name ?? '').trim()
     const inputDomain = String(req.emailDomain ?? '').trim().toLowerCase()
@@ -107,8 +114,18 @@ export class CandidatesService {
         priorBoost = 0.3
         signals.push('prior_correction')
       }
+      let cooccurBoost = 0
+      if (r.code) {
+        const c = r.code.toUpperCase()
+        for (const [sig, codes, boost] of cooccur) {
+          if (codes.has(c)) {
+            cooccurBoost += boost
+            signals.push(sig)
+          }
+        }
+      }
       const base = Math.max(nameScore, domainScore)
-      if (base === 0 && priorBoost === 0) continue // no positive signal → not a candidate
+      if (base === 0 && priorBoost === 0 && cooccurBoost === 0) continue // no positive signal → not a candidate
       // additive rank score, deliberately NOT clamped to 1: an exact domain (+0.15 on top of its base)
       // must outrank a perfect lone name match, and a region match must break a name tie — the design's
       // "multiple independent signals beat a lone high name score". Relative order is what matters.
@@ -122,7 +139,7 @@ export class CandidatesService {
         domains: r.domains,
         aliases: r.aliases,
         signals,
-        score: base + exactDomainBonus + regionBoost + priorBoost,
+        score: base + exactDomainBonus + regionBoost + priorBoost + cooccurBoost,
       })
     }
 
@@ -138,6 +155,40 @@ export class CandidatesService {
       if (out.length >= limit) break
     }
     return { candidates: out }
+  }
+
+  /** Phase 2 co-occurrence boosts derived from the request context (history/facts make a candidate more
+   *  plausible — always a boost, never a filter). Returns [signal, codeSet, boost] tuples; empty when no
+   *  context is supplied, so context-free calls pay zero extra queries. */
+  private async cooccurrence(req: CandidatesRequest): Promise<Array<[string, Set<string>, number]>> {
+    const ctx = req.context
+    if (!ctx) return []
+    const out: Array<[string, Set<string>, number]> = []
+    if (req.type === 'customer') {
+      const pos = (ctx.poNumbers ?? []).filter((p): p is string => !!p && !!p.trim())
+      if (pos.length) {
+        const codes = await this.repo.customerCodesByPoNumbers(pos)
+        if (codes.size) out.push(['cooccur:po', codes, 0.2])
+      }
+      if (ctx.brand && ctx.brand.trim()) {
+        const codes = await this.repo.customerCodesByBrand(ctx.brand)
+        if (codes.size) out.push(['brand:match', codes, 0.1])
+      }
+    } else if ((req.type === 'vendor' || req.type === 'forwarder') && ctx.customerCode && ctx.customerCode.trim()) {
+      const cc = ctx.customerCode.trim().toUpperCase()
+      const { vendors, forwarders } = await this.repo.cooccurringPartyCodes(cc)
+      const historical = req.type === 'vendor' ? vendors : forwarders
+      if (historical.size) out.push(['cooccur:customer', historical, 0.15])
+      if (req.type === 'vendor') {
+        // curated customer_vendor relationship facts — human-stated "this buyer books via this factory"
+        const facts = (await this.repo.listResolution('approved')).filter(
+          (f) => f.kind === 'customer_vendor' && f.lhs.toUpperCase() === cc && f.rhs,
+        )
+        const related = new Set(facts.map((f) => String(f.rhs).toUpperCase()))
+        if (related.size) out.push(['related:customer_vendor', related, 0.2])
+      }
+    }
+    return out
   }
 
   /** Approved+active prior_correction codes whose lhs matches the input name (normalized) or domain. */
