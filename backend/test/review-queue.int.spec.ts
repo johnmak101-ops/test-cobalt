@@ -133,4 +133,56 @@ describe('ReviewQueueService.review — matcher Phase 3: corrections become prio
     await review.review(re.id, { action: 'correct', corrections: { extractedData: { customer_code: 'WYSE' } } }, actorId)
     expect(await db.selectFrom('masterResolution').where('kind', '=', 'prior_correction').selectAll().execute()).toHaveLength(0)
   })
+
+  it('a forwarder raw→code correction writes a prior_correction fact', async () => {
+    await db.insertInto('forwarders').values({ code: 'DSV001', name: 'DSV AIR AND SEA CO LTD' }).execute()
+    const re = await db
+      .insertInto('reviewEmail')
+      .values({ shipmentId: null, extractedData: JSON.stringify({ forwarder_name: 'DSV AIR AND SEA' }), reviewStatus: 'NEEDS_REVIEW' })
+      .outputAll('inserted')
+      .executeTakeFirstOrThrow()
+    await review.review(re.id, { action: 'correct', corrections: { extractedData: { forwarder_name: 'DSV001' } } }, actorId)
+
+    const facts = await db.selectFrom('masterResolution').where('kind', '=', 'prior_correction').selectAll().execute()
+    expect(facts).toHaveLength(1)
+    expect(facts[0]).toMatchObject({ lhs: 'DSV AIR AND SEA', rhs: 'DSV001', active: true })
+  })
+
+  it('a pol raw→UN/LOCODE correction writes a fact; code→code does not', async () => {
+    await db.insertInto('ports').values({ unlocode: 'VNSGN', name: 'Ho Chi Minh City', country: 'VN', mode: 'both' }).execute()
+    const re = await db
+      .insertInto('reviewEmail')
+      .values({ shipmentId: null, extractedData: JSON.stringify({ pol: 'HO CHI MINH' }), reviewStatus: 'NEEDS_REVIEW' })
+      .outputAll('inserted')
+      .executeTakeFirstOrThrow()
+    await review.review(re.id, { action: 'correct', corrections: { extractedData: { pol: 'VNSGN' } } }, actorId)
+    const facts = await db.selectFrom('masterResolution').where('kind', '=', 'prior_correction').selectAll().execute()
+    expect(facts).toHaveLength(1)
+    expect(facts[0]).toMatchObject({ lhs: 'HO CHI MINH', rhs: 'VNSGN', active: true })
+
+    // old value is ALREADY a UN/LOCODE → not a raw-name correction, nothing new recorded
+    await db.insertInto('ports').values({ unlocode: 'CNSHK', name: 'Shekou', country: 'CN', mode: 'sea' }).execute()
+    await db.insertInto('ports').values({ unlocode: 'CNYTN', name: 'Yantian', country: 'CN', mode: 'sea' }).execute()
+    const re2 = await db
+      .insertInto('reviewEmail')
+      .values({ shipmentId: null, extractedData: JSON.stringify({ pol: 'CNSHK' }), reviewStatus: 'NEEDS_REVIEW' })
+      .outputAll('inserted')
+      .executeTakeFirstOrThrow()
+    await review.review(re2.id, { action: 'correct', corrections: { extractedData: { pol: 'CNYTN' } } }, actorId)
+    const after = await db.selectFrom('masterResolution').where('kind', '=', 'prior_correction').selectAll().execute()
+    expect(after).toHaveLength(1) // still just the VNSGN fact from above — no fact for the code→code edit
+  })
+
+  it('a pod raw→UN/LOCODE correction writes a prior_correction fact', async () => {
+    await db.insertInto('ports').values({ unlocode: 'USLAX', name: 'Los Angeles', country: 'US', mode: 'sea' }).execute()
+    const re = await db
+      .insertInto('reviewEmail')
+      .values({ shipmentId: null, extractedData: JSON.stringify({ pod: 'LOS ANGELES' }), reviewStatus: 'NEEDS_REVIEW' })
+      .outputAll('inserted')
+      .executeTakeFirstOrThrow()
+    await review.review(re.id, { action: 'correct', corrections: { extractedData: { pod: 'USLAX' } } }, actorId)
+    const facts = await db.selectFrom('masterResolution').where('kind', '=', 'prior_correction').selectAll().execute()
+    expect(facts).toHaveLength(1)
+    expect(facts[0]).toMatchObject({ lhs: 'LOS ANGELES', rhs: 'USLAX', active: true })
+  })
 })
