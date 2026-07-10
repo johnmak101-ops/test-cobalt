@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { trigrams, trigramSimilarity, tokenMatch } from './trigram'
+import { trigrams, trigramSimilarity, tokenMatch, tokenSubset } from './trigram'
 
 describe('trigramSimilarity (pg_trgm-compatible)', () => {
   it('is 1 for identical strings (case/punctuation-insensitive)', () => {
@@ -40,5 +40,18 @@ describe('tokenMatch (name:tokens recall signal)', () => {
   })
   it('CJK names tokenize (公司 dropped as a stopword)', () => {
     expect(tokenMatch('广州保迅诺物流有限公司', '广州保迅诺物流')).toBe(true)
+  })
+})
+
+describe('tokenSubset (reverse direction: input tokens ⊆ master tokens)', () => {
+  it('a bare city name is contained in the airport long name (the SHANGHAI→CNPVG live-probe gap)', () => {
+    expect(tokenSubset('SHANGHAI', 'Shanghai Pudong International Airport')).toBe(true)
+  })
+  it('does not fire on disjoint or stopword-only input', () => {
+    expect(tokenSubset('SHANGHAI', 'KUEHNE NAGEL LTD')).toBe(false)
+    expect(tokenSubset('CO LTD', 'Shanghai Pudong International Airport')).toBe(false)
+  })
+  it('is strictly the REVERSE of tokenMatch subset — long input over a short master does not fire', () => {
+    expect(tokenSubset('DSV AIR AND SEA CO LTD', 'DSV')).toBe(false)
   })
 })

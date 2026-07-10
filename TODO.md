@@ -205,14 +205,22 @@ masters.repository: `PORT_ALIASES` / `IATA_TO_UNLOCODE` / `ABBREV_OVERRIDE {HCM:
   escape hatch is a persisted trigram table). Follow-ups: Resolution Rules UI still offers the retired
   alias kinds (rows are audit history — hide/deprecate in UI); short-name forwarder trigram recall
   ("DSV AIR AND SEA" → 0 candidates on a sparse master set) worth a track-side look.
-- [x] `[both]` **Forwarder + port join the LLM matcher seam — SHIPPED 2026-07-10 on feature branches**
-  (spec `docs/superpowers/specs/2026-07-10-all-ai-forwarder-resolution-design.md`; track branch
-  `feat/all-ai-forwarder-resolution` + queue branch `feat/all-ai-forwarder-port-seam` — PR numbers
-  pending). Shadow metering is live for both (`audit.change_log` `changeType='shadow'`,
-  `field='forwarder_link'`/`'port_link'`) — fuzzy-tier deletion is a follow-up gated on the shadow
-  count going quiet. `recordPriorCorrections` now covers `forwarder_name`/`pol`/`pod` (previously
-  customer/vendor codes only). `candidates.service.ts` gained a `name:tokens` recall signal + a
-  `port` kind (mode-aware, UN/LOCODE-only).
+- [x] `[both]` **Forwarder + port join the LLM matcher seam — SHIPPED & MERGED 2026-07-10**
+  (spec `docs/superpowers/specs/2026-07-10-all-ai-forwarder-resolution-design.md`; **track PR #73 +
+  queue PR #59**, both merged). Shadow metering is live for both (`audit.change_log`
+  `changeType='shadow'`, `field='forwarder_link'`/`'port_link'`) — fuzzy-tier deletion is a follow-up
+  gated on the shadow count going quiet
+  (`select field, note, count(distinct entity_id) from audit.change_log where change_type='shadow'
+  and field in ('forwarder_link','port_link') group by field, note`). `recordPriorCorrections` now
+  covers `forwarder_name`/`pol`/`pod` (previously customer/vendor codes only). `candidates.service.ts`
+  gained a `name:tokens` recall signal + a `port` kind (mode-aware, UN/LOCODE-only).
+  **Live openpave probe — DONE 2026-07-10 (3/3, tool `cobalt-queue/src/dev/probe-master-matcher.ts`):**
+  forwarder `DSV AIR AND SEA CO LTD` → match `DSV` conf 0.8 (the `name:tokens` rescue live);
+  `SHANGHAI`+Sea → `CNSHA` 0.95; `SHANGHAI`+Air → the probe first exposed a retrieval gap (only the
+  sea port was retrieved; the LLM correctly REFUSED — sea tag vs Air mode → review) → fixed by a
+  **port-only REVERSE token subset** (`tokenSubset`, input⊆master: a bare city name surfaces its
+  airport; gated to ports so parties don't flood) → re-probe `CNPVG` conf 0.92 picked BY MODE over
+  CNSHA. Fix PR: `fix/port-city-token-recall`.
 - [x] ~~**Keep party/shipper fixes deterministic.**~~ SUPERSEDED 2026-07-10 by the matcher decision D
   (the deterministic consignee/alias route is deleted; party fixes now flow raw → LLM matcher →
   review → `prior_correction` retrieval facts). Historical context: the `validate.ts`
