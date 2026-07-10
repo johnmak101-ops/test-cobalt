@@ -440,7 +440,18 @@ Curated resolution facts (alias/group/canonical/role incl. SEH) are now **ADMIN-
   applies only un-recorded migrations, so a NEWLY-ADDED migration auto-applies on the next run — no manual
   `DROP DATABASE cobalt_test`. A pre-ledger DB is recreated once (guarded to a DB literally named `cobalt_test`;
   race-free under `fileParallelism:false`). Verified green on both the transition run and the steady-state run.
-- [ ] `[both]` **Code-only rule tables → data** (the deeper "don't code-bind facts" work the audit surfaced): ShipTrack `masters.repository.ts` port maps (`PORT_ALIASES`/`IATA_TO_UNLOCODE`/`ABBREV_OVERRIDE`/`NAME_CONTAINS_ALIASES`) — **ports have no data home anywhere**; cobalt-queue soul (`prompts/cobalt-parser.md`) port map + FORWARDER CARDS + carrier-prefix rules, and `validate.ts` party lists (`PLATFORM_NOT_FORWARDER`/`SELF`/`GENUINE_SHORT_BRANDS`/…). Extend the resolution/data model to cover these.
+- [x] `[track]` **Code-only rule tables → data — track half DONE 2026-07-10 (PR #68).** The four hardcoded
+  port tiers are now `master_resolution` facts (`port_abbreviation`/`port_alias`/`port_iata`/`port_fragment`,
+  migration 0002, seeded from the former tables, ADMIN-managed live in Settings → Resolution Rules), and a
+  new **`carriers` master** (scac UNIQUE + name, 14 seeded, `GET /masters/carriers` + ADMIN CRUD) gives SCAC
+  its data home — this unlocks rule 6 (SCAC extraction) below. The Resolution Rules create-form now hides
+  the 4 retired alias kinds and offers prior_correction + the port kinds.
+- [ ] `[queue]` **Code-only rule tables → data — queue half remains** (belongs with the soul-iteration
+  session): the soul's embedded port map + FORWARDER CARDS + carrier-prefix rules in
+  `prompts/cobalt-parser.md`, and `validate.ts` party lists (`PLATFORM_NOT_FORWARDER`/`SELF`/
+  `GENUINE_SHORT_BRANDS`/…). Externalizing these means assembling soul sections from data at parse time —
+  design it together with the Iterator mechanics (see the soul-iteration map memory). The queue can now
+  also read `GET /masters/carriers` for its `CARRIER_SCAC` membership check when rule 6 lands.
 - [x] `[track]` **Alert-rules write guard — SUPERSEDED by Config-Page Access Control (PR #17, 2026-07-09).** PUT `/alert-rules`
   is now `@PageWrite('alert_rules')` (GET `@PageRead('alert_rules')`); editability is superadmin-configurable via the access
   matrix instead of a static `@Roles('ADMIN')`. Frontend gates on `usePageAccess().canEdit('alert_rules')`.
