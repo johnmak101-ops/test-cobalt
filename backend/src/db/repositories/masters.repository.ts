@@ -18,6 +18,8 @@ export const FUZZY_FORWARDER_TIERS: ReadonlySet<ForwarderLinkTier> = new Set([
   'containment', 'alias_containment', 'org_token', 'reverse_containment', 'legal_form',
 ])
 
+export type PortLinkTier = 'unlocode_exact' | 'abbreviation' | 'iata' | 'alias' | 'fragment' | 'fuzzy_name'
+
 /**
  * Kysely/SQL Server MastersRepository. The full deterministic resolution tiers ARE ported — staged
  * forwarder resolution (containment / normalized-exact / org-token / reverse-containment / legal-form
@@ -354,7 +356,9 @@ export class MastersRepository {
   async portIdByCodeOrName(code: string) {
     return (await this.portByCodeOrName(code))?.id ?? null
   }
-  /** Resolve a POL/POD string to a port (id + country, for denormalizing origin_country at commit).
+  /** Resolve a POL/POD string to a port link (id + country + the tier that resolved it, for
+   *  denormalizing origin_country at commit and for future shadow-metering of the fuzzy tiers against
+   *  the LLM matcher that will eventually replace them — see `PortLinkTier`).
    *  Order: exact UN/LOCODE → abbreviation fact → exact IATA (bare 3-char PVG/CAN) → CURATED alias
    *  facts (spelling / IATA / name-fragment, high-confidence, exact-keyed) → FORWARD fuzzy name match
    *  (last resort). Curated aliases run BEFORE the fuzzy match so a spelling variant ('Chittagong',
@@ -365,8 +369,9 @@ export class MastersRepository {
    *  `port_alias` (spelling variants), `port_iata` (bare IATA → UN/LOCODE), `port_fragment`
    *  (contains-match on a distinctive fragment). lhs = uppercased punctuation-collapsed key,
    *  rhs = UN/LOCODE. Seeded from the former hardcoded tables; ADMIN-managed at runtime via
-   *  Settings → Resolution Rules. */
-  async portByCodeOrName(code: string): Promise<{ id: string; country: string | null } | null> {
+   *  Settings → Resolution Rules. `portByCodeOrName` below is a thin wrapper for callers that only
+   *  need id + country. */
+  async portLinkByCodeOrName(code: string): Promise<{ id: string; country: string | null; tier: PortLinkTier } | null> {
     const c = code.trim()
     if (!c) return null
     const byUnlocode = async (uloc: string) => {
@@ -374,7 +379,7 @@ export class MastersRepository {
       return a ? { id: a.id, country: a.country } : null
     }
     const byCode = await byUnlocode(c.toUpperCase())
-    if (byCode) return byCode
+    if (byCode) return { ...byCode, tier: 'unlocode_exact' }
 
     // one read serves all four curated tiers (small, ADMIN-curated table)
     const portFacts = await this.db
@@ -392,7 +397,7 @@ export class MastersRepository {
     const abbrev = factMap('port_abbreviation').get(c.toUpperCase())
     if (abbrev) {
       const a = await byUnlocode(abbrev)
-      if (a) return a
+      if (a) return { ...a, tier: 'abbreviation' }
     }
     if (/^[A-Za-z]{3}$/.test(c)) {
       const byIata = await this.db
@@ -402,7 +407,7 @@ export class MastersRepository {
         .orderBy(sql`len(${sql.ref('name')})`)
         .modifyFront(sql`top 1`)
         .executeTakeFirst()
-      if (byIata) return { id: byIata.id, country: byIata.country }
+      if (byIata) return { id: byIata.id, country: byIata.country, tier: 'iata' }
     }
 
     // CURATED ALIAS FACTS (exact-keyed, high-confidence) — checked BEFORE the fuzzy match so a known
@@ -412,20 +417,20 @@ export class MastersRepository {
     const alias = factMap('port_alias').get(aliasKey)
     if (alias) {
       const a = await byUnlocode(alias)
-      if (a) return a
+      if (a) return { ...a, tier: 'alias' }
     }
     // bare IATA (airport) code → UN/LOCODE ('CKG' → CNCKG/Chongqing). Deterministic, no fuzzy.
     const iata = factMap('port_iata').get(aliasKey)
     if (iata) {
       const a = await byUnlocode(iata)
-      if (a) return a
+      if (a) return { ...a, tier: 'iata' }
     }
     // full-facility-name fragments → UN/LOCODE ('SHAHAJALAL INTL. AIR PORT' = Dhaka/BDDAC). Contains-match
     // on a distinctive, long fragment so it can't false-hit another port.
     for (const [frag, uloc] of factMap('port_fragment')) {
       if (aliasKey.includes(frag)) {
         const a = await byUnlocode(uloc)
-        if (a) return a
+        if (a) return { ...a, tier: 'fragment' }
       }
     }
 
@@ -453,9 +458,15 @@ export class MastersRepository {
         .orderBy('name')
         .modifyFront(sql`top 1`)
         .executeTakeFirst()
-      if (byName) return { id: byName.id, country: byName.country }
+      if (byName) return { id: byName.id, country: byName.country, tier: 'fuzzy_name' }
     }
     return null
+  }
+
+  /** Thin wrapper over `portLinkByCodeOrName` for callers that only need id + country (no tier). */
+  async portByCodeOrName(code: string): Promise<{ id: string; country: string | null } | null> {
+    const l = await this.portLinkByCodeOrName(code)
+    return l ? { id: l.id, country: l.country } : null
   }
 
   // --- ops writes (forwarders / ports / consignees) ---
