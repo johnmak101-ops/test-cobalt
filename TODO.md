@@ -79,10 +79,23 @@ enqueue → RabbitMQ → worker(stub) → `parsed_record` (cobalt_queue) → mat
 track-system committer: shipment created (provisional + gate reason carried through, PO linked),
 `evidence[]` → ingest mirror rows (`email_message`/`parsed_record`), alert evaluator re-ran live.
 
+### Deployment — ✅ SHIPPED 2026-07-10 (prod = ONE Fabric SQL DB, schema-shared)
+Prod has exactly one Fabric SQL database (`ShipTrackDB`); Fabric SQL DBs are workspace *items* (no T-SQL
+`CREATE DATABASE`), so **both apps share the one DB via schemas** — ship-track owns `dbo.*` (30 tables),
+cobalt-queue lives in `queue.*` (8 tables), each with its own `kysely_migration` ledger, both connecting as
+the same Entra **Service Principal** (db_owner; SP secret == the Cobalt Mesh web-API client secret). PRs:
+ship-track **#70** (Entra SP auth + skip `CREATE DATABASE` on Fabric); cobalt-queue **#55** (same auth + move
+all tables into a `queue` schema via `WithSchemaPlugin`), **#56** (viewer `/stats` SUM-subquery → two COUNTs;
+SQL Server err 130), **#57** (`CREATE SCHEMA [queue] AUTHORIZATION [dbo]` — a bare CREATE SCHEMA made the SP
+the schema owner, Fabric err 33134). Deploy runbook + full detail: `HANDOFF-FABRIC-SQL.md` § Deployment.
+
 ### Migration follow-ups (non-blocking)
-- [ ] `[ops]` **Fabric-deploy verification**: dev/CI run on the SQL Server 2022 container; before prod,
-  run the suites/migrations once against a real Fabric SQL DB (Entra auth in the conn string) and note
-  Fabric gaps (no `sp_MSforeachtable` — test-reset + demo-wipe are dev-only paths by design).
+- [x] `[ops]` **Fabric-deploy verification — DONE 2026-07-10 (PR #70/#71).** The MSSQL layer now speaks Entra
+  **Service Principal** auth (`Authentication=Active Directory Service Principal` conn-string keyword, encryption
+  forced on) and `migrate-cli` skips `CREATE DATABASE` in that mode (the Fabric DB is pre-provisioned); local
+  SQL Server behaviour unchanged. Live-verified end-to-end: `db:migrate` applied the full 30-table schema to the
+  real Fabric **ShipTrackDB**. Deploy runbook + one-DB shape in `HANDOFF-FABRIC-SQL.md` § Deployment.
+  `sp_MSforeachtable` paths (test-reset, demo-wipe) stay dev-only by design.
 - [x] `[queue]` **Corpus re-ingest — DONE 2026-07-10.** The corpus lived in the pre-split `cobalt_new`
   Postgres DB (not `cobalt_queue`); copied wholesale into SQL Server via row_to_json JSONL export +
   kysely import: 797 messages, 398 attachments, 566 normalized parts (~163MB varbinary blobs), 2710
@@ -214,9 +227,13 @@ masters.repository: `PORT_ALIASES` / `IATA_TO_UNLOCODE` / `ABBREV_OVERRIDE {HCM:
   covered (`score.spec.ts` unit + `decisions.int.spec` e2e). Masters curator/approve: added
   `masters-resolution.int.spec` (create → active-serve/consumer-reads → deactivate/consumer-hides → manage-still-
   shows; single-active invariant; reactivate).
-- [ ] `[queue]` **`AZURE_API_KEY` gap.** The direct-Azure parser and `benchmark.ts` (parser recall) still
-  need the key; matcher + Iterator now run via OpenCode. Either set the key, or add OpenCode paths to
-  the remaining azure-only dev tools.
+- [x] `[queue]` **`AZURE_API_KEY` gap — RESOLVED BY DELETION (verified 2026-07-10).** Per the architect
+  ("we now go to openpave"): every direct-Azure LLM path was removed upstream (`d87c2c4` "remove all
+  direct-Azure paths — cobalt holds no Azure key (it lives in EPM)" + `2ca21d2` openpave-only; the
+  opencode runtime retired in `7a8c279`), and `benchmark.ts` no longer exists. Today's grep confirms:
+  no `AZURE_API_KEY`, no `openai`/`@azure` dep anywhere; parser=openpave|stub, critic/matcher/
+  reconciler/masterMatcher=openpave|deterministic-tier. The only "azure" left is the Entra SP auth in
+  the Fabric SQL dialect (required) + comments about the EPM→Azure model's content filter.
 - [ ] `[track]` **Merge de-dup (Phase 4 follow-up).** The two merge copies (`critic/merge.ts` +
   `reconcile/merge.ts`) are hand-kept-in-sync with a "keep in sync" header. If drift becomes a risk,
   do the generated-copy + CI diff-guard from the plan.
@@ -272,12 +289,26 @@ displays** — the mock's own `extractor.ts` is reference, not used. Disposition
   new customer / mode-change / moved-shipment / late-PO / dup-number→review; no status update→不需處理
   (store, no human review). All emails parsed; sender-type tagged post-parse for field-trust.
 
-### [queue] — parser (FOCUS NOW)
-- [ ] `[queue]` **Parser "extract all info"** — add the fields the real schema has but the parser doesn't:
-  `vessel_name`, `voyage_no`, `flight_no` (air), `mawb` (split out of `mbl`), `ata`, `cfs_cutoff`,
-  `qty_unit`, `brand`, `scac`.
-- [ ] `[queue]` **SCAC extraction (rule 6):** MBL carrier-prefix → carrier name→carrier master →
-  carrier-direct sender domain; NOT container BIC prefix (probe: 0/31 matched a SCAC). Validate vs carrier master.
+### [queue] — parser — ✅ BOTH SHIPPED (verified end-to-end 2026-07-10)
+- [x] `[queue]` **Parser "extract all info" — shipped upstream** (queue `7a268b6` + audit-loops): soul
+  fields 21–31 (`vessel_name`/`voyage_no`/`flight_no`/`mawb`/`ata`/`brand`/`qty_unit`/`scac` +
+  `gross_weight`/`measurement`/`hts_code` beyond the original list); `cfs_cutoff` deliberately NOT a
+  parser field (== `warehouse_end_date` per the 2026-07-09 architect decision — shared.ts omits it on
+  purpose). Wiring verified END-TO-END: shared.ts pass-through emits every field (+ `scac`→`scac_code`
+  canonical key, `pol`/`pod`), queue `merge.ts` FIELD_CLASS lists them all (incl. pol/pod — the old
+  "matcher doesn't emit pol/pod" forward-fix is closed), track `mapFieldsToLegColumns` maps every key
+  (with a `scac` alias). **Leftover fixed 2026-07-10 (queue PR #58):** the souls' COMMON-MISTAKES bullet
+  + LOGIMARK card still taught the PRE-SPLIT "air MAWB → `mbl`" (contradicting fields 14/24) — both
+  souls corrected; `validate.ts` rule 2b added (MAWB-shape in `mbl` → moved to `mawb`, mbl join key
+  scrubbed — the twin of the existing hbl rescue) + `mawb-slot.test.ts`. Suite 705 green | 2 broker-gated.
+  NO corpus re-parse done (per instruction); a later `revalidate.ts` pass relocates historical values.
+- [x] `[queue]` **SCAC extraction (rule 6) — shipped**: soul field 28 (`explicit SCAC > mbl leading 4
+  letters > carrier name/issuer`, ⚠ NOT the container BIC prefix) + `validate.ts` step 10 membership
+  check against `CARRIER_SCAC` (unknown SCAC → dropped + low flag). The carrier master is REAL data:
+  `master-sync.ts` pulls `shiptrack/carriers` from Cobalt Mesh (4151 carriers in `master.generated.json`),
+  overlaid by `dbo.master_entity` + ShipTrack resolution facts — no need for the queue to read track's
+  `GET /masters/carriers` (same ur-source, richer set). **Added 2026-07-10 (PR #58):** the missing 4th
+  tier — carrier-direct sender domain (`@maersk.com`→`MAEU`, never a forwarder/portal domain).
 - note: `pol`/`pod` KEPT — the real schema has `polId`/`podId`; the earlier "take away" was vs the mock UI, now reverted.
 
 ## Shipped this session (reference)
@@ -429,7 +460,7 @@ Spec/plan: `docs/superpowers/{specs,plans}/2026-07-08-separate-shiptrack-databas
 - [x] `[both]` (PR #13 + #50) curated `master_resolution` facts → **ShipTrack single source of truth** (seeded there, `vendor_group` enum added) + cobalt-queue parser reads them via `GET /api/masters/resolution` HTTP; retired cobalt-queue's local `seed-entity-facts.ts`.
 
 **Remaining follow-ups (non-blocking):**
-- [ ] `[both]` **docker-compose 2nd-DB provisioning** — dev creates `cobalt_queue` manually; wire each repo's `docker-compose.yml`/env to its own DB. (Prod = AliCloud VMs, not compose → dev/demo convenience only.)
+- [x] `[both]` **docker-compose 2nd-DB provisioning — SUPERSEDED 2026-07-10** (see § "Migration follow-ups"). Each repo's compose is self-contained and migrate services create their own DB if missing; prod = the one shared Fabric SQL DB (`dbo` + `queue` schemas), not compose.
 - [x] `[track]` **Retire `seed-entity-facts.ts` + reconcile `SEH` — DONE 2026-07-08** (branch `feat/master-resolution-management`; folded into the master_resolution management feature below). SEH now bootstraps as `customer_group→PRIMARK` (fail-safe) and is editable in the UI.
 - [x] `[track]` **`backfill-shipment-ports.sql` — DONE** (already names `ingest.parsed_record`, fixed in `039fc7a`; the only remaining `evidence.parsed_record` hits are frozen drizzle migration snapshots, correctly immutable).
 - [ ] `[queue]` minor test coverage: `graphAttachmentId` on the zip/msg-flag normalize paths.
