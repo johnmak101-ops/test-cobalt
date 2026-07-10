@@ -37,15 +37,17 @@ const NAME_STOPWORDS = new Set([
 
 /** CJK company names run with no delimiter between the org name and its legal-form suffix (no spaces
  *  in Chinese), so the per-word split below can never isolate '有限公司'/'公司' as their own token —
- *  strip them as substrings first. Built from NAME_STOPWORDS (longest-first) so the two lists can't drift. */
-const CJK_STOPWORD_RE = new RegExp(
-  [...NAME_STOPWORDS].filter((w) => /[一-鿿]/.test(w)).sort((a, b) => b.length - a.length).join('|'),
-  'g',
-)
+ *  strip them as substrings first. Built from NAME_STOPWORDS (longest-first) so the two lists can't drift.
+ *  Guarded: if the filtered list were ever empty, `new RegExp('', 'g')` would match everywhere and shred
+ *  CJK tokenization silently — only build the regex when there's at least one CJK stopword. */
+const cjkStops = [...NAME_STOPWORDS].filter((w) => /[一-鿿]/.test(w)).sort((a, b) => b.length - a.length)
+const CJK_STOPWORD_RE = cjkStops.length ? new RegExp(cjkStops.join('|'), 'g') : null
 
 export function nameTokens(s: string): Set<string> {
   const out = new Set<string>()
-  const cleaned = s.toUpperCase().replace(/[^A-Z0-9一-鿿]+/g, ' ').replace(CJK_STOPWORD_RE, ' ').trim()
+  let cleaned = s.toUpperCase().replace(/[^A-Z0-9一-鿿]+/g, ' ')
+  if (CJK_STOPWORD_RE) cleaned = cleaned.replace(CJK_STOPWORD_RE, ' ')
+  cleaned = cleaned.trim()
   for (const t of cleaned.split(/\s+/)) {
     if (t.length >= 2 && !NAME_STOPWORDS.has(t)) out.add(t)
   }
