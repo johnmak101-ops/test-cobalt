@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common'
 import { MastersRepository } from '../db/repositories/masters.repository'
-import { trigramSimilarity, tokenMatch } from './trigram'
+import { trigramSimilarity, tokenMatch, tokenSubset } from './trigram'
 
 /**
  * Deterministic, LLM-free candidate retrieval for the LLM Master Matcher (design 2026-07-09 §3 +
@@ -94,7 +94,14 @@ export class CandidatesService {
         else nameScore = 0
       }
       if (inputName && nameScore === 0) {
-        const tokenHit = tokenMatch(inputName, r.name) || r.aliases.some((a) => tokenMatch(inputName, a))
+        // port kind also tries the REVERSE subset (input ⊆ master): a bare city name must surface that
+        // city's airport ('SHANGHAI' → 'Shanghai Pudong International Airport') so the LLM can pick by
+        // mode — the 2026-07-10 live-probe gap. PORT-ONLY: for parties it would flood candidates with
+        // every master containing a common city token.
+        const tokenHit =
+          tokenMatch(inputName, r.name) ||
+          r.aliases.some((a) => tokenMatch(inputName, a)) ||
+          (r.type === 'port' && (tokenSubset(inputName, r.name) || r.aliases.some((a) => tokenSubset(inputName, a))))
         if (tokenHit) {
           nameScore = 0.6
           signals.push('name:tokens')

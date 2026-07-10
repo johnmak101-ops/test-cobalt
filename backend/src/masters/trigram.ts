@@ -65,3 +65,15 @@ export function tokenMatch(input: string, master: string): boolean {
   if (inter === b.size) return true
   return inter / (a.size + b.size - inter) >= 0.5
 }
+
+/** REVERSE subset — input tokens ⊆ master tokens. The city-name→airport recall direction found by the
+ *  2026-07-10 live probe: raw 'SHANGHAI' must surface 'Shanghai Pudong International Airport' so the LLM
+ *  can pick by mode. Applied to the PORT kind only (small namespace); opening it for parties would flood
+ *  candidates with every master containing a common city token. */
+export function tokenSubset(input: string, master: string): boolean {
+  const a = nameTokens(input)
+  const b = nameTokens(master)
+  if (!a.size || !b.size) return false
+  for (const t of a) if (!b.has(t)) return false
+  return true
+}
