@@ -2,6 +2,8 @@ import { Injectable } from '@nestjs/common'
 import { MastersRepository } from '../db/repositories/masters.repository'
 import { MASTER_RESOLUTION_KIND } from '../db/enums'
 import {
+  CreateCarrierDto,
+  UpdateCarrierDto,
   CreateForwarderDto,
   UpdateForwarderDto,
   CreatePortDto,
@@ -39,6 +41,9 @@ export class MastersService {
   consignees() {
     return this.repo.listConsignees()
   }
+  carriers() {
+    return this.repo.listCarriers()
+  }
 
   // --- writes (Ops-maintained masters only) ---
   createForwarder(dto: CreateForwarderDto) {
@@ -49,6 +54,13 @@ export class MastersService {
     if (dto.code !== undefined) patch.code = nn(dto.code)
     if (dto.name !== undefined) patch.name = dto.name.trim()
     return this.repo.updateForwarder(id, patch)
+  }
+
+  createCarrier(dto: CreateCarrierDto) {
+    return this.repo.createCarrier({ scac: dto.scac, name: dto.name })
+  }
+  updateCarrier(id: string, dto: UpdateCarrierDto) {
+    return this.repo.updateCarrier(id, { scac: dto.scac, name: dto.name })
   }
 
   createPort(dto: CreatePortDto) {

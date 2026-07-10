@@ -311,11 +311,17 @@ export class MastersRepository {
     return (await this.portByCodeOrName(code))?.id ?? null
   }
   /** Resolve a POL/POD string to a port (id + country, for denormalizing origin_country at commit).
-   *  Order: exact UN/LOCODE → exact IATA (bare 3-char PVG/CAN) → CURATED aliases (spelling / IATA /
-   *  name-fragment, high-confidence, exact-keyed) → FORWARD fuzzy name match (last resort). Curated
-   *  aliases run BEFORE the fuzzy match so a spelling variant ('Chittagong', stored as 'Chattogram')
-   *  can't fall through to a loose substring hit. (Faithful T-SQL port of the Drizzle tiers: ILIKE →
-   *  LOWER LIKE, length() → LEN(), limit 1 → top 1.) */
+   *  Order: exact UN/LOCODE → abbreviation fact → exact IATA (bare 3-char PVG/CAN) → CURATED alias
+   *  facts (spelling / IATA / name-fragment, high-confidence, exact-keyed) → FORWARD fuzzy name match
+   *  (last resort). Curated aliases run BEFORE the fuzzy match so a spelling variant ('Chittagong',
+   *  stored as 'Chattogram') can't fall through to a loose substring hit.
+   *
+   *  The curated tiers are DATA, not code: `master_resolution` facts of kinds `port_abbreviation`
+   *  (checked before IATA — 'HCM' must beat the obscure Somali port that owns that literal IATA),
+   *  `port_alias` (spelling variants), `port_iata` (bare IATA → UN/LOCODE), `port_fragment`
+   *  (contains-match on a distinctive fragment). lhs = uppercased punctuation-collapsed key,
+   *  rhs = UN/LOCODE. Seeded from the former hardcoded tables; ADMIN-managed at runtime via
+   *  Settings → Resolution Rules. */
   async portByCodeOrName(code: string): Promise<{ id: string; country: string | null } | null> {
     const c = code.trim()
     if (!c) return null
@@ -325,12 +331,23 @@ export class MastersRepository {
     }
     const byCode = await byUnlocode(c.toUpperCase())
     if (byCode) return byCode
-    // Common shipping abbreviations whose literal IATA collides with an OBSCURE port — pin them before
-    // the IATA lookup ('HCM' = Ho Chi Minh/VNSGN, a top-5 Asian port; its literal IATA 'HCM' belongs to
-    // a tiny Somali entry). Keyed exact, deterministic.
-    const ABBREV_OVERRIDE: Record<string, string> = { HCM: 'VNSGN' }
-    if (ABBREV_OVERRIDE[c.toUpperCase()]) {
-      const a = await byUnlocode(ABBREV_OVERRIDE[c.toUpperCase()]!)
+
+    // one read serves all four curated tiers (small, ADMIN-curated table)
+    const portFacts = await this.db
+      .selectFrom('masterResolution')
+      .where('kind', 'in', ['port_abbreviation', 'port_alias', 'port_iata', 'port_fragment'])
+      .where('status', '=', 'approved')
+      .where('active', '=', true)
+      .select(['kind', 'lhs', 'rhs'])
+      .execute()
+    const factMap = (kind: string) =>
+      new Map(portFacts.filter((f) => f.kind === kind && f.rhs).map((f) => [f.lhs.toUpperCase(), String(f.rhs).toUpperCase()]))
+
+    // abbreviation facts run BEFORE the IATA lookup (a common shipping abbreviation may collide with an
+    // obscure port's literal IATA). Keyed exact, deterministic.
+    const abbrev = factMap('port_abbreviation').get(c.toUpperCase())
+    if (abbrev) {
+      const a = await byUnlocode(abbrev)
       if (a) return a
     }
     if (/^[A-Za-z]{3}$/.test(c)) {
@@ -344,38 +361,24 @@ export class MastersRepository {
       if (byIata) return { id: byIata.id, country: byIata.country }
     }
 
-    // CURATED ALIASES (exact-keyed, high-confidence) — checked BEFORE the fuzzy match so a known
+    // CURATED ALIAS FACTS (exact-keyed, high-confidence) — checked BEFORE the fuzzy match so a known
     // spelling variant wins. aliasKey = uppercased, punctuation-collapsed input.
     const aliasKey = c.toUpperCase().replace(/[^A-Z0-9 ]/g, '').replace(/\s+/g, ' ').trim()
-    // spelling variants → canonical UN/LOCODE ('GOTEBORG'/'GOTHENBURG' → SEGOT).
-    const PORT_ALIASES: Record<string, string> = {
-      GOTEBORG: 'SEGOT',
-      GOTHENBURG: 'SEGOT',
-      KHORFAKKAN: 'AEKLF',
-    }
-    if (PORT_ALIASES[aliasKey]) {
-      const a = await byUnlocode(PORT_ALIASES[aliasKey]!)
+    // spelling variants → canonical UN/LOCODE ('GOTEBORG'/'GOTHENBURG' → SEGOT)
+    const alias = factMap('port_alias').get(aliasKey)
+    if (alias) {
+      const a = await byUnlocode(alias)
       if (a) return a
     }
     // bare IATA (airport) code → UN/LOCODE ('CKG' → CNCKG/Chongqing). Deterministic, no fuzzy.
-    const IATA_TO_UNLOCODE: Record<string, string> = { CKG: 'CNCKG', PNH: 'KHPNH' }
-    if (IATA_TO_UNLOCODE[aliasKey]) {
-      const a = await byUnlocode(IATA_TO_UNLOCODE[aliasKey]!)
+    const iata = factMap('port_iata').get(aliasKey)
+    if (iata) {
+      const a = await byUnlocode(iata)
       if (a) return a
     }
     // full-facility-name fragments → UN/LOCODE ('SHAHAJALAL INTL. AIR PORT' = Dhaka/BDDAC). Contains-match
     // on a distinctive, long fragment so it can't false-hit another port.
-    const NAME_CONTAINS_ALIASES: Array<[string, string]> = [
-      ['SHAHAJALAL', 'BDDAC'],
-      ['SHAHJALAL', 'BDDAC'],
-      ['KHOR AL FAKKAN', 'AEKLF'],
-      ['KHOR FAKKAN', 'AEKLF'],
-      // Chittagong (traditional spelling) — master stores the modern 'Chattogram' (BDCGP). Substring
-      // so decorated raws resolve too: 'CHITTAGONG, BANGLADESH', 'CGP (Golden Depot / Chittagong)'.
-      ['CHITTAGONG', 'BDCGP'],
-      ['CHATTOGRAM', 'BDCGP'],
-    ]
-    for (const [frag, uloc] of NAME_CONTAINS_ALIASES) {
+    for (const [frag, uloc] of factMap('port_fragment')) {
       if (aliasKey.includes(frag)) {
         const a = await byUnlocode(uloc)
         if (a) return a
@@ -430,6 +433,30 @@ export class MastersRepository {
   }
   async updateConsignee(id: string, patch: Record<string, unknown>) {
     const r = await this.db.updateTable('consignees').set({ ...patch, updatedAt: new Date() }).where('id', '=', id).executeTakeFirst()
+    return r ?? null
+  }
+
+  // --- carriers (ocean carriers keyed by SCAC — seeded + ops-maintained, no ERP home; the data home
+  //     for SCAC extraction/validation) ---
+  async listCarriers() {
+    return this.db.selectFrom('carriers').orderBy('scac').selectAll().execute()
+  }
+  async carrierByScac(scac: string) {
+    const r = await this.db.selectFrom('carriers').selectAll().where('scac', '=', scac.trim().toUpperCase()).executeTakeFirst()
+    return r ?? null
+  }
+  async createCarrier(v: { scac: string; name: string }) {
+    return this.db
+      .insertInto('carriers')
+      .values({ scac: v.scac.trim().toUpperCase(), name: v.name.trim() })
+      .outputAll('inserted')
+      .executeTakeFirstOrThrow()
+  }
+  async updateCarrier(id: string, patch: { scac?: string; name?: string }) {
+    const set: Record<string, unknown> = { updatedAt: new Date() }
+    if (patch.scac !== undefined) set.scac = patch.scac.trim().toUpperCase()
+    if (patch.name !== undefined) set.name = patch.name.trim()
+    const r = await this.db.updateTable('carriers').set(set).where('id', '=', id).outputAll('inserted').executeTakeFirst()
     return r ?? null
   }
 

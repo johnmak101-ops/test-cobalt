@@ -133,6 +133,23 @@ async function main() {
     { kind: 'vendor_group', lhs: 'TALIUN', rhs: 'FENIX_FASHION', reason: 'group 2: Tai Li Un (mainland factory for the same shipment)' },
     { kind: 'vendor_group', lhs: 'YAQIHK', rhs: 'YAQI_AE', reason: 'group 11: Yaqi Textile HK (invoice house, American Eagle book)' },
     { kind: 'vendor_group', lhs: 'BANSNK', rhs: 'YAQI_AE', reason: 'group 11: BD Spinners & Knitters (Bangladesh factory on the same B/L)' },
+    // ---- port resolution tiers (formerly hardcoded in masters.repository.ts; see migration 0002) ----
+    // abbreviation: checked BEFORE the IATA lookup — 'HCM' must beat the obscure port owning that literal IATA
+    { kind: 'port_abbreviation', lhs: 'HCM', rhs: 'VNSGN', reason: 'Ho Chi Minh — literal IATA HCM belongs to a tiny Somali entry' },
+    // spelling variants -> canonical UN/LOCODE
+    { kind: 'port_alias', lhs: 'GOTEBORG', rhs: 'SEGOT', reason: 'Gothenburg spelling variant' },
+    { kind: 'port_alias', lhs: 'GOTHENBURG', rhs: 'SEGOT', reason: 'Gothenburg spelling variant' },
+    { kind: 'port_alias', lhs: 'KHORFAKKAN', rhs: 'AEKLF', reason: 'Khor Fakkan collapsed spelling' },
+    // bare IATA (airport) code -> UN/LOCODE
+    { kind: 'port_iata', lhs: 'CKG', rhs: 'CNCKG', reason: 'Chongqing' },
+    { kind: 'port_iata', lhs: 'PNH', rhs: 'KHPNH', reason: 'Phnom Penh' },
+    // distinctive facility-name fragments (contains-match)
+    { kind: 'port_fragment', lhs: 'SHAHAJALAL', rhs: 'BDDAC', reason: 'Dhaka Shahjalal Intl (common misspelling)' },
+    { kind: 'port_fragment', lhs: 'SHAHJALAL', rhs: 'BDDAC', reason: 'Dhaka Shahjalal Intl' },
+    { kind: 'port_fragment', lhs: 'KHOR AL FAKKAN', rhs: 'AEKLF', reason: 'Khor Fakkan long form' },
+    { kind: 'port_fragment', lhs: 'KHOR FAKKAN', rhs: 'AEKLF', reason: 'Khor Fakkan' },
+    { kind: 'port_fragment', lhs: 'CHITTAGONG', rhs: 'BDCGP', reason: 'traditional spelling; master stores the modern Chattogram' },
+    { kind: 'port_fragment', lhs: 'CHATTOGRAM', rhs: 'BDCGP', reason: 'modern spelling of Chittagong' },
   ]
   // Bulk idempotency against uq_master_resolution (kind, lhs, rhs): filter out facts already present.
   const factKey = (f: { kind: string; lhs: string; rhs: string | null }) => `${f.kind} ${f.lhs} ${f.rhs}`
@@ -144,6 +161,34 @@ async function main() {
         .insertInto('masterResolution')
         .values(newFacts.map((f) => ({ ...f, status: 'approved' as const, source: 'seed' as const })))
         .execute()
+    } catch (e) {
+      if (!isUniqueViolation(e)) throw e // concurrent seed won the race — idempotent
+    }
+  }
+
+  // ---- carriers (ALWAYS — ocean carriers keyed by SCAC; no ERP home, like ports; idempotent by scac).
+  // The data home for SCAC extraction/validation (TODO rule 6): MBL prefix -> carrier -> master.
+  const CARRIER_ROWS: { scac: string; name: string }[] = [
+    { scac: 'MAEU', name: 'Maersk Line' },
+    { scac: 'MSCU', name: 'Mediterranean Shipping Company (MSC)' },
+    { scac: 'CMDU', name: 'CMA CGM' },
+    { scac: 'COSU', name: 'COSCO Shipping Lines' },
+    { scac: 'OOLU', name: 'Orient Overseas Container Line (OOCL)' },
+    { scac: 'EGLV', name: 'Evergreen Line' },
+    { scac: 'HLCU', name: 'Hapag-Lloyd' },
+    { scac: 'ONEY', name: 'Ocean Network Express (ONE)' },
+    { scac: 'YMLU', name: 'Yang Ming Marine Transport' },
+    { scac: 'HDMU', name: 'HMM (Hyundai Merchant Marine)' },
+    { scac: 'ZIMU', name: 'ZIM Integrated Shipping' },
+    { scac: 'WHLC', name: 'Wan Hai Lines' },
+    { scac: 'SMLM', name: 'SM Line' },
+    { scac: 'SITC', name: 'SITC Container Lines' },
+  ]
+  const haveScacs = new Set((await db.selectFrom('carriers').select('scac').execute()).map((r) => r.scac.toUpperCase()))
+  const newCarriers = CARRIER_ROWS.filter((r) => !haveScacs.has(r.scac))
+  if (newCarriers.length) {
+    try {
+      await db.insertInto('carriers').values(newCarriers).execute()
     } catch (e) {
       if (!isUniqueViolation(e)) throw e // concurrent seed won the race — idempotent
     }

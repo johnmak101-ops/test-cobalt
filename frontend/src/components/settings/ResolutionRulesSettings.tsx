@@ -9,9 +9,15 @@ import {
 } from '../../hooks/use-resolution'
 import { usePageAccess } from '../../hooks/use-page-access'
 
+// Kinds offered in the CREATE form. The four retired alias kinds (vendor_alias / vendor_name_marker /
+// forwarder_ref / customer_canonical) are hidden here — nothing reads them for resolution since the
+// LLM Master Matcher landed (existing rows stay visible in the list as audit history).
 const KINDS = [
-  'vendor_alias', 'vendor_name_marker', 'customer_vendor', 'consignee_for_customer',
-  'forwarder_ref', 'customer_canonical', 'customer_group', 'customer_role', 'vendor_group',
+  'customer_vendor', 'consignee_for_customer', 'customer_group', 'customer_role', 'vendor_group',
+  // retrieval signal for the matcher: raw name/domain → boosted master code (the LLM still decides)
+  'prior_correction',
+  // port resolution tiers (data home for the committer's portByCodeOrName)
+  'port_abbreviation', 'port_alias', 'port_iata', 'port_fragment',
 ]
 
 export function ResolutionRulesSettings() {

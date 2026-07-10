@@ -11,6 +11,8 @@ import {
   UpdatePortDto,
   CreateConsigneeDto,
   UpdateConsigneeDto,
+  CreateCarrierDto,
+  UpdateCarrierDto,
   CreateResolutionFactDto,
   PatchResolutionFactDto,
   MasterCandidatesDto,
@@ -26,6 +28,7 @@ export class MastersController {
   @Get('forwarders') forwarders() { return this.masters.forwarders() }
   @Get('ports') ports() { return this.masters.ports() }
   @Get('consignees') consignees() { return this.masters.consignees() }
+  @Get('carriers') carriers() { return this.masters.carriers() }
 
   // Candidate retrieval for the LLM Master Matcher — agent-consumed (cobalt-queue Bearer service
   // account), same ungated surface as the consumer `GET resolution` below. Deterministic + LLM-free.
@@ -64,6 +67,12 @@ export class MastersController {
   }
   @Roles('ADMIN') @Patch('forwarders/:id') updateForwarder(@Param('id') id: string, @Body() dto: UpdateForwarderDto) {
     return this.masters.updateForwarder(id, dto)
+  }
+  @Roles('ADMIN') @Post('carriers') createCarrier(@Body() dto: CreateCarrierDto) {
+    return this.masters.createCarrier(dto)
+  }
+  @Roles('ADMIN') @Patch('carriers/:id') updateCarrier(@Param('id') id: string, @Body() dto: UpdateCarrierDto) {
+    return this.masters.updateCarrier(id, dto)
   }
   @Roles('ADMIN') @Post('ports') createPort(@Body() dto: CreatePortDto) {
     return this.masters.createPort(dto)
