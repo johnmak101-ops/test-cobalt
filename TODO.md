@@ -170,9 +170,11 @@ masters.repository: `PORT_ALIASES` / `IATA_TO_UNLOCODE` / `ABBREV_OVERRIDE {HCM:
   OUT (→ masters), only *proposes* (gate still promotes), falls back to heuristic on failure. 98 tests
   green. ⚠ Live AI pass needs a warm `opencode serve` (`OPENCODE_ATTACH=…`) — same cold-start caveat as
   the opencode critic.
-- [ ] `[queue]` **OpenPAVE swap-in.** parser / matcher / critic / refiner all sit behind contracts
-  (`ParserAgent`, `MatcherAgent`, `CriticAgent`, `Refiner`) with OpenCode adapters. Drop OpenPAVE in
-  at each seam when ready — no rewiring.
+- [x] `[queue]` **OpenPAVE swap-in — DONE (verified 2026-07-10).** Every seam runs an openpave adapter:
+  parser (`parser/openpave.ts`, the ONLY model parser), matcher (`matcher-agent.ts`), critic
+  (`critic-agent/openpave.ts`), reconciler, master-matcher (`master-matcher/openpave.ts`), refiner
+  (`iterator/refine-openpave.ts`). The OpenCode runtime + adapters were retired (`7a8c279`); config
+  seams are `openpave | stub/heuristic/deterministic`. Nothing left to swap.
 - [ ] `[queue]` **Iterator trigger.** `run-iterator.ts` is a manual dev pass (not scheduled) and reads
   a sample `corrections.json`. Decide the real corrections source (a corrections store fed by human
   edits / field-locks) and whether/when to schedule a gated pass.
@@ -456,7 +458,17 @@ The `SettingsPage` + `PresentationService` god-components were already decompose
   unblock the loop (schedule + warm teacher + lower gates), relax the frozen backstops, collapse duplicated party
   facts (`PLATFORM_NOT_FORWARDER` ×3, SCAC map redundant w/ carrier master) → master-data. Full map in the
   `cobalt-queue-soul-iteration-map` memory. NEEDS a dedicated cobalt-queue session w/ its benchmark — not a blind edit.
-- [ ] `[queue]` **Matcher source-fixes** — per-PO qty broadcast, thread-unstable identity over-split, CVP
+- [x] `[queue]` **Matcher source-fixes — ALL THREE upstream cures SHIPPED 2026-07-10 (queue PR #62).**
+  (1) task_9d91d677 CVP phantoms: validate rule 1d nulls the vendor-portal alpha PO (`<code>PO<digits><letter>`)
+  out of `booking_no`+join key, souls forbid it, and the Decision now SENDS **`fromPlatform`** (ALL-of over
+  senders — track's dto has been waiting for it: the dead `platform_only` review-policy trigger comes alive)
+  + the queue gate refuses to auto-apply a portal-only group with no carrier identity. (2) task_d1d3e8d4
+  qty broadcast: `poQty` collapses only when qty AND unit agree — 184-cartons-vs-184-pieces now drops+flags
+  (the exceeds-ordered-total half stays track-side by design: needs the PO master). (3) BX836573 over-split:
+  `reconcileIdentitySlots` pre-grouping pass retypes thread-disjoint tokens to the highest-DOC_RANK slot
+  (LOGIMARK reused-ref triple untouched; dual-id records left alone). 19 new tests, suite 731|2, tsc clean.
+  Track's symptom-guards stay as defense-in-depth until shadows go quiet. Historical detail: the
+  `matcher-source-fixes` memory —
   `LPO→booking_no` phantoms. Detail in the `matcher-source-fixes` memory; track-system only symptom-guards these.
 - [ ] `[both]` **Booking-ingestion gap** — the tracking mailbox only sees To/Cc'd/forwarded mail, so
   person-addressed original booking emails+attachments are never ingested (→ empty-cargo shipments). Structural
@@ -479,7 +491,10 @@ Spec/plan: `docs/superpowers/{specs,plans}/2026-07-08-separate-shiptrack-databas
 - [x] `[both]` **docker-compose 2nd-DB provisioning — SUPERSEDED 2026-07-10** (see § "Migration follow-ups"). Each repo's compose is self-contained and migrate services create their own DB if missing; prod = the one shared Fabric SQL DB (`dbo` + `queue` schemas), not compose.
 - [x] `[track]` **Retire `seed-entity-facts.ts` + reconcile `SEH` — DONE 2026-07-08** (branch `feat/master-resolution-management`; folded into the master_resolution management feature below). SEH now bootstraps as `customer_group→PRIMARK` (fail-safe) and is editable in the UI.
 - [x] `[track]` **`backfill-shipment-ports.sql` — DONE** (already names `ingest.parsed_record`, fixed in `039fc7a`; the only remaining `evidence.parsed_record` hits are frozen drizzle migration snapshots, correctly immutable).
-- [ ] `[queue]` minor test coverage: `graphAttachmentId` on the zip/msg-flag normalize paths.
+- [x] `[queue]` minor test coverage: `graphAttachmentId` on the zip/msg-flag normalize paths — DONE
+  2026-07-10 (queue PR #61). Writing the msg-flag case exposed a REAL bug: msgreader parses garbage
+  .msg bytes leniently (no throw) → the original bytes were silently dropped; a nothing-yielded
+  expansion now keeps rawBytes+downloadMime like msgFlag.
 
 ## master_resolution runtime management (shipped 2026-07-08, branch `feat/master-resolution-management`)
 Curated resolution facts (alias/group/canonical/role incl. SEH) are now **ADMIN-managed at runtime** — Settings → **Resolution Rules** (create/edit/deactivate + curator proposals inbox) backed by an `active` flag on `tracking.master_resolution` (mig `0018`) + ADMIN CRUD API (`POST/PATCH /masters/resolution*`; consumer `GET /masters/resolution` now filters `active=true`, so cobalt-queue honours deactivation with no change). **Seed is non-destructive**: `master_resolution`/`app_settings`/`alert_rules`/`users` are no longer truncated (seeded `onConflictDoNothing`) so runtime edits survive a reseed. Spec/plan: `docs/superpowers/{specs,plans}/2026-07-08-master-resolution-management*`. e2e-proven (auth→create→active-serve→deactivate→consumer-hides→unauth-401). Follow-ups:
