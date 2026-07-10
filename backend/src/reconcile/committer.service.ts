@@ -7,7 +7,7 @@ import { guardVendorForwarder, isPlatformNotForwarder, isNotificationPlatformSen
 import { deriveState, classifyKindDetail, normMode } from './state'
 import { deriveMilestoneRows, deriveEmailRows } from './milestone-rows'
 import { currentIdentifierValues, deriveIdentifierRows } from './identifier-rows'
-import { MastersRepository } from '../db/repositories/masters.repository'
+import { MastersRepository, FUZZY_FORWARDER_TIERS, type ForwarderLinkTier, type PortLinkTier } from '../db/repositories/masters.repository'
 import { BookingRepository } from '../db/repositories/booking.repository'
 import { PurchaseOrderRepository } from '../db/repositories/purchase-order.repository'
 import { ShipmentRepository } from '../db/repositories/shipment.repository'
@@ -121,16 +121,28 @@ export class CommitterService {
       f.forwarder_name = null
     }
 
-    const [customerId, vendorId, forwarderId, pol, podId] = await Promise.all([
+    const [customerId, vendorId, forwarderLink, polLink, podLink] = await Promise.all([
       this.resolveCustomer(f.customer_code),
       this.resolveVendor(f.vendor_code),
-      this.resolveForwarder(f.forwarder_name),
-      this.resolvePortFull(f.poi ?? (f as Record<string, unknown>).pol), // POL: id + country (origin_country); alias: parser still emits `pol`
-      this.resolvePort(f.pod),
+      this.resolveForwarderLink(f.forwarder_name),
+      this.resolvePortLink(f.poi ?? (f as Record<string, unknown>).pol), // POL: id + country (origin_country); alias: parser still emits `pol`
+      this.resolvePortLink(f.pod),
     ])
-    const polId = pol?.id ?? null
+    const forwarderId = forwarderLink.id
+    const polId = polLink?.id ?? null
+    const podId = podLink?.id ?? null
     // origin_country: the resolved port's country, else derived from an unseeded LOCODE-shaped/free-text POL.
-    const originCountry = pol?.country ?? null // resolved-port country only; no code-side guessing from a raw POL
+    const originCountry = polLink?.country ?? null // resolved-port country only; no code-side guessing from a raw POL
+
+    // all-AI spec §2 — shadow-meter the deterministic linkers: a link the LLM path did not produce
+    // (fuzzy forwarder tier / non-exact port tier) is recorded WITHOUT changing behavior; deleting the
+    // tiers is a follow-up gated on these going quiet.
+    if (forwarderLink.id && forwarderLink.tier && FUZZY_FORWARDER_TIERS.has(forwarderLink.tier))
+      shadows.push({ field: 'forwarder_link', oldValue: str(f.forwarder_name), newValue: forwarderLink.id, note: `fuzzy-tier ${forwarderLink.tier} linked — LLM path missed this name` })
+    if (polLink && polLink.tier !== 'unlocode_exact')
+      shadows.push({ field: 'port_link', oldValue: str(f.poi ?? (f as Record<string, unknown>).pol), newValue: polLink.id, note: `port tier ${polLink.tier} linked — LLM path missed this value` })
+    if (podLink && podLink.tier !== 'unlocode_exact')
+      shadows.push({ field: 'port_link', oldValue: str(f.pod), newValue: podLink.id, note: `port tier ${podLink.tier} linked — LLM path missed this value` })
 
     // Phase-4 guard: a forwarder mislabeled as the vendor must never land in the vendor slot.
     // If flagged, the vendor link is dropped, the (empty) forwarder slot is filled, and the leg
@@ -488,17 +500,17 @@ export class CommitterService {
     const c = str(code)
     return c ? this.masters.vendorIdByCode(c) : Promise.resolve(null)
   }
-  private resolveForwarder(name: unknown) {
+  private async resolveForwarderLink(name: unknown): Promise<{ id: string | null; tier: ForwarderLinkTier | null }> {
     const n = str(name)
-    return n ? this.masters.forwarderIdByName(n) : Promise.resolve(null)
+    if (!n) return { id: null, tier: null }
+    const byCode = await this.masters.forwarderIdByCode(n)
+    if (byCode) return { id: byCode, tier: 'code_exact' }
+    const link = await this.masters.forwarderLinkByName(n)
+    return link ?? { id: null, tier: null }
   }
-  private resolvePort(code: unknown) {
+  private async resolvePortLink(code: unknown): Promise<{ id: string; country: string | null; tier: PortLinkTier } | null> {
     const c = str(code)
-    return c ? this.masters.portIdByCodeOrName(c) : Promise.resolve(null)
-  }
-  private resolvePortFull(code: unknown) {
-    const c = str(code)
-    return c ? this.masters.portByCodeOrName(c) : Promise.resolve(null)
+    return c ? this.masters.portLinkByCodeOrName(c) : null
   }
   private async nextJobNo(): Promise<string> {
     return formatJobNo(await this.bookings.nextJobSeq())

@@ -469,3 +469,62 @@ describe('CommitterService — de-correction (c): shadow measurements (integrati
     expect(history.some((r) => r.changeType === 'shadow')).toBe(false) // but never in the history view
   })
 })
+
+describe('resolution shadow rows (all-AI spec §2)', () => {
+  const shadowRowsFor = (id: string) =>
+    db.selectFrom('changeLog').where('entityId', '=', id).where('changeType', '=', 'shadow').selectAll().execute()
+
+  it('a fuzzy-tier forwarder link writes a forwarder_link shadow; exact does not', async () => {
+    const fwd = await db
+      .insertInto('forwarders')
+      .values({ code: 'EXPKRA', name: 'EXPEDITORS KOREA LTD' })
+      .output('inserted.id')
+      .executeTakeFirstOrThrow()
+
+    // fixture A: forwarder_name only links via containment ('EXPEDITORS KOREA' ⊂ 'EXPEDITORS KOREA LTD')
+    // — the LLM path did not produce this link, so it is shadow-recorded (never changes behavior).
+    const a = await committer.apply(group({
+      pos: [], fields: { forwarder_name: 'EXPEDITORS KOREA', so_no: 'SO-FWD-A' }, matchKeys: { so_no: 'SO-FWD-A' },
+    }))
+    const aShadows = await shadowRowsFor(a.shipmentId)
+    expect(aShadows.filter((r) => r.field === 'forwarder_link')).toHaveLength(1)
+    expect(aShadows.some((r) =>
+      r.field === 'forwarder_link' && r.oldValue === 'EXPEDITORS KOREA' && r.newValue === fwd.id && /containment/.test(r.note ?? ''),
+    )).toBe(true)
+
+    // fixture B: forwarder_name equal to the master CODE (code_exact) → the code-first lookup wins before
+    // any fuzzy tier runs, so no forwarder_link shadow is written.
+    const b = await committer.apply(group({
+      pos: [], fields: { forwarder_name: 'EXPKRA', so_no: 'SO-FWD-B' }, matchKeys: { so_no: 'SO-FWD-B' },
+    }))
+    expect((await shadowRowsFor(b.shipmentId)).some((r) => r.field === 'forwarder_link')).toBe(false)
+  })
+
+  it('a non-exact port link writes a port_link shadow; exact UN/LOCODE does not', async () => {
+    await db
+      .insertInto('ports')
+      .values([
+        { unlocode: 'VNSGN', name: 'Ho Chi Minh City', country: 'VN', mode: 'both' },
+        { unlocode: 'CNSHK', name: 'Shekou', country: 'CN', mode: 'sea' },
+      ])
+      .execute()
+    await db
+      .insertInto('masterResolution')
+      .values([{ kind: 'port_abbreviation', lhs: 'HCM', rhs: 'VNSGN', status: 'approved', source: 'seed', reason: null }] as never)
+      .execute()
+
+    // fixture A: pol='HCM' resolves via the curated abbreviation fact (non-exact tier) → shadow-recorded
+    const a = await committer.apply(group({
+      pos: [], fields: { pol: 'HCM', so_no: 'SO-PORT-A' }, matchKeys: { so_no: 'SO-PORT-A' },
+    }))
+    const aShadows = await shadowRowsFor(a.shipmentId)
+    expect(aShadows.filter((r) => r.field === 'port_link')).toHaveLength(1)
+    expect(aShadows.some((r) => r.field === 'port_link' && r.oldValue === 'HCM' && /abbreviation/.test(r.note ?? ''))).toBe(true)
+
+    // fixture B: pol='CNSHK' is an exact UN/LOCODE hit → no port_link shadow
+    const b = await committer.apply(group({
+      pos: [], fields: { pol: 'CNSHK', so_no: 'SO-PORT-B' }, matchKeys: { so_no: 'SO-PORT-B' },
+    }))
+    expect((await shadowRowsFor(b.shipmentId)).some((r) => r.field === 'port_link')).toBe(false)
+  })
+})
