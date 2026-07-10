@@ -133,4 +133,36 @@ describe('MastersRepository (SQL Server)', () => {
     const managed = await repo.listResolutionManage()
     expect(managed.some((f) => f.lhs === 'X')).toBe(true) // manage shows deactivated ones too
   })
+
+  describe('forwarderIdByCode (exactly-one, case-insensitive)', () => {
+    it('links an exact code and rejects unknown', async () => {
+      const fwd = await db.insertInto('forwarders').values({ code: 'DSVAIR', name: 'DSV AIR & SEA CO LTD' }).output('inserted.id').executeTakeFirstOrThrow()
+      expect(await repo.forwarderIdByCode('dsvair')).toBe(fwd.id)
+      expect(await repo.forwarderIdByCode('NOPE99')).toBeNull()
+      expect(await repo.forwarderIdByCode('')).toBeNull()
+    })
+  })
+
+  describe('forwarderLinkByName tier attribution', () => {
+    it('normalized-exact reports norm_exact; containment reports containment', async () => {
+      const fwd = await db.insertInto('forwarders').values({ code: 'LXP001', name: 'LX PANTOS LOGISTICS (SHENZHEN) CO. LTD' }).output('inserted.id').executeTakeFirstOrThrow()
+      const exact = await repo.forwarderLinkByName('LX PANTOS LOGISTICS (SHENZHEN) CO.,LTD.')
+      expect(exact).toEqual({ id: fwd.id, tier: 'norm_exact' })
+      const contained = await repo.forwarderLinkByName('PANTOS LOGISTICS (SHENZHEN)')
+      expect(contained?.tier).toBe('containment')
+    })
+    it('forwarderIdByName wrapper still returns the bare id', async () => {
+      const fwd = await db.insertInto('forwarders').values({ code: 'WRAP01', name: 'WRAPPER TEST FORWARDER LIMITED' }).output('inserted.id').executeTakeFirstOrThrow()
+      expect(await repo.forwarderIdByName('WRAPPER TEST FORWARDER LIMITED')).toBe(fwd.id)
+    })
+  })
+
+  describe('portIdByUnlocode (strict shape + exact)', () => {
+    it('resolves only a real UN/LOCODE', async () => {
+      await db.insertInto('ports').values({ unlocode: 'CNSHK', name: 'Shekou', country: 'CN', mode: 'sea' }).execute()
+      expect(await repo.portIdByUnlocode('CNSHK')).toBeTruthy()
+      expect(await repo.portIdByUnlocode('SHEKOU')).toBeNull() // not UN/LOCODE-shaped
+      expect(await repo.portIdByUnlocode('XXXXX')).toBeNull() // shaped but absent
+    })
+  })
 })

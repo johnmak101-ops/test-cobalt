@@ -3,6 +3,21 @@ import { sql, type Kysely } from 'kysely'
 import type { DB } from '../kysely/db'
 import { KYSELY } from '../kysely.provider'
 
+export type ForwarderLinkTier =
+  | 'code_exact'
+  | 'containment'
+  | 'norm_exact'
+  | 'stripped_norm_exact'
+  | 'alias_containment'
+  | 'org_token'
+  | 'reverse_containment'
+  | 'legal_form'
+
+/** Tiers that can mis-link (spec §2): everything except code/normalized-exact. Shadow-metered by the committer. */
+export const FUZZY_FORWARDER_TIERS: ReadonlySet<ForwarderLinkTier> = new Set([
+  'containment', 'alias_containment', 'org_token', 'reverse_containment', 'legal_form',
+])
+
 /**
  * Kysely/SQL Server MastersRepository. The full deterministic resolution tiers ARE ported — staged
  * forwarder resolution (containment / normalized-exact / org-token / reverse-containment / legal-form
@@ -178,6 +193,27 @@ export class MastersRepository {
     return new Set([...po, ...bk].map((r) => r.code.toUpperCase()))
   }
 
+  /** Exact, case-insensitive forwarder CODE lookup — exactly-one-guarded like every name tier (a duplicate
+   *  code must not resolve heap-order style). The fast path for LLM-matcher write-backs. */
+  async forwarderIdByCode(code: string): Promise<string | null> {
+    const c = code.trim().toUpperCase()
+    if (!c) return null
+    const hits = await this.db
+      .selectFrom('forwarders')
+      .select(['id', 'code'])
+      .execute()
+    const match = hits.filter((f) => (f.code ?? '').trim().toUpperCase() === c)
+    return match.length === 1 ? match[0]!.id : null
+  }
+
+  /** Strict UN/LOCODE-only port lookup (no tiers) — used by the prior_correction validator. */
+  async portIdByUnlocode(code: string): Promise<string | null> {
+    const c = code.trim().toUpperCase()
+    if (!/^[A-Z]{2}[A-Z0-9]{3}$/.test(c)) return null
+    const r = await this.db.selectFrom('ports').select('id').where('unlocode', '=', c).executeTakeFirst()
+    return r?.id ?? null
+  }
+
   /**
    * Staged, ambiguity-guarded forwarder resolution (faithful port of the Drizzle tiers): containment →
    * normalized-exact (name, alias; raw + office/email-stripped) → alias containment → org-token
@@ -188,8 +224,12 @@ export class MastersRepository {
    * T-SQL note: SQL Server 2022 has no regexp_replace, so instead of pushing the normalization into SQL
    * the masters (an ERP mirror of a few hundred rows) + aliases are fetched once per call and every stage
    * runs the SAME JS normalization the Postgres SQL expressed — semantics identical, collation-proof.
+   *
+   * Returns the tier that resolved the link (`ForwarderLinkTier`) alongside the id — the committer uses
+   * this to shadow-meter the fuzzy tiers (`FUZZY_FORWARDER_TIERS`) against the LLM matcher that will
+   * eventually replace them. `forwarderIdByName` below is a thin wrapper for callers that only need the id.
    */
-  async forwarderIdByName(name: string): Promise<string | null> {
+  async forwarderLinkByName(name: string): Promise<{ id: string; tier: ForwarderLinkTier } | null> {
     const all = await this.db.selectFrom('forwarders').select(['id', 'name']).execute()
     const aliases = await this.db.selectFrom('forwarderAliases').select(['forwarderId', 'value']).execute()
     const lower = name.toLowerCase()
@@ -199,7 +239,7 @@ export class MastersRepository {
     // (EXPEDITORS - CHINA / CAMBODIA / INTERNATIONAL) — return ONLY when EXACTLY ONE master contains the
     // name; on 0 or >1 fall through (a bare ambiguous 'Expeditors' correctly leaves forwarder_raw to surface).
     const contained = all.filter((f) => f.name.toLowerCase().includes(lower))
-    if (contained.length === 1) return contained[0]!.id
+    if (contained.length === 1) return { id: contained[0]!.id, tier: 'containment' }
 
     // normalized exact match: strip ALL non-alphanumerics so punctuation/spacing variants resolve
     // ('LX PANTOS LOGISTICS (SHENZHEN) CO.,LTD.' == master 'LX PANTOS LOGISTICS (SHENZHEN) CO. LTD').
@@ -214,7 +254,7 @@ export class MastersRepository {
       return null
     }
     const normHit = byNorm(norm)
-    if (normHit) return normHit
+    if (normHit) return { id: normHit, tier: 'norm_exact' }
 
     // strip trailing office/email annotations ('Expeditors International (LAX)', 'Maersk … (lns.maersk.com)',
     // '… <ops@fwd.com>') then retry the SAME normalized-exact match — the parenthetical is not part of the name.
@@ -226,12 +266,12 @@ export class MastersRepository {
     const strippedNorm = normalize(stripped)
     if (strippedNorm !== norm) {
       const hit = byNorm(strippedNorm)
-      if (hit) return hit
+      if (hit) return { id: hit, tier: 'stripped_norm_exact' }
     }
 
     // same exactly-one guard on the alias containment — an ambiguous alias substring must not arbitrarily resolve.
     const aliasContained = aliases.filter((a) => a.value.toLowerCase().includes(lower))
-    if (aliasContained.length === 1) return aliasContained[0]!.forwarderId
+    if (aliasContained.length === 1) return { id: aliasContained[0]!.forwarderId, tier: 'alias_containment' }
 
     // BUG 2: an email-form raw like 'om-booking-notifications@expeditors.com (Expeditors)' resolves to NULL
     // above, but carries the org identity in TWO deterministic places: the parenthetical CONTENT and the
@@ -258,7 +298,7 @@ export class MastersRepository {
       if (tokenResolved && tokenResolved !== id) { tokenResolved = null; break } // two tokens disagree → ambiguous
       tokenResolved = id
     }
-    if (tokenResolved) return tokenResolved
+    if (tokenResolved) return { id: tokenResolved, tier: 'org_token' }
 
     // reverse-containment: a master whose normalized name is a SUBSTRING of the normalized input, so an
     // input with an appended office/domain ('EXPEDITORS INTERNATIONAL (LAX)') still resolves. Guarded by
@@ -271,7 +311,7 @@ export class MastersRepository {
           return fn.length >= 10 && norm.includes(fn)
         })
         .sort((a, b) => b.name.length - a.name.length)[0]
-      if (rc) return rc.id
+      if (rc) return { id: rc.id, tier: 'reverse_containment' }
     }
 
     // legal-form fold: 'TradeLink Technologies Ltd' should reach master 'TRADELINK TECHNOLOGIES LIMITED'.
@@ -302,9 +342,13 @@ export class MastersRepository {
       const inputFold = foldLegalForm(cand)
       if (inputFold.length < 4) continue
       const hits = all.filter((f) => foldLegalForm(f.name) === inputFold)
-      if (hits.length === 1) return hits[0]!.id
+      if (hits.length === 1) return { id: hits[0]!.id, tier: 'legal_form' }
     }
     return null
+  }
+
+  async forwarderIdByName(name: string): Promise<string | null> {
+    return (await this.forwarderLinkByName(name))?.id ?? null
   }
 
   async portIdByCodeOrName(code: string) {
