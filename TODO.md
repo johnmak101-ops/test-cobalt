@@ -451,19 +451,29 @@ The `SettingsPage` + `PresentationService` god-components were already decompose
   updates within 1.x. Bumped to `^1.17.0` (resolved 1.21.0) for freshness; frontend tsc + build + 198 tests green.
 
 ## Cross-system pointers (tracked in memory/docs — recorded here so they're not lost)
-- [ ] `[queue]` **Soul/skill iteration is shadowed (audit 2026-07-09).** Iterating the parser soul feels inert because
-  (1) `validate.ts` + `critic/merge.ts` re-make ~19 reading judgments the prompt already states (frozen-code shadow),
-  and (2) the Iterator's fast path only produces tabular SKILLS while the SOUL path is manual/unscheduled
-  (`pnpm cli batch:iterate`, ≥10-gated, needs a warm openpave teacher — else it just memorizes pairs). 3 moves:
-  unblock the loop (schedule + warm teacher + lower gates), relax the frozen backstops, collapse duplicated party
-  facts (`PLATFORM_NOT_FORWARDER` ×3, SCAC map redundant w/ carrier master) → master-data. Full map in the
-  `cobalt-queue-soul-iteration-map` memory. NEEDS a dedicated cobalt-queue session w/ its benchmark — not a blind edit.
-  - **Move-2 increment 1 SHIPPED (cobalt-queue).** `validate.ts` reading-judgment backstops retired (8 deleted:
+- [~] `[queue]` **Soul/skill iteration is shadowed (audit 2026-07-09) — MOVE 2 DONE + MOVE 1 CORE PROVEN 2026-07-10.**
+  Original problem: (1) `validate.ts` + `critic/merge.ts` re-made ~19 reading judgments the prompt states (frozen-code
+  shadow); (2) the SOUL path is manual/unscheduled + teacher-dependent. Full map in the `cobalt-queue-soul-iteration-map`
+  memory.
+  - **✅ MOVE 2 (un-freeze the frozen backstops) SHIPPED — queue PR #63 (`validate.ts`) + #64 (`merge.ts`).**
+    8 validate reading-judgment backstops deleted + the merge routing-label twin (soul now authoritative:
     forwarder platform/customs-broker, consignee echo/routing-label/factory/china-origin, port-country,
-    customer_code-is-brand; brand+in_dc_date keep-value+note); soul now authoritative for those fields (4 soul
-    sentences added). Deferred: (a) proactive review trigger for brand/in_dc (needs firing-frequency data), (b)
-    `merge.ts` cross-record trio (per-PO-qty broadcast/SO↔HBL de-echo/party-name folding), (c) full
-    forwarder-platform un-freeze (coordinated queue+track+linker).
+    customer_code-is-brand; 4 soul sentences added); brand + in_dc_date + the cross-buyer brand guard → keep-value+flag
+    (never silent-null). **The 3 merge cross-record judgments (SO↔HBL de-echo, per-PO-qty broadcast, sameName folding)
+    STAY — reclassified as spine** (soul is per-email, structurally can't make cross-record calls; they were never
+    real un-freeze targets).
+  - **✅ MOVE 1 core LIVE-PROVEN — queue PR #65 (`src/dev/probe-refiner.ts`).** The audit's #1 unknown ("does the warm
+    openpave refiner GENERALIZE corrections into soul rules, or just memorize pairs?") is answered: fed 3 synthetic
+    consignee corrections → path=OPENPAVE (not fallback), it wrote 2 durable rules, not 3 memorized pairs. The
+    machinery works. **Remaining move-1 blockers are NOT code:** FUEL (`review_correction` fed by live human review,
+    ~empty in dev) + warm-teacher is an OPS/deployment concern (auto-scheduling `batch:iterate` against a COLD teacher
+    is harmful). So move 1 = keep openpave warm in prod + let real corrections accumulate.
+  - **Still open:** (a) proactive review trigger for brand/in_dc (needs firing-frequency data); (b) MOVE 3 — collapse
+    duplicated party facts (`PLATFORM_NOT_FORWARDER` ×3, SCAC map redundant w/ carrier master, validate party lists)
+    → master-data (ties to "Code-only rule tables → data — queue half"); (c) full forwarder-platform un-freeze
+    (coordinated queue+track+linker). Local DB gotcha for a full `batch:iterate` run: queue `.env` has a stale
+    `DATABASE_URL=postgres://…` (no `SQL_SERVER_URL`) + local `cobalt_queue` is `dbo`-flattened while the iterator's
+    runtime-DDL assumes a `queue.` schema — reconcile both before a DB-backed run.
 - [x] `[queue]` **Matcher source-fixes — ALL THREE upstream cures SHIPPED 2026-07-10 (queue PR #62).**
   (1) task_9d91d677 CVP phantoms: validate rule 1d nulls the vendor-portal alpha PO (`<code>PO<digits><letter>`)
   out of `booking_no`+join key, souls forbid it, and the Decision now SENDS **`fromPlatform`** (ALL-of over
