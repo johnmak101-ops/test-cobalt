@@ -437,6 +437,29 @@ The `SettingsPage` + `PresentationService` god-components were already decompose
   PR #30), `presentation` alert summaries (PR #31), `posFor` (single query, PR #32), alert-evaluator
   milestones+emails+evidence (PR #33). **Remaining:** `committer.apply()` still `allLegs()` full-scans + loads
   whole `evidence.allWithMessage()` per commit — push candidate filtering into indexed SQL.
+  **⚠ SCOPED 2026-07-10 (mapping investigation) — NOT a clean perf refactor; has a real prerequisite:**
+  - **allLegs() scan** feeds `findExistingLeg`, which matches on strong-key overlap OR shared-PO OR
+    (zero-id) conversationId. The PO half is safely indexable (`purchase_orders.po_number` uniq →
+    `booking_pos.po_id` idx → `shipments.booking_id` idx). The STRONG-KEY half is the blocker: there is NO
+    safe queryable index. `shipment_identifiers` (the intended index, correct columns) is **opt-in populated**
+    — `writeIdentifiers` early-returns when `g.identifiers` is empty, and the rebuild path never sets it +
+    the agent DTO field is optional → most legs have ZERO rows there → querying it MISSES legs → duplicate
+    shipments. The flat `shipments.{booking_no,so_no,…}` columns are populated on every path BUT via a
+    DIFFERENT merge policy (mergeShipment rank-based) than `gk` (mergeKeys first-wins over matchKeys), so
+    they're a likely-but-NOT-provably-identical proxy — a false-negative → duplicate shipment. So the real
+    prerequisite = make strong keys queryable via a COMPREHENSIVE + indexed structure (fix
+    `shipment_identifiers` to write on every path + add a `(type,value)` index, OR unify the two merge
+    policies, OR add indexed computed columns). Only THEN is the candidate query provably a superset.
+  - **evidence.allWithMessage() scan** feeds `resolvePoEnrichment`/`unattributedBrandStyle`, which by
+    proven test behavior enrich a PO from ANY email in the DB mentioning it (cross-thread, DB-wide-by-PO —
+    `committer.int.spec` seeds thread-disconnected evidence linked only by PO string). Its broadcast guard
+    ALSO needs per-email completeness (all POs of the relevant emails). So narrowing to the group's own
+    messages is a BEHAVIOR CHANGE (breaks those specs); a `WHERE po_no IN g.pos` filter needs a new
+    `parsed_record.po_no` index AND still risks the broadcast/no-PO paths. `forMessages()` can't be reused
+    as-is (missing id/poNo/matchKeys → silently empty enrichment). Net: this half is a behavior decision,
+    not a pure optimization. **Recommendation: do the write-side `shipment_identifiers` prerequisite first
+    (own increment), then the legs candidate query; treat the evidence scan separately.** Full map in the
+    mapping-agent findings (2026-07-10 session).
 - [x] `[track]` **Review-queue apply-back — DONE 2026-07-09.** A `correct` verdict now re-applies to the linked
   shipment via `ShipmentsService.applyExtractionCorrection` (new): parser fields (`booking_no`) → leg columns
   (`bookingNo`) via `PARSER_TO_LEG`, routed through the existing `editFields` (write + human-wins field-lock +
@@ -451,13 +474,29 @@ The `SettingsPage` + `PresentationService` god-components were already decompose
   updates within 1.x. Bumped to `^1.17.0` (resolved 1.21.0) for freshness; frontend tsc + build + 198 tests green.
 
 ## Cross-system pointers (tracked in memory/docs — recorded here so they're not lost)
-- [ ] `[queue]` **Soul/skill iteration is shadowed (audit 2026-07-09).** Iterating the parser soul feels inert because
-  (1) `validate.ts` + `critic/merge.ts` re-make ~19 reading judgments the prompt already states (frozen-code shadow),
-  and (2) the Iterator's fast path only produces tabular SKILLS while the SOUL path is manual/unscheduled
-  (`pnpm cli batch:iterate`, ≥10-gated, needs a warm openpave teacher — else it just memorizes pairs). 3 moves:
-  unblock the loop (schedule + warm teacher + lower gates), relax the frozen backstops, collapse duplicated party
-  facts (`PLATFORM_NOT_FORWARDER` ×3, SCAC map redundant w/ carrier master) → master-data. Full map in the
-  `cobalt-queue-soul-iteration-map` memory. NEEDS a dedicated cobalt-queue session w/ its benchmark — not a blind edit.
+- [~] `[queue]` **Soul/skill iteration is shadowed (audit 2026-07-09) — MOVE 2 DONE + MOVE 1 CORE PROVEN 2026-07-10.**
+  Original problem: (1) `validate.ts` + `critic/merge.ts` re-made ~19 reading judgments the prompt states (frozen-code
+  shadow); (2) the SOUL path is manual/unscheduled + teacher-dependent. Full map in the `cobalt-queue-soul-iteration-map`
+  memory.
+  - **✅ MOVE 2 (un-freeze the frozen backstops) SHIPPED — queue PR #63 (`validate.ts`) + #64 (`merge.ts`).**
+    8 validate reading-judgment backstops deleted + the merge routing-label twin (soul now authoritative:
+    forwarder platform/customs-broker, consignee echo/routing-label/factory/china-origin, port-country,
+    customer_code-is-brand; 4 soul sentences added); brand + in_dc_date + the cross-buyer brand guard → keep-value+flag
+    (never silent-null). **The 3 merge cross-record judgments (SO↔HBL de-echo, per-PO-qty broadcast, sameName folding)
+    STAY — reclassified as spine** (soul is per-email, structurally can't make cross-record calls; they were never
+    real un-freeze targets).
+  - **✅ MOVE 1 core LIVE-PROVEN — queue PR #65 (`src/dev/probe-refiner.ts`).** The audit's #1 unknown ("does the warm
+    openpave refiner GENERALIZE corrections into soul rules, or just memorize pairs?") is answered: fed 3 synthetic
+    consignee corrections → path=OPENPAVE (not fallback), it wrote 2 durable rules, not 3 memorized pairs. The
+    machinery works. **Remaining move-1 blockers are NOT code:** FUEL (`review_correction` fed by live human review,
+    ~empty in dev) + warm-teacher is an OPS/deployment concern (auto-scheduling `batch:iterate` against a COLD teacher
+    is harmful). So move 1 = keep openpave warm in prod + let real corrections accumulate.
+  - **Still open:** (a) proactive review trigger for brand/in_dc (needs firing-frequency data); (b) MOVE 3 — collapse
+    duplicated party facts (`PLATFORM_NOT_FORWARDER` ×3, SCAC map redundant w/ carrier master, validate party lists)
+    → master-data (ties to "Code-only rule tables → data — queue half"); (c) full forwarder-platform un-freeze
+    (coordinated queue+track+linker). Local DB gotcha for a full `batch:iterate` run: queue `.env` has a stale
+    `DATABASE_URL=postgres://…` (no `SQL_SERVER_URL`) + local `cobalt_queue` is `dbo`-flattened while the iterator's
+    runtime-DDL assumes a `queue.` schema — reconcile both before a DB-backed run.
 - [x] `[queue]` **Matcher source-fixes — ALL THREE upstream cures SHIPPED 2026-07-10 (queue PR #62).**
   (1) task_9d91d677 CVP phantoms: validate rule 1d nulls the vendor-portal alpha PO (`<code>PO<digits><letter>`)
   out of `booking_no`+join key, souls forbid it, and the Decision now SENDS **`fromPlatform`** (ALL-of over
