@@ -1,6 +1,6 @@
-# All-AI Forwarder Resolution — extend the LLM Master Matcher seam to `forwarder` (Design)
+# All-AI Resolution — extend the LLM Master Matcher seam to `forwarder` + `port` (Design)
 
-Date: 2026-07-10 · Repos: cobalt-queue + cobalt_track_system · Status: approved (approach A)
+Date: 2026-07-10 · Repos: cobalt-queue + cobalt_track_system · Status: approved (approach A; v2 adds ports)
 Parent design: `2026-07-09-llm-master-matcher-design.md` (+ T-SQL re-spec `2026-07-10-master-matcher-tsql-respec.md`)
 
 ## 0. Context & goal
@@ -19,7 +19,13 @@ committer links it with the 6-tier exactly-one-guarded `forwarderIdByName` (dete
   `unresolvedParties`). Resolving it could only rewrite the name → de-correction red line. YAGNI.
 - **Approach A**: code write-back (consistent with customer/vendor) + demote the deterministic linker via
   shadow measurement, not immediate deletion.
-- Ports stay deterministic (parent design §5, explicit keep — code system, not party resolution).
+- **v2 — ports join the seam (user override of parent §5, with live evidence).** The parent design kept
+  `portByCodeOrName` deterministic; the architect reports it matches the WRONG port at the code level. The
+  failure modes are structural: the bare-IATA tier can collide (the HCM-vs-Somali-port class), `port_fragment`
+  is a contains-match, the last-resort tier is a forward FUZZY name match — and the whole chain is
+  **mode-blind** (Air vs Sea for the same city: SHANGHAI → CNSHA sea vs CNPVG air). The LLM path gets the
+  group's `mode` as context and owns exactly this judgment. Exact-UN/LOCODE lookup stays (it is tier 1 and
+  cannot be wrong); every non-exact tier gets shadow-metered like the forwarder linker.
 
 Track-side retrieval is ALREADY ready for this: `candidates.service.ts` serves `type:'forwarder'` (names +
 `forwarder_aliases` name/domain rows) and the Phase-2 `cooccur:customer` boost already covers forwarders.
@@ -51,9 +57,25 @@ The gap is queue-side detection/write-back, plus a retrieval recall weakness for
   when the reference is genuinely the carrier acting as forwarder; when the raw is a person/email display name,
   decision `none`. Same output contract (match/none + confidence + rationale) — no schema change.
 
+**Ports (v2) — same seam, two more fields:**
+- `UnresolvedParty.field` also gains `'pol' | 'pod'`; `MasterMatchKind` (queue) and `CandidateKind` (track)
+  gain `'port'`.
+- Detection: `f.pol` / `f.pod` non-empty ∧ NOT UN/LOCODE-shaped (`/^[A-Z]{2}[A-Z0-9]{3}$/` after
+  uppercase-trim). A soul-resolved UN/LOCODE passes and is NEVER re-judged (the soul owns clear cases;
+  wrong soul picks flow through review → `prior_correction`, not through a second LLM pass). A bare IATA
+  (`PVG`), an abbreviation (`HCM`), or a raw name (`HO CHI MINH CITY`) all fail the shape test → seam.
+- The matcher call for `kind:'port'` carries the record's **`mode`** in `context` (the whole point: Air →
+  airport UN/LOCODE, Sea → seaport). Write-back at ≥ 0.75 puts the UN/LOCODE into `fields.pol`/`fields.pod`
+  + the same LOW note. `pol`/`pod` are not match keys — no matchKeys interaction.
+- Per-run cache key `port|<MODE>|<RAW>` (the same raw resolves differently by mode).
+
+`prompts/cobalt-master-matcher.md` also gains a port paragraph: resolve by mode (Air → airport, Sea →
+seaport); never a country or a warehouse address; when two ports share the fragment, prefer the candidate
+whose signals (prior_correction, region) support it; `none` beats a guess.
+
 Non-changes: `validate.ts` 4c platform scrub runs at parse time and is untouched (a scrubbed platform arrives
-null → no seam call). `MasterMatchKind` already includes `'forwarder'`. Stub matcher behavior unchanged
-(conservative: unique ≥0.95 or unique domain:exact, else none).
+null → no seam call). Stub matcher behavior unchanged (conservative: unique ≥0.95 or unique domain:exact,
+else none — for ports that means stub mostly defers to review, which is the safe default).
 
 ## 2. Track committer — code-first link + shadow-metered fuzzy tiers (`cobalt_track_system`)
 
@@ -78,8 +100,25 @@ null → no seam call). `MasterMatchKind` already includes `'forwarder'`. Stub m
 - `forwarderIdForVendorCode` (committer.service:143, the forwarder-as-vendor misclassification guard probe)
   is deliberately untouched.
 
+**Ports (v2) — shadow-meter the non-exact tiers, change nothing else:**
+- `portByCodeOrName` already runs exact-UN/LOCODE FIRST — no new code tier needed. Refactor to attribute the
+  tier (`unlocode_exact | abbreviation | iata | alias | fragment | fuzzy_name`), public signatures unchanged.
+- `resolvePort`/`resolvePortFull` call sites write the same `audit.change_log` `changeType='shadow'` row
+  (`field='port_link'`) whenever the link came from any tier EXCEPT `unlocode_exact` — measuring exactly the
+  tiers that can mis-link (bare-IATA collision, fragment contains, fuzzy last resort). The curated-fact tiers
+  (`port_abbreviation`/`port_alias`/`port_iata`) are included in the measurement: they are human-curated but
+  their APPLICATION is mode-blind, which is part of what the user reports. Origin-country denormalization
+  (`deriveOriginCountry` reads the resolved port's country) is unaffected.
+- Deleting/trimming port tiers = the same follow-up, gated on the shadow going quiet.
+
+**Learning loop (v2 catch — applies to forwarder AND port):** `review-queue.service.ts`
+`recordPriorCorrections` currently persists `prior_correction` facts ONLY for `customer_code`/`vendor_code`.
+Extend the field table with `forwarder_name` (new value must be a real forwarder code —
+`forwarderIdByCode`) and `pol`/`pod` (new value must be a known UN/LOCODE — ports lookup). Without this,
+human corrections of the two new kinds never feed the retrieval boost and the loop stays open.
+
 No schema migration: `audit.change_log`/`changeType='shadow'` already exist; `forwarderIdByCode` reads an
-existing column.
+existing column; `prior_correction` is an existing fact kind.
 
 ## 3. Retrieval recall fix — token signal (`cobalt_track_system` `masters/candidates.service.ts`)
 
@@ -97,19 +136,33 @@ Fix — a third name signal, `name:tokens`, additive alongside trigram + domain:
 - This is retrieval, the parent design's sanctioned deterministic layer (§3/§5) — the LLM still makes every
   final call.
 
+**Ports (v2) — `rowsFor('port')`:**
+- Rows from the `ports` table: `code = unlocode`, `name`, `country` (column, else the locode's first two
+  letters). Fold the curated `port_abbreviation`/`port_alias`/`port_iata` fact lhs values onto their rhs
+  port as **aliases**, so the trigram/token/prior signals fire on `HCM`, spelling variants, and bare IATA
+  codes exactly like forwarder aliases. `prior_correction` boost works unchanged (lhs raw → rhs unlocode).
+- The `name:tokens` signal applies to ports for free ('HO CHI MINH CITY VIETNAM' ⊇ tokens of
+  'HO CHI MINH').
+- If the ports table carries an air/sea function tag, expose it on the candidate (the LLM honors mode);
+  if not, the LLM falls back on world knowledge + the mode context — acceptable for MVP, no schema change.
+
 ## 4. Verification (NO corpus re-parse)
 
-- **Unit**: queue — `unresolvedParties` forwarder detection (known key skips, raw name triggers, code
-  write-back at ≥0.75, none→raw-stays), `isKnownForwarderKey` seed/file tiers; track — `forwarderIdByCode`,
-  tier attribution (fuzzy vs exact), shadow-row write, `name:tokens` (the DSV fixture: master `DSV` surfaces
-  for raw `DSV AIR AND SEA CO LTD`).
+- **Unit**: queue — `unresolvedParties` forwarder + port detection (known key / UN/LOCODE shape skips, raw
+  name / bare IATA / abbreviation triggers, code write-back at ≥0.75, none→raw-stays, port cache keyed by
+  mode), `isKnownForwarderKey` seed/file tiers; track — `forwarderIdByCode`, tier attribution (fuzzy vs
+  exact, forwarder AND port), shadow-row writes (`forwarder_link` + `port_link`), `name:tokens` (the DSV
+  fixture: master `DSV` surfaces for raw `DSV AIR AND SEA CO LTD`; port fixture: `HO CHI MINH CITY` sees
+  `VNSGN` among candidates), `rowsFor('port')` fact-alias folding, `recordPriorCorrections` for
+  forwarder_name + pol/pod (raw→code only, code→code never).
 - **Suites green** both repos (queue 705+ / track 634 backend + 198 frontend baselines).
 - **Match-level before/after** (the Phase-0+1 measurement style): run `run-matcher` over existing evidence
   (deterministic re-match, not an LLM re-parse) and compare forwarder link counts + forwarder-related
   review reasons before/after the seam.
 - **Live probe**: `MASTER_MATCHER=openpave` one-shot resolve of a real raw forwarder (e.g. a `DSV`-family
-  name) against live candidates — needs the warm openpave server; if unavailable, verify the stub path
-  end-to-end (conservative none → review) and record that the AI-path probe is pending.
+  name) AND a mode-sensitive port (`SHANGHAI` under Air → CNPVG, under Sea → CNSHA) against live
+  candidates — needs the warm openpave server; if unavailable, verify the stub path end-to-end
+  (conservative none → review) and record that the AI-path probe is pending.
 
 ## 5. Failure modes & rollout
 
@@ -121,7 +174,10 @@ Shadow rows quantify what the LLM path misses while the deterministic linker sti
 ## 6. Out of scope
 
 - Consignee resolution (decided against — see §0).
-- Deleting `forwarderIdByName` fuzzy tiers (follow-up, gated on shadow-quiet).
+- Deleting `forwarderIdByName` fuzzy tiers / trimming `portByCodeOrName` non-exact tiers (follow-ups, each
+  gated on its shadow going quiet).
+- LLM re-judging soul-emitted UN/LOCODEs (the soul owns clear cases; wrong soul picks flow through review →
+  `prior_correction` → the facts-triggered re-match, not a second LLM pass per email).
 - Carriers/SCAC (rule 6 — already shipped separately).
 - Multi-domain table, semantic embeddings (parent design non-goals).
 
