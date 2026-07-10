@@ -458,6 +458,12 @@ The `SettingsPage` + `PresentationService` god-components were already decompose
   unblock the loop (schedule + warm teacher + lower gates), relax the frozen backstops, collapse duplicated party
   facts (`PLATFORM_NOT_FORWARDER` ×3, SCAC map redundant w/ carrier master) → master-data. Full map in the
   `cobalt-queue-soul-iteration-map` memory. NEEDS a dedicated cobalt-queue session w/ its benchmark — not a blind edit.
+  - **Move-2 increment 1 SHIPPED (cobalt-queue).** `validate.ts` reading-judgment backstops retired (8 deleted:
+    forwarder platform/customs-broker, consignee echo/routing-label/factory/china-origin, port-country,
+    customer_code-is-brand; brand+in_dc_date keep-value+note); soul now authoritative for those fields (4 soul
+    sentences added). Deferred: (a) proactive review trigger for brand/in_dc (needs firing-frequency data), (b)
+    `merge.ts` cross-record trio (per-PO-qty broadcast/SO↔HBL de-echo/party-name folding), (c) full
+    forwarder-platform un-freeze (coordinated queue+track+linker).
 - [x] `[queue]` **Matcher source-fixes — ALL THREE upstream cures SHIPPED 2026-07-10 (queue PR #62).**
   (1) task_9d91d677 CVP phantoms: validate rule 1d nulls the vendor-portal alpha PO (`<code>PO<digits><letter>`)
   out of `booking_no`+join key, souls forbid it, and the Decision now SENDS **`fromPlatform`** (ALL-of over
