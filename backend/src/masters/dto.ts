@@ -38,6 +38,16 @@ export class UpdateConsigneeDto {
   @IsOptional() @IsString() mapsToCustomerId?: string
 }
 
+// carriers — ocean carriers keyed by SCAC (seeded + ops-maintained; the SCAC data home).
+export class CreateCarrierDto {
+  @IsString() @MinLength(2) scac!: string
+  @IsString() @MinLength(1) name!: string
+}
+export class UpdateCarrierDto {
+  @IsOptional() @IsString() @MinLength(2) scac?: string
+  @IsOptional() @IsString() @MinLength(1) name?: string
+}
+
 // master_resolution curated facts (ADMIN-managed; app-owned, NOT ERP masters).
 export class CreateResolutionFactDto {
   @IsIn([...MASTER_RESOLUTION_KIND]) kind!: string

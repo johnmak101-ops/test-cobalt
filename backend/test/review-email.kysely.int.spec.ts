@@ -127,7 +127,9 @@ describe('ReviewEmailRepository (SQL Server)', () => {
     expect(row?.reviewStatus).toBe('REVIEWED_CORRECTED')
     expect(row?.reviewedAt).toEqual(at)
     expect(row?.reviewNotes).toBe('fixed pol')
-    expect(row?.updatedAt.getTime()).toBeGreaterThanOrEqual(inserted.updatedAt.getTime())
+    // 2ms slack: the insert's updatedAt comes from the DB clock (SYSDATETIMEOFFSET) while update() stamps
+    // a JS Date — the two sources + tedious ms-rounding can differ by 1ms in either direction (seen flaky).
+    expect(row?.updatedAt.getTime()).toBeGreaterThanOrEqual(inserted.updatedAt.getTime() - 2)
     // reflected on re-read
     expect((await repo.findById(inserted.id))?.reviewStatus).toBe('REVIEWED_CORRECTED')
   })

@@ -21,6 +21,16 @@ const PORTS = [
   { unlocode: 'VNSGN', name: 'Ho Chi Minh City', country: 'VN', mode: 'both' as const, iata: 'SGN' },
 ]
 
+// The curated tiers are DATA now (master_resolution port_* kinds, seeded from the former hardcoded
+// tables) — the spec seeds the same facts the production seed ships, pinning the data-driven behavior.
+const PORT_FACTS = [
+  { kind: 'port_abbreviation', lhs: 'HCM', rhs: 'VNSGN' },
+  { kind: 'port_alias', lhs: 'GOTEBORG', rhs: 'SEGOT' },
+  { kind: 'port_iata', lhs: 'PNH', rhs: 'KHPNH' },
+  { kind: 'port_fragment', lhs: 'CHITTAGONG', rhs: 'BDCGP' },
+  { kind: 'port_fragment', lhs: 'CHATTOGRAM', rhs: 'BDCGP' },
+].map((f) => ({ ...f, status: 'approved', source: 'seed', reason: null }))
+
 beforeAll(async () => {
   const t = await getTestDb()
   db = t.db
@@ -30,6 +40,7 @@ afterAll(closeTestDb)
 beforeEach(async () => {
   await resetDb(db)
   await db.insertInto('ports').values(PORTS).execute()
+  await db.insertInto('masterResolution').values(PORT_FACTS as never).execute()
 })
 
 const codeOf = async (input: string): Promise<string | null> => {
@@ -69,5 +80,31 @@ describe('portByCodeOrName — forward-only fuzzy, curated aliases before the fu
 
   it("'HCM' pins to Ho Chi Minh (VNSGN), not the obscure Somali port that literally owns IATA 'HCM'", async () => {
     expect(await codeOf('HCM')).toBe('VNSGN')
+  })
+
+  it('the tiers are LIVE data: an ADMIN-created fact takes effect immediately, deactivation reverts it', async () => {
+    await db.insertInto('ports').values({ unlocode: 'SEGOT', name: 'Gothenburg', country: 'SE', mode: 'both' }).execute()
+    // 'GOTEBORG' fact is seeded → resolves; a brand-new runtime fact works the same way
+    expect(await codeOf('GOTEBORG')).toBe('SEGOT')
+    const fact = await masters.insertOpsFact({ kind: 'port_alias', lhs: 'GBG', rhs: 'SEGOT', reason: 'ops shorthand', createdBy: null })
+    expect(await codeOf('GBG')).toBe('SEGOT')
+    await masters.setActive((fact as { id: string }).id, false)
+    expect(await masters.portByCodeOrName('GBG')).toBeNull() // deactivated → a miss again, never a stale hit
+  })
+})
+
+describe('carriers master (the SCAC data home)', () => {
+  it('create normalizes SCAC to uppercase; byScac is case-insensitive; list orders by scac', async () => {
+    await masters.createCarrier({ scac: 'maeu', name: 'Maersk Line' })
+    await masters.createCarrier({ scac: 'MSCU', name: 'MSC' })
+    const hit = await masters.carrierByScac('maeu')
+    expect(hit).toMatchObject({ scac: 'MAEU', name: 'Maersk Line' })
+    expect((await masters.listCarriers()).map((c) => c.scac)).toEqual(['MAEU', 'MSCU'])
+    expect(await masters.carrierByScac('ZZZZ')).toBeNull()
+  })
+
+  it('SCAC is unique — a duplicate create fails loudly', async () => {
+    await masters.createCarrier({ scac: 'ONEY', name: 'Ocean Network Express' })
+    await expect(masters.createCarrier({ scac: 'oney', name: 'dupe' })).rejects.toThrow(/unique|duplicate/i)
   })
 })

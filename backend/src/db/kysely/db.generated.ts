@@ -72,6 +72,14 @@ export interface Bookings {
   vendorId: string | null;
 }
 
+export interface Carriers {
+  createdAt: Generated<Date>;
+  id: Generated<string>;
+  name: string;
+  scac: string;
+  updatedAt: Generated<Date>;
+}
+
 export interface ChangeLog {
   actorUserId: string | null;
   changeType: string;
@@ -422,6 +430,7 @@ export interface DB {
   appSettings: AppSettings;
   bookingPos: BookingPos;
   bookings: Bookings;
+  carriers: Carriers;
   changeLog: ChangeLog;
   consignees: Consignees;
   customers: Customers;
