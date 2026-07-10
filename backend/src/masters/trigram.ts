@@ -27,3 +27,39 @@ export function trigramSimilarity(a: string, b: string): number {
   for (const g of ta) if (tb.has(g)) inter++
   return inter / (ta.size + tb.size - inter)
 }
+
+/** Legal-form / generic tokens carrying no identity — excluded from the token-overlap signal. */
+const NAME_STOPWORDS = new Set([
+  'CO', 'COMPANY', 'LTD', 'LIMITED', 'INC', 'INCORPORATED', 'LLC', 'CORP', 'CORPORATION',
+  'GMBH', 'AG', 'SA', 'PLC', 'PTE', 'PVT', 'SDN', 'BHD', 'THE', 'AND', '&',
+  '有限公司', '公司',
+])
+
+/** CJK company names run with no delimiter between the org name and its legal-form suffix (no spaces
+ *  in Chinese), so the per-word split below can never isolate '有限公司'/'公司' as their own token —
+ *  strip them as substrings first. Built from NAME_STOPWORDS (longest-first) so the two lists can't drift. */
+const CJK_STOPWORD_RE = new RegExp(
+  [...NAME_STOPWORDS].filter((w) => /[一-鿿]/.test(w)).sort((a, b) => b.length - a.length).join('|'),
+  'g',
+)
+
+export function nameTokens(s: string): Set<string> {
+  const out = new Set<string>()
+  const cleaned = s.toUpperCase().replace(/[^A-Z0-9一-鿿]+/g, ' ').replace(CJK_STOPWORD_RE, ' ').trim()
+  for (const t of cleaned.split(/\s+/)) {
+    if (t.length >= 2 && !NAME_STOPWORDS.has(t)) out.add(t)
+  }
+  return out
+}
+
+/** Token-overlap recall signal (all-AI spec §3): master tokens ⊆ input tokens, or Jaccard ≥ 0.5.
+ *  Rescues short master names ('DSV') that trigram similarity under-scores against long raws. */
+export function tokenMatch(input: string, master: string): boolean {
+  const a = nameTokens(input)
+  const b = nameTokens(master)
+  if (!a.size || !b.size) return false
+  let inter = 0
+  for (const t of b) if (a.has(t)) inter++
+  if (inter === b.size) return true
+  return inter / (a.size + b.size - inter) >= 0.5
+}

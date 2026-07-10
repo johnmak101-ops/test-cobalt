@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common'
 import { MastersRepository } from '../db/repositories/masters.repository'
-import { trigramSimilarity } from './trigram'
+import { trigramSimilarity, tokenMatch } from './trigram'
 
 /**
  * Deterministic, LLM-free candidate retrieval for the LLM Master Matcher (design 2026-07-09 §3 +
@@ -17,7 +17,7 @@ import { trigramSimilarity } from './trigram'
  * for 60s; correctness never depends on the cache.
  */
 
-export type CandidateKind = 'customer' | 'vendor' | 'forwarder' | 'consignee'
+export type CandidateKind = 'customer' | 'vendor' | 'forwarder' | 'consignee' | 'port'
 
 export interface CandidatesRequest {
   type: CandidateKind
@@ -38,6 +38,7 @@ export interface Candidate {
   name: string
   type: CandidateKind
   vendorType?: string | null
+  mode?: string | null
   country: string | null
   domains: string[]
   aliases: string[]
@@ -50,6 +51,7 @@ interface MasterRow {
   name: string
   type: CandidateKind
   vendorType?: string | null
+  mode?: string | null
   country: string | null
   domains: string[]
   aliases: string[]
@@ -90,6 +92,13 @@ export class CandidatesService {
         for (const a of r.aliases) nameScore = Math.max(nameScore, trigramSimilarity(inputName, a))
         if (nameScore >= NAME_THRESHOLD) signals.push(`name:${nameScore.toFixed(2)}`)
         else nameScore = 0
+      }
+      if (inputName && nameScore === 0) {
+        const tokenHit = tokenMatch(inputName, r.name) || r.aliases.some((a) => tokenMatch(inputName, a))
+        if (tokenHit) {
+          nameScore = 0.6
+          signals.push('name:tokens')
+        }
       }
       let domainScore = 0
       if (inputDomain && r.domains.length) {
@@ -135,6 +144,7 @@ export class CandidatesService {
         name: r.name,
         type: r.type,
         vendorType: r.vendorType ?? null,
+        mode: r.mode ?? null,
         country: r.country,
         domains: r.domains,
         aliases: r.aliases,
@@ -231,6 +241,23 @@ export class CandidatesService {
       rows = fwds.map((f) => ({
         code: f.code, name: f.name, type: 'forwarder' as const, country: null,
         domains: byFwd.get(f.id)?.domains ?? [], aliases: byFwd.get(f.id)?.aliases ?? [],
+      }))
+    } else if (kind === 'port') {
+      const [ports, facts] = await Promise.all([this.repo.listPorts(), this.repo.listResolution('approved')])
+      const aliasesByUloc = new Map<string, string[]>()
+      for (const f of facts) {
+        if (!f.rhs) continue
+        if (f.kind === 'port_abbreviation' || f.kind === 'port_alias' || f.kind === 'port_iata' || f.kind === 'port_fragment') {
+          const u = String(f.rhs).toUpperCase()
+          const slot = aliasesByUloc.get(u) ?? []
+          slot.push(f.lhs)
+          aliasesByUloc.set(u, slot)
+        }
+      }
+      rows = ports.map((p) => ({
+        code: p.unlocode, name: p.name, type: 'port' as const, country: p.country, mode: p.mode,
+        domains: [],
+        aliases: [...(aliasesByUloc.get(p.unlocode.toUpperCase()) ?? []), ...(p.iata ? [p.iata] : [])],
       }))
     } else {
       rows = (await this.repo.listConsignees()).map((c) => ({
