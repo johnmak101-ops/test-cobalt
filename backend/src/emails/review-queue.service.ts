@@ -97,9 +97,14 @@ export class ReviewQueueService {
     corrected: Record<string, unknown>,
     actorId: string,
   ): Promise<void> {
-    const fields: Array<['customer_code' | 'vendor_code', (code: string) => Promise<unknown>]> = [
+    const fields: Array<[string, (code: string) => Promise<unknown>]> = [
       ['customer_code', (c) => this.masters.customerByCode(c)],
       ['vendor_code', (c) => this.masters.vendorIdByCode(c)],
+      // all-AI spec (v2): forwarder + port corrections must feed the retrieval boost too,
+      // else the learning loop stays open for the two new kinds.
+      ['forwarder_name', (c) => this.masters.forwarderIdByCode(c)],
+      ['pol', (c) => this.masters.portIdByUnlocode(c)],
+      ['pod', (c) => this.masters.portIdByUnlocode(c)],
     ]
     for (const [field, lookup] of fields) {
       const oldVal = String(original[field] ?? '').trim()

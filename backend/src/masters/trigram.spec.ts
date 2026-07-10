@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { trigrams, trigramSimilarity } from './trigram'
+import { trigrams, trigramSimilarity, tokenMatch } from './trigram'
 
 describe('trigramSimilarity (pg_trgm-compatible)', () => {
   it('is 1 for identical strings (case/punctuation-insensitive)', () => {
@@ -24,5 +24,21 @@ describe('trigramSimilarity (pg_trgm-compatible)', () => {
   it('word-boundary padding keeps word-initial characters weighty (pg_trgm behavior)', () => {
     // 'abc' vs 'abd' share only the '  a' + ' ab' boundary grams
     expect(trigramSimilarity('abc', 'abd')).toBeCloseTo(2 / 6, 5)
+  })
+})
+
+describe('tokenMatch (name:tokens recall signal)', () => {
+  it('short master name inside a long raw (the DSV case)', () => {
+    expect(tokenMatch('DSV AIR AND SEA CO LTD', 'DSV')).toBe(true)
+  })
+  it('legal-form stopwords are ignored', () => {
+    expect(tokenMatch('MAERSK LOGISTICS COMPANY LIMITED', 'MAERSK LOGISTICS')).toBe(true)
+  })
+  it('does not fire on disjoint names or stopword-only overlap', () => {
+    expect(tokenMatch('KUEHNE NAGEL LTD', 'DSV')).toBe(false)
+    expect(tokenMatch('GLOBAL CO LTD', 'PACIFIC COMPANY LIMITED')).toBe(false)
+  })
+  it('CJK names tokenize (公司 dropped as a stopword)', () => {
+    expect(tokenMatch('广州保迅诺物流有限公司', '广州保迅诺物流')).toBe(true)
   })
 })

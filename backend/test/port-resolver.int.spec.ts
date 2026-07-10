@@ -93,6 +93,55 @@ describe('portByCodeOrName — forward-only fuzzy, curated aliases before the fu
   })
 })
 
+describe('portLinkByCodeOrName tier attribution', () => {
+  it('exact UN/LOCODE reports unlocode_exact', async () => {
+    const link = await masters.portLinkByCodeOrName('NLRTM')
+    expect(link?.tier).toBe('unlocode_exact')
+  })
+
+  it('an abbreviation fact reports abbreviation (HCM → VNSGN)', async () => {
+    const link = await masters.portLinkByCodeOrName('HCM')
+    expect(link?.tier).toBe('abbreviation')
+  })
+
+  it('a bare 3-letter IATA column hit reports iata (CGP → Chattogram)', async () => {
+    const link = await masters.portLinkByCodeOrName('CGP')
+    expect(link?.tier).toBe('iata')
+  })
+
+  it('a port_iata fact hit (not shadowed by the iata column) also reports iata', async () => {
+    // 'TAO' is not any seeded port's iata COLUMN value — this exercises the FACT-based iata route,
+    // distinct from the column-based route above, and pins that BOTH tag the same 'iata' tier.
+    await masters.insertOpsFact({ kind: 'port_iata', lhs: 'TAO', rhs: 'CNQIN', reason: 'test fixture', createdBy: null })
+    const link = await masters.portLinkByCodeOrName('TAO')
+    expect(link?.tier).toBe('iata')
+    expect(link?.country).toBe('CN')
+  })
+
+  it('a port_alias fact reports alias (GOTEBORG → SEGOT)', async () => {
+    await db.insertInto('ports').values({ unlocode: 'SEGOT', name: 'Gothenburg', country: 'SE', mode: 'both' }).execute()
+    const link = await masters.portLinkByCodeOrName('GOTEBORG')
+    expect(link?.tier).toBe('alias')
+  })
+
+  it('a port_fragment fact reports fragment (Chittagong → BDCGP)', async () => {
+    const link = await masters.portLinkByCodeOrName('Chittagong')
+    expect(link?.tier).toBe('fragment')
+  })
+
+  it('the trailing forward fuzzy name match reports fuzzy_name (SHANGHAI → CNSGH)', async () => {
+    const link = await masters.portLinkByCodeOrName('SHANGHAI')
+    expect(link?.tier).toBe('fuzzy_name')
+  })
+
+  it('portByCodeOrName wrapper is unchanged (id + country only, no tier)', async () => {
+    const port = await masters.portByCodeOrName('NLRTM')
+    expect(port).toHaveProperty('id')
+    expect(port).toHaveProperty('country')
+    expect(port).not.toHaveProperty('tier')
+  })
+})
+
 describe('carriers master (the SCAC data home)', () => {
   it('create normalizes SCAC to uppercase; byScac is case-insensitive; list orders by scac', async () => {
     await masters.createCarrier({ scac: 'maeu', name: 'Maersk Line' })

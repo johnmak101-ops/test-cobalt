@@ -61,7 +61,7 @@ export class PatchResolutionFactDto {
 
 // Candidate retrieval for the LLM Master Matcher (agent-consumed; deterministic, recall-oriented).
 export class MasterCandidatesDto {
-  @IsIn(['customer', 'vendor', 'forwarder', 'consignee']) type!: 'customer' | 'vendor' | 'forwarder' | 'consignee'
+  @IsIn(['customer', 'vendor', 'forwarder', 'consignee', 'port']) type!: 'customer' | 'vendor' | 'forwarder' | 'consignee' | 'port'
   @IsOptional() @IsString() name?: string
   @IsOptional() @IsString() emailDomain?: string
   @IsOptional() @IsString() country?: string
