@@ -29,10 +29,16 @@ const URL =
   'Server=localhost,1433;Database=cobalt;User Id=sa;Password=YourStrong!Passw0rd;Encrypt=false;TrustServerCertificate=true'
 
 async function main() {
-  const dbName = parseMssqlConnectionString(URL).database
-  const master = createKysely<unknown>(URL.replace(/Database=[^;]+/i, 'Database=master'))
-  await sql.raw(`IF DB_ID('${dbName}') IS NULL CREATE DATABASE [${dbName}]`).execute(master)
-  await master.destroy()
+  const cfg = parseMssqlConnectionString(URL)
+  const dbName = cfg.database
+  if (cfg.isEntra) {
+    // Fabric SQL: the database is pre-provisioned and `master` isn't exposed — skip CREATE DATABASE.
+    console.log(`[migrate] Entra/Fabric mode — assuming ${dbName} is pre-provisioned (skipping CREATE DATABASE)`)
+  } else {
+    const master = createKysely<unknown>(URL.replace(/Database=[^;]+/i, 'Database=master'))
+    await sql.raw(`IF DB_ID('${dbName}') IS NULL CREATE DATABASE [${dbName}]`).execute(master)
+    await master.destroy()
+  }
 
   const db = createKysely<DB>(URL)
   const migrator = new Migrator({ db, provider: { getMigrations: async () => MIGRATIONS } })
@@ -44,6 +50,13 @@ async function main() {
 }
 
 main().catch((e) => {
-  console.error('[migrate] failed:', e instanceof Error ? e.message : e)
+  // Print the whole error (tedious connection failures are often an AggregateError whose top-level
+  // message is empty — the real reasons live in `.errors[]`/`.cause`), so failures are diagnosable.
+  console.error('[migrate] failed:', e)
+  if (e && typeof e === 'object') {
+    const anyE = e as { cause?: unknown; errors?: unknown }
+    if (anyE.cause) console.error('[migrate] cause:', anyE.cause)
+    if (Array.isArray(anyE.errors)) anyE.errors.forEach((sub, i) => console.error(`[migrate] sub-error[${i}]:`, sub))
+  }
   process.exit(1)
 })
