@@ -437,6 +437,29 @@ The `SettingsPage` + `PresentationService` god-components were already decompose
   PR #30), `presentation` alert summaries (PR #31), `posFor` (single query, PR #32), alert-evaluator
   milestones+emails+evidence (PR #33). **Remaining:** `committer.apply()` still `allLegs()` full-scans + loads
   whole `evidence.allWithMessage()` per commit — push candidate filtering into indexed SQL.
+  **⚠ SCOPED 2026-07-10 (mapping investigation) — NOT a clean perf refactor; has a real prerequisite:**
+  - **allLegs() scan** feeds `findExistingLeg`, which matches on strong-key overlap OR shared-PO OR
+    (zero-id) conversationId. The PO half is safely indexable (`purchase_orders.po_number` uniq →
+    `booking_pos.po_id` idx → `shipments.booking_id` idx). The STRONG-KEY half is the blocker: there is NO
+    safe queryable index. `shipment_identifiers` (the intended index, correct columns) is **opt-in populated**
+    — `writeIdentifiers` early-returns when `g.identifiers` is empty, and the rebuild path never sets it +
+    the agent DTO field is optional → most legs have ZERO rows there → querying it MISSES legs → duplicate
+    shipments. The flat `shipments.{booking_no,so_no,…}` columns are populated on every path BUT via a
+    DIFFERENT merge policy (mergeShipment rank-based) than `gk` (mergeKeys first-wins over matchKeys), so
+    they're a likely-but-NOT-provably-identical proxy — a false-negative → duplicate shipment. So the real
+    prerequisite = make strong keys queryable via a COMPREHENSIVE + indexed structure (fix
+    `shipment_identifiers` to write on every path + add a `(type,value)` index, OR unify the two merge
+    policies, OR add indexed computed columns). Only THEN is the candidate query provably a superset.
+  - **evidence.allWithMessage() scan** feeds `resolvePoEnrichment`/`unattributedBrandStyle`, which by
+    proven test behavior enrich a PO from ANY email in the DB mentioning it (cross-thread, DB-wide-by-PO —
+    `committer.int.spec` seeds thread-disconnected evidence linked only by PO string). Its broadcast guard
+    ALSO needs per-email completeness (all POs of the relevant emails). So narrowing to the group's own
+    messages is a BEHAVIOR CHANGE (breaks those specs); a `WHERE po_no IN g.pos` filter needs a new
+    `parsed_record.po_no` index AND still risks the broadcast/no-PO paths. `forMessages()` can't be reused
+    as-is (missing id/poNo/matchKeys → silently empty enrichment). Net: this half is a behavior decision,
+    not a pure optimization. **Recommendation: do the write-side `shipment_identifiers` prerequisite first
+    (own increment), then the legs candidate query; treat the evidence scan separately.** Full map in the
+    mapping-agent findings (2026-07-10 session).
 - [x] `[track]` **Review-queue apply-back — DONE 2026-07-09.** A `correct` verdict now re-applies to the linked
   shipment via `ShipmentsService.applyExtractionCorrection` (new): parser fields (`booking_no`) → leg columns
   (`bookingNo`) via `PARSER_TO_LEG`, routed through the existing `editFields` (write + human-wins field-lock +
