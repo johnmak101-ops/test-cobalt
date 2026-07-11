@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common'
-import { sql, type Kysely } from 'kysely'
+import { sql, type Kysely, type Expression, type SqlBool } from 'kysely'
 import type { DB } from '../kysely/db'
 import { KYSELY } from '../kysely.provider'
 import type { SHIPMENT_STATE } from '../enums'
@@ -82,6 +82,44 @@ export class ShipmentRepository {
 
   allLegs() {
     return this.db.selectFrom('shipments').selectAll().execute()
+  }
+
+  /**
+   * The indexed CANDIDATE SUPERSET for `findExistingLeg` — replaces the `allLegs()` full-scan on the common
+   * (identified) commit path. Returns every leg that could match the group by either:
+   *   - a STRONG key: a `shipment_match_keys` (type,value) row in `strongPairs` (the 0003 index); OR
+   *   - a SHARED PO: its booking links a `purchase_orders` row whose `po_number_norm` ∈ `posNorm` (0004 index).
+   * Both halves use the SAME normalization + source as `findExistingLeg`, so each is a superset of its match
+   * branch → running the pure `findExistingLeg` over this set yields the identical result to running it over
+   * `allLegs()` whenever the group carries a strong key or a PO. (The zero-identity `conversationId` fallback
+   * is NOT covered here — the caller keeps `allLegs()` for that rare branch.) `selectAll()` → same shape as
+   * `allLegs()`. Returns [] when the group has neither strong keys nor POs (caller shouldn't call it then).
+   */
+  async candidateLegs(strongPairs: { type: string; value: string }[], posNorm: string[]) {
+    if (!strongPairs.length && !posNorm.length) return []
+    return this.db
+      .selectFrom('shipments')
+      .selectAll()
+      .where((eb) => {
+        const ors: Expression<SqlBool>[] = []
+        if (strongPairs.length) {
+          const keyed = eb
+            .selectFrom('shipmentMatchKeys')
+            .select('shipmentId')
+            .where((eb2) => eb2.or(strongPairs.map((p) => eb2.and([eb2('type', '=', p.type), eb2('value', '=', p.value)]))))
+          ors.push(eb('id', 'in', keyed))
+        }
+        if (posNorm.length) {
+          const sharedPo = eb
+            .selectFrom('bookingPos')
+            .innerJoin('purchaseOrders', 'bookingPos.poId', 'purchaseOrders.id')
+            .select('bookingPos.bookingId')
+            .where('purchaseOrders.poNumberNorm', 'in', posNorm)
+          ors.push(eb('bookingId', 'in', sharedPo))
+        }
+        return eb.or(ors)
+      })
+      .execute()
   }
   /** Legs for the tracker/dashboard: ACTIVE plus CANCELLED. Only SUPERSEDED legs are hidden. */
   activeLegs() {

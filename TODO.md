@@ -432,12 +432,14 @@ The `SettingsPage` + `PresentationService` god-components were already decompose
   merge/state/the derived-milestone loop, which forces an index signature `[key:string]:unknown` — and that
   cancels typo-safety anyway. `Record<string,unknown>` at the boundary + `str`/`num`/`date` coercion in the
   committer is the correct split (loose in, strict at point-of-use). Do not re-propose.
-- [~] `[track]` **Ingest N+1 — per-item round-trips DONE 2026-07-09; write-side index DONE 2026-07-11; the
-  two full-scan reads remain.** Killed the per-item
+- [~] `[track]` **Ingest N+1 — per-item round-trips DONE 2026-07-09; write-side index DONE 2026-07-11;
+  committer.apply() legs-scan DONE 2026-07-11 (INCREMENT 2); `evidence.allWithMessage()` scan + `lookupByMatchKey`
+  scan remain.** Killed the per-item
   N+1s: `lookupByMatchKey` + committer match loop (`poNumbersByBooking`, PR #29), `review.queue` (`findByIds`,
   PR #30), `presentation` alert summaries (PR #31), `posFor` (single query, PR #32), alert-evaluator
-  milestones+emails+evidence (PR #33). **Remaining:** `committer.apply()` still `allLegs()` full-scans + loads
-  whole `evidence.allWithMessage()` per commit — push candidate filtering into indexed SQL.
+  milestones+emails+evidence (PR #33). **Remaining:** `committer.apply()` still loads whole
+  `evidence.allWithMessage()` per commit (a behavior decision, see below); `lookupByMatchKey` (matcher read-API)
+  still `allLegs()` full-scans with the SAME semantics as the committer — a clean follow-up reusing `candidateLegs`.
   **✅ INCREMENT 1 — write-side strong-key index SHIPPED 2026-07-11 (migration `0003_shipment_match_keys`).**
   The prerequisite below is done, but NOT via `shipment_identifiers` (the mapping note's first guess): that
   table is the wrong home — its source is the agent's `g.identifiers` display *history* (a DIFFERENT source
@@ -448,23 +450,22 @@ The `SettingsPage` + `PresentationService` god-components were already decompose
   backfill. Same source + same normalization as the matcher → the future `WHERE (type,value) IN gk` candidate
   query is a PROVABLE superset. Pure `matchKeyIndexRows` unit-tested; committer write side int-tested (create/
   amend/idempotent/strong-keys-only); 698 backend green, tsc clean. **Nothing reads it yet — inert on behavior.**
-  **➡ INCREMENT 2 (next) — read-side swap:** replace the `allLegs()` scan in `committer.apply` with a candidate
-  query = (legs sharing a strong key via `shipment_match_keys`) ∪ (legs sharing a PO via `booking_pos`) ∪
-  (zero-identity legs by `conversation_id`), then run the SAME pure `findExistingLeg` over that superset. This is
-  the risky one (a false-negative → duplicate shipment) — do it as its own PR with the index proven populated.
-  **⚠ SCOPED 2026-07-10 (mapping investigation) — NOT a clean perf refactor; has a real prerequisite:**
-  - **allLegs() scan** feeds `findExistingLeg`, which matches on strong-key overlap OR shared-PO OR
-    (zero-id) conversationId. The PO half is safely indexable (`purchase_orders.po_number` uniq →
-    `booking_pos.po_id` idx → `shipments.booking_id` idx). The STRONG-KEY half is the blocker: there is NO
-    safe queryable index. `shipment_identifiers` (the intended index, correct columns) is **opt-in populated**
-    — `writeIdentifiers` early-returns when `g.identifiers` is empty, and the rebuild path never sets it +
-    the agent DTO field is optional → most legs have ZERO rows there → querying it MISSES legs → duplicate
-    shipments. The flat `shipments.{booking_no,so_no,…}` columns are populated on every path BUT via a
-    DIFFERENT merge policy (mergeShipment rank-based) than `gk` (mergeKeys first-wins over matchKeys), so
-    they're a likely-but-NOT-provably-identical proxy — a false-negative → duplicate shipment. So the real
-    prerequisite = make strong keys queryable via a COMPREHENSIVE + indexed structure (fix
-    `shipment_identifiers` to write on every path + add a `(type,value)` index, OR unify the two merge
-    policies, OR add indexed computed columns). Only THEN is the candidate query provably a superset.
+  **✅ INCREMENT 2 — read-side swap SHIPPED 2026-07-11.** `committer.apply` now asks `ShipmentRepository.candidateLegs`
+  for an indexed SUPERSET — (legs sharing a strong key via `shipment_match_keys`, 0003) ∪ (legs whose booking shares
+  a normalized PO via `purchase_orders.po_number_norm`, new **migration 0004**) — then runs the SAME pure
+  `findExistingLeg` over it. The fully-zero-identity branch (no strong key AND no PO) keeps the `allLegs()` scan
+  because the A2 `conversation_id` fallback isn't index-covered (rare orphan-thread case, trivially superset-safe).
+  Superset proven by new int specs (`committer-candidate-query.int.spec.ts`, 9 tests) incl. the hyphenated-PO case;
+  full committer.int + 707 backend green, tsc clean.
+  **TWO discoveries during the swap:**
+  - The 2026-07-10 note's "PO half is safely indexable via `purchase_orders.po_number`" was WRONG: `findExistingLeg`
+    matches POs on `normKey` (strips hyphens/spaces), but `po_number` is stored RAW — a raw-column candidate query
+    would MISS a leg whose PO was stored with different punctuation → duplicate shipment. Fixed by the normalized,
+    indexed `po_number_norm` column (0004), written on every PO path (`upsertPo`/`createPo`/`updatePo` + the demo
+    seed), backfilled — the same "same normalization → provable superset" pattern 0003 used for strong keys.
+  - **Prod bug fixed:** migration `0003_shipment_match_keys` was never registered in the STATIC `migrate-cli.ts`
+    registry (only the vitest folder-scan provider saw it), so `shipment_match_keys` would never be created on a
+    prod/Docker/Fabric migrate → every commit's `writeMatchKeyIndex` would crash. Registered `0003` **and** `0004`.
   - **evidence.allWithMessage() scan** feeds `resolvePoEnrichment`/`unattributedBrandStyle`, which by
     proven test behavior enrich a PO from ANY email in the DB mentioning it (cross-thread, DB-wide-by-PO —
     `committer.int.spec` seeds thread-disconnected evidence linked only by PO string). Its broadcast guard
@@ -472,9 +473,9 @@ The `SettingsPage` + `PresentationService` god-components were already decompose
     messages is a BEHAVIOR CHANGE (breaks those specs); a `WHERE po_no IN g.pos` filter needs a new
     `parsed_record.po_no` index AND still risks the broadcast/no-PO paths. `forMessages()` can't be reused
     as-is (missing id/poNo/matchKeys → silently empty enrichment). Net: this half is a behavior decision,
-    not a pure optimization. **UPDATE 2026-07-11: the write-side prerequisite is DONE** (a dedicated
-    `shipment_match_keys` index, not `shipment_identifiers` — see INCREMENT 1 above for why). Next is the legs
-    candidate query (INCREMENT 2); treat the `evidence.allWithMessage()` scan as a separate behavior decision.
+    not a pure optimization. **UPDATE 2026-07-11: the legs candidate query is DONE (INCREMENT 2, above); the
+    `evidence.allWithMessage()` scan remains as a separate behavior decision** (a `WHERE po_no IN g.pos` filter
+    needs a new `parsed_record.po_no` index AND still risks the broadcast/no-PO cross-thread enrichment paths).
     Full map in the mapping-agent findings (2026-07-10 session).
 - [x] `[track]` **Review-queue apply-back — DONE 2026-07-09.** A `correct` verdict now re-applies to the linked
   shipment via `ShipmentsService.applyExtractionCorrection` (new): parser fields (`booking_no`) → leg columns

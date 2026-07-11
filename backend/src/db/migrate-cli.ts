@@ -17,11 +17,15 @@ import type { DB } from './kysely/db'
 import * as m0000_init from './kysely-migrations/0000_init'
 import * as m0001_prior_correction_kind from './kysely-migrations/0001_prior_correction_kind'
 import * as m0002_port_facts_carriers from './kysely-migrations/0002_port_facts_carriers'
+import * as m0003_shipment_match_keys from './kysely-migrations/0003_shipment_match_keys'
+import * as m0004_purchase_order_norm from './kysely-migrations/0004_purchase_order_norm'
 
 const MIGRATIONS = {
   '0000_init': m0000_init,
   '0001_prior_correction_kind': m0001_prior_correction_kind,
   '0002_port_facts_carriers': m0002_port_facts_carriers,
+  '0003_shipment_match_keys': m0003_shipment_match_keys,
+  '0004_purchase_order_norm': m0004_purchase_order_norm,
 }
 
 const URL =
