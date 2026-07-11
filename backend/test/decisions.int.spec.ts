@@ -175,4 +175,36 @@ describe('DecisionsService review policy (integration)', () => {
     const res = await decisions.ingest(decision({ autoApply: true, conflicts: ['x'] }))
     expect(res.reviewStatus).toBe('confirmed')
   })
+
+  it('v2 lookup trigger: mode_change downgrades auto-confirm when enabled', async () => {
+    await settings.setReviewPolicy(['mode_change'], null)
+    const res = await decisions.ingest(
+      decision({ autoApply: true, confidence: 95, lookupContext: { modeChange: true } }),
+    )
+    expect(res.reviewStatus).toBe('provisional')
+  })
+})
+
+describe('DecisionsService email disposition (integration)', () => {
+  it('lookupContext modeChange forces review even when agent autoApply:true', async () => {
+    const res = await decisions.ingest(
+      decision({ autoApply: true, confidence: 99, lookupContext: { modeChange: true } }),
+    )
+    expect(res.reviewStatus).toBe('provisional')
+  })
+
+  it('derived skip when no PO/strong id/status (不需處理) commits nothing', async () => {
+    const res = await decisions.ingest(
+      decision({
+        matchKey: {},
+        pos: [],
+        fields: { note: 'fyi' },
+        autoApply: false,
+        disposition: undefined,
+        lookupContext: { statusUpdate: false },
+      }),
+    )
+    expect(res.action).toBe('skip')
+    expect(await db.selectFrom('shipments').selectAll().execute()).toHaveLength(0)
+  })
 })

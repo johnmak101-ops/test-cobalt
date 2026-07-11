@@ -34,6 +34,12 @@ export const REVIEW_TRIGGERS: ReviewTrigger[] = [
     predicate: (d) => d.fromPlatform === true,
   },
   { id: 'sparse', label: 'the data is sparse (fewer than 2 populated fields)', predicate: (d) => populatedFieldCount(d.fields) < 2 },
+  // v2 lookup triggers — need agent-supplied lookupContext (cross-leg / master knowledge the payload alone lacks)
+  { id: 'new_customer', label: 'new/unknown customer', predicate: (d) => d.lookupContext?.newCustomer === true },
+  { id: 'mode_change', label: 'transport mode change (sea↔air)', predicate: (d) => d.lookupContext?.modeChange === true },
+  { id: 'moved_shipment', label: 'moved shipment / reassignment', predicate: (d) => d.lookupContext?.movedShipment === true },
+  { id: 'duplicate_number', label: 'duplicate identity number', predicate: (d) => d.lookupContext?.duplicateNumber === true },
+  { id: 'late_po', label: 'late PO on an existing shipment', predicate: (d) => d.lookupContext?.latePo === true },
 ]
 
 export const REVIEW_TRIGGER_IDS = REVIEW_TRIGGERS.map((t) => t.id)

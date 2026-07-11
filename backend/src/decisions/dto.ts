@@ -65,10 +65,22 @@ export class CreateDecisionDto {
   @IsOptional() @IsBoolean() autoApply?: boolean
 
   /** The gate's 3-way disposition. `skip` = 不需處理: a notification/invoice with no actionable shipment
-   *  data — committed for audit but flagged so it is excluded from BOTH the human review queue and alerts.
-   *  `auto`/`review` are informational here (autoApply already encodes them); only `skip` changes routing.
-   *  Omitted by legacy callers → unchanged behaviour. */
+   *  data — acknowledged without committing a shipment (see DecisionsService).
+   *  `auto`/`review` encode apply vs human review; track also re-evaluates via `resolveEmailDisposition`
+   *  when `lookupContext` review signals fire (safe direction only). Omitted → derived from lookupContext. */
   @IsOptional() @IsIn(['auto', 'review', 'skip']) disposition?: 'auto' | 'review' | 'skip'
+
+  /** Cross-leg / master-lookup signals the agent attaches so track can gate review without a full DB scan
+   *  (review-policy v2 + email disposition). Omitted by legacy callers → payload-only gates. */
+  @IsOptional() @IsObject() lookupContext?: {
+    knownCustomer?: boolean
+    newCustomer?: boolean
+    modeChange?: boolean
+    movedShipment?: boolean
+    latePo?: boolean
+    duplicateNumber?: boolean
+    statusUpdate?: boolean
+  }
 
   /** Why the gate withheld auto-apply (empty when autoApply) — surfaced in the review queue ahead of raw conflicts. */
   @IsOptional() @IsArray() @IsString({ each: true }) reviewReasons?: string[]
