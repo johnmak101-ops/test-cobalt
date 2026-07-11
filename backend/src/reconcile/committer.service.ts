@@ -260,7 +260,11 @@ export class CommitterService {
     // Per-PO master enrichment (brand / item_style_no / total_quantity + unit): pulled from the parsed_record
     // whose PO matches — NOT the shipment-level aggregate — so a brand stated at the SO level never leaks onto
     // every PO, and a PO showing two brands across a thread resolves latest-received-wins. See resolvePoEnrichment.
-    const allEvidence = g.pos.length ? await this.evidence.allWithMessage() : []
+    // INCREMENT 4 (Ingest N+1): forCommitEnrichment (po_no_norm index + message-complete + no-PO residual)
+    // instead of allWithMessage() full scan — same pure resolve/unattributed semantics, smaller read set.
+    const allEvidence = g.pos.length
+      ? await this.evidence.forCommitEnrichment([...groupPos], strongPairs)
+      : []
     const poEnrichment = g.pos.length ? resolvePoEnrichment(allEvidence) : null
     // de-correction (b2 no-PO): brand/style stated with no PO to attach to — surfaced, never silently dropped.
     const unattributed = g.pos.length ? unattributedBrandStyle(allEvidence) : []

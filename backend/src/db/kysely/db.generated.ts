@@ -216,6 +216,8 @@ export interface ParsedRecord {
   mode: string | null;
   parserAdapter: string | null;
   poNo: string | null;
+  /** Normalized PO key (normKey(po_no) || normKey(match_keys.customer_po)) — index for commit enrichment. */
+  poNoNorm: string | null;
   recordIdx: Generated<number>;
   senderType: string | null;
 }

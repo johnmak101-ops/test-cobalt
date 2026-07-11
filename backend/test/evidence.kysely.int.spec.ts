@@ -39,8 +39,11 @@ async function seedMsg(gmid: string, subject: string, sender: string) {
   const m = await db.insertInto('emailMessage').values({ graphMessageId: gmid, subject, sender }).output('inserted.id').executeTakeFirstOrThrow()
   return m.id
 }
-async function seedRec(messageId: string, gmid: string, fields: Record<string, unknown>, poNo: string) {
-  await db.insertInto('parsedRecord').values({ messageId, graphMessageId: gmid, fields: JSON.stringify(fields), poNo }).execute()
+async function seedRec(messageId: string, gmid: string, fields: Record<string, unknown>, poNo: string, poNoNorm?: string) {
+  const norm = poNoNorm ?? poNo.toUpperCase().replace(/[^A-Z0-9]/g, '')
+  await db.insertInto('parsedRecord').values({
+    messageId, graphMessageId: gmid, fields: JSON.stringify(fields), poNo, poNoNorm: norm || null,
+  }).execute()
 }
 
 describe('EvidenceRepository (SQL Server)', () => {
@@ -69,6 +72,46 @@ describe('EvidenceRepository (SQL Server)', () => {
     expect(r).toMatchObject({ sender: 'p@q.r', conversationId: null, mode: null })
     expect(r.fields).toMatchObject({ foo: 1 })
     expect(r.matchKeys).toBeNull()
+  })
+
+  /**
+   * INCREMENT 4 — forCommitEnrichment is a message-complete superset for target POs, not a full table scan.
+   * Broadcast siblings (other POs on the same email) must appear; decoy POs on other emails must not.
+   */
+  it('forCommitEnrichment returns message-complete rows for a target PO and skips unrelated emails', async () => {
+    const target = await seedMsg('gm-tgt', 'target', 't@x.co')
+    const decoy = await seedMsg('gm-decoy', 'decoy', 'd@x.co')
+    // one email, three POs (broadcast shape) — all three must come back when querying only PO-A
+    await seedRec(target, 'gm-tgt', { qty: '168' }, 'PO-A')
+    await db.insertInto('parsedRecord').values({
+      messageId: target, graphMessageId: 'gm-tgt', recordIdx: 1, poNo: 'PO-B', poNoNorm: 'POB',
+      fields: JSON.stringify({ qty: '168' }),
+    }).execute()
+    await db.insertInto('parsedRecord').values({
+      messageId: target, graphMessageId: 'gm-tgt', recordIdx: 2, poNo: 'PO-C', poNoNorm: 'POC',
+      fields: JSON.stringify({ qty: '168' }),
+    }).execute()
+    await seedRec(decoy, 'gm-decoy', { brand: 'DECOY' }, 'PO-DECOY')
+
+    const rows = await repo.forCommitEnrichment(['POA'], [])
+    const pos = rows.map((r) => r.poNo).sort()
+    expect(pos).toEqual(['PO-A', 'PO-B', 'PO-C'])
+    expect(rows.some((r) => r.poNo === 'PO-DECOY')).toBe(false)
+  })
+
+  it('forCommitEnrichment includes no-PO rows that share a strong key (unattributed path)', async () => {
+    const so = await seedMsg('gm-so', 'so-level', 's@x.co')
+    await db.insertInto('parsedRecord').values({
+      messageId: so, graphMessageId: 'gm-so', poNo: null, poNoNorm: null,
+      matchKeys: JSON.stringify({ so_no: 'SO-U' }), fields: JSON.stringify({ brand: 'Barbour' }),
+    }).execute()
+    const rows = await repo.forCommitEnrichment([], [{ type: 'so_no', value: 'SOU' }])
+    expect(rows).toHaveLength(1)
+    expect(rows[0].fields).toMatchObject({ brand: 'Barbour' })
+  })
+
+  it('forCommitEnrichment returns [] when given no keys', async () => {
+    expect(await repo.forCommitEnrichment([], [])).toEqual([])
   })
 
   it('sendersByGraphIds returns senders keyed by graph_message_id', async () => {
