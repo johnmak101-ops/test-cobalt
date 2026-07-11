@@ -176,10 +176,11 @@ masters.repository: `PORT_ALIASES` / `IATA_TO_UNLOCODE` / `ABBREV_OVERRIDE {HCM:
   (`critic-agent/openpave.ts`), reconciler, master-matcher (`master-matcher/openpave.ts`), refiner
   (`iterator/refine-openpave.ts`). The OpenCode runtime + adapters were retired (`7a8c279`); config
   seams are `openpave | stub/heuristic/deterministic`. Nothing left to swap.
-- [x] `[queue]` **Iterator trigger — OPS-DEFERRED 2026-07-11 (design closed).** Corrections source =
-  human review / field-locks → `review_correction` fuel (not sample corrections.json). Schedule only when
-  openpave teacher is warm in prod; cold auto-schedule is harmful. Code path exists (`batch:iterate` /
-  probe-refiner); ops owns cron + warm teacher.
+- [x] `[queue]` **Iterator trigger — DONE 2026-07-11 (cobalt-queue).** Corrections source =
+  `review_correction` ⨝ `email_snapshot` (not sample json). Quantity gate + per-field floor +
+  **persisted cursor** (`queue.iterator_state`) so cron does not re-fire the same pile; pure
+  `evaluateBatchTrigger` + `pnpm cli batch:status` (dry, no LLM). `batch:iterate` advances cursor;
+  never auto-promotes; ops only runs iterate when status ready AND openpave warm.
 
 ## Masters & validation
 - [x] `[track]` **Masters from ERP, not seed — DONE 2026-07-09 (PR #47).** The architect's call: don't
