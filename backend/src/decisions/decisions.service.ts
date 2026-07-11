@@ -4,6 +4,7 @@ import { SettingsService } from '../settings/settings.service'
 import { IngestRepository } from '../db/repositories/ingest.repository'
 import type { CreateDecisionDto } from './dto'
 import { evaluate } from './review-policy'
+import { resolveEmailDisposition } from './email-disposition'
 
 export interface DecisionResult extends Omit<CommitResult, 'action'> {
   /** `skip` = the decision was 不需處理 and acknowledged WITHOUT committing a shipment (see ingest). */
@@ -37,12 +38,12 @@ export class DecisionsService {
   ) {}
 
   async ingest(dto: CreateDecisionDto): Promise<DecisionResult> {
-    // 不需處理 (skip): a notification/invoice with no actionable shipment data — the agent gate emits `skip`
-    // only when there is no PO, no strong id, AND no status field. It must NOT be committed as a shipment:
-    // with an empty match-key the committer can never upsert, so it would mint a brand-new phantom JOB-XXXX
-    // ACTIVE leg on EVERY ingest (surfacing in the tracker + burning a job number + duplicating on re-POST).
-    // Acknowledge it without committing — the source email + parsed record are retained on the agent side.
-    if (dto.disposition === 'skip') return { ...SKIP_RESULT, confidence: dto.confidence, reviewStatus: 'skip' }
+    // Email disposition (matcher gates review): derive / escalate from lookupContext + payload.
+    // `skip` must NOT commit — empty match-key would mint phantom JOB-XXXX legs on every ingest.
+    const disp = resolveEmailDisposition(dto)
+    if (disp.disposition === 'skip') {
+      return { ...SKIP_RESULT, confidence: dto.confidence, reviewStatus: 'skip' }
+    }
 
     // RECEIVE side of the cross-service push (post DB-split): cobalt-queue sends the per-email parsed
     // records + metadata that used to live in the shared evidence/queue schemas alongside the decision.
@@ -52,25 +53,30 @@ export class DecisionsService {
     if (dto.evidence?.length) await this.ingestRepo.upsertFromDecision(dto.evidence)
 
     const threshold = await this.settings.confidenceThreshold()
-    // The agent's deterministic review gate is AUTHORITATIVE: a gate-auto decision confirms, a gate-review
-    // goes to a human — independent of the (now informational) confidence score. A shipment is legitimately
-    // sparse early in its lifecycle (PO first, identity ids fill in later), so a completeness-based score must
-    // NOT veto a decision the policy gate already cleared. Legacy callers that OMIT autoApply fall back to the
-    // score-vs-threshold routing (unchanged).
+    // Disposition + agent autoApply: review disposition / false autoApply → provisional; auto → confirmed
+    // when autoApply true or omitted with high confidence (legacy). Safe direction only from disposition.
     let reviewStatus: 'provisional' | 'confirmed' =
-      dto.autoApply === undefined
-        ? dto.confidence >= threshold ? 'confirmed' : 'provisional'
-        : dto.autoApply ? 'confirmed' : 'provisional'
-    let reviewReasons = dto.reviewReasons ?? null
+      disp.disposition === 'review' || dto.autoApply === false
+        ? 'provisional'
+        : dto.autoApply === true
+          ? 'confirmed'
+          : dto.autoApply === undefined
+            ? dto.confidence >= threshold ? 'confirmed' : 'provisional'
+            : 'provisional'
+    let reviewReasons: string[] | null = [
+      ...(dto.reviewReasons ?? []),
+      ...(disp.disposition === 'review' ? disp.reasons : []),
+    ]
+    if (!reviewReasons.length) reviewReasons = null
 
     // Admin-configured review policy (Settings ▸ Review Policy): an enabled trigger that matches
     // downgrades an auto-confirm to human review — safe direction only, never the reverse. Applies to
-    // live agent decisions too. Empty policy (the default) → no-op.
+    // live agent decisions too. Empty policy (the default) → no-op. v2 lookup triggers read lookupContext.
     if (reviewStatus === 'confirmed') {
       const fired = evaluate(await this.settings.reviewPolicy(), dto)
       if (fired.length) {
         reviewStatus = 'provisional'
-        reviewReasons = [...(dto.reviewReasons ?? []), ...fired]
+        reviewReasons = [...(reviewReasons ?? []), ...fired]
       }
     }
 

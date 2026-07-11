@@ -42,6 +42,14 @@ describe('review-policy evaluate', () => {
   it('returns every matched enabled trigger', () => {
     expect(evaluate({ enabled: ['no_po', 'conflict'] }, base({ pos: [], conflicts: ['x'] }))).toHaveLength(2)
   })
+  it('v2 lookup triggers fire only when lookupContext signals are set', () => {
+    expect(evaluate({ enabled: ['new_customer'] }, base({ lookupContext: { newCustomer: true } }))).toHaveLength(1)
+    expect(evaluate({ enabled: ['mode_change'] }, base({ lookupContext: { modeChange: true } }))).toHaveLength(1)
+    expect(evaluate({ enabled: ['moved_shipment'] }, base({ lookupContext: { movedShipment: true } }))).toHaveLength(1)
+    expect(evaluate({ enabled: ['duplicate_number'] }, base({ lookupContext: { duplicateNumber: true } }))).toHaveLength(1)
+    expect(evaluate({ enabled: ['late_po'] }, base({ lookupContext: { latePo: true } }))).toHaveLength(1)
+    expect(evaluate({ enabled: ['new_customer'] }, base({}))).toEqual([])
+  })
 })
 
 describe('review-policy catalogView', () => {
