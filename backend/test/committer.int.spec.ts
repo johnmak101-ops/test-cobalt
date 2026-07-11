@@ -168,6 +168,12 @@ describe('CommitterService — per-PO enrichment from parsed evidence (integrati
       .executeTakeFirstOrThrow()
     // graphMessageId is set like production ingest does (SQL Server UNIQUE (gmid, record_idx) treats NULLs
     // as equal, so NULL-gmid rows — fine on Postgres — would collide here)
+    const mk = over.matchKeys ?? {}
+    // po_no_norm = same key resolvePoEnrichment uses (normKey(po_no)||normKey(customer_po)) — production ingest writes it.
+    const poNoNorm =
+      String(over.poNo ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '') ||
+      String(mk.customer_po ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '') ||
+      null
     await db
       .insertInto('parsedRecord')
       .values({
@@ -175,8 +181,9 @@ describe('CommitterService — per-PO enrichment from parsed evidence (integrati
         graphMessageId: over.graphMessageId,
         recordIdx: over.recordIdx ?? 0,
         poNo: over.poNo,
+        poNoNorm,
         fields: JSON.stringify(over.fields),
-        matchKeys: JSON.stringify(over.matchKeys ?? {}),
+        matchKeys: JSON.stringify(mk),
       })
       .execute()
   }
@@ -404,14 +411,22 @@ describe('CommitterService — de-correction (b): PO-enrichment surfaced as revi
     await db
       .insertInto('parsedRecord')
       .values(
-        records.map((r, i) => ({
-          messageId: msg.id,
-          graphMessageId, // as production ingest writes it (NULL gmids collide on the SQL Server unique key)
-          recordIdx: i,
-          poNo: r.poNo,
-          fields: JSON.stringify(r.fields),
-          matchKeys: JSON.stringify(r.matchKeys ?? {}),
-        })),
+        records.map((r, i) => {
+          const mk = r.matchKeys ?? {}
+          const poNoNorm =
+            String(r.poNo ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '') ||
+            String(mk.customer_po ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '') ||
+            null
+          return {
+            messageId: msg.id,
+            graphMessageId, // as production ingest writes it (NULL gmids collide on the SQL Server unique key)
+            recordIdx: i,
+            poNo: r.poNo,
+            poNoNorm,
+            fields: JSON.stringify(r.fields),
+            matchKeys: JSON.stringify(mk),
+          }
+        }),
       )
       .execute()
   }

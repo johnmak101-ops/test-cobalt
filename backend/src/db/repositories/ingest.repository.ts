@@ -2,6 +2,7 @@ import { Inject, Injectable } from '@nestjs/common'
 import { type Kysely } from 'kysely'
 import type { DB } from '../kysely/db'
 import { KYSELY } from '../kysely.provider'
+import { evidencePoNorm } from '../../reconcile/evidence-po-norm'
 
 export interface EvidenceInput {
   graphMessageId: string
@@ -74,18 +75,19 @@ export class IngestRepository {
         const recordIdx = e.recordIdx ?? 0
         const fieldsJson = JSON.stringify(e.fields ?? {})
         const matchKeysJson = JSON.stringify(e.matchKeys ?? {})
+        const poNoNorm = evidencePoNorm(e.poNo, e.matchKeys ?? null)
         const existingRec = await tx.selectFrom('parsedRecord')
           .where('graphMessageId', '=', e.graphMessageId).where('recordIdx', '=', recordIdx)
           .select('id').executeTakeFirst()
         if (existingRec) {
           await tx.updateTable('parsedRecord').set({
-            messageId: msgId, poNo: e.poNo ?? null, emailType: e.emailType ?? null,
+            messageId: msgId, poNo: e.poNo ?? null, poNoNorm, emailType: e.emailType ?? null,
             senderType: e.senderType ?? null, mode: e.mode ?? null, fields: fieldsJson, matchKeys: matchKeysJson,
           }).where('id', '=', existingRec.id).execute()
         } else {
           await tx.insertInto('parsedRecord').values({
             messageId: msgId, graphMessageId: e.graphMessageId, recordIdx,
-            poNo: e.poNo ?? null, emailType: e.emailType ?? null, senderType: e.senderType ?? null,
+            poNo: e.poNo ?? null, poNoNorm, emailType: e.emailType ?? null, senderType: e.senderType ?? null,
             mode: e.mode ?? null, fields: fieldsJson, matchKeys: matchKeysJson,
           }).execute()
         }

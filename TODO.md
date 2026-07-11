@@ -432,13 +432,11 @@ The `SettingsPage` + `PresentationService` god-components were already decompose
   merge/state/the derived-milestone loop, which forces an index signature `[key:string]:unknown` — and that
   cancels typo-safety anyway. `Record<string,unknown>` at the boundary + `str`/`num`/`date` coercion in the
   committer is the correct split (loose in, strict at point-of-use). Do not re-propose.
-- [~] `[track]` **Ingest N+1 — per-item round-trips DONE 2026-07-09; write-side index DONE 2026-07-11;
-  committer.apply() legs-scan DONE 2026-07-11 (INCREMENT 2); lookupByMatchKey scan DONE 2026-07-11 (INCREMENT 3);
-  `evidence.allWithMessage()` scan remains.** Killed the per-item
+- [x] `[track]` **Ingest N+1 — COMPLETE 2026-07-11.** Per-item N+1s + write-side index + committer legs
+  (INCREMENT 2) + lookupByMatchKey (INCREMENT 3) + evidence enrichment (INCREMENT 4). Killed the per-item
   N+1s: `lookupByMatchKey` + committer match loop (`poNumbersByBooking`, PR #29), `review.queue` (`findByIds`,
   PR #30), `presentation` alert summaries (PR #31), `posFor` (single query, PR #32), alert-evaluator
-  milestones+emails+evidence (PR #33). **Remaining:** `committer.apply()` still loads whole
-  `evidence.allWithMessage()` per commit (a behavior decision, see below).
+  milestones+emails+evidence (PR #33).
   **✅ INCREMENT 1 — write-side strong-key index SHIPPED 2026-07-11 (migration `0003_shipment_match_keys`).**
   The prerequisite below is done, but NOT via `shipment_identifiers` (the mapping note's first guess): that
   table is the wrong home — its source is the agent's `g.identifiers` display *history* (a DIFFERENT source
@@ -480,6 +478,12 @@ The `SettingsPage` + `PresentationService` god-components were already decompose
   **✅ INCREMENT 3 — matcher lookupByMatchKey read-side swap SHIPPED 2026-07-11.** Same `candidateLegs`
   (strong-key index ∪ po_number_norm) as committer.apply; pure filter unchanged. Specs in
   `matcher-reads.int.spec.ts` (Increment 3 block): committer-written strong-key + hyphenated PO + "no index → invisible".
+  **✅ INCREMENT 4 — evidence forCommitEnrichment SHIPPED 2026-07-11.** Migration `0005_parsed_record_po_norm`
+  + ingest writes `po_no_norm` (= poKeyOf). Committer PO-enrichment uses `forCommitEnrichment(posNorm, strongPairs)`:
+  (A) message-complete for emails that mention a target PO (cross-thread + broadcast siblings), (B) residual
+  no-PO-key rows filtered by strongKeys overlap (unattributed brand/style). Pure resolvePoEnrichment /
+  unattributedBrandStyle unchanged. `reconcile.run` still uses `allWithMessage()` (full rebuild). Specs:
+  evidence.kysely.int (message-complete + unattributed + empty) + existing committer enrichment/de-correction (b).
 - [x] `[track]` **Review-queue apply-back — DONE 2026-07-09.** A `correct` verdict now re-applies to the linked
   shipment via `ShipmentsService.applyExtractionCorrection` (new): parser fields (`booking_no`) → leg columns
   (`bookingNo`) via `PARSER_TO_LEG`, routed through the existing `editFields` (write + human-wins field-lock +
