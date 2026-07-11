@@ -345,11 +345,10 @@ Follow-ups from the whole-branch review — done on branch `feat/auth-hardening-
   locks active SUPERADMIN rows `FOR UPDATE` + re-counts in a tx (throws `LastActiveSuperadminError`); `users.service`
   update()/remove() route deactivation/demotion through it. Deterministic int test (side-tx holds the lock) — proven
   red on the old check-then-act, green now.
-- [x] `[track]` **e2e AppModule boot test — CLOSED 2026-07-11.** Structural guard ORDER is pinned
-  (`guard-wiring.spec.ts`); per-guard + throttle unit specs cover behavior. Full NestFactory HTTP boot under
-  vitest needs SWC (`unplugin-swc`) for decorator metadata — **deferred** as optional hardening (not a
-  production bug; guards are unit-tested). Recipe remains: add `@swc/core` + `unplugin-swc` to vitest when
-  a supertest AppModule boot is required.
+- [x] `[track]` **e2e AppModule boot test — DONE 2026-07-11.** vitest uses `unplugin-swc` + `@swc/core`
+  (`decoratorMetadata: true`) so Nest DI works under the runner. `test/app-boot.e2e.spec.ts` boots real
+  `NestFactory.create(AppModule)` against `cobalt_test`: public `/api/health`, mustReset → 403 MUST_RESET on
+  gated routes, 11th login → 429. Structural `guard-wiring.spec.ts` kept.
 - [x] `[track]` **`SESSION_TTL_HOURS` via ConfigService.** `auth.constants.sessionTtlSeconds(config)` replaces the
   import-time `process.env` read; used by the JWT `registerAsync` factory + injected into `AuthController` for the cookie
   maxAge. A `.env` value is now honoured (was always 12h). Unit-tested.
