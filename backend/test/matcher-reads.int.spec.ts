@@ -3,22 +3,30 @@ import { getTestDb, resetDb, closeTestDb, repos, type TestDB } from './setup-db'
 import { ShipmentsService } from '../src/shipments/shipments.service'
 import { PosService } from '../src/pos/pos.service'
 import { CommitterService } from '../src/reconcile/committer.service'
+import { matchKeyIndexRows } from '../src/reconcile/match-key-index'
+import { normKey } from '../src/reconcile/match-keys'
 
 let db: TestDB
 let shipments: ShipmentsService
 let pos: PosService
+let committer: CommitterService
 
 beforeAll(async () => {
   const t = await getTestDb()
   db = t.db
   const r = repos(db)
-  const committer = new CommitterService(r.masters, r.booking, r.shipment, r.fieldLock, r.audit, r.evidence, r.purchaseOrder)
+  committer = new CommitterService(r.masters, r.booking, r.shipment, r.fieldLock, r.audit, r.evidence, r.purchaseOrder)
   shipments = new ShipmentsService(r.shipment, r.booking, r.fieldLock, r.audit, committer)
   pos = new PosService(r.purchaseOrder)
 })
 afterAll(closeTestDb)
 beforeEach(() => resetDb(db))
 
+/**
+ * Production-shaped seed: match_keys JSON on the leg PLUS the queryable indexes the candidate path
+ * needs (shipment_match_keys from strongKeys, purchase_orders.po_number_norm). Mirrors committer.writeMatchKeyIndex
+ * + PO write. Without the indexes, lookupByMatchKey (Increment 3) cannot find the leg.
+ */
 async function seedLeg(
   matchKeys: Record<string, unknown>,
   opts: { jobNo?: string; status?: 'ACTIVE' | 'CLOSED' | 'CANCELLED'; po?: string } = {},
@@ -33,8 +41,14 @@ async function seedLeg(
     .values({ bookingId: bk.id, legNo: 1, matchKeys: JSON.stringify(matchKeys) })
     .outputAll('inserted')
     .executeTakeFirstOrThrow()
+  const indexRows = matchKeyIndexRows(leg.id, matchKeys)
+  if (indexRows.length) await db.insertInto('shipmentMatchKeys').values(indexRows as never).execute()
   if (opts.po) {
-    const po = await db.insertInto('purchaseOrders').values({ poNumber: opts.po }).outputAll('inserted').executeTakeFirstOrThrow()
+    const po = await db
+      .insertInto('purchaseOrders')
+      .values({ poNumber: opts.po, poNumberNorm: normKey(opts.po) })
+      .outputAll('inserted')
+      .executeTakeFirstOrThrow()
     await db.insertInto('bookingPos').values({ bookingId: bk.id, poId: po.id }).execute()
   }
   return { bk, leg }
@@ -95,14 +109,15 @@ describe('Matcher read-APIs (integration)', () => {
   // with no other failing test. This pins the wire shape the adapter depends on.
   it('returns candidates in the shape the Agent VM adapter consumes (mode + camelCase columns + matchKeys)', async () => {
     const bk = await db.insertInto('bookings').values({ jobNo: 'JOB-CT', status: 'ACTIVE' }).outputAll('inserted').executeTakeFirstOrThrow()
-    await db.insertInto('shipments').values({
+    const leg = await db.insertInto('shipments').values({
       bookingId: bk.id,
       legNo: 1,
       mode: 'AIR', // uppercase SHIPMENT_MODE enum — must arrive verbatim, NOT lowercased
       soNo: 'SO-CT',
       hblAwbFcrNo: 'HAWB-CT',
       matchKeys: JSON.stringify({ so_no: 'SO-CT' }),
-    }).execute()
+    }).outputAll('inserted').executeTakeFirstOrThrow()
+    await db.insertInto('shipmentMatchKeys').values(matchKeyIndexRows(leg.id, { so_no: 'SO-CT' }) as never).execute()
     const res = await shipments.lookupByMatchKey({ so_no: 'SO-CT' })
     const c = res.candidates[0] as any
     expect(c).toBeTruthy()
@@ -139,5 +154,75 @@ describe('Matcher read-APIs (integration)', () => {
     expect(all).toEqual(expect.arrayContaining(['PO-CLOSED', 'PO-ACTIVE']))
     expect(open).toContain('PO-ACTIVE')
     expect(open).not.toContain('PO-CLOSED')
+  })
+})
+
+/**
+ * INCREMENT 3 — matcher read-API drops the allLegs() full-scan and uses the same indexed candidate
+ * superset as committer.apply (shipment_match_keys ∪ po_number_norm). Behavior of the pure
+ * strong-key / shared-PO filter is unchanged; only the candidate SET is narrowed at the DB.
+ */
+describe('ShipmentsService.lookupByMatchKey — candidate-query swap (Increment 3)', () => {
+  it('finds a committer-written leg by strong key (index path, not matchKeys JSON alone)', async () => {
+    const a = await committer.apply({
+      fields: { booking_no: 'BK-LK' },
+      pos: [],
+      matchKeys: { booking_no: 'BK-LK' },
+      emailTypes: ['Booking Request'],
+      events: [{ emailType: 'Booking Request', receivedAt: '2026-01-01T00:00:00Z' }],
+      mode: 'Sea-LCL',
+      conversationId: null,
+      conflicts: [],
+      evidenceIds: ['ev-lk'],
+    })
+    // decoy must not pollute candidates
+    await committer.apply({
+      fields: { so_no: 'SO-DECOY' },
+      pos: [],
+      matchKeys: { so_no: 'SO-DECOY' },
+      emailTypes: ['Booking Request'],
+      events: [{ emailType: 'Booking Request', receivedAt: '2026-01-01T00:00:00Z' }],
+      mode: 'Sea-LCL',
+      conversationId: null,
+      conflicts: [],
+      evidenceIds: ['ev-d'],
+    })
+    const res = await shipments.lookupByMatchKey({ booking_no: 'BK-LK' })
+    expect(res.candidates).toHaveLength(1)
+    expect((res.candidates[0] as { id: string }).id).toBe(a.shipmentId)
+    expect((res.candidates[0] as { matchedBy: string }).matchedBy).toBe('strong_key')
+  })
+
+  it('finds by shared PO with different punctuation (po_number_norm index)', async () => {
+    await committer.apply({
+      fields: {},
+      pos: ['FEL-GZ-OSA-2842'],
+      matchKeys: {},
+      emailTypes: ['Booking Request'],
+      events: [{ emailType: 'Booking Request', receivedAt: '2026-01-01T00:00:00Z' }],
+      mode: 'Sea-LCL',
+      conversationId: 'c-po-lk',
+      conflicts: [],
+      evidenceIds: ['ev-po'],
+    })
+    const res = await shipments.lookupByMatchKey({ customer_po: 'FEL GZ OSA 2842' })
+    expect(res.candidates).toHaveLength(1)
+    expect((res.candidates[0] as { matchedBy: string }).matchedBy).toBe('po')
+  })
+
+  it('does NOT find a leg that only has matchKeys JSON and no shipment_match_keys index', async () => {
+    // Documents the Increment 3 contract: the candidate query reads the INDEX, not the JSON bag.
+    // A raw insert that skips writeMatchKeyIndex is invisible to the matcher (same as a failed backfill).
+    const bk = await db
+      .insertInto('bookings')
+      .values({ jobNo: 'JOB-NOIDX', status: 'ACTIVE' })
+      .outputAll('inserted')
+      .executeTakeFirstOrThrow()
+    await db
+      .insertInto('shipments')
+      .values({ bookingId: bk.id, legNo: 1, matchKeys: JSON.stringify({ so_no: 'SO-NOIDX' }) })
+      .execute()
+    const res = await shipments.lookupByMatchKey({ so_no: 'SO-NOIDX' })
+    expect(res.candidates).toHaveLength(0)
   })
 })

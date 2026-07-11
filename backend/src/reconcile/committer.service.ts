@@ -407,7 +407,8 @@ export class CommitterService {
    * matches on, as `(type, value)` rows a future candidate query can hit in place of the `allLegs()` scan.
    * Derives from `match_keys` (NOT the agent's identifier history) — the SAME source, same normalization the
    * matcher reads — so it stays provably consistent on EVERY path (agent / rebuild / manual, create + amend).
-   * Idempotent (delete+insert per shipment). Nothing reads it yet; the scan→candidate-query swap is a follow-up.
+   * Idempotent (delete+insert per shipment). Read by `candidateLegs` (committer.apply INCREMENT 2 +
+   * lookupByMatchKey INCREMENT 3).
    */
   private async writeMatchKeyIndex(shipmentId: string, g: ReconGroup) {
     await this.shipments.replaceMatchKeys(shipmentId, matchKeyIndexRows(shipmentId, g.matchKeys))
