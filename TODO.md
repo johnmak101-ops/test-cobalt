@@ -102,8 +102,8 @@ the schema owner, Fabric err 33134). Deploy runbook + full detail: `HANDOFF-FABR
   parsed evidence rows, 4 sender rules. Gotcha encoded: tedious binds an explicit `null` as nvarchar →
   varbinary columns must be OMITTED when null. The deferred full re-parse remains optional (evidence
   came across intact).
-- [ ] `[both]` kysely 0.29 ships a native `.top(n)` — optional mechanical sweep to replace the
-  `.modifyFront(sql`top …`)` idiom.
+- [x] `[both]` kysely `.top(n)` sweep — **CANCELLED 2026-07-11 (YAGNI).** Optional mechanical rewrite of
+  the `.modifyFront(sql top …)` idiom; no bug, no perf incident. Reopen only if a profiler shows cost.
 - [x] `[both]` docker-compose 2nd-DB provisioning — superseded: each repo's compose is now self-contained
   (track: mssql + app; queue: rabbitmq in-stack + SQL Server via host/Fabric), migrate services create
   their own DB if missing.
@@ -146,8 +146,9 @@ Iterator generalization); (3) when the shadow flag stops firing, DELETE the trac
   `platform_only` (CVP phantom, task_9d91d677 / LPO→booking_no), NOT (a) `bare_orphan` (genuine doc) — via new
   `classifyKindDetail` in `state.ts`; `normBookingKey` revision fold measured committer-side (compare
   `normBookingKey` vs `normKey`) so the pure fn stays byte-identical to the matcher's mirror (parity intact).
-- [ ] **STEP 2/3 remain:** fix the soul upstream (cobalt-queue), then DELETE each track guard once its shadow
-  goes quiet. `normBookingKey` delete must move WITH the matcher's mirrored copy (comment mandates parity).
+- [x] **STEP 2/3 — OPS-DEFERRED 2026-07-11.** Soul-upstream fixes + DELETE track shadow-guards only when
+  `audit.change_log` shadow counts for forwarder_name / classifyKind / normBookingKey go quiet in prod.
+  `normBookingKey` delete must move WITH queue matcher mirror. Not safe to delete while shadows still fire.
 
 ### (d) Legacy reconcile path — same disease, low live impact
 `merge.ts` FIELD_CLASS-allowlist drop + `sameId`/`sameName` folding + higher-rank silent supersede; `reconcile.service`
@@ -175,9 +176,10 @@ masters.repository: `PORT_ALIASES` / `IATA_TO_UNLOCODE` / `ABBREV_OVERRIDE {HCM:
   (`critic-agent/openpave.ts`), reconciler, master-matcher (`master-matcher/openpave.ts`), refiner
   (`iterator/refine-openpave.ts`). The OpenCode runtime + adapters were retired (`7a8c279`); config
   seams are `openpave | stub/heuristic/deterministic`. Nothing left to swap.
-- [ ] `[queue]` **Iterator trigger.** `run-iterator.ts` is a manual dev pass (not scheduled) and reads
-  a sample `corrections.json`. Decide the real corrections source (a corrections store fed by human
-  edits / field-locks) and whether/when to schedule a gated pass.
+- [x] `[queue]` **Iterator trigger — OPS-DEFERRED 2026-07-11 (design closed).** Corrections source =
+  human review / field-locks → `review_correction` fuel (not sample corrections.json). Schedule only when
+  openpave teacher is warm in prod; cold auto-schedule is harmful. Code path exists (`batch:iterate` /
+  probe-refiner); ops owns cron + warm teacher.
 
 ## Masters & validation
 - [x] `[track]` **Masters from ERP, not seed — DONE 2026-07-09 (PR #47).** The architect's call: don't
@@ -231,13 +233,12 @@ masters.repository: `PORT_ALIASES` / `IATA_TO_UNLOCODE` / `ABBREV_OVERRIDE {HCM:
   (Settings → Resolution Rules), NOT validate.ts tables.
 
 ## Tracking & review
-- [ ] `[both]` **JOB-2026-0006 (optional, not a bug).** Stays provisional on a *genuine* two-booking-ref
-  ambiguity (`B1261611448` 中外运订仓号 vs `FEL-GZ-OSA-2842`; `GZOSA2600021` vs `SOKLPO023605A`).
-  Correct to flag for a human. OPTIONAL: route `中外运订仓号` → `booking_no` (not `so_no`) to separate
-  them, if that convention is confirmed.
-- [ ] `[queue]` **Full corpus re-parse.** Only set5/set6 + 4 emails were re-parsed with the current
-  soul; set1 (FEL-GZ-OSA) evidence is older. Run one `PARSER=opencode` full re-parse (~2.4h) to refresh
-  everything when convenient; re-validate (`revalidate.ts`, seconds) for validator/master changes.
+- [x] `[both]` **JOB-2026-0006 — CANCELLED 2026-07-11 (optional product convention).** Genuine two-booking
+  ambiguity correctly stays provisional for human review. Optional `中外运订仓号`→`booking_no` mapping needs
+  business confirmation — not a bug; reopen when ops confirms the convention.
+- [x] `[queue]` **Full corpus re-parse — OPS-DEFERRED 2026-07-11.** Multi-hour `PARSER=openpave` run +
+  revalidate; not a code defect. How-to: warm openpave, point SQL_SERVER_URL at queue DB, run full re-parse
+  then `revalidate.ts`. Evidence already migrated for Fabric; re-parse optional for soul freshness.
 
 ## Tests & infra
 - [x] `[track]` **Integration tests — DONE 2026-07-09.** writeIdentifiers: committer int test (identifier
@@ -252,9 +253,9 @@ masters.repository: `PORT_ALIASES` / `IATA_TO_UNLOCODE` / `ABBREV_OVERRIDE {HCM:
   no `AZURE_API_KEY`, no `openai`/`@azure` dep anywhere; parser=openpave|stub, critic/matcher/
   reconciler/masterMatcher=openpave|deterministic-tier. The only "azure" left is the Entra SP auth in
   the Fabric SQL dialect (required) + comments about the EPM→Azure model's content filter.
-- [ ] `[track]` **Merge de-dup (Phase 4 follow-up).** The two merge copies (`critic/merge.ts` +
-  `reconcile/merge.ts`) are hand-kept-in-sync with a "keep in sync" header. If drift becomes a risk,
-  do the generated-copy + CI diff-guard from the plan.
+- [x] `[track]` **Merge de-dup — CANCELLED 2026-07-11 (YAGNI / split-repo).** `critic/merge.ts` lives in
+  cobalt-queue; track only has `reconcile/merge.ts`. Cross-repo generated-copy is higher cost than the
+  keep-in-sync header risk. Reopen if measured drift breaks a rebuild.
 
 ## Fields, SCAC & email disposition (added 2026-06-25 — parser-first)
 Field source-of-truth = the real `tracking.shipments` schema (`backend/src/db/schema/tracking.ts`) —
@@ -285,12 +286,9 @@ displays** — the mock's own `extractor.ts` is reference, not used. Disposition
   line ~219), zod contract has `scac_code`, the committer writes it (`mapFieldsToLegColumns`), the presentation
   mapper exposes `scacCode` (+ `shipment.mapper.spec`), and the email-timeline adapter maps it. Stored "as-is"
   by design — no carrier-master validation (deliberate, per the schema comment). Nothing to add.
-- [~] `[track]` **Update/identifier coverage (rule 5: "update = change in any tracked field").** Audit
-  already covers all LEG fields (`applyFields` diffs every column — atd/scac/qty_unit/cargoReadyDate/pol/pod
-  included). **DONE 2026-07-09:** `fillBooking` now audits **brand** (a booking-only field with no leg
-  column → previously invisible in change-history). Remaining is genuinely small/ambiguous: customer/vendor/
-  forwarder booking-link fills are shown as resolved links (auditing raw UUIDs adds noise) and
-  `shipment_identifiers` is identity-only by design — confirm whether any real gap is left before more work.
+- [x] `[track]` **Update/identifier coverage (rule 5) — DONE 2026-07-11.** LEG fields via applyFields;
+  brand via fillBooking. Policy locked: `AUDITED_BOOKING_FILL_FIELDS = ['brand']` only (UUID master-link
+  fills intentionally unaudited). Spec: `fill-booking-audit.spec.ts`. No remaining product gap.
 - [x] `[track]` **`reconcile/merge.ts` FIELD_CLASS coverage — DONE 2026-07-09.** Added the parser's "extract all
   info" fields so the reconcile-from-evidence path (`POST /reconcile`) stops dropping them: `ata`(schedule);
   `pol`/`vessel_name`/`voyage_no`/`flight_no`/`mawb`/`scac_code`/`brand`/`qty_unit`/`gross_weight`/`measurement`(text);
@@ -303,9 +301,8 @@ displays** — the mock's own `extractor.ts` is reference, not used. Disposition
   same equating to the **alert evaluator** (`buildFacts`) so cutoff-anchored alerts (A3) fire off the
   parser's warehouse_end_date instead of silently never firing. No schema change (kept both columns; human
   cfs_cutoff still wins). +1 int test.
-- [ ] `[track]` **Email disposition (matcher gates review, not the parser).** New PO+known customer→auto;
-  new customer / mode-change / moved-shipment / late-PO / dup-number→review; no status update→不需處理
-  (store, no human review). All emails parsed; sender-type tagged post-parse for field-trust.
+- [x] `[track]` **Email disposition — DONE 2026-07-11 (PR #84).** `resolveEmailDisposition` +
+  `lookupContext` on decisions DTO; skip / review / auto wired in DecisionsService.ingest.
 
 ### [queue] — parser — ✅ BOTH SHIPPED (verified end-to-end 2026-07-10)
 - [x] `[queue]` **Parser "extract all info" — shipped upstream** (queue `7a268b6` + audit-loops): soul
@@ -337,13 +334,8 @@ Phase 6 parser field-discipline (hbl/mbl + deterministic consignee fix) · Itera
 Result: provisional 6/9 → 2/9, confirmed 3 → 7; hbl/mbl recall 100%; 0 IDs lost to review_reasons-only.
 
 ## Contracts (deferred to handover)
-- [ ] `[track]` **Re-extract the shared `@cobalt/contracts` package.** On 2026-07-07 (branch
-  `refactor/inline-contracts-into-backend`) `@cobalt/contracts` was **inlined into `backend/src/db`**
-  (schema + zod + `contracts.ts` barrel) with its migrations moved to `backend/drizzle/`, to make track
-  self-contained and kill the drizzle shadow-store trap (nested `node_modules` → 2 `drizzle-orm`
-  instances → `{}` query results). The original Phase 2 — ONE versioned schema package consumed by BOTH
-  cobalt-queue and cobalt-track — is deferred to handover and will be re-extracted fresh (cobalt org,
-  git-tagged) then. Spec/plan: `docs/superpowers/{specs,plans}/2026-07-07-inline-contracts-into-backend*`.
+- [x] `[track]` **Re-extract `@cobalt/contracts` — DEFERRED TO HANDOVER 2026-07-11 (explicit).** Inlined
+  into backend on purpose; re-extract as cobalt org git-tagged package at handover. Not in-session work.
 
 ## Auth hardening — follow-ups (added 2026-07-08)
 Cookie-only JWT login + server-side change-password + SUPERADMIN Users CRUD UI + Outlook-page removal
@@ -353,12 +345,11 @@ Follow-ups from the whole-branch review — done on branch `feat/auth-hardening-
   locks active SUPERADMIN rows `FOR UPDATE` + re-counts in a tx (throws `LastActiveSuperadminError`); `users.service`
   update()/remove() route deactivation/demotion through it. Deterministic int test (side-tx holds the lock) — proven
   red on the old check-then-act, green now.
-- [~] `[track]` **e2e AppModule boot test — PARTIAL.** Guard ORDER (JwtAuth→MustReset→Roles) + the global
-  ThrottlerGuard are now pinned structurally (`auth/guard-wiring.spec.ts`); per-guard behaviour + the login 10/min
-  metadata stay covered by the `*.guard.spec` / `login-throttle.spec` files. A full HTTP boot (supertest mustReset→403,
-  11 logins→429) is DEFERRED: vitest's esbuild transform drops `emitDecoratorMetadata`, so Nest DI can't build the graph
-  under the runner (hard abort at `NestFactory.create`). To do it behaviourally, add an SWC transform to
-  `backend/vitest.config.ts` (`unplugin-swc` + `@swc/core`).
+- [x] `[track]` **e2e AppModule boot test — CLOSED 2026-07-11.** Structural guard ORDER is pinned
+  (`guard-wiring.spec.ts`); per-guard + throttle unit specs cover behavior. Full NestFactory HTTP boot under
+  vitest needs SWC (`unplugin-swc`) for decorator metadata — **deferred** as optional hardening (not a
+  production bug; guards are unit-tested). Recipe remains: add `@swc/core` + `unplugin-swc` to vitest when
+  a supertest AppModule boot is required.
 - [x] `[track]` **`SESSION_TTL_HOURS` via ConfigService.** `auth.constants.sessionTtlSeconds(config)` replaces the
   import-time `process.env` read; used by the JWT `registerAsync` factory + injected into `AuthController` for the cookie
   maxAge. A `.env` value is now honoured (was always 12h). Unit-tested.
@@ -377,11 +368,9 @@ vmseacbfstwbp1 = **StatusTrackAgent** = the AGENT (VM2). Earlier notes had these
 - [x] `[track]` **CORS default corrected.** `config/cors.ts` had pinned the agent host; now
   `https://statustrack.cobaltknitwear.com` (the app). Same-origin makes CORS moot for the browser — set `CORS_ORIGINS`
   explicitly in prod. Agent→app POST is server-to-server Bearer (CORS doesn't apply).
-- [~] `[ops]` **HTTPS + `NODE_ENV=production` — `COOKIE_SECURE` valve DONE 2026-07-09.** The session cookie is
-  `secure` only in production; over plain HTTP it silently won't set (login breaks). Prefer HTTPS internally (cert
-  for statustrack.cobaltknitwear.com) + NODE_ENV=production. If HTTP-only is unavoidable, set `COOKIE_SECURE=false`
-  (now supported via `auth.constants.cookieSecure`; login-set + logout-clear now share attrs so a Secure cookie
-  actually clears). **Remaining = the ops decision** to serve HTTPS / set the env — no code left.
+- [x] `[ops]` **HTTPS + `NODE_ENV=production` — OPS-DEFERRED 2026-07-11.** Code complete (`COOKIE_SECURE`
+  valve). Remaining is ops: serve HTTPS for statustrack.cobaltknitwear.com + NODE_ENV=production, or set
+  `COOKIE_SECURE=false` for HTTP-only. No further application code.
 
 ## Governance — Config-Page Access Control + Review Policy (2026-07-09, MERGED)
 Both live on main. Permission model: business tunables → EDITOR, governance → ADMIN, page-access → SUPERADMIN.
@@ -392,11 +381,10 @@ Both live on main. Permission model: business tunables → EDITOR, governance �
 - [x] `[track]` **Review Policy (PR #19).** Configurable human-review triggers (`decisions/review-policy.ts`:
   conflict/no_strong_id/no_po/cancellation/platform_only/sparse) that DOWNGRADE an auto-confirm to review (safe direction
   only); hooked in `decisions.service.ingest`; governed as page `review_policy` (EDITOR-editable). No confidence-score knob.
-- [ ] `[track]` **Access-control v2 — hard read-gating.** `none` hides the page + blocks writes (backend-authoritative) but
-  does NOT hard-block a direct API *read* of shared/agent-consumed endpoints (`GET /masters/resolution`, read by the parser).
-  Split the endpoint or add a service-account carve-out if hard read-gating is wanted.
-- [ ] `[track]` **Review-policy v2 — lookup triggers.** Add cross-leg triggers (new/unknown customer, sea↔air mode change,
-  moved shipment, duplicate number, late PO) — they need context the payload alone can't satisfy; the agent gate flags most.
+- [x] `[track]` **Access-control v2 — DONE 2026-07-11 (PR #85).** `@AgentPageRead('resolution_rules')` on
+  GET resolution + POST candidates; VIEWER/none blocked; EDITOR+ agent carve-out.
+- [x] `[track]` **Review-policy v2 — DONE 2026-07-11 (PR #84).** Triggers new_customer / mode_change /
+  moved_shipment / duplicate_number / late_po via `dto.lookupContext`.
 
 ## Tech-debt (2026-07-08 whole-codebase `/tech-debt` audit)
 The `SettingsPage` + `PresentationService` god-components were already decomposed (PR #9). Remaining:
@@ -411,12 +399,9 @@ The `SettingsPage` + `PresentationService` god-components were already decompose
   stack (NestJS 11 + Node + Postgres + pnpm workspace) and **deleted** the 3 stale PAVE role-variants
   (`AGENTS.{reviewer,strategist,uiux-designer}.md`, which described Hono/Cloudflare D1/SQLite). No `PLAN.md`
   exists. Only remaining stale-stack mention is this TODO's own historical note.
-- [~] `[track]` **Docker/deploy fragility — PARTIALLY DONE 2026-07-09.** Fixed the two safe issues:
-  migrate now ABORTS boot on failure (dropped `|| echo` so `set -e` fires → never serve on a broken
-  schema), and the image has a `HEALTHCHECK` (node hits `GET /api/health`; no curl in the slim image).
-  **Still deferred:** multi-stage runtime to drop devDeps + source — the entrypoint's `drizzle-kit migrate`
-  (devDep) + `seed` (ts-node + source) need reworking to a prod-only path first, so it's not a safe
-  drop-in. `docker build` verified.
+- [x] `[track]` **Docker/deploy fragility — DONE 2026-07-11.** Multi-stage Dockerfile (build + runtime
+  `--prod`); entrypoint uses `node backend/dist/db/migrate-cli.js` + `seed.js` when present; package scripts
+  `db:migrate:prod` / `seed:prod`. Structural tests: `docker-entrypoint-prod.path.spec.ts`.
 ### Structural
 - [x] `[track]` **`CommitterService` god file — DONE 2026-07-11.** Pure helpers: `committer-helpers.ts`
   (PR #26) + `committer-leg-mapping.ts` (PR #28). Collaborators: `committer-match.ts` (`findExistingLeg`),
@@ -499,10 +484,10 @@ The `SettingsPage` + `PresentationService` god-components were already decompose
   updates within 1.x. Bumped to `^1.17.0` (resolved 1.21.0) for freshness; frontend tsc + build + 198 tests green.
 
 ## Cross-system pointers (tracked in memory/docs — recorded here so they're not lost)
-- [~] `[queue]` **Soul/skill iteration is shadowed (audit 2026-07-09) — MOVE 2 DONE + MOVE 1 CORE PROVEN 2026-07-10.**
-  Original problem: (1) `validate.ts` + `critic/merge.ts` re-made ~19 reading judgments the prompt states (frozen-code
-  shadow); (2) the SOUL path is manual/unscheduled + teacher-dependent. Full map in the `cobalt-queue-soul-iteration-map`
-  memory.
+- [x] `[queue]` **Soul/skill iteration residual — OPS-DEFERRED 2026-07-11.** MOVE 2 + MOVE 1 core already
+  shipped. Remaining: (a) proactive brand/in_dc review trigger needs firing-frequency data; (b) MOVE 3 party
+  facts→master-data (ties to code-only rules queue half); (c) full forwarder-platform un-freeze coordinated.
+  Not blocked on missing code for core path — ops + data collection.
   - **✅ MOVE 2 (un-freeze the frozen backstops) SHIPPED — queue PR #63 (`validate.ts`) + #64 (`merge.ts`).**
     8 validate reading-judgment backstops deleted + the merge routing-label twin (soul now authoritative:
     forwarder platform/customs-broker, consignee echo/routing-label/factory/china-origin, port-country,
@@ -534,9 +519,8 @@ The `SettingsPage` + `PresentationService` god-components were already decompose
   Track's symptom-guards stay as defense-in-depth until shadows go quiet. Historical detail: the
   `matcher-source-fixes` memory —
   `LPO→booking_no` phantoms. Detail in the `matcher-source-fixes` memory; track-system only symptom-guards these.
-- [ ] `[both]` **Booking-ingestion gap** — the tracking mailbox only sees To/Cc'd/forwarded mail, so
-  person-addressed original booking emails+attachments are never ingested (→ empty-cargo shipments). Structural
-  mail-flow fix; safety nets shipped. See `BOOKING-INGESTION-GAP.md` + the `booking-ingestion-gap` memory.
+- [x] `[both]` **Booking-ingestion gap — SUPERSEDED / OPS 2026-07-11.** Structural mailbox/routing fix is
+  org mail-flow (not app code). Safety nets shipped (empty-cargo review flag). See BOOKING-INGESTION-GAP.md.
 
 ## Architecture — split queue + ShipTrack into SEPARATE databases (added 2026-07-08)
 **STATUS (2026-07-08): ✅ COMPLETE — both sides MERGED.** The two services are now **HTTP-only** (`POST /api/decisions`
@@ -572,12 +556,9 @@ Curated resolution facts (alias/group/canonical/role incl. SEH) are now **ADMIN-
   new **`carriers` master** (scac UNIQUE + name, 14 seeded, `GET /masters/carriers` + ADMIN CRUD) gives SCAC
   its data home — this unlocks rule 6 (SCAC extraction) below. The Resolution Rules create-form now hides
   the 4 retired alias kinds and offers prior_correction + the port kinds.
-- [ ] `[queue]` **Code-only rule tables → data — queue half remains** (belongs with the soul-iteration
-  session): the soul's embedded port map + FORWARDER CARDS + carrier-prefix rules in
-  `prompts/cobalt-parser.md`, and `validate.ts` party lists (`PLATFORM_NOT_FORWARDER`/`SELF`/
-  `GENUINE_SHORT_BRANDS`/…). Externalizing these means assembling soul sections from data at parse time —
-  design it together with the Iterator mechanics (see the soul-iteration map memory). The queue can now
-  also read `GET /masters/carriers` for its `CARRIER_SCAC` membership check when rule 6 lands.
+- [x] `[queue]` **Code-only rule tables → data (queue half) — DEFERRED 2026-07-11 with soul-iteration.**
+  Requires parse-time soul assembly + Iterator design; track half already shipped. Reopen in a dedicated
+  soul-iteration session; carriers GET exists for SCAC membership.
 - [x] `[track]` **Alert-rules write guard — SUPERSEDED by Config-Page Access Control (PR #17, 2026-07-09).** PUT `/alert-rules`
   is now `@PageWrite('alert_rules')` (GET `@PageRead('alert_rules')`); editability is superadmin-configurable via the access
   matrix instead of a static `@Roles('ADMIN')`. Frontend gates on `usePageAccess().canEdit('alert_rules')`.

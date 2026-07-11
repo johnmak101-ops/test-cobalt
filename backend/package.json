@@ -8,11 +8,13 @@
     "dev": "nest start --watch",
     "start:prod": "node dist/main.js",
     "seed": "ts-node -P tsconfig.json src/db/seed.ts",
+    "seed:prod": "node dist/db/seed.js",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:unit": "vitest run src",
     "smoke": "node test/smoke.mjs",
     "db:migrate": "ts-node -P tsconfig.json src/db/migrate-cli.ts",
+    "db:migrate:prod": "node dist/db/migrate-cli.js",
     "db:codegen": "kysely-codegen --dialect mssql --url \"Server=localhost,1433;Database=cobalt_test;User Id=sa;Password=YourStrong!Passw0rd;Encrypt=false;TrustServerCertificate=true\" --out-file src/db/kysely/db.generated.ts --camel-case --exclude-pattern \"kysely_*\""
   },
   "dependencies": {
