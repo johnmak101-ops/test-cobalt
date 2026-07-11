@@ -2,7 +2,7 @@ import { Body, Controller, Get, Param, Patch, Post } from '@nestjs/common'
 import { MastersService } from './masters.service'
 import { CandidatesService } from './candidates.service'
 import { Roles, CurrentUser } from '../auth/decorators'
-import { PageRead, PageWrite } from '../access/page-access.decorators'
+import { AgentPageRead, PageRead, PageWrite } from '../access/page-access.decorators'
 import type { AuthUser } from '../auth/auth.service'
 import {
   CreateForwarderDto,
@@ -30,15 +30,17 @@ export class MastersController {
   @Get('consignees') consignees() { return this.masters.consignees() }
   @Get('carriers') carriers() { return this.masters.carriers() }
 
-  // Candidate retrieval for the LLM Master Matcher — agent-consumed (cobalt-queue Bearer service
-  // account), same ungated surface as the consumer `GET resolution` below. Deterministic + LLM-free.
+  // Candidate retrieval for the LLM Master Matcher — agent-consumed (cobalt-queue Bearer EDITOR+).
+  // Access-control v2: hard page-read gate for VIEWER/none + EDITOR+ service-account carve-out.
+  @AgentPageRead('resolution_rules')
   @Post('candidates') candidates(@Body() dto: MasterCandidatesDto) { return this.candidatesService.candidates(dto) }
 
   // Master resolution (curated facts) + the curator loop.
+  // Access-control v2: same hard-read + agent carve-out (was fully ungated for any authenticated user).
+  @AgentPageRead('resolution_rules')
   @Get('resolution') resolution() { return this.masters.resolution() }
   // Resolution Rules page — governed by the Access Control matrix (page 'resolution_rules'):
-  // management reads need View, mutations need Edit; superadmin always passes. The consumer read
-  // `GET resolution` above stays UNGATED — cobalt-queue's parser reads it over HTTP.
+  // management reads need View, mutations need Edit; superadmin always passes.
   @Get('resolution/manage') @PageRead('resolution_rules') resolutionManage() { return this.masters.resolutionManage() }
   @PageWrite('resolution_rules') @Post('resolution') createFact(@Body() dto: CreateResolutionFactDto, @CurrentUser() u: AuthUser) {
     return this.masters.createFact(dto, u.id)
