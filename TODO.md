@@ -556,9 +556,10 @@ Curated resolution facts (alias/group/canonical/role incl. SEH) are now **ADMIN-
   new **`carriers` master** (scac UNIQUE + name, 14 seeded, `GET /masters/carriers` + ADMIN CRUD) gives SCAC
   its data home — this unlocks rule 6 (SCAC extraction) below. The Resolution Rules create-form now hides
   the 4 retired alias kinds and offers prior_correction + the port kinds.
-- [x] `[queue]` **Code-only rule tables → data (queue half) — DEFERRED 2026-07-11 with soul-iteration.**
-  Requires parse-time soul assembly + Iterator design; track half already shipped. Reopen in a dedicated
-  soul-iteration session; carriers GET exists for SCAC membership.
+- [x] `[queue]` **Code-only rule tables → data (queue half) — DONE 2026-07-11 (cobalt-queue).** validate.ts
+  SELF + GENUINE_SHORT_BRANDS moved to `party-rules.ts` / `party-rules.json`, overlaid at loadMasters from
+  optional resolution kinds `genuine_short_brand` / `self_identity`. SCAC already from carrier master data.
+  Soul FORWARDER CARDS remain prompt-side (LLM reading guidance; not a validate membership table).
 - [x] `[track]` **Alert-rules write guard — SUPERSEDED by Config-Page Access Control (PR #17, 2026-07-09).** PUT `/alert-rules`
   is now `@PageWrite('alert_rules')` (GET `@PageRead('alert_rules')`); editability is superadmin-configurable via the access
   matrix instead of a static `@Roles('ADMIN')`. Frontend gates on `usePageAccess().canEdit('alert_rules')`.
