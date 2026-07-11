@@ -432,11 +432,26 @@ The `SettingsPage` + `PresentationService` god-components were already decompose
   merge/state/the derived-milestone loop, which forces an index signature `[key:string]:unknown` — and that
   cancels typo-safety anyway. `Record<string,unknown>` at the boundary + `str`/`num`/`date` coercion in the
   committer is the correct split (loose in, strict at point-of-use). Do not re-propose.
-- [~] `[track]` **Ingest N+1 — per-item round-trips DONE 2026-07-09, full-scans remain.** Killed the per-item
+- [~] `[track]` **Ingest N+1 — per-item round-trips DONE 2026-07-09; write-side index DONE 2026-07-11; the
+  two full-scan reads remain.** Killed the per-item
   N+1s: `lookupByMatchKey` + committer match loop (`poNumbersByBooking`, PR #29), `review.queue` (`findByIds`,
   PR #30), `presentation` alert summaries (PR #31), `posFor` (single query, PR #32), alert-evaluator
   milestones+emails+evidence (PR #33). **Remaining:** `committer.apply()` still `allLegs()` full-scans + loads
   whole `evidence.allWithMessage()` per commit — push candidate filtering into indexed SQL.
+  **✅ INCREMENT 1 — write-side strong-key index SHIPPED 2026-07-11 (migration `0003_shipment_match_keys`).**
+  The prerequisite below is done, but NOT via `shipment_identifiers` (the mapping note's first guess): that
+  table is the wrong home — its source is the agent's `g.identifiers` display *history* (a DIFFERENT source
+  than `findExistingLeg`'s `strongKeys(matchKeys)`), its `value` is RAW (matching is normalized), and it's
+  agent-path-only. Instead a dedicated **`shipment_match_keys(shipment_id, type, value)`** table holds the
+  NORMALIZED `strongKeys(matchKeys)` (the `gk` the committer already computes), indexed `(type,value)`,
+  (re)written on EVERY path via `committer.writeMatchKeyIndex` (delete+insert, idempotent) + a frozen-inline
+  backfill. Same source + same normalization as the matcher → the future `WHERE (type,value) IN gk` candidate
+  query is a PROVABLE superset. Pure `matchKeyIndexRows` unit-tested; committer write side int-tested (create/
+  amend/idempotent/strong-keys-only); 698 backend green, tsc clean. **Nothing reads it yet — inert on behavior.**
+  **➡ INCREMENT 2 (next) — read-side swap:** replace the `allLegs()` scan in `committer.apply` with a candidate
+  query = (legs sharing a strong key via `shipment_match_keys`) ∪ (legs sharing a PO via `booking_pos`) ∪
+  (zero-identity legs by `conversation_id`), then run the SAME pure `findExistingLeg` over that superset. This is
+  the risky one (a false-negative → duplicate shipment) — do it as its own PR with the index proven populated.
   **⚠ SCOPED 2026-07-10 (mapping investigation) — NOT a clean perf refactor; has a real prerequisite:**
   - **allLegs() scan** feeds `findExistingLeg`, which matches on strong-key overlap OR shared-PO OR
     (zero-id) conversationId. The PO half is safely indexable (`purchase_orders.po_number` uniq →
@@ -457,9 +472,10 @@ The `SettingsPage` + `PresentationService` god-components were already decompose
     messages is a BEHAVIOR CHANGE (breaks those specs); a `WHERE po_no IN g.pos` filter needs a new
     `parsed_record.po_no` index AND still risks the broadcast/no-PO paths. `forMessages()` can't be reused
     as-is (missing id/poNo/matchKeys → silently empty enrichment). Net: this half is a behavior decision,
-    not a pure optimization. **Recommendation: do the write-side `shipment_identifiers` prerequisite first
-    (own increment), then the legs candidate query; treat the evidence scan separately.** Full map in the
-    mapping-agent findings (2026-07-10 session).
+    not a pure optimization. **UPDATE 2026-07-11: the write-side prerequisite is DONE** (a dedicated
+    `shipment_match_keys` index, not `shipment_identifiers` — see INCREMENT 1 above for why). Next is the legs
+    candidate query (INCREMENT 2); treat the `evidence.allWithMessage()` scan as a separate behavior decision.
+    Full map in the mapping-agent findings (2026-07-10 session).
 - [x] `[track]` **Review-queue apply-back — DONE 2026-07-09.** A `correct` verdict now re-applies to the linked
   shipment via `ShipmentsService.applyExtractionCorrection` (new): parser fields (`booking_no`) → leg columns
   (`bookingNo`) via `PARSER_TO_LEG`, routed through the existing `editFields` (write + human-wins field-lock +

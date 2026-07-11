@@ -301,6 +301,14 @@ export interface ShipmentIdentifiers {
   value: string;
 }
 
+export interface ShipmentMatchKeys {
+  createdAt: Generated<Date>;
+  id: Generated<string>;
+  shipmentId: string;
+  type: string;
+  value: string;
+}
+
 export interface ShipmentMilestones {
   createdAt: Generated<Date>;
   emailMessageId: string | null;
@@ -449,6 +457,7 @@ export interface DB {
   reviewEmail: ReviewEmail;
   shipmentEmails: ShipmentEmails;
   shipmentIdentifiers: ShipmentIdentifiers;
+  shipmentMatchKeys: ShipmentMatchKeys;
   shipmentMilestones: ShipmentMilestones;
   shipmentParties: ShipmentParties;
   shipmentPos: ShipmentPos;

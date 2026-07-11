@@ -7,6 +7,7 @@ import { guardVendorForwarder, isPlatformNotForwarder, isNotificationPlatformSen
 import { deriveState, classifyKindDetail, normMode } from './state'
 import { deriveMilestoneRows, deriveEmailRows } from './milestone-rows'
 import { currentIdentifierValues, deriveIdentifierRows } from './identifier-rows'
+import { matchKeyIndexRows } from './match-key-index'
 import { MastersRepository, FUZZY_FORWARDER_TIERS, type ForwarderLinkTier, type PortLinkTier } from '../db/repositories/masters.repository'
 import { BookingRepository } from '../db/repositories/booking.repository'
 import { PurchaseOrderRepository } from '../db/repositories/purchase-order.repository'
@@ -330,6 +331,7 @@ export class CommitterService {
     }
 
     await this.writeIdentifiers(shipmentId, g)
+    await this.writeMatchKeyIndex(shipmentId, g)
     await this.writeParties(shipmentId, g)
     await this.syncMilestones(shipmentId, g, state)
     // de-correction (c): flush the shadow measurements now that the leg id exists (never changes behavior).
@@ -391,6 +393,17 @@ export class CommitterService {
     if (!leg) return
     const rows = deriveIdentifierRows(shipmentId, g.identifiers, currentIdentifierValues(leg as Record<string, unknown>))
     await this.shipments.replaceIdentifiers(shipmentId, rows)
+  }
+
+  /**
+   * Persist the leg's queryable strong-key INDEX: the normalized `strongKeys(matchKeys)` that `findExistingLeg`
+   * matches on, as `(type, value)` rows a future candidate query can hit in place of the `allLegs()` scan.
+   * Derives from `match_keys` (NOT the agent's identifier history) — the SAME source, same normalization the
+   * matcher reads — so it stays provably consistent on EVERY path (agent / rebuild / manual, create + amend).
+   * Idempotent (delete+insert per shipment). Nothing reads it yet; the scan→candidate-query swap is a follow-up.
+   */
+  private async writeMatchKeyIndex(shipmentId: string, g: ReconGroup) {
+    await this.shipments.replaceMatchKeys(shipmentId, matchKeyIndexRows(shipmentId, g.matchKeys))
   }
 
   /**
