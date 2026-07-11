@@ -89,8 +89,11 @@ describe('AlertRepository (SQL Server)', () => {
     await repo.insertDeduped({ ruleId: 'F1', severity: 'INFO', message: 'second', dedupKey: 'F1:2', firedAt: new Date('2026-06-01T00:00:00Z') })
     const active = await repo.list('ACTIVE')
     expect(active.length).toBeGreaterThanOrEqual(2)
-    // newest first
-    expect(active[0].firedAt.getTime()).toBeGreaterThan(active[1].firedAt.getTime())
+    // newest-fired first — assert on THIS test's own two alerts (known distinct firedAt). The table
+    // accumulates earlier tests' alerts that default firedAt=SYSDATETIMEOFFSET() (now); two of those can
+    // share a millisecond on a fast runner, so a positional active[0] > active[1] check is flaky.
+    const f1 = active.filter((a) => a.dedupKey === 'F1:1' || a.dedupKey === 'F1:2')
+    expect(f1.map((a) => a.dedupKey)).toEqual(['F1:2', 'F1:1']) // F1:2 (Jun) fired after F1:1 (Jan)
   })
 
   it('setStatus transitions ACTIVE → DISMISSED with extra fields', async () => {
