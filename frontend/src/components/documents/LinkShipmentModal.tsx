@@ -37,7 +37,9 @@ export function LinkShipmentModal({
     return () => window.removeEventListener('keydown', onKey)
   }, [onClose])
 
-  const allShipments = data?.shipments ?? []
+  // Stable reference so the `filtered` memo below doesn't recompute every render (`?? []` would otherwise
+  // mint a fresh empty array each time while shipments are loading).
+  const allShipments = useMemo(() => data?.shipments ?? [], [data?.shipments])
 
   // Multi-term client-side filter — mirrors ShipmentTrackerPage: space/comma-separated, OR match.
   const filtered = useMemo(() => {
