@@ -20,6 +20,7 @@ import { findExistingLeg } from './committer-match'
 import { MasterResolver } from './committer-master-resolver'
 import { planPoReconcile } from './committer-po-reconciler'
 import { MilestoneSynchronizer } from './committer-milestones'
+import { isAuditedBookingFill } from './fill-booking-audit'
 
 // Re-export for any external import sites that still pull findExistingLeg from the service module.
 export { findExistingLeg } from './committer-match'
@@ -357,11 +358,8 @@ export class CommitterService {
     for (const [k, v] of Object.entries(vals)) {
       if (v == null || (bk as Record<string, unknown>)[k] != null) continue
       patch[k] = v
-      // rule 5 (change-history completeness): brand is a booking-only field with no shipments column, so
-      // without an audit here a later-learned brand never appears in the shipment's change-history. crd/
-      // customer/vendor/forwarder are already covered (leg audit / resolved-link display), so only the
-      // human-readable brand is surfaced here (never a raw UUID).
-      if (k === 'brand') await this.writeAudit('shipment', shipmentId, 'update', null, toStr(v), g, 'brand')
+      // rule 5: only AUDITED_BOOKING_FILL_FIELDS (brand) — never raw UUID master-link fills.
+      if (isAuditedBookingFill(k)) await this.writeAudit('shipment', shipmentId, 'update', null, toStr(v), g, k)
     }
     if (Object.keys(patch).length) await this.bookings.update(bookingId, patch)
   }
