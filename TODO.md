@@ -418,11 +418,12 @@ The `SettingsPage` + `PresentationService` god-components were already decompose
   (devDep) + `seed` (ts-node + source) need reworking to a prod-only path first, so it's not a safe
   drop-in. `docker build` verified.
 ### Structural
-- [~] `[track]` **`CommitterService` god file — PARTIALLY DONE 2026-07-09.** Pure helpers extracted:
-  `committer-helpers.ts` (dedupeCsv/scacFromMbl/countryToIso2, PR #26) + `committer-leg-mapping.ts`
-  (`mapFieldsToLegColumns`/`deriveOriginCountry`, PR #28); `LegMatcher` (`findExistingLeg`) already pure.
-  **Remaining:** extract the stateful collaborators (MasterResolver, PoQtyReconciler, MilestoneSynchronizer)
-  so `apply()` reads as a thin orchestrator.
+- [x] `[track]` **`CommitterService` god file — DONE 2026-07-11.** Pure helpers: `committer-helpers.ts`
+  (PR #26) + `committer-leg-mapping.ts` (PR #28). Collaborators: `committer-match.ts` (`findExistingLeg`),
+  `MasterResolver` (`committer-master-resolver.ts`), `planPoReconcile` (`committer-po-reconciler.ts`),
+  `MilestoneSynchronizer` (`committer-milestones.ts`). `apply()` is now orchestration + thin private
+  writers (applyFields/fillBooking/identifiers/parties/audit). ~640→~500 LOC on the service file.
+
 - [x] `[track]` **PO domain — RESOLVED 2026-07-09.** `PurchaseOrderRepository` extracted from `BookingRepository`
   (PR #27). The `/pos` module is **NOT orphaned** — the FE reads via `/purchase-orders` (`UiPosController`), but
   **cobalt-queue's matcher `src/matcher/tracking-client.ts:72` calls `GET /pos?open=true`** (verified against the

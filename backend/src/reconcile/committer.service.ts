@@ -2,13 +2,12 @@ import { Injectable } from '@nestjs/common'
 import { formatJobNo } from '../common/job-no'
 import type { Insertable } from 'kysely'
 import type { DB } from '../db/kysely/db'
-import { keysOverlap, strongKeys, normKey, normBookingKey, str, num, date } from './match-keys'
+import { strongKeys, normKey, normBookingKey, str, date } from './match-keys'
 import { guardVendorForwarder, isPlatformNotForwarder, isNotificationPlatformSender } from './vendor-forwarder-guard'
 import { deriveState, classifyKindDetail, normMode } from './state'
-import { deriveMilestoneRows, deriveEmailRows } from './milestone-rows'
 import { currentIdentifierValues, deriveIdentifierRows } from './identifier-rows'
 import { matchKeyIndexRows } from './match-key-index'
-import { MastersRepository, FUZZY_FORWARDER_TIERS, type ForwarderLinkTier, type PortLinkTier } from '../db/repositories/masters.repository'
+import { MastersRepository, FUZZY_FORWARDER_TIERS } from '../db/repositories/masters.repository'
 import { BookingRepository } from '../db/repositories/booking.repository'
 import { PurchaseOrderRepository } from '../db/repositories/purchase-order.repository'
 import { ShipmentRepository } from '../db/repositories/shipment.repository'
@@ -16,8 +15,14 @@ import { FieldLockRepository } from '../db/repositories/field-lock.repository'
 import { AuditRepository } from '../db/repositories/audit.repository'
 import { EvidenceRepository } from '../db/repositories/evidence.repository'
 import { resolvePoEnrichment, unattributedBrandStyle } from './po-enrichment'
-import { poQtyIssue, describePoQtyIssue } from './po-qty-consistency'
 import { mapFieldsToLegColumns } from './committer-leg-mapping'
+import { findExistingLeg } from './committer-match'
+import { MasterResolver } from './committer-master-resolver'
+import { planPoReconcile } from './committer-po-reconciler'
+import { MilestoneSynchronizer } from './committer-milestones'
+
+// Re-export for any external import sites that still pull findExistingLeg from the service module.
+export { findExistingLeg } from './committer-match'
 
 /** One reconciled shipment picture, ready to commit. */
 export interface ReconGroup {
@@ -87,6 +92,9 @@ export interface CommitResult {
  */
 @Injectable()
 export class CommitterService {
+  private readonly mastersResolver: MasterResolver
+  private readonly milestones: MilestoneSynchronizer
+
   constructor(
     private readonly masters: MastersRepository,
     private readonly bookings: BookingRepository,
@@ -95,7 +103,10 @@ export class CommitterService {
     private readonly audit: AuditRepository,
     private readonly evidence: EvidenceRepository,
     private readonly purchaseOrders: PurchaseOrderRepository,
-  ) {}
+  ) {
+    this.mastersResolver = new MasterResolver(masters)
+    this.milestones = new MilestoneSynchronizer(shipments)
+  }
 
   async apply(g: ReconGroup): Promise<CommitResult> {
     const f = g.fields
@@ -122,13 +133,7 @@ export class CommitterService {
       f.forwarder_name = null
     }
 
-    const [customerId, vendorId, forwarderLink, polLink, podLink] = await Promise.all([
-      this.resolveCustomer(f.customer_code),
-      this.resolveVendor(f.vendor_code),
-      this.resolveForwarderLink(f.forwarder_name),
-      this.resolvePortLink(f.poi ?? (f as Record<string, unknown>).pol), // POL: id + country (origin_country); alias: parser still emits `pol`
-      this.resolvePortLink(f.pod),
-    ])
+    const { customerId, vendorId, forwarderLink, polLink, podLink } = await this.mastersResolver.resolveAll(f)
     const forwarderId = forwarderLink.id
     const polId = polLink?.id ?? null
     const podId = podLink?.id ?? null
@@ -269,50 +274,20 @@ export class CommitterService {
     // de-correction (b2 no-PO): brand/style stated with no PO to attach to — surfaced, never silently dropped.
     const unattributed = g.pos.length ? unattributedBrandStyle(allEvidence) : []
 
-    // per-PO shipped qty: prefer the Matcher's unambiguous per-PO qty map (keyed by normalized po_no) when it
-    // provides one for this PO; else fall back to the single-PO case (a shipment carrying ONE PO owns the whole
-    // qty). With several POs and no map entry the split is unknown, so qty stays null — never attribute the
-    // whole shipment total to each (that inflated every PO to the total).
-    // Deterministic PO-qty guard: the ERP order is authoritative, so a per-PO shipped qty that EXCEEDS the
-    // ordered total, or uses a DIFFERENT unit, is a bad attribution (a broadcast total / wrong unit). Collect
-    // any such inconsistency and route the shipment to review below — the qty is kept (not dropped), never
-    // silently accepted as fact.
-    const poQtyIssues: string[] = []
-    // de-correction (b1/b2): the model's per-PO facts are KEPT and SURFACED, never silently corrected —
-    // a suspected broadcast total and a brand/style conflict route the leg to review with the raw value intact.
-    const poFlagReasons: string[] = []
-    for (const poNo of g.pos) {
-      const mapped = num(g.poQty?.[normKey(poNo)])
-      const perPoQty = mapped ?? (g.pos.length === 1 ? num(f.qty) : null)
-      const perPoUnit = str(f.qty_unit) // no code-side default — a missing unit stays null (the parser owns it)
-      const enr = poEnrichment?.get(normKey(poNo))
-      const qctx = { legQty: perPoQty, legUnit: perPoUnit, poTotal: enr?.totalQuantity ?? null, poUnit: enr?.quantityUnit ?? null }
-      const issue = poQtyIssue(qctx)
-      if (issue) poQtyIssues.push(`PO ${poNo}: ${describePoQtyIssue(issue, qctx)}`)
-      if (enr?.broadcastSuspected && enr.totalQuantity != null)
-        poFlagReasons.push(`PO ${poNo}: total_quantity ${enr.totalQuantity} looks like a broadcast total (same value across ≥3 POs) — verify`)
-      if (enr?.brandConflict)
-        poFlagReasons.push(`PO ${poNo}: brand conflict ${enr.brandConflict.join(' vs ')} (kept ${enr.brand}) — verify`)
-      if (enr?.styleConflict)
-        poFlagReasons.push(`PO ${poNo}: item_style_no conflict ${enr.styleConflict.join(' vs ')} (kept ${enr.itemStyleNo}) — verify`)
-      const poId = await this.purchaseOrders.upsertPo(poNo, customerId, effVendorId, enr)
+    // PoQtyReconciler: pure plan (qty/unit/enrichment flags) then side-effect links. Reasons stay byte-stable
+    // with the pre-extract loop (see committer-po-reconciler.spec).
+    const { links, poQtyIssues, poFlagReasons } = planPoReconcile({
+      pos: g.pos,
+      fields: f,
+      poQty: g.poQty,
+      poEnrichment,
+      unattributed,
+      gk,
+    })
+    for (const link of links) {
+      const poId = await this.purchaseOrders.upsertPo(link.poNo, customerId, effVendorId, link.enr ?? undefined)
       await this.bookings.linkPo(bookingId, poId)
-      await this.shipments.linkPo(shipmentId, poId, perPoQty, perPoUnit)
-    }
-    // de-correction (b2 no-PO): a brand/style stated with NO PO is not leaked onto every PO (the LLM did not
-    // say per-PO) and no longer silently dropped — flagged for a human on the shipment whose identity it
-    // shares, but only when no PO here already carries that field (so a genuine per-PO value isn't drowned).
-    const poGotBrand = g.pos.some((p) => poEnrichment?.get(normKey(p))?.brand != null)
-    const poGotStyle = g.pos.some((p) => poEnrichment?.get(normKey(p))?.itemStyleNo != null)
-    const seenUnattributed = new Set<string>()
-    for (const u of unattributed) {
-      if (u.field === 'brand' && poGotBrand) continue
-      if (u.field === 'item_style_no' && poGotStyle) continue
-      if (!keysOverlap(strongKeys(u.matchKeys), gk)) continue // gk = strongKeys(g.matchKeys), computed above
-      const dedupe = `${u.field}:${u.value}`
-      if (seenUnattributed.has(dedupe)) continue
-      seenUnattributed.add(dedupe)
-      poFlagReasons.push(`shipment-level ${u.field} "${u.value}" not attributed to any PO — verify per-PO ${u.field}`)
+      await this.shipments.linkPo(shipmentId, poId, link.perPoQty, link.perPoUnit)
     }
     // Data-completeness escalations route the shipment to human review. Additive: only ever escalate to
     // provisional + append (deduped) reasons — data is kept, never dropped; the reviewer resolves it.
@@ -344,7 +319,7 @@ export class CommitterService {
     await this.writeIdentifiers(shipmentId, g)
     await this.writeMatchKeyIndex(shipmentId, g)
     await this.writeParties(shipmentId, g)
-    await this.syncMilestones(shipmentId, g, state)
+    await this.milestones.sync(shipmentId, g.events, g.fields, state)
     // de-correction (c): flush the shadow measurements now that the leg id exists (never changes behavior).
     for (const s of shadows) await this.writeShadow(shipmentId, s.field, s.oldValue, s.newValue, s.note, g)
     return { action, jobNo, bookingId, shipmentId, state, conflicts: g.conflicts, skippedLockedFields }
@@ -463,11 +438,6 @@ export class CommitterService {
     await this.shipments.replaceParties(shipmentId, rows)
   }
 
-  private async syncMilestones(shipmentId: string, g: ReconGroup, state: string) {
-    await this.shipments.replaceMilestones(shipmentId, deriveMilestoneRows(shipmentId, g.events, g.fields, state))
-    await this.shipments.replaceEmails(shipmentId, deriveEmailRows(shipmentId, g.events))
-  }
-
   /** de-correction shadow: record "code would have corrected X" WITHOUT changing behavior, so the model's
    *  error-rate is queryable (count by field/note; distinct entity_id per shipment). changeType='shadow'
    *  keeps these rows out of every user-facing audit/history read (see AuditRepository.listForEntity). */
@@ -513,30 +483,6 @@ export class CommitterService {
     })
   }
 
-  private async resolveCustomer(code: unknown): Promise<string | null> {
-    const c = str(code)
-    if (!c) return null
-    // canonical-aware: COLEB silently resolves to COLE's id. A canonical fact must never NULL an otherwise
-    // -resolvable customer, so fall back to the original code when the canonical has no master row (Hole-2 guard).
-    const canon = await this.masters.canonicalCode(c)
-    return (await this.masters.customerIdByCode(canon)) ?? (canon !== c.toUpperCase() ? await this.masters.customerIdByCode(c) : null)
-  }
-  private resolveVendor(code: unknown) {
-    const c = str(code)
-    return c ? this.masters.vendorIdByCode(c) : Promise.resolve(null)
-  }
-  private async resolveForwarderLink(name: unknown): Promise<{ id: string | null; tier: ForwarderLinkTier | null }> {
-    const n = str(name)
-    if (!n) return { id: null, tier: null }
-    const byCode = await this.masters.forwarderIdByCode(n)
-    if (byCode) return { id: byCode, tier: 'code_exact' }
-    const link = await this.masters.forwarderLinkByName(n)
-    return link ?? { id: null, tier: null }
-  }
-  private async resolvePortLink(code: unknown): Promise<{ id: string; country: string | null; tier: PortLinkTier } | null> {
-    const c = str(code)
-    return c ? this.masters.portLinkByCodeOrName(c) : null
-  }
   private async nextJobNo(): Promise<string> {
     return formatJobNo(await this.bookings.nextJobSeq())
   }
@@ -559,85 +505,3 @@ const reviewReasonsFor = (g: ReconGroup): string[] | null =>
 
 const toStr = (v: unknown): string | null => (v == null ? null : v instanceof Date ? v.toISOString() : String(v))
 const same = (a: unknown, b: unknown) => toStr(a) === toStr(b)
-const setsOverlap = (a: Set<string>, b: Set<string>) => {
-  for (const x of a) if (b.has(x)) return true
-  return false
-}
-/** BUG 4: two strong-key sets CONFLICT when they state DIFFERENT values for the SAME identity type
- *  (e.g. booking_no:ULLA26060096 on the leg vs booking_no:ULLA26060102 on the group). A conflicting leg
- *  is a different shipment and must never be amended — insert a new leg + route to review instead. Keys
- *  are `type:value`; group by the type prefix and flag any type present on both sides with unequal values. */
-const strongKeysConflict = (a: Set<string>, b: Set<string>): boolean => {
-  const byType = (s: Set<string>): Map<string, Set<string>> => {
-    const m = new Map<string, Set<string>>()
-    for (const k of s) {
-      const i = k.indexOf(':')
-      if (i < 0) continue
-      const type = k.slice(0, i)
-      const val = k.slice(i + 1)
-      if (!m.has(type)) m.set(type, new Set())
-      m.get(type)!.add(val)
-    }
-    return m
-  }
-  const am = byType(a)
-  const bm = byType(b)
-  for (const [type, avals] of am) {
-    const bvals = bm.get(type)
-    if (!bvals) continue // type absent on the other side → no conflict for that type
-    // present on both sides: conflict unless they SHARE at least one value for this type
-    let shared = false
-    for (const v of avals) if (bvals.has(v)) { shared = true; break }
-    if (!shared) return true
-  }
-  return false
-}
-
-/**
- * PURE leg-matching (extracted verbatim from apply() so the subtle rules are unit-tested and the per-leg PO
- * lookup becomes ONE bulk load). Given all legs, a bookingId->[poNumber] map, and the group's keys, return the
- * existing leg this group amends — or undefined (→ new leg). A leg matches when:
- *   - it shares a STRONG key with the group AND is PO-consistent (never when their strong keys CONFLICT); OR
- *   - they share a PO and at least ONE side has no strong id (a nascent PO-only leg gaining its first id).
- * A2 fallback: a zero-identity group (no strong key AND no PO) matches another zero-identity leg of the same
- * thread by the conversationId persisted in match_keys — so a re-ingest UPDATES the provisional row.
- */
-export function findExistingLeg<L extends { bookingId: string; matchKeys: unknown }>(
-  legs: L[],
-  posByBooking: Map<string, string[]>,
-  gk: Set<string>,
-  groupPos: Set<string>,
-  conversationId: string | null,
-): L | undefined {
-  let existing: L | undefined
-  for (const l of legs) {
-    const legStrong = strongKeys(l.matchKeys as Record<string, unknown>)
-    // BUG 4: a group whose strong key states a DIFFERENT value for a type the leg already carries is a
-    // DIFFERENT shipment — never a match here, on ANY path (strong-overlap, PO, or conversationId).
-    if (strongKeysConflict(gk, legStrong)) continue
-    const bkPos = new Set((posByBooking.get(l.bookingId) ?? []).map((p) => normKey(p)).filter(Boolean))
-    const sharePo = groupPos.size > 0 && setsOverlap(groupPos, bkPos)
-    if (gk.size > 0 && keysOverlap(legStrong, gk)) {
-      if (bkPos.size && !sharePo) continue // strong match but clashing POs → not the same shipment
-      existing = l
-      break
-    }
-    if (sharePo && (legStrong.size === 0 || gk.size === 0)) {
-      existing = l
-      break
-    }
-  }
-  // A2: zero-identity group → match another zero-identity leg of the same thread by conversationId. The
-  // leg-strong==0 guard keeps it strictly zero-identity, so conversationId can never bridge two legs.
-  if (!existing && gk.size === 0 && groupPos.size === 0 && conversationId) {
-    const conv = normKey(conversationId)
-    existing = legs.find((l) => {
-      const mk = (l.matchKeys ?? {}) as Record<string, unknown>
-      const legStrong = strongKeys(mk)
-      if (legStrong.size !== 0) return false
-      if (strongKeysConflict(gk, legStrong)) return false
-      return normKey(mk.conversation_id) === conv
-    })
-  }
-  return existing
-}
