@@ -433,13 +433,12 @@ The `SettingsPage` + `PresentationService` god-components were already decompose
   cancels typo-safety anyway. `Record<string,unknown>` at the boundary + `str`/`num`/`date` coercion in the
   committer is the correct split (loose in, strict at point-of-use). Do not re-propose.
 - [~] `[track]` **Ingest N+1 — per-item round-trips DONE 2026-07-09; write-side index DONE 2026-07-11;
-  committer.apply() legs-scan DONE 2026-07-11 (INCREMENT 2); `evidence.allWithMessage()` scan + `lookupByMatchKey`
-  scan remain.** Killed the per-item
+  committer.apply() legs-scan DONE 2026-07-11 (INCREMENT 2); lookupByMatchKey scan DONE 2026-07-11 (INCREMENT 3);
+  `evidence.allWithMessage()` scan remains.** Killed the per-item
   N+1s: `lookupByMatchKey` + committer match loop (`poNumbersByBooking`, PR #29), `review.queue` (`findByIds`,
   PR #30), `presentation` alert summaries (PR #31), `posFor` (single query, PR #32), alert-evaluator
   milestones+emails+evidence (PR #33). **Remaining:** `committer.apply()` still loads whole
-  `evidence.allWithMessage()` per commit (a behavior decision, see below); `lookupByMatchKey` (matcher read-API)
-  still `allLegs()` full-scans with the SAME semantics as the committer — a clean follow-up reusing `candidateLegs`.
+  `evidence.allWithMessage()` per commit (a behavior decision, see below).
   **✅ INCREMENT 1 — write-side strong-key index SHIPPED 2026-07-11 (migration `0003_shipment_match_keys`).**
   The prerequisite below is done, but NOT via `shipment_identifiers` (the mapping note's first guess): that
   table is the wrong home — its source is the agent's `g.identifiers` display *history* (a DIFFERENT source
@@ -449,7 +448,8 @@ The `SettingsPage` + `PresentationService` god-components were already decompose
   (re)written on EVERY path via `committer.writeMatchKeyIndex` (delete+insert, idempotent) + a frozen-inline
   backfill. Same source + same normalization as the matcher → the future `WHERE (type,value) IN gk` candidate
   query is a PROVABLE superset. Pure `matchKeyIndexRows` unit-tested; committer write side int-tested (create/
-  amend/idempotent/strong-keys-only); 698 backend green, tsc clean. **Nothing reads it yet — inert on behavior.**
+  amend/idempotent/strong-keys-only); 698 backend green, tsc clean. **At INCREMENT 1 ship: nothing read it yet
+  (inert on behavior). Readers landed in INCREMENT 2 (committer) + INCREMENT 3 (matcher lookup).**
   **✅ INCREMENT 2 — read-side swap SHIPPED 2026-07-11.** `committer.apply` now asks `ShipmentRepository.candidateLegs`
   for an indexed SUPERSET — (legs sharing a strong key via `shipment_match_keys`, 0003) ∪ (legs whose booking shares
   a normalized PO via `purchase_orders.po_number_norm`, new **migration 0004**) — then runs the SAME pure
@@ -477,6 +477,9 @@ The `SettingsPage` + `PresentationService` god-components were already decompose
     `evidence.allWithMessage()` scan remains as a separate behavior decision** (a `WHERE po_no IN g.pos` filter
     needs a new `parsed_record.po_no` index AND still risks the broadcast/no-PO cross-thread enrichment paths).
     Full map in the mapping-agent findings (2026-07-10 session).
+  **✅ INCREMENT 3 — matcher lookupByMatchKey read-side swap SHIPPED 2026-07-11.** Same `candidateLegs`
+  (strong-key index ∪ po_number_norm) as committer.apply; pure filter unchanged. Specs in
+  `matcher-reads.int.spec.ts` (Increment 3 block): committer-written strong-key + hyphenated PO + "no index → invisible".
 - [x] `[track]` **Review-queue apply-back — DONE 2026-07-09.** A `correct` verdict now re-applies to the linked
   shipment via `ShipmentsService.applyExtractionCorrection` (new): parser fields (`booking_no`) → leg columns
   (`bookingNo`) via `PARSER_TO_LEG`, routed through the existing `editFields` (write + human-wins field-lock +

@@ -416,7 +416,7 @@ export class ShipmentRepository {
   }
 
   // --- shipment_match_keys (normalized strong-key INDEX derived from match_keys — the queryable form of
-  //     strongKeys() that a future candidate query uses in place of the allLegs() scan) ---
+  //     strongKeys() that candidateLegs uses in place of the allLegs() scan; committer + matcher lookup) ---
 
   /** Rewrite a leg's strong-key index rows (delete+insert per shipment) — idempotent, like replaceIdentifiers. */
   async replaceMatchKeys(shipmentId: string, rows: Record<string, unknown>[]) {

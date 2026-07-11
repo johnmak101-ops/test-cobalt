@@ -3,11 +3,11 @@
  * `strongKeys(matchKeys)`. Extracted so the parse is unit-tested in isolation; the committer's thin shell
  * reads the group's already-computed keys, calls this, and persists the rows (delete+insert per shipment).
  *
- * WHY it exists: `findExistingLeg` matches a leg on `strongKeys(l.matchKeys)`, read from a full `allLegs()`
- * scan. Persisting the SAME keys (same source, same normalization) into an indexed `(type,value)` table lets
- * a future candidate query `WHERE (type,value) IN gk` be a PROVABLE SUPERSET of that strong-overlap match —
- * so the scan can be replaced without ever missing a leg (which would mint a duplicate shipment). This module
- * is the write side; the read-side swap is a separate increment.
+ * WHY it exists: `findExistingLeg` / matcher lookup match a leg on `strongKeys(l.matchKeys)`. Persisting the
+ * SAME keys (same source, same normalization) into an indexed `(type,value)` table lets `candidateLegs`
+ * (`WHERE (type,value) IN gk` ∪ shared-PO) be a PROVABLE SUPERSET of the strong-overlap match — so the
+ * allLegs() scan is replaced without missing a leg (which would mint a duplicate). Write side here;
+ * readers: committer.apply (INCREMENT 2) + ShipmentsService.lookupByMatchKey (INCREMENT 3).
  */
 import type { Insertable } from 'kysely'
 import type { DB } from '../db/kysely/db'

@@ -291,6 +291,10 @@ export class ShipmentsService {
    * container_no + optional customer_po), return candidate legs so the Agent VM can decide
    * update-vs-create and see which fields are human-locked (it must not try to overwrite those).
    * Mirrors the committer's match rule: strong-key overlap OR a shared PO.
+   *
+   * INCREMENT 3 (Ingest N+1): candidate SUPERSET from the indexed `shipment_match_keys` (0003) ∪
+   * `purchase_orders.po_number_norm` (0004) — same path as committer.apply — instead of an allLegs()
+   * full-scan. Pure filter over that set is unchanged (strongKeys / shared PO).
    */
   async lookupByMatchKey(q: Record<string, unknown>) {
     const keys = {
@@ -305,7 +309,12 @@ export class ShipmentsService {
     const poNorm = keys.customer_po ? normKey(keys.customer_po) : null
     if (gk.size === 0 && !poNorm) return { query: keys, candidates: [] as unknown[] }
 
-    const legs = await this.shipments.allLegs()
+    // Same strongPairs parse as committer.apply (type:value tokens from strongKeys).
+    const strongPairs = [...gk].map((k) => {
+      const i = k.indexOf(':')
+      return { type: k.slice(0, i), value: k.slice(i + 1) }
+    })
+    const legs = await this.shipments.candidateLegs(strongPairs, poNorm ? [poNorm] : [])
     // ONE bulk load of every candidate booking's PO numbers (bookingId -> [poNumber]) instead of a per-leg
     // query inside the loop — the old O(N) poNumbersFor round-trips were the dominant cost as shipments grow.
     // Mirrors the committer's match loop; the PO list each leg sees is byte-identical to per-leg poNumbersFor.
