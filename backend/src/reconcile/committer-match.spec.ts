@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { findExistingLeg } from './committer.service'
+import { findExistingLeg } from './committer-match'
 import { strongKeys, normKey } from './match-keys'
 
 type Leg = { id: string; bookingId: string; matchKeys: Record<string, unknown> }
