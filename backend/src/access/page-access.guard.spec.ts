@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import type { Reflector } from '@nestjs/core'
 import { PageAccessGuard } from './page-access.guard'
-import { PAGE_READ_KEY, PAGE_WRITE_KEY } from './page-access.decorators'
+import { AGENT_PAGE_READ_KEY, PAGE_READ_KEY, PAGE_WRITE_KEY } from './page-access.decorators'
 import type { PageAccessService } from './page-access.service'
 
 const ctx = (role: string) =>
@@ -34,4 +34,12 @@ describe('PageAccessGuard', () => {
     expect(await guard({ [PAGE_READ_KEY]: 'alert_rules' }, 'edit').canActivate(ctx('ADMIN'))).toBe(true)
     await expect(guard({ [PAGE_READ_KEY]: 'alert_rules' }, 'none').canActivate(ctx('VIEWER'))).rejects.toThrow()
   })
+
+  it('@AgentPageRead: none blocks VIEWER but EDITOR+ service-account carve-out passes', async () => {
+    await expect(guard({ [AGENT_PAGE_READ_KEY]: 'resolution_rules' }, 'none').canActivate(ctx('VIEWER'))).rejects.toThrow()
+    expect(await guard({ [AGENT_PAGE_READ_KEY]: 'resolution_rules' }, 'none').canActivate(ctx('EDITOR'))).toBe(true)
+    expect(await guard({ [AGENT_PAGE_READ_KEY]: 'resolution_rules' }, 'none').canActivate(ctx('ADMIN'))).toBe(true)
+    expect(await guard({ [AGENT_PAGE_READ_KEY]: 'resolution_rules' }, 'view').canActivate(ctx('VIEWER'))).toBe(true)
+  })
 })
+
