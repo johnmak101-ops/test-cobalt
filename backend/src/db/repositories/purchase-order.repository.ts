@@ -5,6 +5,13 @@ import { KYSELY } from '../kysely.provider'
 
 export type PoEnrichInput = Partial<{ brand: string | null; itemStyleNo: string | null; totalQuantity: number | null; quantityUnit: string | null }>
 
+/** Normalized PO key for the queryable `po_number_norm` index (0004). A FROZEN parity copy of match-keys.ts
+ *  `normKey` (strip non-alphanumerics + upper-case) — kept LOCAL to avoid a db→reconcile layer import. The
+ *  committer's PO-candidate query compares this against `normKey`-computed groupPos, so it MUST stay
+ *  byte-identical to `normKey`; the committer-candidate-query int specs seed raw + query normalized, guarding
+ *  the parity end-to-end. */
+const poNumberNorm = (v: unknown): string => String(v ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '')
+
 /** Kysely/SQL Server port of PurchaseOrderRepository. PO master reads + CRUD + PO↔shipment links. */
 @Injectable()
 export class PurchaseOrderRepository {
@@ -122,7 +129,7 @@ export class PurchaseOrderRepository {
     // insert is caught → fall through to the read + fill-if-null path.
     try {
       const inserted = await this.db.insertInto('purchaseOrders').values({
-        poNumber, customerId, vendorId,
+        poNumber, poNumberNorm: poNumberNorm(poNumber), customerId, vendorId,
         brand: enrich?.brand ?? null, itemStyleNo: enrich?.itemStyleNo ?? null,
         totalQuantity: enrich?.totalQuantity ?? null, quantityUnit: enrich?.quantityUnit ?? null,
       }).output('inserted.id').executeTakeFirst()
@@ -164,11 +171,18 @@ export class PurchaseOrderRepository {
     quantityUnit?: string | null
     notes?: string | null
   }) {
-    const row = await this.db.insertInto('purchaseOrders').values(values).outputAll('inserted').executeTakeFirstOrThrow()
+    const row = await this.db
+      .insertInto('purchaseOrders')
+      .values({ ...values, poNumberNorm: poNumberNorm(values.poNumber) })
+      .outputAll('inserted')
+      .executeTakeFirstOrThrow()
     return row
   }
   async updatePo(id: string, patch: Record<string, unknown>) {
-    const row = await this.db.updateTable('purchaseOrders').set({ ...patch, updatedAt: new Date() }).where('id', '=', id).outputAll('inserted').executeTakeFirst()
+    // keep po_number_norm in lockstep with po_number when the number is edited (the candidate query reads it).
+    const set: Record<string, unknown> = { ...patch, updatedAt: new Date() }
+    if ('poNumber' in patch) set.poNumberNorm = poNumberNorm(patch.poNumber)
+    const row = await this.db.updateTable('purchaseOrders').set(set as never).where('id', '=', id).outputAll('inserted').executeTakeFirst()
     return row ?? null
   }
   async poLinkCounts(id: string) {

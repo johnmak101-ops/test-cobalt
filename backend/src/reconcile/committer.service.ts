@@ -199,11 +199,18 @@ export class CommitterService {
     //    duplicate on the next email. It deliberately does NOT match by PO when BOTH carry DIFFERENT strong
     //    ids — that is a PO reassignment the gate reviews, never a silent merge here.
     const groupPos = new Set(g.pos.map((p) => normKey(p)).filter(Boolean))
-    const legs = await this.shipments.allLegs()
-    // ONE bulk load of every candidate booking's PO numbers (bookingId -> [poNumber]) instead of a per-leg
-    // query inside the match loop — the old O(N) PO round-trips per email were the dominant ingest cost as
-    // the shipment table grows. The matching itself is the pure, unit-tested findExistingLeg; the PO data it
-    // sees is byte-identical to the old per-leg poNumbersFor.
+    // Candidate SUPERSET instead of an allLegs() full-scan: the strong-key index (shipment_match_keys, 0003)
+    // ∪ the shared-PO index (purchase_orders.po_number_norm, 0004). Same normalization + source as
+    // findExistingLeg, so it provably contains every leg the strong-overlap / shared-PO branches could match.
+    // The A2 zero-identity fallback (matches by conversationId inside match_keys — not index-covered) only
+    // fires when the group has NO strong key AND NO PO; in that rare orphan-thread case we keep the full scan.
+    const strongPairs = [...gk].map((k) => ({ type: k.slice(0, k.indexOf(':')), value: k.slice(k.indexOf(':') + 1) }))
+    const legs =
+      gk.size > 0 || groupPos.size > 0
+        ? await this.shipments.candidateLegs(strongPairs, [...groupPos])
+        : await this.shipments.allLegs()
+    // ONE bulk load of the candidate bookings' PO numbers (bookingId -> [poNumber]) — the PO data findExistingLeg
+    // sees is byte-identical to the old per-leg poNumbersFor; the matching itself is the pure, unit-tested fn.
     const posByBooking = await this.bookings.poNumbersByBooking(legs.map((l) => l.bookingId))
     const existing = findExistingLeg(legs, posByBooking, gk, groupPos, g.conversationId)
 

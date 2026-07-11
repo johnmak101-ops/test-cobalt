@@ -240,6 +240,7 @@ export interface PurchaseOrders {
   itemStyleNo: string | null;
   notes: string | null;
   poNumber: string;
+  poNumberNorm: string | null;
   quantityUnit: string | null;
   raw: string | null;
   totalQuantity: number | null;

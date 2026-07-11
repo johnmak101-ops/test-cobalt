@@ -16,6 +16,7 @@ import { sql, type Insertable } from 'kysely'
 import { createKysely } from './kysely/mssql-dialect'
 import type { DB } from './kysely/db'
 import { MASTER_RESOLUTION_KIND } from './enums'
+import { normKey } from '../reconcile/match-keys'
 import { seedAuthUsers } from './seed-auth-users'
 
 const SQL_SERVER_URL =
@@ -298,6 +299,7 @@ async function main() {
     .insertInto('purchaseOrders')
     .values({
       poNumber: '100-100209',
+      poNumberNorm: normKey('100-100209'), // keep the candidate-query PO index populated (this insert bypasses the repo)
       customerId: newlob.id,
       vendorId: factory.id,
       brand: 'New Lobster',
