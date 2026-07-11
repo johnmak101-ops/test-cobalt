@@ -118,6 +118,39 @@ describe('CommitterService (integration, real SQL Server)', () => {
   })
 })
 
+describe('CommitterService — strong-key index (shipment_match_keys) write side (integration)', () => {
+  const indexPairs = async (shipmentId: string) =>
+    (await db.selectFrom('shipmentMatchKeys').where('shipmentId', '=', shipmentId).selectAll().execute())
+      .map((r) => `${r.type}:${r.value}`)
+      .sort()
+
+  it('persists a NORMALIZED strong-key row per leg from match_keys (independent of g.identifiers)', async () => {
+    // no `identifiers` on the group at all — the index must still populate (proves it derives from match_keys,
+    // i.e. it works on the rebuild path too, where g.identifiers is never set)
+    const res = await committer.apply(group({ matchKeys: { booking_no: 'BK-1', so_no: 'SO-1' }, pos: [] }))
+    expect(await indexPairs(res.shipmentId)).toEqual(['booking_no:BK1', 'so_no:SO1']) // '-' stripped, upper-cased
+  })
+
+  it('only the five strong keys are indexed — customer_po / conversation_id are not', async () => {
+    const res = await committer.apply(group({ matchKeys: { so_no: 'SO-X', customer_po: 'PO-9' }, conversationId: 'conv-x', pos: [] }))
+    expect(await indexPairs(res.shipmentId)).toEqual(['so_no:SOX'])
+  })
+
+  it('is idempotent: re-applying the same decision never piles up duplicate index rows', async () => {
+    const g = group({ matchKeys: { booking_no: 'BK-IDEM' }, pos: [] })
+    const res = await committer.apply(g)
+    await committer.apply(g)
+    expect(await indexPairs(res.shipmentId)).toEqual(['booking_no:BKIDEM'])
+  })
+
+  it('amend: a strong key added by a later email is reflected in the index (mirrors the leg match_keys)', async () => {
+    const a = await committer.apply(group({ matchKeys: { so_no: 'SO-GROW' }, pos: [] }))
+    const b = await committer.apply(group({ matchKeys: { so_no: 'SO-GROW', booking_no: 'BK-GROW' }, pos: [] }))
+    expect(b.shipmentId).toBe(a.shipmentId) // same leg (amended by so_no overlap)
+    expect(await indexPairs(a.shipmentId)).toEqual(['booking_no:BKGROW', 'so_no:SOGROW'])
+  })
+})
+
 describe('CommitterService — per-PO enrichment from parsed evidence (integration)', () => {
   /** Seed one parsed_record (email × PO) with its email_message received time. */
   async function seedRecord(over: {

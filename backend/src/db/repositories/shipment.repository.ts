@@ -377,6 +377,15 @@ export class ShipmentRepository {
     if (rows.length) await this.db.insertInto('shipmentIdentifiers').values(rows as never).execute()
   }
 
+  // --- shipment_match_keys (normalized strong-key INDEX derived from match_keys — the queryable form of
+  //     strongKeys() that a future candidate query uses in place of the allLegs() scan) ---
+
+  /** Rewrite a leg's strong-key index rows (delete+insert per shipment) — idempotent, like replaceIdentifiers. */
+  async replaceMatchKeys(shipmentId: string, rows: Record<string, unknown>[]) {
+    await this.db.deleteFrom('shipmentMatchKeys').where('shipmentId', '=', shipmentId).execute()
+    if (rows.length) await this.db.insertInto('shipmentMatchKeys').values(rows as never).execute()
+  }
+
   // --- shipment_parties (co-valid customer entities with roles — the primary first) ---
 
   partiesFor(shipmentId: string) {
