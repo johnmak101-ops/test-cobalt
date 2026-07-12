@@ -39,7 +39,7 @@ describe('IngestRepository (SQL Server)', () => {
   it('upserts email_message + parsed_record + attachments; idempotent on re-POST', async () => {
     const ev: EvidenceInput = {
       graphMessageId: 'gmsg-1', subject: 'hi', sender: 'a@b.c', receivedAt: '2026-01-01T00:00:00Z',
-      recordIdx: 0, poNo: 'PO1', fields: { customer_code: 'X' }, matchKeys: { hbl: 'H1' },
+      recordIdx: 0, poNo: 'PO1', fields: { customer_code: 'X' }, matchKeys: { hbl: 'H1' }, promptVersion: 7,
       attachments: [{ graphAttachmentId: 'ga1', filename: 'f.pdf', sizeBytes: 100 }],
     }
     await repo.upsertFromDecision([ev])
@@ -50,18 +50,20 @@ describe('IngestRepository (SQL Server)', () => {
     const rec = await db.selectFrom('parsedRecord').where('graphMessageId', '=', 'gmsg-1').selectAll().executeTakeFirstOrThrow()
     expect(rec.poNo).toBe('PO1')
     expect(rec.fields).toMatchObject({ customer_code: 'X' }) // json parsed
+    expect(rec.promptVersion).toBe(7) // soul provenance persisted on insert
     const atts = await db.selectFrom('emailAttachment').where('messageId', '=', msg.id).selectAll().execute()
     expect(atts.length).toBe(1)
     expect(atts[0]!.filename).toBe('f.pdf')
 
     // re-POST with changed fields + a different attachment set → upserts in place, no duplicates
-    await repo.upsertFromDecision([{ ...ev, subject: 'hi2', poNo: 'PO2', attachments: [{ graphAttachmentId: 'ga2', filename: 'g.pdf' }] }])
+    await repo.upsertFromDecision([{ ...ev, subject: 'hi2', poNo: 'PO2', promptVersion: 8, attachments: [{ graphAttachmentId: 'ga2', filename: 'g.pdf' }] }])
     const msgs = await db.selectFrom('emailMessage').where('graphMessageId', '=', 'gmsg-1').selectAll().execute()
     expect(msgs.length).toBe(1) // upserted, not duplicated
     expect(msgs[0]!.subject).toBe('hi2')
     const recs = await db.selectFrom('parsedRecord').where('graphMessageId', '=', 'gmsg-1').selectAll().execute()
     expect(recs.length).toBe(1)
     expect(recs[0]!.poNo).toBe('PO2')
+    expect(recs[0]!.promptVersion).toBe(8) // soul provenance re-written on update
     const atts2 = await db.selectFrom('emailAttachment').where('messageId', '=', msg.id).selectAll().execute()
     expect(atts2.length).toBe(1) // replaced, not appended
     expect(atts2[0]!.filename).toBe('g.pdf')

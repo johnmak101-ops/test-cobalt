@@ -22,6 +22,8 @@ export interface EvidenceInput {
   sourceFile?: string | null
   bodyText?: string | null
   bodyHtml?: string | null
+  /** cobalt-queue soul version (queue.prompt_version.id) that produced this parse — provenance (queue v1, §4.6d). */
+  promptVersion?: number | null
   attachments?: { graphAttachmentId: string; filename: string; declaredMime?: string; sizeBytes?: number; sourceKind?: string }[]
 }
 
@@ -96,12 +98,13 @@ export class IngestRepository {
           await tx.updateTable('parsedRecord').set({
             messageId: msgId, poNo: e.poNo ?? null, poNoNorm, emailType: e.emailType ?? null,
             senderType: e.senderType ?? null, mode: e.mode ?? null, fields: fieldsJson, matchKeys: matchKeysJson,
+            promptVersion: e.promptVersion ?? null,
           }).where('id', '=', existingRec.id).execute()
         } else {
           await tx.insertInto('parsedRecord').values({
             messageId: msgId, graphMessageId: e.graphMessageId, recordIdx,
             poNo: e.poNo ?? null, poNoNorm, emailType: e.emailType ?? null, senderType: e.senderType ?? null,
-            mode: e.mode ?? null, fields: fieldsJson, matchKeys: matchKeysJson,
+            mode: e.mode ?? null, fields: fieldsJson, matchKeys: matchKeysJson, promptVersion: e.promptVersion ?? null,
           }).execute()
         }
       })

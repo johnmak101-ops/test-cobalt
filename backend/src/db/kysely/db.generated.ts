@@ -218,6 +218,8 @@ export interface ParsedRecord {
   poNo: string | null;
   /** Normalized PO key (normKey(po_no) || normKey(match_keys.customer_po)) — index for commit enrichment. */
   poNoNorm: string | null;
+  /** cobalt-queue soul version (queue.prompt_version.id) that produced this parse — provenance (0007). */
+  promptVersion: number | null;
   recordIdx: Generated<number>;
   senderType: string | null;
 }

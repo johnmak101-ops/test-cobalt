@@ -1,6 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common'
 
-/** One field correction, in the shape the queue learning feed (POST /review/correction) expects. */
+/** One field signal, in the shape the queue learning feed (POST /review/correction) expects. `kind`
+ *  distinguishes a real correction (a human changed the value) from a "looks right" confirm-sentinel
+ *  (a human accepted the value) — confirms guard the queue's held-out eval but never train the refiner. */
 export interface CorrectionPayload {
   messageId: string
   field: string
@@ -8,6 +10,8 @@ export interface CorrectionPayload {
   humanCorrected: string | null
   forwarder: string | null
   note: string | null
+  /** 'correction' (default when omitted) or 'confirm' — the queue rejects any other value. */
+  kind?: 'correction' | 'confirm'
 }
 
 /**
