@@ -38,4 +38,28 @@ describe('AlertRulesSettings', () => {
     // The per-country warning-days editor is part of this section's behavior.
     expect(await screen.findByText('Country warning days')).toBeInTheDocument()
   })
+
+  it('does not crash when a rule has null state (API allows null staircase mapping)', async () => {
+    const { api } = await import('../../lib/api')
+    vi.mocked(api.get).mockResolvedValueOnce({
+      rules: [
+        {
+          id: 'NULL_STATE',
+          name: 'Rule with no state',
+          description: null,
+          state: null,
+          triggerType: 'days_after',
+          triggerReference: 'etd',
+          thresholdDays: 1,
+          countryThresholds: null,
+          severity: 'INFO',
+          enabled: true,
+          locked: false,
+        },
+      ],
+    })
+    renderWithClient(<AlertRulesSettings />)
+    expect(await screen.findByText('Rule with no state')).toBeInTheDocument()
+    expect(screen.getByText('—')).toBeInTheDocument()
+  })
 })
