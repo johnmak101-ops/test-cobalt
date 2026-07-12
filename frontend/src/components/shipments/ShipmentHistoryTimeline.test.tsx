@@ -43,4 +43,31 @@ describe('ShipmentHistoryTimeline — field titles render as human labels, not c
       expect(screen.queryByText(raw)).not.toBeInTheDocument()
     }
   })
+
+  it('renders multi-PO enrichment flags as a bullet list, not one paragraph', () => {
+    const notes =
+      'PO 2605358: total_quantity 692 looks like a broadcast total (same value across ≥3 POs) — verify; ' +
+      'PO 2605359: total_quantity 692 looks like a broadcast total (same value across ≥3 POs) — verify; ' +
+      'PO 298924: total_quantity 692 looks like a broadcast total (same value across ≥3 POs) — verify'
+    render(
+      <ShipmentHistoryTimeline
+        history={[
+          entry({
+            field: 'po_enrichment_flag',
+            oldValue: null,
+            newValue: null,
+            sourceType: 'system',
+            notes,
+          }),
+        ]}
+      />,
+    )
+    expect(screen.getByText('PO Enrichment Flag')).toBeInTheDocument()
+    const items = screen.getAllByRole('listitem')
+    expect(items.length).toBe(3)
+    expect(items[0]!.textContent).toMatch(/PO 2605358: order total 692 looks like a shared shipment total/)
+    expect(items[1]!.textContent).toMatch(/PO 2605359/)
+    // not one long paragraph with "; "
+    expect(screen.queryByText(/2605358:.*2605359:/)).not.toBeInTheDocument()
+  })
 })

@@ -76,7 +76,7 @@ export function TopBar() {
   }, [menuOpen, notiOpen])
 
   return (
-    <header className="flex h-14 shrink-0 items-center justify-between border-b border-border bg-surface-900 px-4 sm:px-6">
+    <header className="flex h-14 shrink-0 items-center border-b border-border bg-surface-900 px-4 sm:px-6">
       {/* Left: hamburger opens the nav drawer (mobile/tablet only). */}
       <button
         onClick={openMobileNav}
@@ -88,8 +88,8 @@ export function TopBar() {
         <Menu size={18} />
       </button>
 
-      {/* Right side */}
-      <div className="flex items-center gap-2">
+      {/* Theme / alerts / user — always right-aligned (hamburger is only on small screens). */}
+      <div className="ml-auto flex items-center gap-2">
         {/* Theme toggle */}
         <button
           onClick={toggleTheme}

@@ -5,7 +5,6 @@ import {
   RefreshCw,
   Ship,
   Package,
-  AlertTriangle,
   Loader2,
 } from 'lucide-react'
 import { useReviewQueue, useConfirmShipment, type ReviewShipment } from '../hooks/use-review-queue'
@@ -13,22 +12,8 @@ import { Badge } from '../components/ui/Badge'
 import { Pagination, usePagination, PageSizeSelect } from '../components/ui/Pagination'
 import { formatRelativeTime } from '../lib/utils'
 import { toast } from '../components/ui/Toast'
-import { humanizeReason } from '../lib/review-reasons'
+import { humanizeReasons } from '../lib/review-reasons'
 import { useState } from 'react'
-
-/** Small chip explaining WHY a provisional shipment is held for review — plain ops language,
- *  raw audit string kept as the hover tooltip. */
-function ReasonChip({ reason }: { reason: string }) {
-  return (
-    <span
-      title={reason}
-      className="inline-flex items-center gap-1 rounded-md bg-status-warning/15 px-1.5 py-0.5 text-[10px] font-medium text-status-warning"
-    >
-      <AlertTriangle size={9} className="shrink-0" />
-      {humanizeReason(reason)}
-    </span>
-  )
-}
 
 export default function ReviewQueuePage() {
   const { data, isLoading, isError } = useReviewQueue()
@@ -154,11 +139,13 @@ export default function ReviewQueuePage() {
                         {/* Review reasons */}
                         <td className="px-4 py-3">
                           {s.reviewReasons.length > 0 ? (
-                            <div className="flex flex-wrap gap-1">
-                              {s.reviewReasons.map((r, i) => (
-                                <ReasonChip key={`${s.id}-${i}`} reason={r} />
+                            <ul className="list-disc space-y-0.5 pl-3.5 text-[11px] leading-snug text-text-secondary">
+                              {humanizeReasons(s.reviewReasons).map(({ raw, text }) => (
+                                <li key={raw} title={raw}>
+                                  {text}
+                                </li>
                               ))}
-                            </div>
+                            </ul>
                           ) : (
                             <span className="text-xs text-text-muted">—</span>
                           )}

@@ -6,6 +6,8 @@ import { evidencePoNorm } from '../../reconcile/evidence-po-norm'
 
 export interface EvidenceInput {
   graphMessageId: string
+  /** Microsoft Graph item id (AAMk…) — enables on-demand body re-fetch when local body is empty/purged. */
+  graphId?: string | null
   recordIdx?: number
   poNo?: string | null
   emailType?: string | null
@@ -18,6 +20,8 @@ export interface EvidenceInput {
   receivedAt?: string | null
   conversationId?: string | null
   sourceFile?: string | null
+  bodyText?: string | null
+  bodyHtml?: string | null
   attachments?: { graphAttachmentId: string; filename: string; declaredMime?: string; sizeBytes?: number; sourceKind?: string }[]
 }
 
@@ -43,19 +47,28 @@ export class IngestRepository {
         const receivedAt = e.receivedAt ? new Date(e.receivedAt) : null
         const attachmentCount = e.attachments?.length ?? 0
 
-        // email_message upsert on graph_message_id
+        // email_message upsert on graph_message_id — also stores body + Graph item id for "view original"
         const existing = await tx.selectFrom('emailMessage').where('graphMessageId', '=', e.graphMessageId).select('id').executeTakeFirst()
         let msgId: string
+        const emailPatch = {
+          subject: e.subject ?? null,
+          sender: e.sender ?? null,
+          receivedAt,
+          conversationId: e.conversationId ?? null,
+          sourceFile: e.sourceFile ?? null,
+          attachmentCount,
+          graphId: e.graphId ?? null,
+          bodyText: e.bodyText ?? null,
+          bodyHtml: e.bodyHtml ?? null,
+        }
         if (existing) {
-          await tx.updateTable('emailMessage').set({
-            subject: e.subject ?? null, sender: e.sender ?? null, receivedAt,
-            conversationId: e.conversationId ?? null, sourceFile: e.sourceFile ?? null, attachmentCount,
-          }).where('id', '=', existing.id).execute()
+          await tx.updateTable('emailMessage').set(emailPatch).where('id', '=', existing.id).execute()
           msgId = existing.id
         } else {
           const inserted = await tx.insertInto('emailMessage').values({
-            graphMessageId: e.graphMessageId, subject: e.subject ?? null, sender: e.sender ?? null, receivedAt,
-            conversationId: e.conversationId ?? null, sourceFile: e.sourceFile ?? null, attachmentCount, status: 'DONE',
+            graphMessageId: e.graphMessageId,
+            ...emailPatch,
+            status: 'DONE',
           }).output('inserted.id').executeTakeFirstOrThrow()
           msgId = inserted.id
         }

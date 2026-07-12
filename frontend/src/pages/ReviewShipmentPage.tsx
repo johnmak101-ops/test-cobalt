@@ -16,7 +16,7 @@ import {
   type EditableField,
   type StyleEntry,
 } from '../lib/review-fields'
-import { humanizeReason } from '../lib/review-reasons'
+import { humanizeReasons } from '../lib/review-reasons'
 import {
   ArrowLeft,
   AlertTriangle,
@@ -266,18 +266,13 @@ export default function ReviewShipmentPage() {
           </Link>
         </div>
         {(shipment.reviewReasons?.length ?? 0) > 0 && (
-          <div className="mt-3 flex flex-wrap gap-1.5">
-            {shipment.reviewReasons!.map((r, i) => (
-              <span
-                key={i}
-                title={r}
-                className="inline-flex items-center gap-1 rounded-md bg-status-warning/15 px-2 py-1 text-[11px] font-medium text-status-warning"
-              >
-                <AlertTriangle size={10} className="shrink-0" />
-                {humanizeReason(r)}
-              </span>
+          <ul className="mt-3 list-disc space-y-1 pl-5 text-xs text-text-secondary">
+            {humanizeReasons(shipment.reviewReasons!).map(({ raw, text }) => (
+              <li key={raw} title={raw}>
+                {text}
+              </li>
             ))}
-          </div>
+          </ul>
         )}
       </div>
 

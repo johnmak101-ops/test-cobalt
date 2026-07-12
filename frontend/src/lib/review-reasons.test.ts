@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { humanizeReason } from './review-reasons'
+import { humanizeReason, humanizeReasons } from './review-reasons'
 
 describe('humanizeReason — engineering audit strings → ops language', () => {
   it('translates the two "bad example" warnings John flagged', () => {
@@ -44,7 +44,59 @@ describe('humanizeReason — engineering audit strings → ops language', () => 
     ).toMatch(/Cargo quantity \/ weight \/ volume is missing/)
   })
 
-  it('falls back to the raw string for unknown reasons', () => {
+  it('humanizes the backend stale-ETD flag (contract: committer-date-plausibility emits this exact shape)', () => {
+    // Producer: staleEtdReasons() in backend/src/reconcile/committer-date-plausibility.ts
+    expect(humanizeReason('sender: ETD 2026-01-24 is 156 days before this email')).toBe(
+      'ETD 2026-01-24 is 156 days before this email',
+    )
+  })
+
+  it('humanizes attachment-missing and master/port unmatched reasons without DB field names', () => {
+    expect(humanizeReason('email references an attachment but none was ingested — original booking file missing')).toBe(
+      'Referenced attachment is missing from this thread — packing list or cargo quantities may be incomplete',
+    )
+    expect(
+      humanizeReason(
+        'referenced attachment not present on this thread — packing list or cargo detail may be incomplete',
+      ),
+    ).toBe(
+      'Referenced attachment is missing from this thread — packing list or cargo quantities may be incomplete',
+    )
+    expect(
+      humanizeReason('forwarder_name "Expeditors" did not exact-match a master (LLM matcher owns fuzzy; left unlinked)'),
+    ).toBe('Forwarder "Expeditors" did not match master data — left unlinked')
+    expect(humanizeReason('pod "USLGB" did not exact/curated-match a port master — left unlinked')).toBe(
+      'Port of Discharge "USLGB" did not match a known port — left unlinked',
+    )
+    expect(humanizeReason('forwarder_name "Expeditors" did not exact-match a master')).not.toMatch(/forwarder_name/)
+    expect(humanizeReason('pod "USLGB" did not exact/curated-match a port master')).not.toMatch(/\bpod\b/)
+  })
+
+  it('scrubs snake_case field tokens on unknown reasons', () => {
+    const out = humanizeReason('check forwarder_name and in_dc_date before confirming')
+    expect(out).not.toMatch(/_/)
+    expect(out).toContain('Forwarder')
+    expect(out).toContain('In DC Date')
+  })
+
+  it('falls back to the raw string for unknown reasons with no field tokens', () => {
     expect(humanizeReason('some brand new reason')).toBe('some brand new reason')
+  })
+
+  it('dedupes identical humanized reasons', () => {
+    const list = humanizeReasons([
+      'output_truncated: model output cut; some records may be miss',
+      'email references an attachment but none was ingested — original booking file missing',
+      'output_truncated: model output cut; some records may be miss',
+      'email references an attachment but none was ingested — original booking file missing',
+      'forwarder_name "Expeditors" did not exact-match a master (LLM matcher owns fuzzy; left unlinked)',
+      'pod "USLGB" did not exact/curated-match a port master — left unlinked',
+    ])
+    expect(list.map((x) => x.text)).toEqual([
+      'The email/attachments were too large to read fully — some records may be missing',
+      'Referenced attachment is missing from this thread — packing list or cargo quantities may be incomplete',
+      'Forwarder "Expeditors" did not match master data — left unlinked',
+      'Port of Discharge "USLGB" did not match a known port — left unlinked',
+    ])
   })
 })

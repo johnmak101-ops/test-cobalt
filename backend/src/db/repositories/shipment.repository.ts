@@ -293,6 +293,7 @@ export class ShipmentRepository {
       .select([
         'purchaseOrders.id as id', 'purchaseOrders.poNumber as poNumber',
         'purchaseOrders.totalQuantity as totalQuantity', 'purchaseOrders.quantityUnit as quantityUnit',
+        'purchaseOrders.itemStyleNo as itemStyleNo', 'purchaseOrders.brand as brand',
         'vendors.name as vendorName',
       ])
       .execute()
