@@ -2,12 +2,12 @@ import { Injectable } from '@nestjs/common'
 import { formatJobNo } from '../common/job-no'
 import type { Insertable } from 'kysely'
 import type { DB } from '../db/kysely/db'
-import { strongKeys, normKey, normBookingKey, str, date } from './match-keys'
+import { strongKeys, normKey, str, date } from './match-keys'
 import { guardVendorForwarder, isPlatformNotForwarder, isNotificationPlatformSender } from './vendor-forwarder-guard'
 import { deriveState, classifyKindDetail, normMode } from './state'
 import { currentIdentifierValues, deriveIdentifierRows } from './identifier-rows'
 import { matchKeyIndexRows } from './match-key-index'
-import { MastersRepository, FUZZY_FORWARDER_TIERS } from '../db/repositories/masters.repository'
+import { MastersRepository } from '../db/repositories/masters.repository'
 import { BookingRepository } from '../db/repositories/booking.repository'
 import { PurchaseOrderRepository } from '../db/repositories/purchase-order.repository'
 import { ShipmentRepository } from '../db/repositories/shipment.repository'
@@ -113,43 +113,37 @@ export class CommitterService {
     const f = g.fields
     const gk = strongKeys(g.matchKeys)
 
-    // de-correction (c) — SOUL-FIRST shadow: the classifiers below still fire exactly as today (they are
-    // load-bearing), but each model-correction is recorded as a 'shadow' audit row so the gap is measurable.
-    // The rows are flushed after the leg id is known and never surface in the user-facing history.
-    const shadows: { field: string; oldValue: string | null; newValue: string | null; note: string }[] = []
-
-    // c3: normBookingKey folds a revision suffix ('BX845666 V3' → 'BX845666') so a re-issue amends its base.
-    // Kept byte-identical to the matcher's mirror (parity mandated) — only shadow-measured here, never changed.
-    const bnRaw = str(g.matchKeys?.booking_no) ?? str(f.booking_no)
-    if (bnRaw && normBookingKey(bnRaw) !== normKey(bnRaw))
-      shadows.push({ field: 'booking_no', oldValue: bnRaw, newValue: normBookingKey(bnRaw), note: 'normBookingKey revision fold' })
-
-    // A notification platform (TradeLinkOne CVP portal) is never the forwarder — scrub before resolution
-    // so its synced forwarder master row (code 603) can't link. Parser-side validate 4c is the first line;
-    // this covers evidence parsed before that rule (and any other producer).
-    // c1: keep the scrub (behavior unchanged); shadow-record what it removed.
-    const scrubbedForwarder = isPlatformNotForwarder(str(f.forwarder_name)) ? str(f.forwarder_name) : null
-    if (scrubbedForwarder) {
-      shadows.push({ field: 'forwarder_name', oldValue: scrubbedForwarder, newValue: null, note: 'platform-not-forwarder scrub' })
-      f.forwarder_name = null
+    // de-correction STEP 2/3 (2026-07-12): no silent model-corrections, no shadow metering.
+    // Platform names stay on the field for display but never link (LLM master-matcher on queue owns
+    // party resolution; track only exact/code + curated exact facts for ports).
+    const platformForwarder = isPlatformNotForwarder(str(f.forwarder_name))
+    const reviewHints: string[] = []
+    if (platformForwarder) {
+      reviewHints.push(
+        `forwarder_name "${str(f.forwarder_name)}" looks like a notification platform, not a freight forwarder — left unlinked for review`,
+      )
     }
 
-    const { customerId, vendorId, forwarderLink, polLink, podLink } = await this.mastersResolver.resolveAll(f)
+    const { customerId, vendorId, forwarderLink, polLink, podLink } = await this.mastersResolver.resolveAll(
+      platformForwarder ? { ...f, forwarder_name: null } : f,
+    )
+    // Exact-only link; unresolved free-text → review (queue LLM should have resolved codes upstream)
+    if (!platformForwarder && str(f.forwarder_name) && !forwarderLink.id) {
+      reviewHints.push(
+        `forwarder_name "${str(f.forwarder_name)}" did not exact-match a master (LLM matcher owns fuzzy; left unlinked)`,
+      )
+    }
+    const polRaw = str(f.poi ?? (f as Record<string, unknown>).pol)
+    const podRaw = str(f.pod)
+    if (polRaw && !polLink)
+      reviewHints.push(`pol "${polRaw}" did not exact/curated-match a port master — left unlinked`)
+    if (podRaw && !podLink)
+      reviewHints.push(`pod "${podRaw}" did not exact/curated-match a port master — left unlinked`)
+
     const forwarderId = forwarderLink.id
     const polId = polLink?.id ?? null
     const podId = podLink?.id ?? null
-    // origin_country: the resolved port's country, else derived from an unseeded LOCODE-shaped/free-text POL.
-    const originCountry = polLink?.country ?? null // resolved-port country only; no code-side guessing from a raw POL
-
-    // all-AI spec §2 — shadow-meter the deterministic linkers: a link the LLM path did not produce
-    // (fuzzy forwarder tier / non-exact port tier) is recorded WITHOUT changing behavior; deleting the
-    // tiers is a follow-up gated on these going quiet.
-    if (forwarderLink.id && forwarderLink.tier && FUZZY_FORWARDER_TIERS.has(forwarderLink.tier))
-      shadows.push({ field: 'forwarder_link', oldValue: str(f.forwarder_name), newValue: forwarderLink.id, note: `fuzzy-tier ${forwarderLink.tier} linked — LLM path missed this name` })
-    if (polLink && polLink.tier !== 'unlocode_exact')
-      shadows.push({ field: 'port_link', oldValue: str(f.poi ?? (f as Record<string, unknown>).pol), newValue: polLink.id, note: `port tier ${polLink.tier} linked — LLM path missed this value` })
-    if (podLink && podLink.tier !== 'unlocode_exact')
-      shadows.push({ field: 'port_link', oldValue: str(f.pod), newValue: podLink.id, note: `port tier ${podLink.tier} linked — LLM path missed this value` })
+    const originCountry = polLink?.country ?? null
 
     // Phase-4 guard: a forwarder mislabeled as the vendor must never land in the vendor slot.
     // If flagged, the vendor link is dropped, the (empty) forwarder slot is filled, and the leg
@@ -164,11 +158,6 @@ export class CommitterService {
     })
     const effVendorId = guard.vendorId
     const effForwarderId = guard.forwarderId
-    const effReviewStatus = guard.misclassified ? 'provisional' : g.reviewStatus
-    const effReasons = ((): string[] | null => {
-      const all = [...(reviewReasonsFor(g) ?? []), ...guard.reasons]
-      return all.length ? all : null
-    })()
 
     const emailTypes = new Set(g.emailTypes)
     const state = deriveState(emailTypes, f)
@@ -180,11 +169,19 @@ export class CommitterService {
     // sender, so resolve it here from the source emails' graph ids (defense in depth — see classifyKind (c)).
     const fromPlatform = g.fromPlatform ?? (await this.allSourceEmailsFromPlatform(g))
     const { kind, rule: kindRule } = classifyKindDetail(emailTypes, f, { fromPlatform })
-    // c2: rules (b) invoice-only-SO-ref and (c) platform-only are model-correcting demotions (CVP phantom
-    // suppression) — shadow-record them. Rule (a) bare_orphan is a genuine no-identity document, not a
-    // correction, so it is NOT recorded. Behavior (the demotion itself) is unchanged.
-    if (kind === 'DOCUMENT' && (kindRule === 'invoice_so_ref' || kindRule === 'platform_only'))
-      shadows.push({ field: 'kind', oldValue: 'SHIPMENT', newValue: 'DOCUMENT', note: `classifyKind ${kindRule}` })
+    // (b)/(c) no longer demote to DOCUMENT — surface for human review instead
+    if (kindRule === 'invoice_so_ref')
+      reviewHints.push('invoice-only email with SO-ref only — verify this is a real shipment (not a billing phantom)')
+    if (kindRule === 'platform_only')
+      reviewHints.push('platform/portal email without carrier identity — verify booking_no is not a portal LPO')
+
+    const needsReview = guard.misclassified || reviewHints.length > 0
+    const effReviewStatus = needsReview ? 'provisional' : g.reviewStatus
+    const effReasons = ((): string[] | null => {
+      const all = [...(reviewReasonsFor(g) ?? []), ...guard.reasons, ...reviewHints]
+      return all.length ? all : null
+    })()
+
     const legValues: Record<string, unknown> = {
       ...mapFieldsToLegColumns(f), // direct field→column mapping (raws, cargo, dates, scac fallback, CSV dedupe)
       mode: normMode(g.mode),
@@ -321,8 +318,6 @@ export class CommitterService {
     await this.writeMatchKeyIndex(shipmentId, g)
     await this.writeParties(shipmentId, g)
     await this.milestones.sync(shipmentId, g.events, g.fields, state)
-    // de-correction (c): flush the shadow measurements now that the leg id exists (never changes behavior).
-    for (const s of shadows) await this.writeShadow(shipmentId, s.field, s.oldValue, s.newValue, s.note, g)
     return { action, jobNo, bookingId, shipmentId, state, conflicts: g.conflicts, skippedLockedFields }
   }
 
@@ -434,30 +429,6 @@ export class CommitterService {
       })
     }
     await this.shipments.replaceParties(shipmentId, rows)
-  }
-
-  /** de-correction shadow: record "code would have corrected X" WITHOUT changing behavior, so the model's
-   *  error-rate is queryable (count by field/note; distinct entity_id per shipment). changeType='shadow'
-   *  keeps these rows out of every user-facing audit/history read (see AuditRepository.listForEntity). */
-  private writeShadow(
-    shipmentId: string,
-    field: string,
-    oldValue: string | null,
-    newValue: string | null,
-    note: string,
-    g: ReconGroup,
-  ) {
-    return this.audit.write({
-      entityType: 'shipment',
-      entityId: shipmentId,
-      field,
-      oldValue,
-      newValue,
-      changeType: 'shadow',
-      sourceType: 'system',
-      sourceId: g.evidenceIds[0] ?? null,
-      note,
-    })
   }
 
   private writeAudit(

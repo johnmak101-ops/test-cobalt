@@ -146,9 +146,10 @@ Iterator generalization); (3) when the shadow flag stops firing, DELETE the trac
   `platform_only` (CVP phantom, task_9d91d677 / LPO→booking_no), NOT (a) `bare_orphan` (genuine doc) — via new
   `classifyKindDetail` in `state.ts`; `normBookingKey` revision fold measured committer-side (compare
   `normBookingKey` vs `normKey`) so the pure fn stays byte-identical to the matcher's mirror (parity intact).
-- [x] **STEP 2/3 — OPS-DEFERRED 2026-07-11.** Soul-upstream fixes + DELETE track shadow-guards only when
-  `audit.change_log` shadow counts for forwarder_name / classifyKind / normBookingKey go quiet in prod.
-  `normBookingKey` delete must move WITH queue matcher mirror. Not safe to delete while shadows still fire.
+- [x] **STEP 2/3 — DONE 2026-07-12.** Deleted silent track guards: no platform forwarder scrub-to-null,
+  no classifyKind DOCUMENT demotion for invoice_so_ref/platform_only (SHIPMENT + provisional review instead),
+  no shadow metering. Fuzzy forwarder/port tiers deleted (exact/code + curated port facts only; free-text →
+  queue LLM Master Matcher).
 
 ### (d) Legacy reconcile path — same disease, low live impact
 `merge.ts` FIELD_CLASS-allowlist drop + `sameId`/`sameName` folding + higher-rank silent supersede; `reconcile.service`
@@ -213,10 +214,8 @@ masters.repository: `PORT_ALIASES` / `IATA_TO_UNLOCODE` / `ABBREV_OVERRIDE {HCM:
 - [x] `[both]` **Forwarder + port join the LLM matcher seam — SHIPPED & MERGED 2026-07-10**
   (spec `docs/superpowers/specs/2026-07-10-all-ai-forwarder-resolution-design.md`; **track PR #73 +
   queue PR #59**, both merged). Shadow metering is live for both (`audit.change_log`
-  `changeType='shadow'`, `field='forwarder_link'`/`'port_link'`) — fuzzy-tier deletion is a follow-up
-  gated on the shadow count going quiet
-  (`select field, note, count(distinct entity_id) from audit.change_log where change_type='shadow'
-  and field in ('forwarder_link','port_link') group by field, note`). `recordPriorCorrections` now
+  `changeType='shadow'`, `field='forwarder_link'`/`'port_link'`) — **fuzzy-tier DELETED 2026-07-12**
+  (exact/code + curated facts only; free-text → queue LLM). `recordPriorCorrections` now
   covers `forwarder_name`/`pol`/`pod` (previously customer/vendor codes only). `candidates.service.ts`
   gained a `name:tokens` recall signal + a `port` kind (mode-aware, UN/LOCODE-only).
   **Live openpave probe — DONE 2026-07-10 (3/3, tool `cobalt-queue/src/dev/probe-master-matcher.ts`):**

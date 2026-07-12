@@ -469,86 +469,102 @@ describe('CommitterService — de-correction (b): PO-enrichment surfaced as revi
   })
 })
 
-describe('CommitterService — de-correction (c): shadow measurements (integration)', () => {
-  const shadowRowsFor = (id: string) =>
-    db.selectFrom('changeLog').where('entityId', '=', id).where('changeType', '=', 'shadow').selectAll().execute()
+describe('CommitterService — de-correction STEP 2/3: no silent guards / no shadows', () => {
+  const reasonsOf = (leg: { reviewReasons: unknown }) =>
+    Array.isArray(leg.reviewReasons) ? (leg.reviewReasons as string[]) : []
 
-  it('c1: the platform forwarder scrub still fires (forwarderRaw nulled) AND is shadow-recorded', async () => {
-    const res = await committer.apply(group({ pos: [], fields: { forwarder_name: 'TradeLinkOne', so_no: 'SO-SCRUB' }, matchKeys: { so_no: 'SO-SCRUB' } }))
+  it('platform forwarder keeps raw name, does not link, routes provisional review', async () => {
+    const res = await committer.apply(
+      group({
+        pos: [],
+        fields: { forwarder_name: 'TradeLinkOne', so_no: 'SO-SCRUB' },
+        matchKeys: { so_no: 'SO-SCRUB' },
+      }),
+    )
     const leg = await db.selectFrom('shipments').where('id', '=', res.shipmentId).selectAll().executeTakeFirstOrThrow()
-    expect(leg.forwarderRaw).toBeNull() // behavior unchanged: the scrub wiped the raw forwarder
-    const shadows = await shadowRowsFor(res.shipmentId)
-    expect(shadows.some((r) => r.field === 'forwarder_name' && r.oldValue === 'TradeLinkOne' && r.newValue === null)).toBe(true)
+    // raw kept for display (no silent scrub-to-null)
+    expect(String(leg.forwarderRaw ?? '').toLowerCase()).toContain('tradelink')
+    expect(leg.forwarderId).toBeNull()
+    expect(leg.reviewStatus).toBe('provisional')
+    expect(reasonsOf(leg).some((r) => /platform/i.test(r))).toBe(true)
+    const shadows = await db
+      .selectFrom('changeLog')
+      .where('entityId', '=', res.shipmentId)
+      .where('changeType', '=', 'shadow')
+      .selectAll()
+      .execute()
+    expect(shadows).toHaveLength(0)
   })
 
-  it('c2: a platform-only DOCUMENT demotion (rule c) is shadow-recorded', async () => {
-    const res = await committer.apply(group({
-      pos: [], fields: { booking_no: 'FENLPOSHADOW1' }, matchKeys: { booking_no: 'FENLPOSHADOW1' },
-      emailTypes: ['Other'], events: [{ emailType: 'Other', receivedAt: '2026-01-01T00:00:00Z' }], fromPlatform: true,
-    }))
+  it('platform-only portal booking stays SHIPMENT with review flag (no DOCUMENT demotion)', async () => {
+    const res = await committer.apply(
+      group({
+        pos: [],
+        fields: { booking_no: 'FENLPOSHADOW1' },
+        matchKeys: { booking_no: 'FENLPOSHADOW1' },
+        emailTypes: ['Other'],
+        events: [{ emailType: 'Other', receivedAt: '2026-01-01T00:00:00Z' }],
+        fromPlatform: true,
+      }),
+    )
     const leg = await db.selectFrom('shipments').where('id', '=', res.shipmentId).selectAll().executeTakeFirstOrThrow()
-    expect(leg.kind).toBe('DOCUMENT') // behavior unchanged
-    const shadows = await shadowRowsFor(res.shipmentId)
-    expect(shadows.some((r) => r.field === 'kind' && r.note === 'classifyKind platform_only')).toBe(true)
+    expect(leg.kind).toBe('SHIPMENT')
+    expect(leg.reviewStatus).toBe('provisional')
+    expect(reasonsOf(leg).some((r) => /platform|portal|LPO/i.test(r))).toBe(true)
   })
 
-  it('c2: a bare-orphan DOCUMENT (rule a) is NOT shadow-recorded (a genuine document, not a model correction)', async () => {
-    const res = await committer.apply(group({
-      pos: [], fields: {}, matchKeys: {}, emailTypes: ['Other'], events: [{ emailType: 'Other', receivedAt: '2026-01-01T00:00:00Z' }],
-    }))
+  it('bare orphan stays DOCUMENT (genuine no-identity)', async () => {
+    const res = await committer.apply(
+      group({
+        pos: [],
+        fields: {},
+        matchKeys: {},
+        emailTypes: ['Other'],
+        events: [{ emailType: 'Other', receivedAt: '2026-01-01T00:00:00Z' }],
+      }),
+    )
     const leg = await db.selectFrom('shipments').where('id', '=', res.shipmentId).selectAll().executeTakeFirstOrThrow()
     expect(leg.kind).toBe('DOCUMENT')
-    expect(await shadowRowsFor(res.shipmentId)).toHaveLength(0)
-  })
-
-  it('c3: a booking# revision fold is shadow-recorded; a clean booking# is not', async () => {
-    const folded = await committer.apply(group({ pos: [], fields: { booking_no: 'BX845666 V3' }, matchKeys: { booking_no: 'BX845666 V3' } }))
-    const foldShadows = await shadowRowsFor(folded.shipmentId)
-    expect(foldShadows.some((r) => r.field === 'booking_no' && r.oldValue === 'BX845666 V3' && r.newValue === 'BX845666')).toBe(true)
-
-    const clean = await committer.apply(group({ pos: [], fields: { booking_no: 'BX999000' }, matchKeys: { booking_no: 'BX999000' } }))
-    expect((await shadowRowsFor(clean.shipmentId)).some((r) => r.field === 'booking_no')).toBe(false)
-  })
-
-  it('shadow rows are EXCLUDED from the user-facing change history (listForEntity)', async () => {
-    const res = await committer.apply(group({ pos: [], fields: { forwarder_name: 'TradeLinkOne', so_no: 'SO-HIST' }, matchKeys: { so_no: 'SO-HIST' } }))
-    expect((await shadowRowsFor(res.shipmentId)).length).toBeGreaterThan(0) // present in the raw log
-    const history = await auditRepo.listForEntity('shipment', res.shipmentId)
-    expect(history.some((r) => r.changeType === 'shadow')).toBe(false) // but never in the history view
   })
 })
 
-describe('resolution shadow rows (all-AI spec §2)', () => {
-  const shadowRowsFor = (id: string) =>
-    db.selectFrom('changeLog').where('entityId', '=', id).where('changeType', '=', 'shadow').selectAll().execute()
+describe('resolution exact-only (all-AI: fuzzy deleted, LLM owns free-text)', () => {
+  const reasonsOf = (leg: { reviewReasons: unknown }) =>
+    Array.isArray(leg.reviewReasons) ? (leg.reviewReasons as string[]) : []
 
-  it('a fuzzy-tier forwarder link writes a forwarder_link shadow; exact does not', async () => {
+  it('substring forwarder name does NOT link; code_exact does; free-text → provisional', async () => {
     const fwd = await db
       .insertInto('forwarders')
       .values({ code: 'EXPKRA', name: 'EXPEDITORS KOREA LTD' })
       .output('inserted.id')
       .executeTakeFirstOrThrow()
 
-    // fixture A: forwarder_name only links via containment ('EXPEDITORS KOREA' ⊂ 'EXPEDITORS KOREA LTD')
-    // — the LLM path did not produce this link, so it is shadow-recorded (never changes behavior).
-    const a = await committer.apply(group({
-      pos: [], fields: { forwarder_name: 'EXPEDITORS KOREA', so_no: 'SO-FWD-A' }, matchKeys: { so_no: 'SO-FWD-A' },
-    }))
-    const aShadows = await shadowRowsFor(a.shipmentId)
-    expect(aShadows.filter((r) => r.field === 'forwarder_link')).toHaveLength(1)
-    expect(aShadows.some((r) =>
-      r.field === 'forwarder_link' && r.oldValue === 'EXPEDITORS KOREA' && r.newValue === fwd.id && /containment/.test(r.note ?? ''),
-    )).toBe(true)
+    // containment deleted: partial name no longer links
+    const a = await committer.apply(
+      group({
+        pos: [],
+        fields: { forwarder_name: 'EXPEDITORS KOREA', so_no: 'SO-FWD-A' },
+        matchKeys: { so_no: 'SO-FWD-A' },
+      }),
+    )
+    const legA = await db.selectFrom('shipments').where('id', '=', a.shipmentId).selectAll().executeTakeFirstOrThrow()
+    expect(legA.forwarderId).toBeNull()
+    expect(legA.reviewStatus).toBe('provisional')
+    expect(reasonsOf(legA).some((r) => /exact-match|LLM matcher/i.test(r))).toBe(true)
 
-    // fixture B: forwarder_name equal to the master CODE (code_exact) → the code-first lookup wins before
-    // any fuzzy tier runs, so no forwarder_link shadow is written.
-    const b = await committer.apply(group({
-      pos: [], fields: { forwarder_name: 'EXPKRA', so_no: 'SO-FWD-B' }, matchKeys: { so_no: 'SO-FWD-B' },
-    }))
-    expect((await shadowRowsFor(b.shipmentId)).some((r) => r.field === 'forwarder_link')).toBe(false)
+    // code_exact still links
+    const b = await committer.apply(
+      group({
+        pos: [],
+        fields: { forwarder_name: 'EXPKRA', so_no: 'SO-FWD-B' },
+        matchKeys: { so_no: 'SO-FWD-B' },
+      }),
+    )
+    const legB = await db.selectFrom('shipments').where('id', '=', b.shipmentId).selectAll().executeTakeFirstOrThrow()
+    expect(legB.forwarderId).toBe(fwd.id)
   })
 
-  it('a non-exact port link writes a port_link shadow; exact UN/LOCODE does not', async () => {
+  it('curated port abbreviation still links; free-text city without fact does not; UN/LOCODE does', async () => {
     await db
       .insertInto('ports')
       .values([
@@ -561,18 +577,36 @@ describe('resolution shadow rows (all-AI spec §2)', () => {
       .values([{ kind: 'port_abbreviation', lhs: 'HCM', rhs: 'VNSGN', status: 'approved', source: 'seed', reason: null }] as never)
       .execute()
 
-    // fixture A: pol='HCM' resolves via the curated abbreviation fact (non-exact tier) → shadow-recorded
-    const a = await committer.apply(group({
-      pos: [], fields: { pol: 'HCM', so_no: 'SO-PORT-A' }, matchKeys: { so_no: 'SO-PORT-A' },
-    }))
-    const aShadows = await shadowRowsFor(a.shipmentId)
-    expect(aShadows.filter((r) => r.field === 'port_link')).toHaveLength(1)
-    expect(aShadows.some((r) => r.field === 'port_link' && r.oldValue === 'HCM' && /abbreviation/.test(r.note ?? ''))).toBe(true)
+    const a = await committer.apply(
+      group({
+        pos: [],
+        fields: { pol: 'HCM', so_no: 'SO-PORT-A' },
+        matchKeys: { so_no: 'SO-PORT-A' },
+      }),
+    )
+    const legA = await db.selectFrom('shipments').where('id', '=', a.shipmentId).selectAll().executeTakeFirstOrThrow()
+    expect(legA.polId).not.toBeNull()
 
-    // fixture B: pol='CNSHK' is an exact UN/LOCODE hit → no port_link shadow
-    const b = await committer.apply(group({
-      pos: [], fields: { pol: 'CNSHK', so_no: 'SO-PORT-B' }, matchKeys: { so_no: 'SO-PORT-B' },
-    }))
-    expect((await shadowRowsFor(b.shipmentId)).some((r) => r.field === 'port_link')).toBe(false)
+    // fuzzy city name deleted — no free-text "Shekou" link without curated fact / UNLOCODE
+    const c = await committer.apply(
+      group({
+        pos: [],
+        fields: { pol: 'Shekou Port Terminal', so_no: 'SO-PORT-C' },
+        matchKeys: { so_no: 'SO-PORT-C' },
+      }),
+    )
+    const legC = await db.selectFrom('shipments').where('id', '=', c.shipmentId).selectAll().executeTakeFirstOrThrow()
+    expect(legC.polId).toBeNull()
+    expect(legC.reviewStatus).toBe('provisional')
+
+    const b = await committer.apply(
+      group({
+        pos: [],
+        fields: { pol: 'CNSHK', so_no: 'SO-PORT-B' },
+        matchKeys: { so_no: 'SO-PORT-B' },
+      }),
+    )
+    const legB = await db.selectFrom('shipments').where('id', '=', b.shipmentId).selectAll().executeTakeFirstOrThrow()
+    expect(legB.polId).not.toBeNull()
   })
 })

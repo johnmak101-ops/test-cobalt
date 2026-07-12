@@ -47,9 +47,9 @@ describe('classifyKind — SHIPMENT vs DOCUMENT', () => {
   it('bare orphan (no id, no lifecycle doc) → DOCUMENT', () => {
     expect(classifyKind(new Set(['Other']), {})).toBe('DOCUMENT')
   })
-  it('CVP invoice-only with only an order-reference so_no → DOCUMENT', () => {
-    // the screenshot case: all emails Invoice/Billing, so_no set, no booking/BL/container
-    expect(classifyKind(invoice, { so_no: 'CMS364079' })).toBe('DOCUMENT')
+  it('CVP invoice-only with only an order-reference so_no → SHIPMENT (flag via classifyKindDetail, no silent DOCUMENT demotion)', () => {
+    // STEP 2/3: track no longer demotes; human reviews
+    expect(classifyKind(invoice, { so_no: 'CMS364079' })).toBe('SHIPMENT')
   })
   it('invoice-only BUT carrying a real booking#/BL/container → SHIPMENT (a booked move the invoice reports)', () => {
     expect(classifyKind(invoice, { so_no: 'CMS364079', booking_no: 'BX845666' })).toBe('SHIPMENT')
@@ -71,8 +71,8 @@ describe('classifyKind — SHIPMENT vs DOCUMENT', () => {
   // LPO reference into booking_no. Demote to DOCUMENT UNLESS a real carrier identity or a lifecycle
   // email proves an actual shipment. Field shape alone can't tell it apart (see the invoice+booking#
   // case above), so the discriminator is fromPlatform. The screenshot case: FENLPO003034A.
-  it('platform-only "Other" alert whose only identity is a portal booking# → DOCUMENT', () => {
-    expect(classifyKind(new Set(['Other']), { booking_no: 'FENLPO003034A' }, { fromPlatform: true })).toBe('DOCUMENT')
+  it('platform-only "Other" alert whose only identity is a portal booking# → SHIPMENT (flag only)', () => {
+    expect(classifyKind(new Set(['Other']), { booking_no: 'FENLPO003034A' }, { fromPlatform: true })).toBe('SHIPMENT')
   })
   it('the SAME leg NOT flagged from the platform stays SHIPMENT (a real booking# is a booked move)', () => {
     expect(classifyKind(new Set(['Other']), { booking_no: 'FENLPO003034A' })).toBe('SHIPMENT')
@@ -85,24 +85,24 @@ describe('classifyKind — SHIPMENT vs DOCUMENT', () => {
   })
 })
 
-describe('classifyKindDetail — exposes the deciding rule (for de-correction shadow)', () => {
+describe('classifyKindDetail — review rules without silent demotion (STEP 2/3)', () => {
   const invoice = new Set(['Invoice/Billing'])
-  it('bare orphan → rule "bare_orphan" (a genuine document, NOT shadow-recorded)', () => {
+  it('bare orphan → DOCUMENT + bare_orphan', () => {
     expect(classifyKindDetail(new Set(['Other']), {})).toEqual({ kind: 'DOCUMENT', rule: 'bare_orphan' })
   })
-  it('CVP invoice-only SO-ref → rule "invoice_so_ref" (model-correcting demotion b)', () => {
-    expect(classifyKindDetail(invoice, { so_no: 'CMS364079' })).toEqual({ kind: 'DOCUMENT', rule: 'invoice_so_ref' })
+  it('CVP invoice-only SO-ref → SHIPMENT + invoice_so_ref (flag only)', () => {
+    expect(classifyKindDetail(invoice, { so_no: 'CMS364079' })).toEqual({ kind: 'SHIPMENT', rule: 'invoice_so_ref' })
   })
-  it('platform-only portal booking# → rule "platform_only" (model-correcting demotion c)', () => {
+  it('platform-only portal booking# → SHIPMENT + platform_only (flag only)', () => {
     expect(classifyKindDetail(new Set(['Other']), { booking_no: 'FENLPO003034A' }, { fromPlatform: true })).toEqual({
-      kind: 'DOCUMENT',
+      kind: 'SHIPMENT',
       rule: 'platform_only',
     })
   })
   it('a real shipment → kind SHIPMENT, rule null', () => {
     expect(classifyKindDetail(invoice, { booking_no: 'BX845666' })).toEqual({ kind: 'SHIPMENT', rule: null })
   })
-  it('classifyKind wrapper still returns the kind string only (unchanged call surface)', () => {
+  it('classifyKind wrapper still returns the kind string only', () => {
     expect(classifyKind(new Set(['Other']), {})).toBe('DOCUMENT')
     expect(classifyKind(invoice, { booking_no: 'BX845666' })).toBe('SHIPMENT')
   })
