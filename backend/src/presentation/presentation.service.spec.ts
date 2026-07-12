@@ -73,7 +73,7 @@ const build = () => {
   }
   const auditRepo = { listForEntity: async (_t: string, id: string) => (id === 'leg1' ? auditRows : []) }
   const emailRepo = {
-    countPendingReview: async () => 3,
+    unreadCount: async () => 3,
     ingestionStatus: async () => ({ count: 0, lastAt: null }),
     ingestState: async () => null,
     emailsForShipment: async () => [],
@@ -99,7 +99,7 @@ describe('PresentationService.shipments — list', () => {
     expect(s.forwarder).toEqual({ id: 'f1', name: 'Fairate', code: 'FAIR' })
     // linkedPOs carry the real PO id (drill-down), vendor, and qty/unit — not the old {poNumber} stub
     expect(s.linkedPOs).toEqual([
-      { id: 'po1', poNumber: 'PO-1', totalQuantity: 5000, quantityUnit: 'pieces', quantity: null, qtyIssue: null, qtyIssueDetail: null, vendor: { name: 'Rose Knit' } },
+      { id: 'po1', poNumber: 'PO-1', totalQuantity: 5000, quantityUnit: 'pieces', quantity: null, itemStyleNo: null, brand: null, qtyIssue: null, qtyIssueDetail: null, vendor: { name: 'Rose Knit' }, sharedBroadcastTotal: null, sharedBroadcastUnit: null },
     ])
   })
 
@@ -164,7 +164,7 @@ describe('PresentationService.dashboard', () => {
     expect(d.stats.activeShipments).toBe(1) // non-DELIVERED active legs
     expect(d.stats.atRiskShipments).toBe(1) // leg1 AT_RISK
     expect(d.stats.criticalAlerts).toBe(1)
-    expect(d.stats.newEmails).toBe(3) // pending-review count, not a hardcoded 0
+    expect(d.stats.newEmails).toBe(3) // inbox unread count (same as /emails/unread-count)
     expect(Array.isArray(d.recentAlerts)).toBe(true)
     expect(Array.isArray(d.recentActivity)).toBe(true)
   })

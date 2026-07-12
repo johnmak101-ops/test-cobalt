@@ -143,11 +143,21 @@ export class EmailRepository {
     return row ?? null
   }
 
-  /** The emails that built a shipment — joined via its milestones' graph message ids (Related Emails). */
+  /** The emails that built a shipment (Related Emails / Alerts & Emails).
+   *  Join key may be either the RFC Message-ID (`email_message.graph_message_id`) OR the Graph item id
+   *  (`email_message.graph_id`) — older commits stored AAMk… in shipment_emails after matcher started
+   *  sending real Graph ids on events.graphId. */
   async emailsForShipment(shipmentId: string) {
     return this.db
       .selectFrom('shipmentEmails')
-      .innerJoin('emailMessage', 'shipmentEmails.graphMessageId', 'emailMessage.graphMessageId')
+      .innerJoin('emailMessage', (join) =>
+        join.on((eb) =>
+          eb.or([
+            eb('shipmentEmails.graphMessageId', '=', eb.ref('emailMessage.graphMessageId')),
+            eb('shipmentEmails.graphMessageId', '=', eb.ref('emailMessage.graphId')),
+          ]),
+        ),
+      )
       .where('shipmentEmails.shipmentId', '=', shipmentId)
       .orderBy('emailMessage.receivedAt', 'desc')
       .select([
@@ -164,7 +174,14 @@ export class EmailRepository {
     const rows = shipmentIds.length
       ? await this.db
           .selectFrom('shipmentEmails')
-          .innerJoin('emailMessage', 'shipmentEmails.graphMessageId', 'emailMessage.graphMessageId')
+          .innerJoin('emailMessage', (join) =>
+            join.on((eb) =>
+              eb.or([
+                eb('shipmentEmails.graphMessageId', '=', eb.ref('emailMessage.graphMessageId')),
+                eb('shipmentEmails.graphMessageId', '=', eb.ref('emailMessage.graphId')),
+              ]),
+            ),
+          )
           .where('shipmentEmails.shipmentId', 'in', shipmentIds)
           .orderBy('emailMessage.receivedAt', 'desc')
           .select([

@@ -99,6 +99,8 @@ export class CreateDecisionDto {
    *  Additive: legacy callers omit it → no ingest write (unchanged). Populated by cobalt-queue's send-side. */
   @IsOptional() @IsArray() evidence?: {
     graphMessageId: string
+    /** Microsoft Graph item id (AAMk…) for on-demand body/attachment re-fetch — distinct from graphMessageId. */
+    graphId?: string | null
     recordIdx?: number
     poNo?: string | null
     emailType?: string | null
@@ -111,6 +113,8 @@ export class CreateDecisionDto {
     receivedAt?: string | null
     conversationId?: string | null
     sourceFile?: string | null
+    bodyText?: string | null
+    bodyHtml?: string | null
     attachments?: { graphAttachmentId: string; filename: string; declaredMime?: string; sizeBytes?: number; sourceKind?: string }[]
   }[]
 }

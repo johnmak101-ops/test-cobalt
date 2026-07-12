@@ -25,7 +25,15 @@ import { makeTtlCache } from '../common/ttl-cache'
 type Ref = { id: string; code?: string | null; name: string }
 type PortRow = { id: string; unlocode?: string | null; country?: string | null; iata?: string | null }
 type BookingRow = { id: string; customerId: string | null; vendorId: string | null }
-type LinkedPoRow = { id: string; poNumber: string; totalQuantity: number | null; quantityUnit: string | null; vendorName: string | null }
+type LinkedPoRow = {
+  id: string
+  poNumber: string
+  totalQuantity: number | null
+  quantityUnit: string | null
+  itemStyleNo?: string | null
+  brand?: string | null
+  vendorName: string | null
+}
 
 interface MasterMaps {
   customers: Map<string, Ref>
@@ -115,23 +123,40 @@ export class PresentationService {
       polPort: leg.polId ? maps.ports.get(leg.polId) ?? null : null,
       podPort: leg.podId ? maps.ports.get(leg.podId) ?? null : null,
       poNumbers: linkedPos.map((p) => p.poNumber),
-      linkedPOs: linkedPos.map((p) => {
-        const quantity = p.legQty ?? null // per-leg shipped qty from shipment_pos (null when the split is unknown)
-        // Compare the attributed shipped qty against the ERP order (total + unit) — flag an impossible
-        // over-attribution (shipped > ordered) or a unit mismatch so the UI can surface it.
-        const ctx = { legQty: quantity, legUnit: p.legUnit ?? null, poTotal: p.totalQuantity ?? null, poUnit: p.quantityUnit ?? null }
-        const issue = poQtyIssue(ctx)
-        return {
-          id: p.id,
-          poNumber: p.poNumber,
-          totalQuantity: p.totalQuantity ?? null,
-          quantityUnit: p.quantityUnit ?? p.legUnit ?? leg.qtyUnit ?? null,
-          quantity,
-          qtyIssue: issue,
-          qtyIssueDetail: issue ? describePoQtyIssue(issue, ctx) : null,
-          vendor: p.vendorName ? { name: p.vendorName } : null,
-        }
-      }),
+      linkedPOs: (() => {
+        // When ≥3 POs all show the same total and none have a per-leg shipped split, that total is a
+        // booking-level broadcast (not per-PO order qty) — UI must not present it as each PO's total.
+        const totals = linkedPos.map((p) => p.totalQuantity).filter((t): t is number => t != null)
+        const sharedBroadcast =
+          linkedPos.length >= 3 &&
+          totals.length === linkedPos.length &&
+          new Set(totals).size === 1 &&
+          linkedPos.every((p) => p.legQty == null)
+        const sharedTotal = sharedBroadcast ? totals[0]! : null
+        return linkedPos.map((p) => {
+          const quantity = p.legQty ?? null // per-leg shipped qty from shipment_pos (null when the split is unknown)
+          // Compare the attributed shipped qty against the ERP order (total + unit) — flag an impossible
+          // over-attribution (shipped > ordered) or a unit mismatch so the UI can surface it.
+          const poTotal = sharedBroadcast ? null : p.totalQuantity ?? null
+          const ctx = { legQty: quantity, legUnit: p.legUnit ?? null, poTotal, poUnit: p.quantityUnit ?? null }
+          const issue = poQtyIssue(ctx)
+          return {
+            id: p.id,
+            poNumber: p.poNumber,
+            totalQuantity: poTotal,
+            quantityUnit: p.quantityUnit ?? p.legUnit ?? leg.qtyUnit ?? null,
+            quantity,
+            itemStyleNo: p.itemStyleNo ?? null,
+            brand: p.brand ?? null,
+            qtyIssue: issue,
+            qtyIssueDetail: issue ? describePoQtyIssue(issue, ctx) : null,
+            vendor: p.vendorName ? { name: p.vendorName } : null,
+            // same on every row when set — UI shows one banner, not a fake per-PO total
+            sharedBroadcastTotal: sharedTotal,
+            sharedBroadcastUnit: sharedTotal != null ? (p.quantityUnit ?? leg.qtyUnit ?? null) : null,
+          }
+        })
+      })(),
     }
   }
 
@@ -358,12 +383,14 @@ export class PresentationService {
   // ---- dashboard ----
 
   async dashboard() {
-    const [legs, activeAlerts, maps, bookingRows, pendingReview] = await Promise.all([
+    // newEmails = inbox unread (email_message with no email_read row) — same source as Sidebar/Inbox badge.
+    // Do NOT use review_email NEEDS_REVIEW: the matcher→decisions path never writes that legacy table.
+    const [legs, activeAlerts, maps, bookingRows, unreadEmails] = await Promise.all([
       this.shipmentRepo.activeLegs(),
       this.alertRepo.list('ACTIVE'),
       this.masterMaps(),
       this.bookingRepo.listOrdered(),
-      this.emailRepo.countPendingReview(),
+      this.emailRepo.unreadCount(),
     ])
     // active-shipments stats exclude cancelled legs (they still appear in the tracker list, shown as
     // Cancelled, but must not inflate the active/at-risk counts).
@@ -372,7 +399,7 @@ export class PresentationService {
       activeShipments: nonDelivered.length,
       atRiskShipments: nonDelivered.filter((l) => l.riskLevel != null && AT_RISK.has(l.riskLevel)).length,
       criticalAlerts: activeAlerts.filter((a) => a.severity === 'CRITICAL').length,
-      newEmails: pendingReview, // emails awaiting human review — the actionable "new" count
+      newEmails: unreadEmails,
     }
 
     const recentAlertRows = activeAlerts.slice(0, 5)
