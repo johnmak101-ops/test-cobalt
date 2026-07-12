@@ -8,8 +8,9 @@ import { usePageAccess } from '../../hooks/use-page-access'
 interface AlertRule {
   id: string
   name: string
-  description: string
-  state: string
+  description: string | null
+  /** Backend may return null when the rule has no mapped staircase state. */
+  state: string | null
   triggerType: string
   triggerReference: string
   thresholdDays: number
@@ -187,7 +188,7 @@ export function AlertRulesSettings() {
               <div>
                 <label className="text-xs text-text-muted">State</label>
                 <p className="mt-1 h-9 flex items-center text-sm text-text-secondary">
-                  {rule.state.replace('_', ' ')}
+                  {rule.state ? rule.state.replace(/_/g, ' ') : '—'}
                 </p>
               </div>
             </div>
