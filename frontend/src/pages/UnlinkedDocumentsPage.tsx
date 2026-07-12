@@ -217,7 +217,13 @@ export default function UnlinkedDocumentsPage() {
         }}
       />
 
-      <LinkShipmentModal document={linkTarget} onClose={() => setLinkTarget(null)} />
+      {linkTarget && (
+        <LinkShipmentModal
+          key={linkTarget.id}
+          document={linkTarget}
+          onClose={() => setLinkTarget(null)}
+        />
+      )}
     </div>
   )
 }
