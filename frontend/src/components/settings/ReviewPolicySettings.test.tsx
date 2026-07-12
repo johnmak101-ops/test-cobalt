@@ -7,8 +7,8 @@ import { ReviewPolicySettings } from './ReviewPolicySettings'
 vi.mock('../../hooks/use-review-policy', () => {
   const data = {
     triggers: [
-      { id: 'conflict', label: "there's an unresolved conflict", enabled: true },
-      { id: 'no_po', label: 'no PO is linked', enabled: false },
+      { id: 'conflict', label: 'the email disagrees with what’s already on the shipment', enabled: true },
+      { id: 'no_po', label: 'there’s no purchase order', enabled: false },
     ],
   }
   return {
@@ -26,15 +26,15 @@ describe('ReviewPolicySettings', () => {
   it('renders a checkbox per trigger reflecting its enabled state', () => {
     level = 'edit'
     render(<ReviewPolicySettings />)
-    expect((screen.getByLabelText(/there's an unresolved conflict/) as HTMLInputElement).checked).toBe(true)
-    expect((screen.getByLabelText(/no PO is linked/) as HTMLInputElement).checked).toBe(false)
+    expect((screen.getByLabelText(/email disagrees with what’s already on the shipment/) as HTMLInputElement).checked).toBe(true)
+    expect((screen.getByLabelText(/there’s no purchase order/) as HTMLInputElement).checked).toBe(false)
     expect(screen.getByRole('button', { name: /save/i })).toBeInTheDocument()
   })
 
   it('is read-only (checkboxes disabled, no Save) when the user lacks edit', () => {
     level = 'view'
     render(<ReviewPolicySettings />)
-    expect((screen.getByLabelText(/there's an unresolved conflict/) as HTMLInputElement).disabled).toBe(true)
+    expect((screen.getByLabelText(/email disagrees with what’s already on the shipment/) as HTMLInputElement).disabled).toBe(true)
     expect(screen.queryByRole('button', { name: /save/i })).not.toBeInTheDocument()
     level = 'edit'
   })

@@ -25,9 +25,10 @@ describe('SettingsPage nav (access-aware)', () => {
     expect(screen.queryByRole('link', { name: /^users$/i })).not.toBeInTheDocument()
     expect(screen.queryByRole('link', { name: /access control/i })).not.toBeInTheDocument()
   })
-  it('a SUPERADMIN sees every tab, including Access Control', () => {
+  it('a SUPERADMIN sees every tab, including Access Control (no empty General tab)', () => {
     mockUser.role = 'SUPERADMIN'
-    render(<MemoryRouter initialEntries={['/settings']}><SettingsPage /></MemoryRouter>)
+    render(<MemoryRouter initialEntries={['/settings/users']}><SettingsPage /></MemoryRouter>)
+    expect(screen.queryByRole('link', { name: /^general$/i })).not.toBeInTheDocument()
     expect(screen.getByRole('link', { name: /resolution rules/i })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: /^users$/i })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: /access control/i })).toBeInTheDocument()
