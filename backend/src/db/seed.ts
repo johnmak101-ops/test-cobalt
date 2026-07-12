@@ -1,9 +1,9 @@
 /**
  * Seed the tracking + alerts tables (SQL Server / Kysely).
  *
- * ALWAYS (prod + dev): ports (no ERP home) + admin config (master_resolution facts, alert_rules, users,
- * app_settings), all idempotent (check-then-insert — MSSQL has no ON CONFLICT DO NOTHING) — never wiped,
- * so runtime admin edits survive.
+ * ALWAYS (prod + dev): ports (no ERP home) + admin config (alert_rules, users, app_settings), all
+ * idempotent (check-then-insert — MSSQL has no ON CONFLICT DO NOTHING) — never wiped, so runtime admin
+ * edits survive. master_resolution is NOT seeded — manage only via Settings → Resolution Rules.
  *
  * SEED_DEMO=1 (dev/demo only): the demo dataset — demo masters (customers/vendors/forwarders/consignees),
  * a fixture PO/booking re-planned sea→air, the review queue, and the ingest mirror. Rebuilt from a wipe.
@@ -15,7 +15,6 @@
 import { sql, type Insertable } from 'kysely'
 import { createKysely } from './kysely/mssql-dialect'
 import type { DB } from './kysely/db'
-import { MASTER_RESOLUTION_KIND } from './enums'
 import { normKey } from '../reconcile/match-keys'
 import { seedAuthUsers } from './seed-auth-users'
 
@@ -33,8 +32,8 @@ async function main() {
   // admin config; masters come from the daily Mesh sync (sync-masters.ts).
   const DEMO = process.env.SEED_DEMO === '1' || process.env.SEED_DEMO === 'true'
 
-  // Demo rebuild: wipe the demo transactional data + demo masters (NOT master_resolution/app_settings/
-  // alert_rules/users, which are admin-owned and preserved). Only in demo mode — never wipe real data.
+  // Demo rebuild: wipe the demo transactional data + demo masters (NOT app_settings/alert_rules/users,
+  // which are admin-owned and preserved). master_resolution is admin-owned and not re-seeded.
   // T-SQL has no `truncate ... cascade`: disable every FK, DELETE child→parent (the Postgres cascade
   // reached shipments' children shipment_identifiers/shipment_parties/shipment_emails/shipment_milestones/
   // shipment_pos), then re-enable WITH CHECK. uniqueidentifier PKs default via NEWID() — no identity to restart.
@@ -114,58 +113,8 @@ async function main() {
   const ports = await db.selectFrom('ports').selectAll().execute()
   const port = (code: string) => ports.find((p) => p.unlocode === code)
 
-  // ---- curated master-resolution facts (ALWAYS — admin config, served via GET /api/masters/resolution;
-  // cobalt-queue's parser reads them over HTTP). NOT gated behind SEED_DEMO: these include RELATIONSHIP facts
-  // (customer_group/role, vendor_group) that are business knowledge, not name-inferable, and must survive. ----
-  const MASTER_RESOLUTION_FACTS: { kind: (typeof MASTER_RESOLUTION_KIND)[number]; lhs: string; rhs: string; reason: string }[] = [
-    { kind: 'customer_canonical', lhs: 'COLEB', rhs: 'COLE', reason: 'group 3: duplicate master rows for Cole Buxton' },
-    { kind: 'customer_group', lhs: 'SEH', rhs: 'PRIMARK', reason: 'group 13: SEH bootstraps as a Primark GROUP sibling (stays reviewed); flip in Settings → Resolution Rules if confirmed a hard fold' },
-    { kind: 'customer_group', lhs: 'AEOW', rhs: 'AMERICAN_EAGLE', reason: 'groups 7-11: AEO Management (bill-to)' },
-    { kind: 'customer_group', lhs: 'BLUI', rhs: 'AMERICAN_EAGLE', reason: 'groups 7-11: Blue Star Imports (AE importer-of-record)' },
-    { kind: 'customer_group', lhs: 'TORL', rhs: 'TORY', reason: 'group 4: Tory US LLC' },
-    { kind: 'customer_group', lhs: 'TOFE', rhs: 'TORY', reason: 'group 4: Tory HK / Far East' },
-    { kind: 'customer_group', lhs: 'PRMK', rhs: 'PRIMARK', reason: 'Primark Ltd' },
-    { kind: 'customer_group', lhs: 'PRMS', rhs: 'PRIMARK', reason: 'group 17: Primark regional sibling' },
-    { kind: 'customer_group', lhs: 'PRMT', rhs: 'PRIMARK', reason: 'group 17: Primark regional sibling' },
-    { kind: 'customer_role', lhs: 'AEOW', rhs: 'bill_to', reason: 'groups 7-10: pins primary -> auto-apply' },
-    { kind: 'customer_role', lhs: 'BLUI', rhs: 'importer_of_record', reason: 'groups 7-11: retained as IOR co-valid member' },
-    { kind: 'customer_role', lhs: 'PRMT', rhs: 'bill_to', reason: 'group 17: PRMT is the invoiced/main Primark party -> pins primary -> auto' },
-    { kind: 'vendor_group', lhs: 'FEFALT', rhs: 'FENIX_FASHION', reason: 'group 2: Fenix Fashion HK (booking/invoice house)' },
-    { kind: 'vendor_group', lhs: 'TALIUN', rhs: 'FENIX_FASHION', reason: 'group 2: Tai Li Un (mainland factory for the same shipment)' },
-    { kind: 'vendor_group', lhs: 'YAQIHK', rhs: 'YAQI_AE', reason: 'group 11: Yaqi Textile HK (invoice house, American Eagle book)' },
-    { kind: 'vendor_group', lhs: 'BANSNK', rhs: 'YAQI_AE', reason: 'group 11: BD Spinners & Knitters (Bangladesh factory on the same B/L)' },
-    // ---- port resolution tiers (formerly hardcoded in masters.repository.ts; see migration 0002) ----
-    // abbreviation: checked BEFORE the IATA lookup — 'HCM' must beat the obscure port owning that literal IATA
-    { kind: 'port_abbreviation', lhs: 'HCM', rhs: 'VNSGN', reason: 'Ho Chi Minh — literal IATA HCM belongs to a tiny Somali entry' },
-    // spelling variants -> canonical UN/LOCODE
-    { kind: 'port_alias', lhs: 'GOTEBORG', rhs: 'SEGOT', reason: 'Gothenburg spelling variant' },
-    { kind: 'port_alias', lhs: 'GOTHENBURG', rhs: 'SEGOT', reason: 'Gothenburg spelling variant' },
-    { kind: 'port_alias', lhs: 'KHORFAKKAN', rhs: 'AEKLF', reason: 'Khor Fakkan collapsed spelling' },
-    // bare IATA (airport) code -> UN/LOCODE
-    { kind: 'port_iata', lhs: 'CKG', rhs: 'CNCKG', reason: 'Chongqing' },
-    { kind: 'port_iata', lhs: 'PNH', rhs: 'KHPNH', reason: 'Phnom Penh' },
-    // distinctive facility-name fragments (contains-match)
-    { kind: 'port_fragment', lhs: 'SHAHAJALAL', rhs: 'BDDAC', reason: 'Dhaka Shahjalal Intl (common misspelling)' },
-    { kind: 'port_fragment', lhs: 'SHAHJALAL', rhs: 'BDDAC', reason: 'Dhaka Shahjalal Intl' },
-    { kind: 'port_fragment', lhs: 'KHOR AL FAKKAN', rhs: 'AEKLF', reason: 'Khor Fakkan long form' },
-    { kind: 'port_fragment', lhs: 'KHOR FAKKAN', rhs: 'AEKLF', reason: 'Khor Fakkan' },
-    { kind: 'port_fragment', lhs: 'CHITTAGONG', rhs: 'BDCGP', reason: 'traditional spelling; master stores the modern Chattogram' },
-    { kind: 'port_fragment', lhs: 'CHATTOGRAM', rhs: 'BDCGP', reason: 'modern spelling of Chittagong' },
-  ]
-  // Bulk idempotency against uq_master_resolution (kind, lhs, rhs): filter out facts already present.
-  const factKey = (f: { kind: string; lhs: string; rhs: string | null }) => `${f.kind} ${f.lhs} ${f.rhs}`
-  const haveFacts = new Set((await db.selectFrom('masterResolution').select(['kind', 'lhs', 'rhs']).execute()).map(factKey))
-  const newFacts = MASTER_RESOLUTION_FACTS.filter((f) => !haveFacts.has(factKey(f)))
-  if (newFacts.length) {
-    try {
-      await db
-        .insertInto('masterResolution')
-        .values(newFacts.map((f) => ({ ...f, status: 'approved' as const, source: 'seed' as const })))
-        .execute()
-    } catch (e) {
-      if (!isUniqueViolation(e)) throw e // concurrent seed won the race — idempotent
-    }
-  }
+  // master_resolution is NOT seeded. Ops manage facts only via Settings → Resolution Rules.
+  // Re-running seed never re-inserts curated groups/ports; incorrect prior seeds were removed.
 
   // ---- carriers (ALWAYS — ocean carriers keyed by SCAC; no ERP home, like ports; idempotent by scac).
   // The data home for SCAC extraction/validation (TODO rule 6): MBL prefix -> carrier -> master.
