@@ -8,7 +8,7 @@ import { MilestoneTimeline } from '../components/shipments/MilestoneTimeline'
 import { ShipmentHistoryTimeline } from '../components/shipments/ShipmentHistoryTimeline'
 import { AlertCard } from '../components/alerts/AlertCard'
 import { formatDate, formatDateTime, formatDateMaybeTime, cn } from '../lib/utils'
-import { humanizeReason } from '../lib/review-reasons'
+import { humanizeReasons } from '../lib/review-reasons'
 import { toast } from '../components/ui/Toast'
 import { ArrowLeft, Mail, Clock, ClipboardList, Package, Ship, Calendar, AlertTriangle, AlertCircle, Info, Pencil, Check, X, NotebookPen } from 'lucide-react'
 
@@ -188,14 +188,18 @@ export default function ShipmentDetailPage() {
 
       {/* Review banner — a provisional shipment is committed but unconfirmed; surface WHY + the fix path */}
       {shipment.reviewStatus === 'provisional' && (
-        <div className="flex flex-wrap items-center gap-3 rounded-xl border border-status-warning/40 bg-status-warning/10 px-4 py-3">
-          <AlertTriangle size={16} className="shrink-0 text-status-warning" />
+        <div className="flex flex-wrap items-start gap-3 rounded-xl border border-status-warning/40 bg-status-warning/10 px-4 py-3">
+          <AlertTriangle size={16} className="mt-0.5 shrink-0 text-status-warning" />
           <div className="min-w-0 flex-1">
-            <p className="text-sm font-medium text-status-warning">Awaiting review — data may change</p>
+            <p className="text-sm font-medium text-status-warning">Awaiting Review</p>
             {(shipment.reviewReasons?.length ?? 0) > 0 && (
-              <p className="mt-0.5 text-xs text-text-secondary" title={shipment.reviewReasons!.join(' · ')}>
-                {shipment.reviewReasons!.map(humanizeReason).join(' · ')}
-              </p>
+              <ul className="mt-1.5 list-disc space-y-1 pl-4 text-xs text-text-secondary">
+                {humanizeReasons(shipment.reviewReasons!).map(({ raw, text }) => (
+                  <li key={raw} title={raw}>
+                    {text}
+                  </li>
+                ))}
+              </ul>
             )}
           </div>
           <Link
@@ -276,14 +280,41 @@ export default function ShipmentDetailPage() {
               </span>
             </h4>
           </div>
+          {/* Booking total stamped on every PO is NOT a per-PO order qty — surface it once, above the table. */}
+          {linkedPOs[0]?.sharedBroadcastTotal != null && (
+            <div className="mb-3 flex items-start gap-2 rounded-lg border border-status-warning/30 bg-status-warning/10 px-3 py-2 text-xs text-status-warning">
+              <AlertTriangle size={13} className="mt-0.5 shrink-0" />
+              <p>
+                <span className="font-medium">Shipment cargo total: </span>
+                {linkedPOs[0].sharedBroadcastTotal}
+                {linkedPOs[0].sharedBroadcastUnit ? ` ${linkedPOs[0].sharedBroadcastUnit}` : ''}
+                <span className="text-text-secondary">
+                  {' '}
+                  — same figure was applied to every PO (not a per-PO split). Per-line style/qty from the packing
+                  list may still be missing.
+                </span>
+              </p>
+            </div>
+          )}
           <div className="overflow-x-auto overflow-y-hidden rounded-lg border border-border">
-            <table className="w-full min-w-[32rem]">
+            <table className="w-full min-w-[36rem]">
               <thead>
                 <tr className="border-b border-border bg-surface-900/50">
                   <th className="px-3 py-2 text-left text-[11px] font-medium text-text-muted">Customer PO#</th>
+                  <th className="px-3 py-2 text-left text-[11px] font-medium text-text-muted">Style</th>
                   <th className="px-3 py-2 text-left text-[11px] font-medium text-text-muted">Vendor</th>
-                  <th className="px-3 py-2 text-right text-[11px] font-medium text-text-muted">Qty</th>
-                  <th className="px-3 py-2 text-right text-[11px] font-medium text-text-muted">Total</th>
+                  <th
+                    className="px-3 py-2 text-right text-[11px] font-medium text-text-muted"
+                    title="Qty attributed to this PO on this shipment (blank when unknown)"
+                  >
+                    On this shipment
+                  </th>
+                  <th
+                    className="px-3 py-2 text-right text-[11px] font-medium text-text-muted"
+                    title="PO order total when known per-PO — not a shared booking total"
+                  >
+                    PO order total
+                  </th>
                   <th className="px-3 py-2 text-left text-[11px] font-medium text-text-muted">UOM</th>
                 </tr>
               </thead>
@@ -295,6 +326,9 @@ export default function ShipmentDetailPage() {
                     className="cursor-pointer border-b border-border last:border-0 transition-colors hover:bg-surface-700"
                   >
                     <td className="px-3 py-2 font-mono text-sm text-cobalt-primary-light">{po.poNumber}</td>
+                    <td className="max-w-[14rem] truncate px-3 py-2 text-sm text-text-secondary" title={po.itemStyleNo ?? undefined}>
+                      {po.itemStyleNo ?? '—'}
+                    </td>
                     <td className="px-3 py-2 text-sm text-text-secondary">{po.vendor?.name ?? '—'}</td>
                     <td className="px-3 py-2 text-right font-mono text-sm">
                       {po.qtyIssue ? (
@@ -309,7 +343,9 @@ export default function ShipmentDetailPage() {
                         <span className="text-text-primary">{po.quantity ?? '—'}</span>
                       )}
                     </td>
-                    <td className="px-3 py-2 text-right font-mono text-sm text-text-muted">{po.totalQuantity ?? '—'}</td>
+                    <td className="px-3 py-2 text-right font-mono text-sm text-text-muted">
+                      {po.totalQuantity ?? '—'}
+                    </td>
                     <td className="px-3 py-2 text-xs text-text-muted">{po.quantityUnit ?? ''}</td>
                   </tr>
                 ))}

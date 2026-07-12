@@ -7,12 +7,18 @@ export interface LinkedPO {
   quantity: number | null
   totalQuantity: number | null
   quantityUnit: string | null
+  /** Style/article from enrichment when the parser captured it on this PO. */
+  itemStyleNo?: string | null
+  brand?: string | null
   // Set when the shipped Qty is inconsistent with the ERP order (exceeds the total, or a different unit).
   qtyIssue?: 'exceeds_total' | 'unit_mismatch' | null
   qtyIssueDetail?: string | null
   notes?: string | null
   vendor?: { id: string; name: string; code: string } | null
   customer?: { id: string; name: string; code: string } | null
+  /** Booking-level total wrongly repeated on every PO — UI shows one banner, not per-row totals. */
+  sharedBroadcastTotal?: number | null
+  sharedBroadcastUnit?: string | null
 }
 
 export interface Shipment {

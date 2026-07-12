@@ -43,6 +43,8 @@ const EXTRA_LABELS: Record<string, string> = {
   kind: 'Record Type',
   poQtyConflict: 'PO Qty Conflict',
   po_qty_conflict: 'PO Qty Conflict',
+  poEnrichmentFlag: 'PO Enrichment Flag',
+  po_enrichment_flag: 'PO Enrichment Flag',
   // legacy snake_case keys from older audit rows
   vessel_name: 'Vessel',
   cfs_cutoff: 'CFS Cut-off',

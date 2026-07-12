@@ -1,6 +1,7 @@
 import { formatDate, formatDateTime } from '../../lib/utils'
 import { cn } from '../../lib/utils'
 import { fieldLabel } from '../../lib/field-labels'
+import { humanizeReason } from '../../lib/review-reasons'
 import type { HistoryEntry } from '../../hooks/use-shipment-history'
 import {
   Clock,
@@ -112,7 +113,7 @@ export function ShipmentHistoryTimeline({ history }: ShipmentHistoryTimelineProp
                   <ExternalLink size={10} className="shrink-0" />
                 </button>
               ) : (
-                entry.notes && <p className="mt-1 text-xs italic text-text-muted">{entry.notes}</p>
+                entry.notes && <HistoryNotes field={entry.field} notes={entry.notes} />
               )}
             </div>
           </div>
@@ -120,6 +121,54 @@ export function ShipmentHistoryTimeline({ history }: ShipmentHistoryTimelineProp
       })}
     </div>
   )
+}
+
+/**
+ * Multi-PO audit notes are stored as one semicolon-joined string
+ * ("PO A: …; PO B: …"). Render as bullets + plain language when there are 2+.
+ */
+function HistoryNotes({ field, notes }: { field: string; notes: string }) {
+  const items = splitHistoryNotes(notes)
+  if (items.length <= 1) {
+    return (
+      <p className="mt-1 text-xs italic text-text-muted" title={notes}>
+        {humanizeHistoryNote(field, notes)}
+      </p>
+    )
+  }
+  return (
+    <ul className="mt-1.5 list-disc space-y-1 pl-4 text-xs text-text-secondary">
+      {items.map((raw) => (
+        <li key={raw} title={raw}>
+          {humanizeHistoryNote(field, raw)}
+        </li>
+      ))}
+    </ul>
+  )
+}
+
+/** Split "; "-joined multi-PO flags without breaking times like "12:00". */
+export function splitHistoryNotes(notes: string): string[] {
+  const parts = notes
+    .split(/\s*;\s*(?=PO\s|shipment-level\s)/i)
+    .map((s) => s.trim())
+    .filter(Boolean)
+  // Fallback: generic "; " split when the PO-prefix pattern doesn't apply but we still have many clauses
+  if (parts.length <= 1 && notes.includes(';')) {
+    return notes
+      .split(/\s*;\s+/)
+      .map((s) => s.trim())
+      .filter(Boolean)
+  }
+  return parts
+}
+
+function humanizeHistoryNote(field: string, note: string): string {
+  // PO enrichment / qty conflict notes → same ops language as review reasons
+  if (/po_enrichment|po_qty|enrichment|broadcast|conflict/i.test(field) || /broadcast total|PO\s+\S+:/i.test(note)) {
+    return humanizeReason(note)
+  }
+  return note
 }
 
 // Leg-column date fields (camelCase, the vocabulary the backend history emits) + legacy snake keys.
