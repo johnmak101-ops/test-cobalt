@@ -20,6 +20,7 @@ import * as m0002_port_facts_carriers from './kysely-migrations/0002_port_facts_
 import * as m0003_shipment_match_keys from './kysely-migrations/0003_shipment_match_keys'
 import * as m0004_purchase_order_norm from './kysely-migrations/0004_purchase_order_norm'
 import * as m0005_parsed_record_po_norm from './kysely-migrations/0005_parsed_record_po_norm'
+import * as m0006_party_resolution_kinds from './kysely-migrations/0006_party_resolution_kinds'
 
 const MIGRATIONS = {
   '0000_init': m0000_init,
@@ -28,6 +29,7 @@ const MIGRATIONS = {
   '0003_shipment_match_keys': m0003_shipment_match_keys,
   '0004_purchase_order_norm': m0004_purchase_order_norm,
   '0005_parsed_record_po_norm': m0005_parsed_record_po_norm,
+  '0006_party_resolution_kinds': m0006_party_resolution_kinds,
 }
 
 const URL =
