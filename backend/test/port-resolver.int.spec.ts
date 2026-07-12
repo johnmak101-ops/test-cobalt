@@ -50,18 +50,18 @@ const codeOf = async (input: string): Promise<string | null> => {
   return p?.unlocode ?? null
 }
 
-describe('portByCodeOrName — forward-only fuzzy, curated aliases before the fuzzy match', () => {
-  it("'Chittagong' resolves to Bangladesh BDCGP, NOT Japan 'Tago' (the JPTAO regression)", async () => {
+describe('portByCodeOrName — exact + curated facts only (open fuzzy deleted)', () => {
+  it("'Chittagong' resolves via port_fragment fact to BDCGP, NOT Japan 'Tago'", async () => {
     expect(await codeOf('Chittagong')).toBe('BDCGP')
     expect((await masters.portByCodeOrName('Chittagong'))?.country).toBe('BD')
   })
 
-  it("decorated 'QINGDAO, CHINA' → Qingdao, not the JP port literally named 'China'", async () => {
-    expect(await codeOf('QINGDAO, CHINA')).toBe('CNQIN')
+  it("free-text 'QINGDAO, CHINA' does NOT fuzzy-link (needs LLM / curated fact)", async () => {
+    expect(await masters.portByCodeOrName('QINGDAO, CHINA')).toBeNull()
   })
 
-  it("'SHANGHAI' → the city entry, not 'Shanghai Railway Station' (shortest official name wins)", async () => {
-    expect(await codeOf('SHANGHAI')).toBe('CNSGH')
+  it("free-text 'SHANGHAI' does NOT fuzzy-link without a fact", async () => {
+    expect(await masters.portByCodeOrName('SHANGHAI')).toBeNull()
   })
 
   it('exact UN/LOCODE and bare IATA still win', async () => {
@@ -129,9 +129,8 @@ describe('portLinkByCodeOrName tier attribution', () => {
     expect(link?.tier).toBe('fragment')
   })
 
-  it('the trailing forward fuzzy name match reports fuzzy_name (SHANGHAI → CNSGH)', async () => {
-    const link = await masters.portLinkByCodeOrName('SHANGHAI')
-    expect(link?.tier).toBe('fuzzy_name')
+  it('open fuzzy_name is gone — free-text SHANGHAI does not link without a fact', async () => {
+    expect(await masters.portLinkByCodeOrName('SHANGHAI')).toBeNull()
   })
 
   it('portByCodeOrName wrapper is unchanged (id + country only, no tier)', async () => {

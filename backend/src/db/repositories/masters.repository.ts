@@ -9,19 +9,14 @@ export type ForwarderLinkTier = 'code_exact' | 'norm_exact' | 'stripped_norm_exa
 /** @deprecated empty — fuzzy tiers deleted; kept for any external import that still names the set */
 export const FUZZY_FORWARDER_TIERS: ReadonlySet<ForwarderLinkTier> = new Set()
 
-export type PortLinkTier = 'unlocode_exact' | 'abbreviation' | 'iata' | 'alias'
+export type PortLinkTier = 'unlocode_exact' | 'abbreviation' | 'iata' | 'alias' | 'fragment'
 
 /**
  * Kysely/SQL Server MastersRepository.
  *
- * Forwarder/port free-text fuzzy linking was DELETED 2026-07-12 (de-correction STEP 2/3 + all-AI
- * path): the queue LLM Master Matcher resolves names→codes before POST /decisions. Track only does:
- *   forwarder: code exact · normalized name/alias exact (punctuation-insensitive)
- *   port: UN/LOCODE · curated master_resolution facts (abbreviation/iata/alias) · bare IATA column
- * Unresolved free text stays null + committer review flag.
- *
- * T-SQL notes: no regexp_replace on SQL Server 2022 → normalization runs in JS over the (small,
- * ERP-mirrored) master sets; limit 1 → top 1.
+ * Free-text fuzzy (LIKE / reverse-containment) DELETED 2026-07-12 — queue LLM Master Matcher owns it.
+ * Track keeps only exact/code + curated master_resolution facts (incl. port_fragment keyed facts).
+ * Unresolved free text → null + committer review flag.
  */
 @Injectable()
 export class MastersRepository {
@@ -250,9 +245,8 @@ export class MastersRepository {
     return (await this.portByCodeOrName(code))?.id ?? null
   }
   /**
-   * Exact/curated port link only (fuzzy name + fragment contains deleted 2026-07-12).
-   * Order: UN/LOCODE → port_abbreviation fact → ports.iata → port_alias / port_iata facts.
-   * Free-text city names → queue LLM Master Matcher; track leaves null + review.
+   * Exact + curated facts only (open LIKE fuzzy_name deleted 2026-07-12).
+   * Order: UN/LOCODE → abbreviation fact → ports.iata → port_alias/port_iata facts → port_fragment facts.
    */
   async portLinkByCodeOrName(code: string): Promise<{ id: string; country: string | null; tier: PortLinkTier } | null> {
     const c = code.trim()
@@ -266,7 +260,7 @@ export class MastersRepository {
 
     const portFacts = await this.db
       .selectFrom('masterResolution')
-      .where('kind', 'in', ['port_abbreviation', 'port_alias', 'port_iata'])
+      .where('kind', 'in', ['port_abbreviation', 'port_alias', 'port_iata', 'port_fragment'])
       .where('status', '=', 'approved')
       .where('active', '=', true)
       .select(['kind', 'lhs', 'rhs'])
@@ -300,6 +294,13 @@ export class MastersRepository {
     if (iata) {
       const a = await byUnlocode(iata)
       if (a) return { ...a, tier: 'iata' }
+    }
+    // Curated fragments only (ADMIN data) — not open fuzzy LIKE against ports.name
+    for (const [frag, uloc] of factMap('port_fragment')) {
+      if (aliasKey.includes(frag)) {
+        const a = await byUnlocode(uloc)
+        if (a) return { ...a, tier: 'fragment' }
+      }
     }
     return null
   }
