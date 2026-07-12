@@ -55,9 +55,12 @@ const SHIPMENT_IDENTITY = ['booking_no', 'hbl_awb_fcr_no', 'mbl', 'container_no'
 /** Carrier-issued identities — booking_no EXCLUDED (the portal leaks an LPO into it, see (c)). */
 const CARRIER_IDENTITY = ['hbl_awb_fcr_no', 'mbl', 'container_no'] as const
 const LIFECYCLE_TYPES = new Set(['Booking Request', 'SO', 'Draft B/L', 'Final B/L', 'Telex Release'])
-/** The rule that classified a leg. 'bare_orphan' (a) is a genuine no-identity document — NOT a model
- *  correction. 'invoice_so_ref' (b) and 'platform_only' (c) are the load-bearing model-correcting demotions
- *  that de-correction shadow-measures (kept firing, but recorded so the gap is visible). null = SHIPMENT. */
+/**
+ * Classification rule. STEP 2/3 de-correction (2026-07-12):
+ *   (a) bare_orphan → DOCUMENT (genuine no-identity)
+ *   (b)/(c) invoice_so_ref / platform_only → SHIPMENT + review flag (no silent demotion;
+ *       queue LLM/soul owns classification; track only surfaces doubt)
+ */
 export type ClassifyRule = 'bare_orphan' | 'invoice_so_ref' | 'platform_only'
 
 export function classifyKindDetail(
@@ -70,9 +73,11 @@ export function classifyKindDetail(
   if (!hasIdentity && !hasLifecycle) return { kind: 'DOCUMENT', rule: 'bare_orphan' } // (a) bare orphan
   const invoiceOnly = emailTypes.size > 0 && [...emailTypes].every((t) => t === 'Invoice/Billing')
   const hasShipmentIdentity = SHIPMENT_IDENTITY.some((k) => has(fields[k]))
-  if (invoiceOnly && !hasShipmentIdentity) return { kind: 'DOCUMENT', rule: 'invoice_so_ref' } // (b) CVP invoice-only, SO-ref only
+  // (b) was DOCUMENT demotion — now SHIPMENT + flag for human review
+  if (invoiceOnly && !hasShipmentIdentity) return { kind: 'SHIPMENT', rule: 'invoice_so_ref' }
   const hasCarrierIdentity = CARRIER_IDENTITY.some((k) => has(fields[k]))
-  if (opts.fromPlatform && !hasLifecycle && !hasCarrierIdentity) return { kind: 'DOCUMENT', rule: 'platform_only' } // (c) CVP platform-only notification
+  // (c) was DOCUMENT demotion for platform-only LPO — now SHIPMENT + flag
+  if (opts.fromPlatform && !hasLifecycle && !hasCarrierIdentity) return { kind: 'SHIPMENT', rule: 'platform_only' }
   return { kind: 'SHIPMENT', rule: null }
 }
 

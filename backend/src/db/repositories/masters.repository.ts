@@ -3,33 +3,25 @@ import { sql, type Kysely } from 'kysely'
 import type { DB } from '../kysely/db'
 import { KYSELY } from '../kysely.provider'
 
-export type ForwarderLinkTier =
-  | 'code_exact'
-  | 'containment'
-  | 'norm_exact'
-  | 'stripped_norm_exact'
-  | 'alias_containment'
-  | 'org_token'
-  | 'reverse_containment'
-  | 'legal_form'
+/** Exact-only tiers. Fuzzy/containment removed 2026-07-12 — queue LLM Master Matcher owns free-text. */
+export type ForwarderLinkTier = 'code_exact' | 'norm_exact' | 'stripped_norm_exact'
 
-/** Tiers that can mis-link (spec §2): everything except code/normalized-exact. Shadow-metered by the committer. */
-export const FUZZY_FORWARDER_TIERS: ReadonlySet<ForwarderLinkTier> = new Set([
-  'containment', 'alias_containment', 'org_token', 'reverse_containment', 'legal_form',
-])
+/** @deprecated empty — fuzzy tiers deleted; kept for any external import that still names the set */
+export const FUZZY_FORWARDER_TIERS: ReadonlySet<ForwarderLinkTier> = new Set()
 
-export type PortLinkTier = 'unlocode_exact' | 'abbreviation' | 'iata' | 'alias' | 'fragment' | 'fuzzy_name'
+export type PortLinkTier = 'unlocode_exact' | 'abbreviation' | 'iata' | 'alias'
 
 /**
- * Kysely/SQL Server MastersRepository. The full deterministic resolution tiers ARE ported — staged
- * forwarder resolution (containment / normalized-exact / org-token / reverse-containment / legal-form
- * fold, every stage exactly-one-guarded) and the tiered port resolver (ABBREV_OVERRIDE / IATA / curated
- * aliases / forward-only fuzzy) — because the LLM Master Matcher that will replace them is deferred
- * BEHIND this migration; dropping them here would silently degrade live committer resolution
- * (e.g. 'HCM' → the wrong Somali port instead of VNSGN).
+ * Kysely/SQL Server MastersRepository.
+ *
+ * Forwarder/port free-text fuzzy linking was DELETED 2026-07-12 (de-correction STEP 2/3 + all-AI
+ * path): the queue LLM Master Matcher resolves names→codes before POST /decisions. Track only does:
+ *   forwarder: code exact · normalized name/alias exact (punctuation-insensitive)
+ *   port: UN/LOCODE · curated master_resolution facts (abbreviation/iata/alias) · bare IATA column
+ * Unresolved free text stays null + committer review flag.
  *
  * T-SQL notes: no regexp_replace on SQL Server 2022 → normalization runs in JS over the (small,
- * ERP-mirrored) master sets; ILIKE → LOWER LIKE / JS includes; limit 1 → top 1.
+ * ERP-mirrored) master sets; limit 1 → top 1.
  */
 @Injectable()
 export class MastersRepository {
@@ -217,36 +209,15 @@ export class MastersRepository {
   }
 
   /**
-   * Staged, ambiguity-guarded forwarder resolution (faithful port of the Drizzle tiers): containment →
-   * normalized-exact (name, alias; raw + office/email-stripped) → alias containment → org-token
-   * (parenthetical / email-domain, BUG 2) → reverse-containment → legal-form fold (BUG 8). Every stage
-   * accepts ONLY an exactly-one match; on 0 or >1 it falls through, and an unresolved name returns null
-   * so forwarder_raw surfaces.
-   *
-   * T-SQL note: SQL Server 2022 has no regexp_replace, so instead of pushing the normalization into SQL
-   * the masters (an ERP mirror of a few hundred rows) + aliases are fetched once per call and every stage
-   * runs the SAME JS normalization the Postgres SQL expressed — semantics identical, collation-proof.
-   *
-   * Returns the tier that resolved the link (`ForwarderLinkTier`) alongside the id — the committer uses
-   * this to shadow-meter the fuzzy tiers (`FUZZY_FORWARDER_TIERS`) against the LLM matcher that will
-   * eventually replace them. `forwarderIdByName` below is a thin wrapper for callers that only need the id.
+   * Exact-only forwarder name link (fuzzy deleted 2026-07-12).
+   *   · normalized exact match on master name or alias (punctuation-insensitive, exactly-one)
+   *   · same after stripping office/email parentheticals
+   * Free-text that needs judgment → queue LLM Master Matcher; track leaves null + review.
    */
   async forwarderLinkByName(name: string): Promise<{ id: string; tier: ForwarderLinkTier } | null> {
     const all = await this.db.selectFrom('forwarders').select(['id', 'name']).execute()
     const aliases = await this.db.selectFrom('forwarderAliases').select(['forwarderId', 'value']).execute()
-    const lower = name.toLowerCase()
     const normalize = (s: string) => s.toUpperCase().replace(/[^A-Z0-9]/g, '')
-
-    // AMBIGUITY-GUARDED first-stage containment: a substring like 'Expeditors' hits several masters
-    // (EXPEDITORS - CHINA / CAMBODIA / INTERNATIONAL) — return ONLY when EXACTLY ONE master contains the
-    // name; on 0 or >1 fall through (a bare ambiguous 'Expeditors' correctly leaves forwarder_raw to surface).
-    const contained = all.filter((f) => f.name.toLowerCase().includes(lower))
-    if (contained.length === 1) return { id: contained[0]!.id, tier: 'containment' }
-
-    // normalized exact match: strip ALL non-alphanumerics so punctuation/spacing variants resolve
-    // ('LX PANTOS LOGISTICS (SHENZHEN) CO.,LTD.' == master 'LX PANTOS LOGISTICS (SHENZHEN) CO. LTD').
-    // BUG 6: exactly-one guard (two masters normalizing identically must not resolve heap-order style).
-    const norm = normalize(name)
     const byNorm = (key: string): string | null => {
       if (key.length < 4) return null
       const n = all.filter((f) => normalize(f.name) === key)
@@ -255,11 +226,9 @@ export class MastersRepository {
       if (na.length === 1) return na[0]!.forwarderId
       return null
     }
+    const norm = normalize(name)
     const normHit = byNorm(norm)
     if (normHit) return { id: normHit, tier: 'norm_exact' }
-
-    // strip trailing office/email annotations ('Expeditors International (LAX)', 'Maersk … (lns.maersk.com)',
-    // '… <ops@fwd.com>') then retry the SAME normalized-exact match — the parenthetical is not part of the name.
     const stripped = name
       .replace(/\([^)]*\)/g, '')
       .replace(/<[^>]*>/g, '')
@@ -269,82 +238,6 @@ export class MastersRepository {
     if (strippedNorm !== norm) {
       const hit = byNorm(strippedNorm)
       if (hit) return { id: hit, tier: 'stripped_norm_exact' }
-    }
-
-    // same exactly-one guard on the alias containment — an ambiguous alias substring must not arbitrarily resolve.
-    const aliasContained = aliases.filter((a) => a.value.toLowerCase().includes(lower))
-    if (aliasContained.length === 1) return { id: aliasContained[0]!.forwarderId, tier: 'alias_containment' }
-
-    // BUG 2: an email-form raw like 'om-booking-notifications@expeditors.com (Expeditors)' resolves to NULL
-    // above, but carries the org identity in TWO deterministic places: the parenthetical CONTENT and the
-    // domain's second-level label. Run EACH token through the SAME exactly-one-guarded stages; accept only
-    // when exactly one token resolves and never to two different masters.
-    const orgTokens: string[] = []
-    const parenContent = /\(([^)]*)\)/.exec(name)?.[1]?.trim()
-    if (parenContent) orgTokens.push(parenContent)
-    const emailMatch = /([A-Za-z0-9._%+-]+)@([A-Za-z0-9.-]+\.[A-Za-z]{2,})/.exec(name)
-    if (emailMatch) {
-      const labels = emailMatch[2]!.toLowerCase().split('.')
-      const sld = labels.length >= 2 ? labels[labels.length - 2]! : ''
-      const GENERIC_HOSTS = new Set(['gmail', 'outlook', 'hotmail', 'yahoo', 'qq', '163', '126', 'live', 'icloud', 'googlemail'])
-      if (sld.length >= 3 && !GENERIC_HOSTS.has(sld)) orgTokens.push(sld)
-    }
-    let tokenResolved: string | null = null
-    for (const tok of orgTokens) {
-      const t = tok.trim()
-      if (t.length < 3) continue
-      // same stages as above, over the already-loaded sets (deliberately NOT recursive)
-      const tc = all.filter((f) => f.name.toLowerCase().includes(t.toLowerCase()))
-      const id: string | null = tc.length === 1 ? tc[0]!.id : byNorm(normalize(t))
-      if (!id) continue
-      if (tokenResolved && tokenResolved !== id) { tokenResolved = null; break } // two tokens disagree → ambiguous
-      tokenResolved = id
-    }
-    if (tokenResolved) return { id: tokenResolved, tier: 'org_token' }
-
-    // reverse-containment: a master whose normalized name is a SUBSTRING of the normalized input, so an
-    // input with an appended office/domain ('EXPEDITORS INTERNATIONAL (LAX)') still resolves. Guarded by
-    // master-name length ≥ 10 chars and LONGEST match first (prefer 'MAERSK LOGISTICS & SERVICES CHINA
-    // LIMITED' over a bare 'MAERSK').
-    if (norm.length >= 10) {
-      const rc = all
-        .filter((f) => {
-          const fn = normalize(f.name)
-          return fn.length >= 10 && norm.includes(fn)
-        })
-        .sort((a, b) => b.name.length - a.name.length)[0]
-      if (rc) return { id: rc.id, tier: 'reverse_containment' }
-    }
-
-    // legal-form fold: 'TradeLink Technologies Ltd' should reach master 'TRADELINK TECHNOLOGIES LIMITED'.
-    // DANGER: the table holds 50+ pairs that differ ONLY by legal form as distinct coded rows — accept the
-    // folded match ONLY when EXACTLY ONE forwarder folds to it (BUG 8: also try the first parenthetical's
-    // CONTENT — an outer brand wrapping an inner legal name).
-    const foldLegalForm = (s: string): string => {
-      const tokens = s
-        .toUpperCase()
-        .replace(/[^A-Z0-9]+/g, ' ')
-        .trim()
-        .split(' ')
-        .filter(Boolean)
-      const canon: Record<string, string> = {
-        LTD: 'LIMITED',
-        LIMITED: 'LIMITED',
-        CO: 'COMPANY',
-        COMPANY: 'COMPANY',
-        INC: 'INCORPORATED',
-        INCORPORATED: 'INCORPORATED',
-        CORP: 'CORPORATION',
-        CORPORATION: 'CORPORATION',
-      }
-      return tokens.map((t) => canon[t] ?? t).join('')
-    }
-    const inner = /\(([^)]*)\)/.exec(name)?.[1]?.trim()
-    for (const cand of [stripped, ...(inner ? [inner] : []), name]) {
-      const inputFold = foldLegalForm(cand)
-      if (inputFold.length < 4) continue
-      const hits = all.filter((f) => foldLegalForm(f.name) === inputFold)
-      if (hits.length === 1) return { id: hits[0]!.id, tier: 'legal_form' }
     }
     return null
   }
@@ -356,21 +249,11 @@ export class MastersRepository {
   async portIdByCodeOrName(code: string) {
     return (await this.portByCodeOrName(code))?.id ?? null
   }
-  /** Resolve a POL/POD string to a port link (id + country + the tier that resolved it, for
-   *  denormalizing origin_country at commit and for future shadow-metering of the fuzzy tiers against
-   *  the LLM matcher that will eventually replace them — see `PortLinkTier`).
-   *  Order: exact UN/LOCODE → abbreviation fact → exact IATA (bare 3-char PVG/CAN) → CURATED alias
-   *  facts (spelling / IATA / name-fragment, high-confidence, exact-keyed) → FORWARD fuzzy name match
-   *  (last resort). Curated aliases run BEFORE the fuzzy match so a spelling variant ('Chittagong',
-   *  stored as 'Chattogram') can't fall through to a loose substring hit.
-   *
-   *  The curated tiers are DATA, not code: `master_resolution` facts of kinds `port_abbreviation`
-   *  (checked before IATA — 'HCM' must beat the obscure Somali port that owns that literal IATA),
-   *  `port_alias` (spelling variants), `port_iata` (bare IATA → UN/LOCODE), `port_fragment`
-   *  (contains-match on a distinctive fragment). lhs = uppercased punctuation-collapsed key,
-   *  rhs = UN/LOCODE. Seeded from the former hardcoded tables; ADMIN-managed at runtime via
-   *  Settings → Resolution Rules. `portByCodeOrName` below is a thin wrapper for callers that only
-   *  need id + country. */
+  /**
+   * Exact/curated port link only (fuzzy name + fragment contains deleted 2026-07-12).
+   * Order: UN/LOCODE → port_abbreviation fact → ports.iata → port_alias / port_iata facts.
+   * Free-text city names → queue LLM Master Matcher; track leaves null + review.
+   */
   async portLinkByCodeOrName(code: string): Promise<{ id: string; country: string | null; tier: PortLinkTier } | null> {
     const c = code.trim()
     if (!c) return null
@@ -381,10 +264,9 @@ export class MastersRepository {
     const byCode = await byUnlocode(c.toUpperCase())
     if (byCode) return { ...byCode, tier: 'unlocode_exact' }
 
-    // one read serves all four curated tiers (small, ADMIN-curated table)
     const portFacts = await this.db
       .selectFrom('masterResolution')
-      .where('kind', 'in', ['port_abbreviation', 'port_alias', 'port_iata', 'port_fragment'])
+      .where('kind', 'in', ['port_abbreviation', 'port_alias', 'port_iata'])
       .where('status', '=', 'approved')
       .where('active', '=', true)
       .select(['kind', 'lhs', 'rhs'])
@@ -392,8 +274,6 @@ export class MastersRepository {
     const factMap = (kind: string) =>
       new Map(portFacts.filter((f) => f.kind === kind && f.rhs).map((f) => [f.lhs.toUpperCase(), String(f.rhs).toUpperCase()]))
 
-    // abbreviation facts run BEFORE the IATA lookup (a common shipping abbreviation may collide with an
-    // obscure port's literal IATA). Keyed exact, deterministic.
     const abbrev = factMap('port_abbreviation').get(c.toUpperCase())
     if (abbrev) {
       const a = await byUnlocode(abbrev)
@@ -410,55 +290,16 @@ export class MastersRepository {
       if (byIata) return { id: byIata.id, country: byIata.country, tier: 'iata' }
     }
 
-    // CURATED ALIAS FACTS (exact-keyed, high-confidence) — checked BEFORE the fuzzy match so a known
-    // spelling variant wins. aliasKey = uppercased, punctuation-collapsed input.
     const aliasKey = c.toUpperCase().replace(/[^A-Z0-9 ]/g, '').replace(/\s+/g, ' ').trim()
-    // spelling variants → canonical UN/LOCODE ('GOTEBORG'/'GOTHENBURG' → SEGOT)
     const alias = factMap('port_alias').get(aliasKey)
     if (alias) {
       const a = await byUnlocode(alias)
       if (a) return { ...a, tier: 'alias' }
     }
-    // bare IATA (airport) code → UN/LOCODE ('CKG' → CNCKG/Chongqing). Deterministic, no fuzzy.
     const iata = factMap('port_iata').get(aliasKey)
     if (iata) {
       const a = await byUnlocode(iata)
       if (a) return { ...a, tier: 'iata' }
-    }
-    // full-facility-name fragments → UN/LOCODE ('SHAHAJALAL INTL. AIR PORT' = Dhaka/BDDAC). Contains-match
-    // on a distinctive, long fragment so it can't false-hit another port.
-    for (const [frag, uloc] of factMap('port_fragment')) {
-      if (aliasKey.includes(frag)) {
-        const a = await byUnlocode(uloc)
-        if (a) return { ...a, tier: 'fragment' }
-      }
-    }
-
-    // FUZZY NAME MATCH (last resort) — FORWARD ONLY: the port's official name must CONTAIN the input,
-    // or contain the input's leading token ('QINGDAO, CHINA' → 'Qingdao'). We do NOT reverse-match
-    // (input contains name): a short port name buried mid-word would hijack the input — 'Tago' (JPTAO)
-    // inside 'Chit·tago·ng', or 'China' (JPCHI) inside 'QINGDAO, CHINA'. And we only fuzzy-match inputs
-    // ≥4 chars: a 3-char token is a code/IATA (handled above) or junk, and forward-matching it lets IT
-    // hijack a longer name ('EHU' ⊂ 'L·ehu·'). Forward-full beats leading-token; shortest official name
-    // wins ('SHANGHAI' → 'Shanghai', not 'Shanghai Railway Station').
-    if (c.length >= 4) {
-      const head = c.split(',')[0]!.trim()
-      const useHead = head.length >= 4 && head.toUpperCase() !== c.toUpperCase()
-      const full = `%${c.toLowerCase()}%`
-      const headPat = `%${head.toLowerCase()}%`
-      const nameWhere = useHead
-        ? sql<boolean>`len(${sql.ref('name')}) >= 4 AND (LOWER(${sql.ref('name')}) LIKE ${full} OR LOWER(${sql.ref('name')}) LIKE ${headPat})`
-        : sql<boolean>`len(${sql.ref('name')}) >= 4 AND LOWER(${sql.ref('name')}) LIKE ${full}`
-      const byName = await this.db
-        .selectFrom('ports')
-        .select(['id', 'country'])
-        .where(nameWhere)
-        .orderBy(sql`(CASE WHEN LOWER(${sql.ref('name')}) LIKE ${full} THEN 0 ELSE 1 END)`)
-        .orderBy(sql`len(${sql.ref('name')})`)
-        .orderBy('name')
-        .modifyFront(sql`top 1`)
-        .executeTakeFirst()
-      if (byName) return { id: byName.id, country: byName.country, tier: 'fuzzy_name' }
     }
     return null
   }
