@@ -36,7 +36,13 @@ export const FORWARDER_ALIAS_TYPE = ['name', 'domain', 'chinese_name'] as const
  *  customer_role (code → bill_to/importer_of_record/booking_entity), vendor_group (code → vendor-group id,
  *  the vendor-side analogue of customer_group — a booking/invoice house and its manufacturing factory
  *  co-valid on the same shipment) drive the co-valid entity model. */
-export const MASTER_RESOLUTION_KIND = ['vendor_alias', 'vendor_name_marker', 'customer_vendor', 'consignee_for_customer', 'forwarder_ref', 'customer_canonical', 'customer_group', 'customer_role', 'vendor_group', 'prior_correction', 'port_abbreviation', 'port_alias', 'port_iata', 'port_fragment'] as const
+export const MASTER_RESOLUTION_KIND = [
+  'vendor_alias', 'vendor_name_marker', 'customer_vendor', 'consignee_for_customer', 'forwarder_ref',
+  'customer_canonical', 'customer_group', 'customer_role', 'vendor_group', 'prior_correction',
+  'port_abbreviation', 'port_alias', 'port_iata', 'port_fragment',
+  // Iterator MOVE 3 — party facts as data (queue party-rules + track platform scrub consume these)
+  'platform_not_forwarder', 'genuine_short_brand', 'self_identity',
+] as const
 export const MASTER_RESOLUTION_STATUS = ['approved', 'proposed', 'rejected'] as const
 export const MASTER_RESOLUTION_SOURCE = ['seed', 'curator', 'ops'] as const
 export const PORT_MODE = ['sea', 'air', 'both'] as const

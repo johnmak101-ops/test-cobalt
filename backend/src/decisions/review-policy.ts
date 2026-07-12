@@ -40,6 +40,18 @@ export const REVIEW_TRIGGERS: ReviewTrigger[] = [
   { id: 'moved_shipment', label: 'moved shipment / reassignment', predicate: (d) => d.lookupContext?.movedShipment === true },
   { id: 'duplicate_number', label: 'duplicate identity number', predicate: (d) => d.lookupContext?.duplicateNumber === true },
   { id: 'late_po', label: 'late PO on an existing shipment', predicate: (d) => d.lookupContext?.latePo === true },
+  // Iterator residual (2026-07-12): optional gates for fields the soul/un-freeze often gets wrong.
+  // Default OFF in seed policies — enable in Settings after measuring fire rate on live traffic.
+  {
+    id: 'brand_present',
+    label: 'brand is set (verify not a customer/style echo)',
+    predicate: (d) => present(d.fields?.brand),
+  },
+  {
+    id: 'in_dc_date',
+    label: 'in-DC / delivery date is set (verify not warehouse cut-off confusion)',
+    predicate: (d) => present(d.fields?.in_dc_date),
+  },
 ]
 
 export const REVIEW_TRIGGER_IDS = REVIEW_TRIGGERS.map((t) => t.id)

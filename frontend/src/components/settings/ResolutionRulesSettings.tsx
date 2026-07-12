@@ -11,14 +11,24 @@ import { usePageAccess } from '../../hooks/use-page-access'
 
 // Kinds offered in the CREATE form. The four retired alias kinds (vendor_alias / vendor_name_marker /
 // forwarder_ref / customer_canonical) are hidden here — nothing reads them for resolution since the
-// LLM Master Matcher landed (existing rows stay visible in the list as audit history).
+// LLM Master Matcher landed (existing rows stay visible in the list as audit history with a badge).
 const KINDS = [
   'customer_vendor', 'consignee_for_customer', 'customer_group', 'customer_role', 'vendor_group',
   // retrieval signal for the matcher: raw name/domain → boosted master code (the LLM still decides)
   'prior_correction',
   // port resolution tiers (data home for the committer's portByCodeOrName)
   'port_abbreviation', 'port_alias', 'port_iata', 'port_fragment',
+  // Iterator MOVE 3 party facts (track scrub + queue party-rules)
+  'platform_not_forwarder', 'genuine_short_brand', 'self_identity',
 ]
+
+/** Alias kinds retired after the LLM Master Matcher — list-only audit; create form does not offer them. */
+const RETIRED_KINDS = new Set([
+  'vendor_alias',
+  'vendor_name_marker',
+  'forwarder_ref',
+  'customer_canonical',
+])
 
 export function ResolutionRulesSettings() {
   const { data: facts, isLoading, isError } = useResolutionFacts()
@@ -101,7 +111,19 @@ export function ResolutionRulesSettings() {
             <tbody>
               {facts.map((f) => (
                 <tr key={f.id} className={cn('border-b border-border/60 last:border-0', !f.active && 'opacity-50')}>
-                  <td className="px-4 py-3 text-text-secondary">{f.kind}</td>
+                  <td className="px-4 py-3 text-text-secondary">
+                    <span className="inline-flex flex-wrap items-center gap-1.5">
+                      {f.kind}
+                      {RETIRED_KINDS.has(f.kind) && (
+                        <span
+                          title="Retired after LLM Master Matcher — kept for audit; not offered in Add rule"
+                          className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[11px] font-medium text-amber-700 dark:text-amber-400"
+                        >
+                          Retired
+                        </span>
+                      )}
+                    </span>
+                  </td>
                   <td className="px-4 py-3 font-medium text-text-primary">{f.lhs}</td>
                   <td className="px-4 py-3 text-text-secondary">{f.rhs ?? '—'}</td>
                   <td className="px-4 py-3 text-text-muted">

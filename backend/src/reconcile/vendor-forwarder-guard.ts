@@ -28,13 +28,39 @@ export interface GuardResult {
   reasons: string[]
 }
 
-/** Notification/e-invoicing platforms whose identity is NEVER the freight forwarder — the CVP portal's
- *  sender leaks into parsed forwarder_name, and a synced forwarder master row (TRADELINK, code 603)
- *  makes it resolve and link. Defense in depth behind the parser-side scrub (validate rule 4c). */
-const PLATFORM_NOT_FORWARDER: RegExp[] = [/TRADE\s*LINK\s*(TECHNOLOGIES|ONE)/i, /TRADELINKONE\.COM/i]
+/**
+ * Notification/e-invoicing platforms that are NEVER the freight forwarder.
+ * SEED patterns (below) + optional runtime overlays from master_resolution kind
+ * `platform_not_forwarder` (lhs = substring/regex source, managed in Resolution Rules).
+ */
+const SEED_PLATFORM_NOT_FORWARDER: RegExp[] = [
+  /TRADE\s*LINK\s*(TECHNOLOGIES|ONE)/i,
+  /TRADELINKONE\.COM/i,
+]
+
+let runtimePlatformPatterns: RegExp[] = []
+
+/** Overlay from Resolution Rules (kind=platform_not_forwarder). Call after masters load. */
+export function setPlatformNotForwarderPatterns(lhsList: string[]): void {
+  runtimePlatformPatterns = []
+  for (const raw of lhsList) {
+    const s = String(raw ?? '').trim()
+    if (!s) continue
+    try {
+      runtimePlatformPatterns.push(new RegExp(s, 'i'))
+    } catch {
+      // treat as literal substring if not valid regex
+      runtimePlatformPatterns.push(new RegExp(s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i'))
+    }
+  }
+}
 
 export function isPlatformNotForwarder(name: string | null | undefined): boolean {
-  return !!name && PLATFORM_NOT_FORWARDER.some((re) => re.test(name))
+  if (!name) return false
+  const all = runtimePlatformPatterns.length
+    ? [...SEED_PLATFORM_NOT_FORWARDER, ...runtimePlatformPatterns]
+    : SEED_PLATFORM_NOT_FORWARDER
+  return all.some((re) => re.test(name))
 }
 
 /** True when a raw email SENDER address belongs to the CVP/TradeLinkOne notification platform (e.g.

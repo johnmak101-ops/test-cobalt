@@ -3,7 +3,12 @@ import { formatJobNo } from '../common/job-no'
 import type { Insertable } from 'kysely'
 import type { DB } from '../db/kysely/db'
 import { strongKeys, normKey, str, date } from './match-keys'
-import { guardVendorForwarder, isPlatformNotForwarder, isNotificationPlatformSender } from './vendor-forwarder-guard'
+import {
+  guardVendorForwarder,
+  isPlatformNotForwarder,
+  isNotificationPlatformSender,
+  setPlatformNotForwarderPatterns,
+} from './vendor-forwarder-guard'
 import { deriveState, classifyKindDetail, normMode } from './state'
 import { currentIdentifierValues, deriveIdentifierRows } from './identifier-rows'
 import { matchKeyIndexRows } from './match-key-index'
@@ -112,6 +117,13 @@ export class CommitterService {
   async apply(g: ReconGroup): Promise<CommitResult> {
     const f = g.fields
     const gk = strongKeys(g.matchKeys)
+
+    // MOVE 3: overlay platform_not_forwarder patterns from Resolution Rules (lhs = regex/substring).
+    // SEED patterns in vendor-forwarder-guard always apply; admin facts extend without redeploy.
+    const platformFacts = (await this.masters.listResolution('approved')).filter(
+      (row) => row.kind === 'platform_not_forwarder' && row.lhs,
+    )
+    setPlatformNotForwarderPatterns(platformFacts.map((row) => row.lhs))
 
     // de-correction STEP 2/3 (2026-07-12): no silent model-corrections, no shadow metering.
     // Platform names stay on the field for display but never link (LLM master-matcher on queue owns
