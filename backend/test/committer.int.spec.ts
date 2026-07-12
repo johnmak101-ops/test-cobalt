@@ -4,7 +4,6 @@ import { CommitterService, type ReconGroup } from '../src/reconcile/committer.se
 
 let db: TestDB
 let committer: CommitterService
-let auditRepo: ReturnType<typeof repos>['audit']
 
 const group = (over: Partial<ReconGroup> = {}): ReconGroup => ({
   fields: {},
@@ -23,7 +22,6 @@ beforeAll(async () => {
   const t = await getTestDb()
   db = t.db
   const r = repos(db)
-  auditRepo = r.audit
   committer = new CommitterService(r.masters, r.booking, r.shipment, r.fieldLock, r.audit, r.evidence, r.purchaseOrder)
 })
 afterAll(closeTestDb)
