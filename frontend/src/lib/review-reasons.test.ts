@@ -44,11 +44,13 @@ describe('humanizeReason — engineering audit strings → ops language', () => 
     ).toMatch(/Cargo quantity \/ weight \/ volume is missing/)
   })
 
-  it('humanizes the backend stale-ETD flag (contract: committer-date-plausibility emits this exact shape)', () => {
-    // Producer: staleEtdReasons() in backend/src/reconcile/committer-date-plausibility.ts
-    expect(humanizeReason('sender: ETD 2026-01-24 is 156 days before this email')).toBe(
-      'ETD 2026-01-24 is 156 days before this email',
-    )
+  it('humanizes the queue stale-ETD note (produced by cobalt-queue validate.ts)', () => {
+    // Producer: cobalt-queue src/parser/validate.ts emits this note; it reaches ShipTrack as a
+    // review_reason (truncated ~60 chars in decision.ts) and is rendered here. ShipTrack's own
+    // committer flag for this was retired to dedupe — the queue owns stale-ETD detection.
+    expect(
+      humanizeReason('ETD 2026-01-24 is 156 days before this email (2026-06-29) — likely wrong month or stale subject (sender) — verify'),
+    ).toBe('ETD 2026-01-24 is 156 days before this email')
   })
 
   it('humanizes attachment-missing and master/port unmatched reasons without DB field names', () => {

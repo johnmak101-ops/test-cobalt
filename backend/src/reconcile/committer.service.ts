@@ -24,7 +24,6 @@ import { mapFieldsToLegColumns } from './committer-leg-mapping'
 import { findExistingLeg } from './committer-match'
 import { MasterResolver } from './committer-master-resolver'
 import { planPoReconcile } from './committer-po-reconciler'
-import { staleEtdReasons } from './committer-date-plausibility'
 import { MilestoneSynchronizer } from './committer-milestones'
 import { isAuditedBookingFill } from './fill-booking-audit'
 
@@ -313,15 +312,13 @@ export class CommitterService {
     const cargoUnitButNoNumbers =
       c != null && c.qtyUnit != null && c.qty == null && c.grossWeight == null && c.measurement == null
     const cargoMissing = isRealLeg && cargoUnitButNoNumbers
-    //  (iii) STALE PLANNED DATE — the stated ETD sits implausibly far before the shipment's own source
-    //        emails (a reused subject date / wrong month, e.g. a "24-Jan-2026" subject carried across a
-    //        booking whose emails are all June). Surfacing only; the value is kept for the reviewer.
-    const staleEtd = staleEtdReasons(f, g.events)
+    // NOTE: stale-ETD ("ETD implausibly before the email") is owned by the QUEUE (cobalt-queue
+    // validate.ts) — its note flows here as a review reason and is humanized by review-reasons.ts.
+    // The former committer-side staleEtdReasons flag was retired to avoid double-flagging.
     const dataIssues = [
       ...poQtyIssues,
       ...poFlagReasons,
       ...(cargoMissing ? ['booked shipment missing cargo detail (qty/weight/volume) — source attachment likely not ingested'] : []),
-      ...staleEtd,
     ]
     if (dataIssues.length) {
       const priorReasons = (c?.reviewReasons as string[] | null) ?? []
@@ -330,7 +327,6 @@ export class CommitterService {
       if (poQtyIssues.length) await this.writeAudit('shipment', shipmentId, 'update', null, poQtyIssues.join('; '), g, 'po_qty_conflict')
       if (poFlagReasons.length) await this.writeAudit('shipment', shipmentId, 'update', null, poFlagReasons.join('; '), g, 'po_enrichment_flag')
       if (cargoMissing) await this.writeAudit('shipment', shipmentId, 'update', null, 'missing cargo qty/weight/volume', g, 'cargo_missing')
-      if (staleEtd.length) await this.writeAudit('shipment', shipmentId, 'update', null, staleEtd.join('; '), g, 'stale_planned_date')
     }
 
     await this.writeIdentifiers(shipmentId, g)
