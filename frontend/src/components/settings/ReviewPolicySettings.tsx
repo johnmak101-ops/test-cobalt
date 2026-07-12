@@ -40,8 +40,8 @@ export function ReviewPolicySettings() {
     <Card>
       <h2 className="text-base font-semibold text-text-primary">Review policy</h2>
       <p className="mt-1 text-sm text-text-secondary">
-        Send a decision to human review when any checked condition holds. This never auto-confirms a
-        decision the agent flagged — it only adds review.
+        When any of these is checked, matching emails go to a person before they are confirmed.
+        Turning a box on only adds a human check — it never forces auto-confirm.
       </p>
       {!canEdit && <p className="mt-2 text-xs text-text-muted">You have view-only access to Review Policy.</p>}
       <ul className="mt-4 space-y-2">

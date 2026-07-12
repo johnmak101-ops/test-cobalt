@@ -27,7 +27,7 @@ describe('resolveEmailDisposition', () => {
       autoApply: true,
     }))
     expect(r.disposition).toBe('review')
-    expect(r.reasons.some((x) => /new\/unknown customer/i.test(x))).toBe(true)
+    expect(r.reasons.some((x) => /customer is new or not recognized/i.test(x))).toBe(true)
   })
 
   it('review: mode-change / moved / late-PO / dup-number', () => {

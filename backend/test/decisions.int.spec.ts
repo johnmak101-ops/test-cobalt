@@ -162,7 +162,7 @@ describe('DecisionsService review policy (integration)', () => {
     expect(res.reviewStatus).toBe('provisional') // downgraded even though the agent auto-confirmed
     const [leg] = await db.selectFrom('shipments').selectAll().execute()
     expect(leg.reviewStatus).toBe('provisional')
-    expect(leg.reviewReasons).toContain("there's an unresolved conflict") // reason surfaced in the review queue
+    expect(leg.reviewReasons).toContain('the email disagrees with what’s already on the shipment') // reason surfaced in the review queue
   })
 
   it('leaves an auto-confirm alone when no enabled trigger matches', async () => {

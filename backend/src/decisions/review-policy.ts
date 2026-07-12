@@ -18,38 +18,75 @@ const hasStrongKey = (matchKey: Record<string, unknown> | undefined): boolean =>
 const populatedFieldCount = (fields: Record<string, unknown> | undefined): number =>
   Object.values(fields ?? {}).filter(present).length
 
-/** v1 catalog — every predicate reads only the decision payload, so these gate LIVE agent decisions. */
+/** v1 catalog — every predicate reads only the decision payload, so these gate LIVE agent decisions.
+ *  Labels are plain ops language (Settings UI + review queue). Keep IDs stable. */
 export const REVIEW_TRIGGERS: ReviewTrigger[] = [
-  { id: 'conflict', label: "there's an unresolved conflict", predicate: (d) => (d.conflicts?.length ?? 0) > 0 },
+  {
+    id: 'conflict',
+    label: 'the email disagrees with what’s already on the shipment',
+    predicate: (d) => (d.conflicts?.length ?? 0) > 0,
+  },
   {
     id: 'no_strong_id',
-    label: "there's no strong identity key (SO / booking / B-L / AWB / container)",
+    label: 'there’s no booking, bill of lading, AWB, or container number',
     predicate: (d) => !hasStrongKey(d.matchKey),
   },
-  { id: 'no_po', label: 'no PO is linked', predicate: (d) => (d.pos?.length ?? 0) === 0 },
-  { id: 'cancellation', label: "it's a cancellation notice", predicate: (d) => d.cancelled === true },
+  {
+    id: 'no_po',
+    label: 'there’s no purchase order',
+    predicate: (d) => (d.pos?.length ?? 0) === 0,
+  },
+  {
+    id: 'cancellation',
+    label: 'the email is a cancellation',
+    predicate: (d) => d.cancelled === true,
+  },
   {
     id: 'platform_only',
-    label: "it's a platform-only notification (CVP / TradeLinkOne)",
+    label: 'the email is only a portal alert (not a real booking update)',
     predicate: (d) => d.fromPlatform === true,
   },
-  { id: 'sparse', label: 'the data is sparse (fewer than 2 populated fields)', predicate: (d) => populatedFieldCount(d.fields) < 2 },
+  {
+    id: 'sparse',
+    label: 'the email has almost no useful shipment details',
+    predicate: (d) => populatedFieldCount(d.fields) < 2,
+  },
   // v2 lookup triggers — need agent-supplied lookupContext (cross-leg / master knowledge the payload alone lacks)
-  { id: 'new_customer', label: 'new/unknown customer', predicate: (d) => d.lookupContext?.newCustomer === true },
-  { id: 'mode_change', label: 'transport mode change (sea↔air)', predicate: (d) => d.lookupContext?.modeChange === true },
-  { id: 'moved_shipment', label: 'moved shipment / reassignment', predicate: (d) => d.lookupContext?.movedShipment === true },
-  { id: 'duplicate_number', label: 'duplicate identity number', predicate: (d) => d.lookupContext?.duplicateNumber === true },
-  { id: 'late_po', label: 'late PO on an existing shipment', predicate: (d) => d.lookupContext?.latePo === true },
+  {
+    id: 'new_customer',
+    label: 'the customer is new or not recognized',
+    predicate: (d) => d.lookupContext?.newCustomer === true,
+  },
+  {
+    id: 'mode_change',
+    label: 'transport switched between sea and air',
+    predicate: (d) => d.lookupContext?.modeChange === true,
+  },
+  {
+    id: 'moved_shipment',
+    label: 'the shipment was moved or reassigned',
+    predicate: (d) => d.lookupContext?.movedShipment === true,
+  },
+  {
+    id: 'duplicate_number',
+    label: 'the same reference number already belongs to another shipment',
+    predicate: (d) => d.lookupContext?.duplicateNumber === true,
+  },
+  {
+    id: 'late_po',
+    label: 'a purchase order was added late to an existing shipment',
+    predicate: (d) => d.lookupContext?.latePo === true,
+  },
   // Iterator residual (2026-07-12): optional gates for fields the soul/un-freeze often gets wrong.
   // Default OFF in seed policies — enable in Settings after measuring fire rate on live traffic.
   {
     id: 'brand_present',
-    label: 'brand is set (verify not a customer/style echo)',
+    label: 'a brand was found (check it isn’t really the customer or style name)',
     predicate: (d) => present(d.fields?.brand),
   },
   {
     id: 'in_dc_date',
-    label: 'in-DC / delivery date is set (verify not warehouse cut-off confusion)',
+    label: 'a warehouse delivery date was found (check it isn’t a cut-off date)',
     predicate: (d) => present(d.fields?.in_dc_date),
   },
 ]

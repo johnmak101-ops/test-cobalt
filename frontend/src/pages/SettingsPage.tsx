@@ -1,4 +1,4 @@
-import { NavLink, useLocation } from 'react-router-dom'
+import { NavLink, Navigate, useLocation } from 'react-router-dom'
 import { cn } from '../lib/utils'
 import { useAuth } from '../hooks/use-auth'
 import { usePageAccess } from '../hooks/use-page-access'
@@ -21,10 +21,8 @@ export default function SettingsPage() {
   const isAccess = location.pathname.includes('/settings/access')
   const isReviewPolicy = location.pathname.includes('/settings/review-policy')
 
-  // General / Vendors / Users stay superadmin-only; Alert Rules & Resolution Rules follow the
-  // configurable Access Control matrix (shown when the user has at least View on that page).
+  // No empty "General" tab — only real config panels. Superadmin-only vs access-matrix tabs.
   const navItems = [
-    { to: '/settings', label: 'General', end: true, show: isSuper },
     { to: '/settings/alerts', label: 'Alert Rules', end: false, show: canView('alert_rules') },
     { to: '/settings/vendors', label: 'Vendors', end: false, show: isSuper },
     { to: '/settings/users', label: 'Users', end: false, show: isSuper },
@@ -33,9 +31,19 @@ export default function SettingsPage() {
     { to: '/settings/access', label: 'Access Control', end: false, show: isSuper },
   ].filter((i) => i.show)
 
+  // /settings alone had no content — send to the first tab the user can open.
+  const atSettingsRoot =
+    location.pathname === '/settings' || location.pathname === '/settings/'
+  if (atSettingsRoot) {
+    const dest = navItems[0]?.to
+    if (dest) return <Navigate to={dest} replace />
+    return (
+      <p className="text-sm text-text-muted">No settings pages available for your role.</p>
+    )
+  }
+
   return (
     <div className="flex flex-col gap-6 lg:flex-row">
-      {/* Settings Nav */}
       <nav className="w-full space-y-1 lg:w-48 lg:shrink-0">
         {navItems.map((item) => (
           <NavLink
@@ -47,7 +55,7 @@ export default function SettingsPage() {
                 'block rounded-lg px-3 py-2 text-sm font-medium transition-colors',
                 isActive
                   ? 'bg-cobalt-primary/15 text-cobalt-primary'
-                  : 'text-text-secondary hover:bg-surface-700 hover:text-text-primary'
+                  : 'text-text-secondary hover:bg-surface-700 hover:text-text-primary',
               )
             }
           >
@@ -56,7 +64,6 @@ export default function SettingsPage() {
         ))}
       </nav>
 
-      {/* Settings Content */}
       <div className="flex-1">
         {isReviewPolicy ? (
           <ReviewPolicySettings />
@@ -71,13 +78,7 @@ export default function SettingsPage() {
         ) : isVendorsSettings ? (
           <VendorsSettings />
         ) : (
-          <div>
-            <h2 className="text-base font-semibold text-text-primary">General Settings</h2>
-            <p className="mt-2 text-sm text-text-secondary">
-              Manage alert rules and vendors from the tabs on the left. Email ingestion is configured
-              on the server (via GRAPH_* environment variables), not in the app.
-            </p>
-          </div>
+          <Navigate to={navItems[0]?.to ?? '/'} replace />
         )}
       </div>
     </div>

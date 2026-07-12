@@ -35,11 +35,11 @@ export interface DispositionResult {
 }
 
 const REVIEW_SIGNALS: { key: keyof LookupContext; reason: string }[] = [
-  { key: 'newCustomer', reason: 'new/unknown customer' },
-  { key: 'modeChange', reason: 'transport mode change (sea↔air)' },
-  { key: 'movedShipment', reason: 'moved shipment / reassignment' },
-  { key: 'latePo', reason: 'late PO on an existing shipment' },
-  { key: 'duplicateNumber', reason: 'duplicate identity number' },
+  { key: 'newCustomer', reason: 'the customer is new or not recognized' },
+  { key: 'modeChange', reason: 'transport switched between sea and air' },
+  { key: 'movedShipment', reason: 'the shipment was moved or reassigned' },
+  { key: 'latePo', reason: 'a purchase order was added late to an existing shipment' },
+  { key: 'duplicateNumber', reason: 'the same reference number already belongs to another shipment' },
 ]
 
 /**
