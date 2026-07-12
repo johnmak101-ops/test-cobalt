@@ -67,6 +67,33 @@ const domainOf = (email: string | null | undefined): string | null => {
 }
 const norm = (s: string): string => s.toUpperCase().replace(/[^A-Z0-9]/g, '')
 
+const PARTY_KINDS = new Set<CandidateKind>(['customer', 'vendor', 'forwarder', 'consignee'])
+function isPartyKind(t: CandidateKind): boolean {
+  return PARTY_KINDS.has(t)
+}
+
+/**
+ * Single brand-like token, length 2–6 (e.g. DSV, MAERSK is 6). Excludes long city names
+ * (SHANGHAI = 8) so reverse token-subset does not flood party candidates.
+ */
+function isShortBrandInput(input: string): boolean {
+  const cleaned = input.toUpperCase().replace(/[^A-Z0-9一-鿿]+/g, ' ').trim()
+  if (!cleaned || /\s/.test(cleaned)) return false
+  const alnum = cleaned.replace(/[^A-Z0-9]/g, '')
+  // CJK short brands: 2–4 chars; Latin: 2–6
+  if (/[一-鿿]/.test(cleaned)) return cleaned.length >= 2 && cleaned.length <= 4
+  return alnum.length >= 2 && alnum.length <= 6
+}
+
+/** Master code equals short brand, or code is brand + digits (DSV / DSV001). */
+function codeMatchesShortBrand(input: string, code: string): boolean {
+  const a = norm(input)
+  const c = norm(code)
+  if (!a || !c) return false
+  if (c === a) return true
+  return c.startsWith(a) && c.length > a.length && /^[0-9]+$/.test(c.slice(a.length))
+}
+
 @Injectable()
 export class CandidatesService {
   private cache = new Map<CandidateKind, { at: number; rows: MasterRow[] }>()
@@ -94,17 +121,24 @@ export class CandidatesService {
         else nameScore = 0
       }
       if (inputName && nameScore === 0) {
-        // port kind also tries the REVERSE subset (input ⊆ master): a bare city name must surface that
-        // city's airport ('SHANGHAI' → 'Shanghai Pudong International Airport') so the LLM can pick by
-        // mode — the 2026-07-10 live-probe gap. PORT-ONLY: for parties it would flood candidates with
-        // every master containing a common city token.
+        // (1) master tokens ⊆ input — rescues short masters ('DSV') against long raws.
+        // (2) port: reverse subset (input ⊆ master) for bare city → airport (live-probe gap).
+        // (3) short-brand reverse for parties only: single brand-like token (2–6 chars) that is
+        //     a subset of the master ('DSV' → 'DSV AIR AND SEA…'). Cities like 'SHANGHAI' (8 chars)
+        //     and logistics generics stay out so we do not flood forwarder candidates.
         const tokenHit =
           tokenMatch(inputName, r.name) ||
           r.aliases.some((a) => tokenMatch(inputName, a)) ||
-          (r.type === 'port' && (tokenSubset(inputName, r.name) || r.aliases.some((a) => tokenSubset(inputName, a))))
-        if (tokenHit) {
-          nameScore = 0.6
-          signals.push('name:tokens')
+          (r.type === 'port' && (tokenSubset(inputName, r.name) || r.aliases.some((a) => tokenSubset(inputName, a)))) ||
+          (isPartyKind(r.type) &&
+            isShortBrandInput(inputName) &&
+            (tokenSubset(inputName, r.name) || r.aliases.some((a) => tokenSubset(inputName, a))))
+        // code prefix / exact: raw "DSV" must surface master code DSV001 even when name is long
+        const codeHit = r.code && isShortBrandInput(inputName) && codeMatchesShortBrand(inputName, r.code)
+        if (tokenHit || codeHit) {
+          nameScore = codeHit && !tokenHit ? 0.75 : 0.6
+          if (tokenHit) signals.push('name:tokens')
+          if (codeHit) signals.push('name:code')
         }
       }
       let domainScore = 0
