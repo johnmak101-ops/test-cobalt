@@ -370,11 +370,14 @@ describe('CommitterService — CVP notification-platform legs → DOCUMENT (inte
       ...over,
     })
 
-  it("agent path: a leg built entirely from the CVP platform's emails commits as kind=DOCUMENT", async () => {
+  it("agent path: CVP platform-only leg is SHIPMENT + provisional (no silent DOCUMENT demotion)", async () => {
     await seedEmail('cvp-1', 'notify.noreply2@tradelinkone.com')
     const res = await committer.apply(cvpGroup()) // fromPlatform unset → committer resolves it from the sender
     const leg = await db.selectFrom('shipments').where('id', '=', res.shipmentId).selectAll().executeTakeFirstOrThrow()
-    expect(leg.kind).toBe('DOCUMENT')
+    expect(leg.kind).toBe('SHIPMENT')
+    expect(leg.reviewStatus).toBe('provisional')
+    const reasons = Array.isArray(leg.reviewReasons) ? (leg.reviewReasons as string[]) : []
+    expect(reasons.some((r) => /platform|portal|LPO/i.test(r))).toBe(true)
   })
 
   it('the SAME leg from a real forwarder sender stays kind=SHIPMENT (booking# is a booked move)', async () => {
@@ -391,10 +394,11 @@ describe('CommitterService — CVP notification-platform legs → DOCUMENT (inte
     expect(leg.kind).toBe('SHIPMENT')
   })
 
-  it('rebuild path: an explicit fromPlatform=true demotes without needing to resolve senders', async () => {
+  it('rebuild path: fromPlatform=true flags provisional SHIPMENT without demoting to DOCUMENT', async () => {
     const res = await committer.apply(cvpGroup({ fromPlatform: true, events: [{ emailType: 'Other', receivedAt: '2026-07-01T08:22:00Z' }] }))
     const leg = await db.selectFrom('shipments').where('id', '=', res.shipmentId).selectAll().executeTakeFirstOrThrow()
-    expect(leg.kind).toBe('DOCUMENT')
+    expect(leg.kind).toBe('SHIPMENT')
+    expect(leg.reviewStatus).toBe('provisional')
   })
 })
 
