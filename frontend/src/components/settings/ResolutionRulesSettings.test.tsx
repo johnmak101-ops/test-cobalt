@@ -29,13 +29,39 @@ describe('ResolutionRulesSettings', () => {
     expect(screen.getByText('MACAU FUNG TAI')).toBeInTheDocument()
     expect(screen.getByText(/inactive/i)).toBeInTheDocument()
   })
-  it('badges retired alias kinds in the list (not offered in create, still visible as audit)', () => {
+  it('shows human labels, not raw db kind/column names', () => {
     render(<ResolutionRulesSettings />)
-    expect(screen.getByText('vendor_alias')).toBeInTheDocument()
-    expect(screen.getByText(/retired/i)).toBeInTheDocument()
+    expect(screen.getByText('Customer group')).toBeInTheDocument()
+    expect(screen.getByText('Vendor alias (retired)')).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: 'Type' })).toBeInTheDocument()
+    // column headers: From / To — not lhs / rhs
+    expect(screen.getByRole('columnheader', { name: 'From' })).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: 'To' })).toBeInTheDocument()
+    expect(screen.queryByText('lhs')).not.toBeInTheDocument()
+    expect(screen.queryByText('rhs')).not.toBeInTheDocument()
+    expect(screen.queryByText('vendor_alias')).not.toBeInTheDocument()
+    expect(screen.queryByText('customer_group')).not.toBeInTheDocument()
   })
   it('shows an Add rule control', () => {
     render(<ResolutionRulesSettings />)
     expect(screen.getByRole('button', { name: /add rule/i })).toBeInTheDocument()
+  })
+
+  it('opens a deactivate confirm modal instead of window.confirm', async () => {
+    const { userEvent } = await import('@testing-library/user-event')
+    const user = userEvent.setup()
+    render(<ResolutionRulesSettings />)
+    await user.click(screen.getByRole('button', { name: /deactivate SEH/i }))
+    expect(screen.getByRole('dialog', { name: /deactivate rule/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /^deactivate$/i })).toBeInTheDocument()
+  })
+
+  it('opens an edit-reason modal instead of window.prompt', async () => {
+    const { userEvent } = await import('@testing-library/user-event')
+    const user = userEvent.setup()
+    render(<ResolutionRulesSettings />)
+    await user.click(screen.getByRole('button', { name: /edit reason for SEH/i }))
+    expect(screen.getByRole('dialog', { name: /edit reason/i })).toBeInTheDocument()
+    expect(screen.getByPlaceholderText(/optional note/i)).toBeInTheDocument()
   })
 })

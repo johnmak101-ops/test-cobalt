@@ -15,31 +15,62 @@ export function useProposals() {
   return useQuery({ queryKey: PROPOSALS, queryFn: () => api.getProposals() })
 }
 
-/** A mutation that toasts on failure and invalidates the given query keys on success. */
-function useInvalidatingMutation<V>(fn: (v: V) => Promise<unknown>, fail: string, keys: readonly (readonly string[])[]) {
+/** A mutation that toasts success/failure and invalidates the given query keys on success. */
+function useInvalidatingMutation<V>(
+  fn: (v: V) => Promise<unknown>,
+  messages: { ok: string; fail: string },
+  keys: readonly (readonly string[])[],
+) {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: fn,
-    onSuccess: () => keys.forEach((k) => qc.invalidateQueries({ queryKey: k })),
-    onError: (e) => toast(apiErrorMessage(e, fail)),
+    onSuccess: () => {
+      toast(messages.ok)
+      keys.forEach((k) => qc.invalidateQueries({ queryKey: k }))
+    },
+    onError: (e) => toast(apiErrorMessage(e, messages.fail)),
   })
 }
 
 export function useCreateFact() {
-  return useInvalidatingMutation((b: { kind: string; lhs: string; rhs?: string; reason?: string }) => api.createFact(b), 'Failed to create rule', [FACTS])
+  return useInvalidatingMutation(
+    (b: { kind: string; lhs: string; rhs?: string; reason?: string }) => api.createFact(b),
+    { ok: 'Rule added', fail: 'Failed to create rule' },
+    [FACTS],
+  )
 }
 export function usePatchFact() {
-  return useInvalidatingMutation(({ id, reason }: { id: string; reason?: string }) => api.patchFact(id, { reason }), 'Failed to update rule', [FACTS])
+  return useInvalidatingMutation(
+    ({ id, reason }: { id: string; reason?: string }) => api.patchFact(id, { reason }),
+    { ok: 'Reason updated', fail: 'Failed to update rule' },
+    [FACTS],
+  )
 }
 export function useDeactivateFact() {
-  return useInvalidatingMutation((id: string) => api.deactivateFact(id), 'Failed to deactivate', [FACTS])
+  return useInvalidatingMutation(
+    (id: string) => api.deactivateFact(id),
+    { ok: 'Rule deactivated', fail: 'Failed to deactivate' },
+    [FACTS],
+  )
 }
 export function useReactivateFact() {
-  return useInvalidatingMutation((id: string) => api.reactivateFact(id), 'Failed to reactivate', [FACTS])
+  return useInvalidatingMutation(
+    (id: string) => api.reactivateFact(id),
+    { ok: 'Rule reactivated', fail: 'Failed to reactivate' },
+    [FACTS],
+  )
 }
 export function useApproveProposal() {
-  return useInvalidatingMutation((id: string) => api.approveProposal(id), 'Failed to approve', [FACTS, PROPOSALS])
+  return useInvalidatingMutation(
+    (id: string) => api.approveProposal(id),
+    { ok: 'Proposal approved', fail: 'Failed to approve' },
+    [FACTS, PROPOSALS],
+  )
 }
 export function useRejectProposal() {
-  return useInvalidatingMutation((id: string) => api.rejectProposal(id), 'Failed to reject', [PROPOSALS])
+  return useInvalidatingMutation(
+    (id: string) => api.rejectProposal(id),
+    { ok: 'Proposal rejected', fail: 'Failed to reject' },
+    [PROPOSALS],
+  )
 }
