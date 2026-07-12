@@ -115,6 +115,8 @@ export class CreateDecisionDto {
     sourceFile?: string | null
     bodyText?: string | null
     bodyHtml?: string | null
+    /** cobalt-queue soul version (queue.prompt_version.id) that produced this parse — provenance (queue v1, §4.6d). */
+    promptVersion?: number | null
     attachments?: { graphAttachmentId: string; filename: string; declaredMime?: string; sizeBytes?: number; sourceKind?: string }[]
   }[]
 }

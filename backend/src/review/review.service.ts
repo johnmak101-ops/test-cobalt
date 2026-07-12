@@ -27,6 +27,37 @@ function coerce(field: string, value: unknown): unknown {
 }
 const toStr = (v: unknown): string | null => (v == null ? null : v instanceof Date ? v.toISOString() : String(v))
 
+/** Leg (camelCase) column → the queue's snake_case parse-field name (booking_no, hbl_awb_fcr_no, …). The
+ *  track DB columns ARE the queue parse fields, so a plain camel→snake conversion is exact. Without this the
+ *  learning feed posted leg columns (`soNo`) that never matched the parser's fields (`so_no`) — the queue's
+ *  eval could not score them. */
+const toQueueField = (col: string): string => col.replace(/([a-z0-9])([A-Z])/g, '$1_$2').toLowerCase()
+
+/** The parse-derived leg columns a reviewer can accept ("looks right") — the same set the review UI edits
+ *  (frontend review-fields.ts). `isDate` cols are frozen as YYYY-MM-DD to match the parser's date format so
+ *  the confirm actually matches on the queue's re-parse. */
+const CONFIRMABLE_FIELDS: { column: string; isDate: boolean }[] = [
+  { column: 'bookingNo', isDate: false }, { column: 'soNo', isDate: false }, { column: 'itemStyleNo', isDate: false },
+  { column: 'qty', isDate: false }, { column: 'qtyUnit', isDate: false }, { column: 'grossWeight', isDate: false },
+  { column: 'measurement', isDate: false }, { column: 'htsCode', isDate: false }, { column: 'hblAwbFcrNo', isDate: false },
+  { column: 'mbl', isDate: false }, { column: 'containerNo', isDate: false }, { column: 'scacCode', isDate: false },
+  { column: 'vesselName', isDate: false }, { column: 'voyageNo', isDate: false }, { column: 'consigneeName', isDate: false },
+  { column: 'consigneeAddress', isDate: false }, { column: 'cargoReadyDate', isDate: true }, { column: 'cfsCutoff', isDate: true },
+  { column: 'etd', isDate: true }, { column: 'atd', isDate: true }, { column: 'eta', isDate: true }, { column: 'ata', isDate: true },
+  { column: 'warehouseStartDate', isDate: true }, { column: 'warehouseEndDate', isDate: true },
+]
+
+/** The value a confirm freezes: what the reviewer SAW, in the parser's own format (dates → YYYY-MM-DD so a
+ *  later soul re-parse compares equal). Null/blank → not confirmable. */
+function confirmValue(isDate: boolean, value: unknown): string | null {
+  if (value == null || value === '') return null
+  if (isDate) {
+    const d = value instanceof Date ? value : new Date(String(value))
+    return Number.isNaN(d.getTime()) ? null : d.toISOString().slice(0, 10)
+  }
+  return String(value)
+}
+
 /**
  * The human review workflow over the commit-first model: provisional shipments are listed here,
  * and a reviewer either confirms them as-is or corrects fields. A correction LOCKS each edited field
@@ -59,7 +90,10 @@ export class ReviewService {
     }))
   }
 
-  /** Accept a provisional shipment as-is. An optional reviewer note is audited (soul feedback). */
+  /** Accept a provisional shipment as-is. An optional reviewer note is audited (soul feedback). A "looks
+   *  right" acceptance also vouches for every parse-derived field, so we emit a confirm-sentinel per field
+   *  to the queue's learning feed (guards its held-out eval — a soul that starts mis-parsing a confirmed
+   *  field regresses the score). Nothing was edited → the edited set is empty. */
   async confirm(shipmentId: string, actorId: string, note?: string) {
     const leg = await this.shipments.findById(shipmentId)
     if (!leg) throw new NotFoundException(`shipment ${shipmentId} not found`)
@@ -69,7 +103,25 @@ export class ReviewService {
       oldValue: leg.reviewStatus, newValue: 'confirmed', changeType: 'update',
       sourceType: 'manual', actorUserId: actorId, note: note?.trim() || 'review: confirmed as-is',
     })
+    const messageId = (await this.shipments.sourceGraphIdFor(shipmentId)) ?? shipmentId
+    const forwarder = ((leg as Record<string, unknown>).forwarderRaw as string | null) ?? null
+    await this.emitConfirms(leg as Record<string, unknown>, new Set(), messageId, forwarder)
     return { shipmentId, reviewStatus: 'confirmed' }
+  }
+
+  /** Emit a "looks right" confirm-sentinel to the queue learning feed for every confirmable parse field that
+   *  is non-null and was NOT just edited. Each is one POST with kind:'confirm', agentSaid == humanCorrected
+   *  == the frozen value the reviewer saw (dates as YYYY-MM-DD, the parser's format, so a later soul re-parse
+   *  compares equal). Best-effort — postCorrection swallows its own errors and never breaks the review save. */
+  private async emitConfirms(leg: Record<string, unknown>, edited: Set<string>, messageId: string, forwarder: string | null) {
+    for (const { column, isDate } of CONFIRMABLE_FIELDS) {
+      if (edited.has(column)) continue
+      const frozen = confirmValue(isDate, leg[column])
+      if (frozen == null) continue
+      await this.queueLearning.postCorrection({
+        messageId, field: toQueueField(column), agentSaid: frozen, humanCorrected: frozen, forwarder, note: null, kind: 'confirm',
+      })
+    }
   }
 
   /** Correct fields on a provisional shipment: edits win, lock, are audited, and confirm the leg. */
@@ -93,11 +145,17 @@ export class ReviewService {
         sourceType: 'manual', actorUserId: actorId, note: dto.reason ?? 'review: corrected',
       })
       corrected.push(field)
-      // Feed the correction to the queue learning loop (best-effort; never breaks the review save).
+      // Feed the correction to the queue learning loop (best-effort; never breaks the review save). Post the
+      // queue's snake_case parse-field name — the leg column `soNo` is the parser's `so_no`, and the queue
+      // scores on the parse field, so a camelCase name would silently never match.
       await this.queueLearning.postCorrection({
-        messageId, field, agentSaid: toStr(current[field]), humanCorrected: toStr(value), forwarder, note: dto.reason ?? null,
+        messageId, field: toQueueField(field), agentSaid: toStr(current[field]), humanCorrected: toStr(value),
+        forwarder, note: dto.reason ?? null, kind: 'correction',
       })
     }
+
+    // The parse-derived fields the reviewer looked at and left untouched are an implicit "looks right".
+    await this.emitConfirms(current, new Set(corrected), messageId, forwarder)
 
     await this.shipments.updateLeg(shipmentId, { reviewStatus: 'confirmed', reviewedBy: actorId, reviewedAt: new Date() })
     return { shipmentId, reviewStatus: 'confirmed', corrected }
