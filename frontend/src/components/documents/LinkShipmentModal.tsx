@@ -8,7 +8,10 @@ import { formatShortDate } from '../../lib/utils'
 
 /** Manual "Link to shipment" picker for an orphan document. Candidate shipments come from the
  *  existing shipments endpoint (same one the Shipment Tracker uses) and are filtered client-side
- *  by booking#, customer, or route as the user types. */
+ *  by booking#, customer, or route as the user types.
+ *
+ *  Parent should remount on document change via `key={doc.id}` so search/selection start clean
+ *  (avoids setState-in-effect reset). */
 export function LinkShipmentModal({
   document: doc,
   onClose,
@@ -20,14 +23,6 @@ export function LinkShipmentModal({
   const linkMutation = useLinkDocument()
   const [search, setSearch] = useState('')
   const [selectedId, setSelectedId] = useState<string | null>(null)
-
-  // Reset transient state whenever a different document is opened.
-  useEffect(() => {
-    setSearch('')
-    setSelectedId(null)
-    linkMutation.reset()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [doc?.id])
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {

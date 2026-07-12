@@ -34,12 +34,13 @@ Two safety nets so this is caught, plus a way to recover:
 1. **Process (do this first):** have factories/forwarders always **Cc `CobaltStatusTrack@cobaltknitwear.com`**
    (or `CobaltShipment@`, which auto-forwards in) on the **original** "NEW BOOKING" email — not just the
    internal repliers. This puts the original + its attachment directly in the ingested Inbox.
-2. **Forward-as-attachment intake (code follow-up):** when staff receive an original booking, forward it
-   **as an attachment** (`.eml` / `.msg`) to the tracking mailbox, and extend the ingest to detect a
-   `message/rfc822` part and recurse into the embedded original to recover its body + booking attachment
-   (today only same-message MIME parts are unpacked). — *not yet built; offered.*
+2. **Forward-as-attachment intake (code — shipped):** when staff receive an original booking, forward it
+   **as an attachment** (`.eml` / `.msg`) to the tracking mailbox. Normalize now detects `.eml` /
+   `message/rfc822` (and already-handled `.msg`) and recurses: body text + child attachments (booking
+   PDF/Excel) become their own queue parts for the parser.
 3. **Exchange transport/journal rule:** copy factory-domain / "NEW BOOKING"-subject mail into the Inbox.
-4. **Manual re-ingest endpoint:** accept an uploaded `.eml` / `.msg` (or a Graph id from another mailbox)
-   so an operator can pull a specific missing booking on demand.
+4. **Manual re-ingest (dev CLI — shipped):** export the missing original as `.eml` or `.msg` and run:
+   `pnpm exec tsx src/dev/ingest-msg.ts <dir|file>` on the Agent VM (accepts both extensions).
+   Filename is the dedup key (`mock:<fname>`). Full HTTP upload API still optional if ops want a UI.
 
-Options 1 and 4 give the biggest coverage for the least effort; 2 is the cleanest code fix once desired.
+**Preferred order:** (1) process Cc first → (2)/(4) for already-missed originals → (3) if volume justifies.

@@ -32,6 +32,12 @@ describe('review-policy evaluate', () => {
   it('platform_only fires when fromPlatform', () => {
     expect(evaluate({ enabled: ['platform_only'] }, base({ fromPlatform: true }))).toHaveLength(1)
   })
+  it('brand_present / in_dc_date fire only when those fields are set', () => {
+    expect(evaluate({ enabled: ['brand_present'] }, base({ fields: { brand: 'FENIX' } }))).toHaveLength(1)
+    expect(evaluate({ enabled: ['brand_present'] }, base({ fields: {} }))).toEqual([])
+    expect(evaluate({ enabled: ['in_dc_date'] }, base({ fields: { in_dc_date: '2026-07-01' } }))).toHaveLength(1)
+    expect(evaluate({ enabled: ['in_dc_date'] }, base({ fields: { etd: '2026-07-01' } }))).toEqual([])
+  })
   it('sparse fires when fewer than 2 fields are populated', () => {
     expect(evaluate({ enabled: ['sparse'] }, base({ fields: { so_no: 'SO-1' } }))).toHaveLength(1)
     expect(evaluate({ enabled: ['sparse'] }, base({ fields: { so_no: 'SO-1', booking_no: 'BK-1' } }))).toEqual([])

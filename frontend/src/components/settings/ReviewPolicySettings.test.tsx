@@ -2,8 +2,8 @@ import { describe, it, expect, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { ReviewPolicySettings } from './ReviewPolicySettings'
 
-// `data` must be a STABLE reference across renders — the component's useEffect([data]) would otherwise
-// re-fire every render (real react-query memoizes data; a fresh object per call = infinite loop).
+// `data` must be a STABLE reference across renders — the component keys draft reset on data identity
+// (real react-query memoizes data; a fresh object per call would thrash drafts every render).
 vi.mock('../../hooks/use-review-policy', () => {
   const data = {
     triggers: [

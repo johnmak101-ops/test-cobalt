@@ -71,15 +71,35 @@ describe('CandidatesService — name:tokens recall signal', () => {
     expect(pvg!.mode).toBe('air') // the LLM picks by mode — both candidates must be on the table
   })
 
-  it('the reverse subset is PORT-ONLY — a bare city name must not flood forwarder candidates', async () => {
-    // master long enough that trigram stays under 0.3 (a shorter name like 'Shanghai Global Logistics
-    // Ltd' legitimately clears the trigram threshold on its own); tokenSubset WOULD fire here if the
-    // reverse direction were open for parties — asserting 0 candidates proves the port-only gate.
+  it('city-length reverse subset still blocked for parties — SHANGHAI must not flood forwarders', async () => {
+    // SHANGHAI is 8 chars → not isShortBrandInput; reverse stays port-only for long tokens.
     const { svc } = forwarderRepo({
       forwarders: [{ id: 'f1', code: 'SIF001', name: 'Shanghai International Freight Forwarding Company Limited' }],
       forwarderAliases: [],
     })
     const { candidates } = await svc.candidates({ type: 'forwarder', name: 'SHANGHAI' })
     expect(candidates).toHaveLength(0)
+  })
+
+  it('short brand reverse: extracted "DSV" surfaces long master name "DSV AIR AND SEA…"', async () => {
+    const { svc } = forwarderRepo({
+      forwarders: [{ id: 'f1', code: 'DSV001', name: 'DSV AIR AND SEA CO LTD' }],
+      forwarderAliases: [],
+    })
+    const { candidates } = await svc.candidates({ type: 'forwarder', name: 'DSV' })
+    const hit = candidates.find((c) => c.code === 'DSV001')
+    expect(hit).toBeTruthy()
+    expect(hit!.signals).toEqual(expect.arrayContaining(['name:tokens', 'name:code']))
+  })
+
+  it('short brand code-only: "DSV" matches code DSV001 even when name has no DSV token', async () => {
+    const { svc } = forwarderRepo({
+      forwarders: [{ id: 'f1', code: 'DSV001', name: 'Global Freight Partner Limited' }],
+      forwarderAliases: [],
+    })
+    const { candidates } = await svc.candidates({ type: 'forwarder', name: 'DSV' })
+    const hit = candidates.find((c) => c.code === 'DSV001')
+    expect(hit).toBeTruthy()
+    expect(hit!.signals).toContain('name:code')
   })
 })

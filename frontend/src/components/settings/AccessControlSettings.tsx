@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { api } from '../../lib/api'
 import { Card } from '../ui/Card'
 
@@ -26,15 +26,15 @@ export function AccessControlSettings() {
     queryFn: () => api.get('/page-access'),
   })
   const qc = useQueryClient()
-  const [rows, setRows] = useState<PageRow[]>([])
-  const [dirty, setDirty] = useState(false)
-
-  useEffect(() => {
-    if (data?.pages) {
-      setRows(data.pages)
-      setDirty(false)
-    }
-  }, [data])
+  const serverRows = data?.pages ?? null
+  const [draft, setDraft] = useState<PageRow[] | null>(null)
+  const [serverSnap, setServerSnap] = useState(serverRows)
+  if (serverRows !== serverSnap) {
+    setServerSnap(serverRows)
+    setDraft(null)
+  }
+  const rows = draft ?? serverRows ?? []
+  const dirty = draft !== null
 
   const save = useMutation({
     mutationFn: () => {
@@ -44,7 +44,7 @@ export function AccessControlSettings() {
     },
     // invalidate the whole pageAccess tree so this matrix AND every user's /me refetch
     onSuccess: () => {
-      setDirty(false)
+      setDraft(null)
       qc.invalidateQueries({ queryKey: ['pageAccess'] })
     },
   })
@@ -52,8 +52,10 @@ export function AccessControlSettings() {
   if (isLoading) return <p className="text-sm text-text-secondary">Loading…</p>
 
   const setLevel = (pageId: string, role: string, level: Level) => {
-    setRows((rs) => rs.map((p) => (p.id === pageId ? { ...p, levels: { ...p.levels, [role]: level } } : p)))
-    setDirty(true)
+    setDraft((prev) => {
+      const base = prev ?? serverRows ?? []
+      return base.map((p) => (p.id === pageId ? { ...p, levels: { ...p.levels, [role]: level } } : p))
+    })
   }
 
   return (

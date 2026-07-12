@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { useState, useEffect } from 'react'
+import { useMemo, useState } from 'react'
 import { api } from '../../lib/api'
 import { Card } from '../ui/Card'
 import { cn } from '../../lib/utils'
@@ -54,15 +54,18 @@ export function AlertRulesSettings() {
   const qc = useQueryClient()
   const { canEdit: canEditPage } = usePageAccess()
   const canEdit = canEditPage('alert_rules') // Access Control matrix; backend @PageWrite is authoritative
-  const [localRules, setLocalRules] = useState<AlertRule[]>([])
-  const [dirty, setDirty] = useState(false)
-
-  useEffect(() => {
-    if (data?.rules) {
-      setLocalRules(withOffsets(data.rules))
-      setDirty(false)
-    }
-  }, [data])
+  const serverRules = useMemo(
+    () => (data?.rules ? withOffsets(data.rules) : null),
+    [data],
+  )
+  const [draft, setDraft] = useState<AlertRule[] | null>(null)
+  const [serverSnap, setServerSnap] = useState(serverRules)
+  if (serverRules !== serverSnap) {
+    setServerSnap(serverRules)
+    setDraft(null)
+  }
+  const localRules = draft ?? serverRules ?? []
+  const dirty = draft !== null
 
   const saveRules = useMutation({
     // Convert each rule's per-country OFFSET back to the API's ABSOLUTE days (default + offset)
@@ -78,29 +81,27 @@ export function AlertRulesSettings() {
         }),
       }),
     onSuccess: () => {
+      setDraft(null)
       qc.invalidateQueries({ queryKey: ['alertRules'] })
-      setDirty(false)
     },
   })
 
   const updateRule = (id: string, field: string, value: number | string | boolean) => {
-    setLocalRules((prev) =>
-      prev.map((r) => (r.id === id ? { ...r, [field]: value } : r))
+    setDraft((prev) =>
+      (prev ?? serverRules ?? []).map((r) => (r.id === id ? { ...r, [field]: value } : r)),
     )
-    setDirty(true)
   }
 
   const updateCountryOffset = (id: string, code: string, offset: number | '') => {
-    setLocalRules((prev) =>
-      prev.map((r) => {
+    setDraft((prev) =>
+      (prev ?? serverRules ?? []).map((r) => {
         if (r.id !== id) return r
         const offs = { ...(r.countryOffsets ?? {}) }
         if (offset === '' || offset === 0) delete offs[code]
         else offs[code] = offset
         return { ...r, countryOffsets: offs }
-      })
+      }),
     )
-    setDirty(true)
   }
 
   if (isLoading) {
@@ -242,12 +243,7 @@ export function AlertRulesSettings() {
       )}
       <div className="flex items-center justify-end gap-3 pt-2">
         <button
-          onClick={() => {
-            if (data?.rules) {
-              setLocalRules(withOffsets(data.rules))
-              setDirty(false)
-            }
-          }}
+          onClick={() => setDraft(null)}
           disabled={!dirty}
           className="rounded-lg px-4 py-2 text-sm text-text-secondary hover:text-text-primary disabled:opacity-50"
         >

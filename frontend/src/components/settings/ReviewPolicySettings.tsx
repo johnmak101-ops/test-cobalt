@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useMemo, useState } from 'react'
 import { Card } from '../ui/Card'
 import { cn } from '../../lib/utils'
 import { usePageAccess } from '../../hooks/use-page-access'
@@ -11,22 +11,29 @@ export function ReviewPolicySettings() {
   const canEdit = canEditPage('review_policy')
   const { data, isLoading } = useReviewPolicy()
   const save = useSaveReviewPolicy()
-  const [enabled, setEnabled] = useState<Record<string, boolean>>({})
-  const [dirty, setDirty] = useState(false)
 
-  useEffect(() => {
-    if (data?.triggers) {
-      setEnabled(Object.fromEntries(data.triggers.map((t) => [t.id, t.enabled])))
-      setDirty(false)
-    }
-  }, [data])
+  // Server snapshot; local edits live in `draft` until save or a new fetch replaces the snapshot.
+  const serverEnabled = useMemo(
+    () =>
+      data?.triggers
+        ? Object.fromEntries(data.triggers.map((t) => [t.id, t.enabled]))
+        : null,
+    [data],
+  )
+  const [draft, setDraft] = useState<Record<string, boolean> | null>(null)
+  const [serverSnap, setServerSnap] = useState(serverEnabled)
+  if (serverEnabled !== serverSnap) {
+    setServerSnap(serverEnabled)
+    setDraft(null)
+  }
+  const enabled = draft ?? serverEnabled ?? {}
+  const dirty = draft !== null
 
   if (isLoading) return <p className="text-sm text-text-secondary">Loading…</p>
 
   const toggle = (id: string) => {
     if (!canEdit) return
-    setEnabled((e) => ({ ...e, [id]: !e[id] }))
-    setDirty(true)
+    setDraft({ ...enabled, [id]: !enabled[id] })
   }
 
   return (

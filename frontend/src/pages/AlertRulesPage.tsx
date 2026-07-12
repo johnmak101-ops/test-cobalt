@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../lib/api'
 import { Card } from '../components/ui/Card'
-import { useState, useEffect } from 'react'
+import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { usePageAccess } from '../hooks/use-page-access'
 import { cn } from '../lib/utils'
@@ -55,24 +55,28 @@ export default function AlertRulesPage() {
     queryFn: () => api.get('/alert-rules'),
   })
   const qc = useQueryClient()
-  const [localRules, setLocalRules] = useState<AlertRule[]>([])
-  const [dirty, setDirty] = useState(false)
-
-  useEffect(() => {
-    if (data?.rules) {
-      setLocalRules(
-        data.rules.map((r: AlertRule) => ({
-          ...r,
-          countryThresholds: r.countryThresholds
-            ? typeof r.countryThresholds === 'string'
-              ? JSON.parse(r.countryThresholds)
-              : r.countryThresholds
-            : {},
-        }))
-      )
-      setDirty(false)
-    }
-  }, [data])
+  const serverRules = useMemo(
+    () =>
+      data?.rules
+        ? data.rules.map((r: AlertRule) => ({
+            ...r,
+            countryThresholds: r.countryThresholds
+              ? typeof r.countryThresholds === 'string'
+                ? JSON.parse(r.countryThresholds)
+                : r.countryThresholds
+              : {},
+          }))
+        : null,
+    [data],
+  )
+  const [draft, setDraft] = useState<AlertRule[] | null>(null)
+  const [serverSnap, setServerSnap] = useState(serverRules)
+  if (serverRules !== serverSnap) {
+    setServerSnap(serverRules)
+    setDraft(null)
+  }
+  const localRules = draft ?? serverRules ?? []
+  const dirty = draft !== null
 
   const saveRules = useMutation({
     mutationFn: (rules: AlertRule[]) =>
@@ -86,23 +90,22 @@ export default function AlertRulesPage() {
         })),
       }),
     onSuccess: () => {
+      setDraft(null)
       qc.invalidateQueries({ queryKey: ['alertRules'] })
-      setDirty(false)
     },
   })
 
   const updateRule = (id: string, field: string, value: number | string | boolean) => {
     if (!canEdit) return
-    setLocalRules((prev) =>
-      prev.map((r) => (r.id === id ? { ...r, [field]: value } : r))
+    setDraft((prev) =>
+      (prev ?? serverRules ?? []).map((r) => (r.id === id ? { ...r, [field]: value } : r)),
     )
-    setDirty(true)
   }
 
   const updateCountryThreshold = (ruleId: string, countryCode: string, days: number | '') => {
     if (!canEdit) return
-    setLocalRules((prev) =>
-      prev.map((r) => {
+    setDraft((prev) =>
+      (prev ?? serverRules ?? []).map((r) => {
         if (r.id !== ruleId) return r
         const ct = { ...(r.countryThresholds || {}) }
         if (days === '' || days === 0) {
@@ -111,9 +114,8 @@ export default function AlertRulesPage() {
           ct[countryCode] = days as number
         }
         return { ...r, countryThresholds: Object.keys(ct).length > 0 ? ct : null }
-      })
+      }),
     )
-    setDirty(true)
   }
 
   return (
@@ -277,21 +279,7 @@ export default function AlertRulesPage() {
           {canEdit && (
           <div className="flex items-center justify-end gap-3 pt-2">
             <button
-              onClick={() => {
-                if (data?.rules) {
-                  setLocalRules(
-                    data.rules.map((r: AlertRule) => ({
-                      ...r,
-                      countryThresholds: r.countryThresholds
-                        ? typeof r.countryThresholds === 'string'
-                          ? JSON.parse(r.countryThresholds)
-                          : r.countryThresholds
-                        : {},
-                    }))
-                  )
-                  setDirty(false)
-                }
-              }}
+              onClick={() => setDraft(null)}
               disabled={!dirty}
               className="rounded-lg px-4 py-2 text-sm text-text-secondary hover:text-text-primary disabled:opacity-50"
             >

@@ -29,6 +29,11 @@ describe('ResolutionRulesSettings', () => {
     expect(screen.getByText('MACAU FUNG TAI')).toBeInTheDocument()
     expect(screen.getByText(/inactive/i)).toBeInTheDocument()
   })
+  it('badges retired alias kinds in the list (not offered in create, still visible as audit)', () => {
+    render(<ResolutionRulesSettings />)
+    expect(screen.getByText('vendor_alias')).toBeInTheDocument()
+    expect(screen.getByText(/retired/i)).toBeInTheDocument()
+  })
   it('shows an Add rule control', () => {
     render(<ResolutionRulesSettings />)
     expect(screen.getByRole('button', { name: /add rule/i })).toBeInTheDocument()

@@ -1,7 +1,14 @@
-import { describe, it, expect } from 'vitest'
-import { guardVendorForwarder, isPlatformNotForwarder, type GuardInput } from './vendor-forwarder-guard'
+import { describe, it, expect, afterEach } from 'vitest'
+import {
+  guardVendorForwarder,
+  isPlatformNotForwarder,
+  setPlatformNotForwarderPatterns,
+  type GuardInput,
+} from './vendor-forwarder-guard'
 
 describe('isPlatformNotForwarder — CVP portal is never the forwarder', () => {
+  afterEach(() => setPlatformNotForwarderPatterns([]))
+
   it('matches the TradeLink platform in every observed spelling', () => {
     expect(isPlatformNotForwarder('TRADELINK TECHNOLOGIES LIMITED')).toBe(true)
     expect(isPlatformNotForwarder('TradeLink Technologies Ltd (TradeLinkOne portal)')).toBe(true)
@@ -11,6 +18,16 @@ describe('isPlatformNotForwarder — CVP portal is never the forwarder', () => {
     expect(isPlatformNotForwarder('MAERSK LOGISTICS & SERVICES CHINA LIMITED')).toBe(false)
     expect(isPlatformNotForwarder('EXPEDITORS INTERNATIONAL')).toBe(false)
     expect(isPlatformNotForwarder(null)).toBe(false)
+  })
+  it('setPlatformNotForwarderPatterns overlays Resolution Rules facts (MOVE 3 data path)', () => {
+    expect(isPlatformNotForwarder('ACME PORTAL NOTIFY')).toBe(false)
+    setPlatformNotForwarderPatterns(['ACME\\s*PORTAL', 'notify\\.acme\\.example'])
+    expect(isPlatformNotForwarder('ACME PORTAL NOTIFY')).toBe(true)
+    expect(isPlatformNotForwarder('x@notify.acme.example')).toBe(true)
+    expect(isPlatformNotForwarder('MAERSK LOGISTICS')).toBe(false)
+    // invalid regex falls back to literal substring escape
+    setPlatformNotForwarderPatterns(['foo(bar'])
+    expect(isPlatformNotForwarder('xx foo(bar yy')).toBe(true)
   })
 })
 
