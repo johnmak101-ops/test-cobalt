@@ -51,7 +51,12 @@ export const USER_ROLE = ['VIEWER', 'EDITOR', 'ADMIN', 'SUPERADMIN'] as const
 // ---- Milestones (event log) ----
 export const MILESTONE_TYPE = [
   'BOOKING_SENT', 'SO_RECEIVED', 'AT_WAREHOUSE', 'DRAFT_BL_RECEIVED',
-  'FINAL_BL_RECEIVED', 'TELEX_RELEASED', 'INVOICE_RECEIVED', 'DELIVERED',
+  // SAILED is a DERIVED milestone (atd → SAILED, or the etd-fallback when state reached SAILED with no
+  // atd) — deriveMilestoneRows emits it and the UI reads milestoneMap.get('SAILED') for the Departure step.
+  // It MUST be in this enum + the ck_shipment_milestones_type CHECK (mig 0009), else EVERY sailed shipment's
+  // milestone INSERT fails, which also skips the related-email write in the same sync() → blank timeline + no
+  // "Related Emails".
+  'FINAL_BL_RECEIVED', 'SAILED', 'TELEX_RELEASED', 'INVOICE_RECEIVED', 'DELIVERED',
 ] as const
 /** AT_WAREHOUSE fires on the EARLIEST of these signals; the milestone records which one. */
 export const WAREHOUSE_SIGNAL = ['forwarder_cfs', 'vendor_confirm', 'draft_bl'] as const

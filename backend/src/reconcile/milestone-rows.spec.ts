@@ -1,7 +1,29 @@
 import { describe, it, expect } from 'vitest'
 import { deriveMilestoneRows, deriveEmailRows } from './milestone-rows'
+import { MILESTONE_OF, DERIVED_MILESTONE_OF } from './state'
+import { MILESTONE_TYPE } from '../db/enums'
 
 const ev = (emailType: string, receivedAt: string, graphId?: string | null) => ({ emailType, receivedAt, graphId })
+
+describe('milestone_type integrity — every emittable type is in the enum + CHECK constraint', () => {
+  // Regression guard for the missing-'SAILED' bug: deriveMilestoneRows emitted 'SAILED' but it was absent
+  // from MILESTONE_TYPE / ck_shipment_milestones_type, so every sailed shipment's milestone INSERT threw the
+  // CHECK violation — which aborted sync() before the related-email write (blank timeline + no Related Emails).
+  const allowed = new Set<string>(MILESTONE_TYPE)
+  it("includes 'SAILED' (the derived departure milestone the UI reads and committer emits)", () => {
+    expect(allowed.has('SAILED')).toBe(true)
+  })
+  it('every email-mapped milestone type is allowed', () => {
+    for (const mt of Object.values(MILESTONE_OF)) expect(allowed.has(mt)).toBe(true)
+  })
+  it('every field-derived milestone type is allowed', () => {
+    for (const { milestone } of DERIVED_MILESTONE_OF) expect(allowed.has(milestone)).toBe(true)
+  })
+  it('the SAILED etd-fallback row uses an allowed type', () => {
+    const rows = deriveMilestoneRows('s1', [], { etd: '2026-02-10' }, 'SAILED')
+    for (const r of rows) expect(allowed.has(r.milestoneType as string)).toBe(true)
+  })
+})
 
 describe('deriveMilestoneRows — email-mapped + field-derived milestones (pure)', () => {
   it('maps each source-email type to its milestone, dated by receivedAt', () => {
