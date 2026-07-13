@@ -366,6 +366,7 @@ export interface Shipments {
   consigneeName: string | null;
   containerNo: string | null;
   createdAt: Generated<Date>;
+  customerRaw: string | null;
   dismissedAt: Date | null;
   eta: Date | null;
   etd: Date | null;
