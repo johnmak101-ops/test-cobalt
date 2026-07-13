@@ -21,6 +21,8 @@ import * as m0003_shipment_match_keys from './kysely-migrations/0003_shipment_ma
 import * as m0004_purchase_order_norm from './kysely-migrations/0004_purchase_order_norm'
 import * as m0005_parsed_record_po_norm from './kysely-migrations/0005_parsed_record_po_norm'
 import * as m0006_party_resolution_kinds from './kysely-migrations/0006_party_resolution_kinds'
+import * as m0007_parsed_record_prompt_version from './kysely-migrations/0007_parsed_record_prompt_version'
+import * as m0008_shipment_customer_raw from './kysely-migrations/0008_shipment_customer_raw'
 
 const MIGRATIONS = {
   '0000_init': m0000_init,
@@ -30,6 +32,8 @@ const MIGRATIONS = {
   '0004_purchase_order_norm': m0004_purchase_order_norm,
   '0005_parsed_record_po_norm': m0005_parsed_record_po_norm,
   '0006_party_resolution_kinds': m0006_party_resolution_kinds,
+  '0007_parsed_record_prompt_version': m0007_parsed_record_prompt_version,
+  '0008_shipment_customer_raw': m0008_shipment_customer_raw,
 }
 
 const URL =

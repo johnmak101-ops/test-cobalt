@@ -21,6 +21,7 @@ const leg = (over: Partial<ShipmentLegRow> = {}): ShipmentLegRow => ({
   polRaw: null,
   podRaw: null,
   forwarderRaw: null,
+  customerRaw: null,
   grossWeight: null,
   measurement: null,
   htsCode: null,
@@ -162,5 +163,21 @@ describe('toUiShipment — flat active-leg projection', () => {
     expect(s.customer).toBeNull()
     expect(s.soNumber).toBeNull()
     expect(s.etd).toBeNull()
+  })
+
+  it('falls back to customerRaw/forwarderRaw when the code never resolved to a master', () => {
+    const s = toUiShipment({
+      leg: leg({ customerRaw: 'OTCX', forwarderRaw: 'A.P. Moller – Maersk' }),
+      booking: { customerId: null, vendorId: null },
+      customer: null,
+      forwarder: null,
+    })
+    expect(s.customer).toEqual({ id: '', name: 'OTCX', code: 'OTCX' })
+    expect(s.forwarder).toEqual({ id: '', name: 'A.P. Moller – Maersk' })
+  })
+
+  it('prefers the resolved master over the raw fallback when both are present', () => {
+    const s = toUiShipment({ ...fullInput(), leg: leg({ customerRaw: 'OTCX' }) })
+    expect(s.customer).toEqual({ id: 'cust-1', name: 'Cole Haan', code: 'COLE' })
   })
 })

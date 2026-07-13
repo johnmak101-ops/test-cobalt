@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common'
-import { GraphService, type OriginalEmail } from './graph.service'
+import { GraphService, type OriginalEmail, type GraphAttachment } from './graph.service'
 import { EmailRepository } from '../db/repositories/email.repository'
 
 const MOCK_PREFIX = 'mock:'
@@ -133,7 +133,7 @@ export class EmailsService {
           else a.tooLarge = true
           return a
         }
-        const g = graphOriginals.find((x) => x.graphAttachmentId === r.graphAttachmentId)
+        const g = matchGraphOriginal(graphOriginals, r)
         if (g) {
           a.mime = a.mime ?? g.mime
           if (g.body.length <= MAX_INLINE) a.base64 = g.body.toString('base64')
@@ -173,7 +173,7 @@ export class EmailsService {
         body: first.rawBytes,
       }
     }
-    const g = (await this.fetchGraphOriginals([first])).find((x) => x.graphAttachmentId === first.graphAttachmentId)
+    const g = matchGraphOriginal(await this.fetchGraphOriginals([first]), first)
     if (!g) return null
     return {
       filename: leafName(first.filename),
@@ -191,9 +191,11 @@ export class EmailsService {
    * degrade to `[]` so callers fall through to their own parsedOnly/unavailable handling.
    */
   private async fetchGraphOriginals(
-    rows: { rawBytes: Buffer | null; graphAttachmentId: string | null; messageGraphId: string }[],
+    rows: { rawBytes: Buffer | null; graphAttachmentId: string | null; messageGraphId: string; filename: string }[],
   ) {
-    const needsGraph = rows.find((r) => !r.rawBytes && r.graphAttachmentId && r.messageGraphId)
+    // graphAttachmentId is absent for attachments ingested via the raw-MIME (mailparser) path — those
+    // still need this fetch (matched back by filename, see matchGraphOriginal), so only messageGraphId gates it.
+    const needsGraph = rows.find((r) => !r.rawBytes && r.messageGraphId)
     if (!needsGraph) return []
     try {
       if (!this.graph.configured()) return []
@@ -203,6 +205,23 @@ export class EmailsService {
       return []
     }
   }
+}
+
+/**
+ * Match a fetched Graph attachment back to a DB row: prefer the stored `graphAttachmentId` (exact,
+ * cheap); fall back to a case-insensitive leaf-filename match for rows ingested via the raw-MIME
+ * path, which never had a `graphAttachmentId` to store in the first place.
+ */
+function matchGraphOriginal(
+  originals: GraphAttachment[],
+  row: { graphAttachmentId: string | null; filename: string },
+): GraphAttachment | undefined {
+  if (row.graphAttachmentId) {
+    const byId = originals.find((x) => x.graphAttachmentId === row.graphAttachmentId)
+    if (byId) return byId
+  }
+  const leaf = leafName(row.filename).toLowerCase()
+  return originals.find((x) => leafName(x.filename).toLowerCase() === leaf)
 }
 
 /** The real filename to save as — strip the `parent!/` container prefix and any path segments. */

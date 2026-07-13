@@ -28,6 +28,7 @@ export type ShipmentInsert = Partial<{
   confirmedByEmail: boolean
   forwarderId: string | null
   forwarderRaw: string | null
+  customerRaw: string | null
   consigneeId: string | null
   bookingNo: string | null
   soNo: string | null
