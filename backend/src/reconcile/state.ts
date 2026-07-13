@@ -26,10 +26,12 @@ export function deriveState(
     if (!Number.isNaN(wsMs) && wsMs <= now.getTime()) bump('AT_WAREHOUSE')
   }
   if (has(fields.atd)) bump('SAILED')
-  // BUG 7: an Invoice/Billing shipment carrying a cut MBL with a PAST ETD has demonstrably sailed even without
-  // an explicit ATD (invoices are issued post-departure). Tightly gated to that exact combination — NOT a broad
-  // has(mbl)->SAILED nor vessel+past-etd->SAILED, both of which false-promote drafts / booking-requests.
-  if (emailTypes.has('Invoice/Billing') && has(fields.mbl) && has(fields.etd)) {
+  // BUG 7: an Invoice/Billing shipment carrying a cut carrier document (MBL, or the house HBL/AWB/FCR — the
+  // carrier number often lands there, not in mbl) with a PAST ETD has demonstrably sailed even without an
+  // explicit ATD (invoices are issued post-departure). Tightly gated to that exact combination — still
+  // Invoice/Billing + past ETD, NOT a broad has(carrier-doc)->SAILED nor vessel+past-etd->SAILED, both of
+  // which false-promote drafts / booking-requests.
+  if (emailTypes.has('Invoice/Billing') && (has(fields.mbl) || has(fields.hbl_awb_fcr_no)) && has(fields.etd)) {
     const etd = new Date(String(fields.etd))
     if (!Number.isNaN(etd.getTime()) && etd.getTime() < now.getTime()) bump('SAILED')
   }

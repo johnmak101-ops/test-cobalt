@@ -36,6 +36,27 @@ describe('deriveState — 6-state staircase', () => {
   it('actual departure → SAILED', () => {
     expect(deriveState(new Set(['Draft B/L']), { atd: '2026-02-10' })).toBe('SAILED')
   })
+  it('Invoice/Billing with a PAST ETD + a carrier doc (MBL or HBL/FCR) → SAILED (invoices are post-departure)', () => {
+    const now = new Date('2026-07-13T00:00:00Z')
+    // MBL (the original BUG-7 case)
+    expect(deriveState(new Set(['Invoice/Billing']), { mbl: 'MEDU1', etd: '2026-05-31' }, now)).toBe('SAILED')
+    // HBL/FCR only (the carrier number lands here, not in mbl — the 270639828 invoice case)
+    expect(deriveState(new Set(['Invoice/Billing']), { hbl_awb_fcr_no: '5548410963', etd: '2026-05-31' }, now)).toBe(
+      'SAILED',
+    )
+  })
+  it('Invoice/Billing with a FUTURE ETD does NOT promote to SAILED (not yet departed)', () => {
+    const now = new Date('2026-05-01T00:00:00Z')
+    expect(deriveState(new Set(['Invoice/Billing']), { hbl_awb_fcr_no: '5548410963', etd: '2026-05-31' }, now)).toBe(
+      'BOOKED',
+    )
+  })
+  it('a non-invoice Booking Request with a past ETD + HBL stays BOOKED (no false promotion of drafts)', () => {
+    const now = new Date('2026-07-13T00:00:00Z')
+    expect(deriveState(new Set(['Booking Request']), { hbl_awb_fcr_no: '5548410963', etd: '2026-05-31' }, now)).toBe(
+      'BOOKED',
+    )
+  })
   it('Telex / Final B/L → RELEASED', () => {
     expect(deriveState(new Set(['Telex Release']), {})).toBe('RELEASED')
   })
