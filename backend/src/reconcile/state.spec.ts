@@ -9,9 +9,29 @@ describe('deriveState — 6-state staircase', () => {
     expect(deriveState(new Set(['SO']), {})).toBe('CONFIRMED')
     expect(deriveState(new Set(), { so_no: 'X' })).toBe('CONFIRMED')
   })
-  it('Draft B/L or warehouse date → AT_WAREHOUSE', () => {
+  it('Draft B/L or past warehouse date → AT_WAREHOUSE', () => {
     expect(deriveState(new Set(['Draft B/L']), {})).toBe('AT_WAREHOUSE')
-    expect(deriveState(new Set(), { warehouse_start_date: '2026-02-01' })).toBe('AT_WAREHOUSE')
+    expect(deriveState(new Set(), { warehouse_start_date: '2026-02-01' }, new Date('2026-02-15T00:00:00Z'))).toBe(
+      'AT_WAREHOUSE',
+    )
+  })
+  it('future warehouse_start alone does NOT promote (planned CFS open ≠ already at warehouse)', () => {
+    // Booking / Nexus form often has a future CY open; that is schedule, not AT_WAREHOUSE yet.
+    expect(
+      deriveState(new Set(['Booking Request']), { warehouse_start_date: '2026-07-21', so_no: 'SO1' }, new Date('2026-07-05T00:00:00Z')),
+    ).toBe('CONFIRMED')
+    expect(
+      deriveState(new Set(['Booking Request']), { warehouse_start_date: '2026-07-21' }, new Date('2026-07-05T00:00:00Z')),
+    ).toBe('BOOKED')
+  })
+  it('ex-factory / cargo_ready alone never reaches AT_WAREHOUSE', () => {
+    expect(
+      deriveState(
+        new Set(['Booking Request']),
+        { cargo_ready_date: '2026-07-20', so_no: '202654650377' },
+        new Date('2026-07-13T00:00:00Z'),
+      ),
+    ).toBe('CONFIRMED')
   })
   it('actual departure → SAILED', () => {
     expect(deriveState(new Set(['Draft B/L']), { atd: '2026-02-10' })).toBe('SAILED')
@@ -42,56 +62,49 @@ describe('normMode', () => {
   })
 })
 
-describe('classifyKind — SHIPMENT vs DOCUMENT', () => {
+describe('classifyKind — SHIPMENT vs DOCUMENT (Documents = Invoice/Billing only)', () => {
   const invoice = new Set(['Invoice/Billing'])
-  it('bare orphan (no id, no lifecycle doc) → DOCUMENT', () => {
-    expect(classifyKind(new Set(['Other']), {})).toBe('DOCUMENT')
+  it('Invoice/Billing-only → DOCUMENT (with or without SO/booking/BL ids)', () => {
+    expect(classifyKind(invoice, {})).toBe('DOCUMENT')
+    expect(classifyKind(invoice, { so_no: 'CMS364079' })).toBe('DOCUMENT')
+    expect(classifyKind(invoice, { so_no: 'CMS364079', booking_no: 'BX845666' })).toBe('DOCUMENT')
+    expect(classifyKind(invoice, { hbl_awb_fcr_no: 'Z13764183' })).toBe('DOCUMENT')
+    expect(classifyKind(invoice, { container_no: 'WHSU0570946' })).toBe('DOCUMENT')
   })
-  it('CVP invoice-only with only an order-reference so_no → SHIPMENT (flag via classifyKindDetail, no silent DOCUMENT demotion)', () => {
-    // STEP 2/3: track no longer demotes; human reviews
-    expect(classifyKind(invoice, { so_no: 'CMS364079' })).toBe('SHIPMENT')
-  })
-  it('invoice-only BUT carrying a real booking#/BL/container → SHIPMENT (a booked move the invoice reports)', () => {
-    expect(classifyKind(invoice, { so_no: 'CMS364079', booking_no: 'BX845666' })).toBe('SHIPMENT')
-    expect(classifyKind(invoice, { hbl_awb_fcr_no: 'Z13764183' })).toBe('SHIPMENT')
-    expect(classifyKind(invoice, { container_no: 'WHSU0570946' })).toBe('SHIPMENT')
+  it('bare orphan (Other, no id) → SHIPMENT (ops chat/cancel/ack is not a Document)', () => {
+    expect(classifyKind(new Set(['Other']), {})).toBe('SHIPMENT')
   })
   it('an SO document (lifecycle type) with an so_no stays SHIPMENT', () => {
     expect(classifyKind(new Set(['SO']), { so_no: 'CMS364079' })).toBe('SHIPMENT')
   })
-  it("a non-invoice 'Other' leg with an so_no stays SHIPMENT (rule is CVP-invoice-only)", () => {
+  it("a non-invoice 'Other' leg with an so_no stays SHIPMENT", () => {
     expect(classifyKind(new Set(['Other']), { so_no: 'CMS364079' })).toBe('SHIPMENT')
   })
   it('a Booking Request with no booking# yet stays SHIPMENT (gains identity later)', () => {
     expect(classifyKind(new Set(['Booking Request']), {})).toBe('SHIPMENT')
   })
-
-  // Rule (c): a leg built ENTIRELY from the CVP/TradeLinkOne notification platform (all source emails
-  // sent by the portal) is a vendor/PO notification, not a booked move — the portal leaks its own
-  // LPO reference into booking_no. Demote to DOCUMENT UNLESS a real carrier identity or a lifecycle
-  // email proves an actual shipment. Field shape alone can't tell it apart (see the invoice+booking#
-  // case above), so the discriminator is fromPlatform. The screenshot case: FENLPO003034A.
-  it('platform-only "Other" alert whose only identity is a portal booking# → SHIPMENT (flag only)', () => {
+  it('Invoice/Billing mixed with Booking Request stays SHIPMENT', () => {
+    expect(classifyKind(new Set(['Invoice/Billing', 'Booking Request']), { booking_no: 'BX1' })).toBe('SHIPMENT')
+  })
+  it('platform-only "Other" alert with portal booking# → SHIPMENT (flag only)', () => {
     expect(classifyKind(new Set(['Other']), { booking_no: 'FENLPO003034A' }, { fromPlatform: true })).toBe('SHIPMENT')
   })
-  it('the SAME leg NOT flagged from the platform stays SHIPMENT (a real booking# is a booked move)', () => {
+  it('the SAME leg NOT flagged from the platform stays SHIPMENT', () => {
     expect(classifyKind(new Set(['Other']), { booking_no: 'FENLPO003034A' })).toBe('SHIPMENT')
-  })
-  it('platform-only BUT carrying a real carrier id (MBL/BL/container) stays SHIPMENT', () => {
-    expect(classifyKind(new Set(['Invoice/Billing']), { booking_no: 'X', mbl: 'WHLC123' }, { fromPlatform: true })).toBe('SHIPMENT')
   })
   it('platform-flagged BUT with a lifecycle email stays SHIPMENT', () => {
     expect(classifyKind(new Set(['Booking Request']), { booking_no: 'X' }, { fromPlatform: true })).toBe('SHIPMENT')
   })
 })
 
-describe('classifyKindDetail — review rules without silent demotion (STEP 2/3)', () => {
+describe('classifyKindDetail — Invoice/Billing → DOCUMENT; others SHIPMENT + optional flag', () => {
   const invoice = new Set(['Invoice/Billing'])
-  it('bare orphan → DOCUMENT + bare_orphan', () => {
-    expect(classifyKindDetail(new Set(['Other']), {})).toEqual({ kind: 'DOCUMENT', rule: 'bare_orphan' })
+  it('Invoice/Billing-only → DOCUMENT + invoice_so_ref', () => {
+    expect(classifyKindDetail(invoice, { so_no: 'CMS364079' })).toEqual({ kind: 'DOCUMENT', rule: 'invoice_so_ref' })
+    expect(classifyKindDetail(invoice, { booking_no: 'BX845666' })).toEqual({ kind: 'DOCUMENT', rule: 'invoice_so_ref' })
   })
-  it('CVP invoice-only SO-ref → SHIPMENT + invoice_so_ref (flag only)', () => {
-    expect(classifyKindDetail(invoice, { so_no: 'CMS364079' })).toEqual({ kind: 'SHIPMENT', rule: 'invoice_so_ref' })
+  it('bare orphan → SHIPMENT + bare_orphan (flag only)', () => {
+    expect(classifyKindDetail(new Set(['Other']), {})).toEqual({ kind: 'SHIPMENT', rule: 'bare_orphan' })
   })
   it('platform-only portal booking# → SHIPMENT + platform_only (flag only)', () => {
     expect(classifyKindDetail(new Set(['Other']), { booking_no: 'FENLPO003034A' }, { fromPlatform: true })).toEqual({
@@ -99,12 +112,15 @@ describe('classifyKindDetail — review rules without silent demotion (STEP 2/3)
       rule: 'platform_only',
     })
   })
-  it('a real shipment → kind SHIPMENT, rule null', () => {
-    expect(classifyKindDetail(invoice, { booking_no: 'BX845666' })).toEqual({ kind: 'SHIPMENT', rule: null })
+  it('a real booking → kind SHIPMENT, rule null', () => {
+    expect(classifyKindDetail(new Set(['Booking Request']), { booking_no: 'BX845666' })).toEqual({
+      kind: 'SHIPMENT',
+      rule: null,
+    })
   })
   it('classifyKind wrapper still returns the kind string only', () => {
-    expect(classifyKind(new Set(['Other']), {})).toBe('DOCUMENT')
-    expect(classifyKind(invoice, { booking_no: 'BX845666' })).toBe('SHIPMENT')
+    expect(classifyKind(new Set(['Other']), {})).toBe('SHIPMENT')
+    expect(classifyKind(invoice, {})).toBe('DOCUMENT')
   })
 })
 

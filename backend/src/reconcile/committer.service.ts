@@ -26,6 +26,7 @@ import { MasterResolver } from './committer-master-resolver'
 import { planPoReconcile } from './committer-po-reconciler'
 import { MilestoneSynchronizer } from './committer-milestones'
 import { isAuditedBookingFill } from './fill-booking-audit'
+import { collectSourceEvents } from './source-events'
 
 // Re-export for any external import sites that still pull findExistingLeg from the service module.
 export { findExistingLeg } from './committer-match'
@@ -176,14 +177,13 @@ export class CommitterService {
     // A cancelled booking is marked leg_status='CANCELLED' (the UI surfaces it as Cancelled); otherwise the
     // leg keeps the existing 'ACTIVE' default. This is a lifecycle flag, not a lockable field.
     const legStatus: 'ACTIVE' | 'CANCELLED' = g.cancelled ? 'CANCELLED' : 'ACTIVE'
-    // SHIPMENT (real leg) vs DOCUMENT (orphan invoice/misc with no shipping identity → Unlinked Documents).
+    // SHIPMENT vs DOCUMENT: Unlinked Documents is Invoice/Billing only; bare orphans stay SHIPMENT.
     // fromPlatform: the rebuild path pre-computes it (senders in hand); on the agent path the DTO carries no
     // sender, so resolve it here from the source emails' graph ids (defense in depth — see classifyKind (c)).
     const fromPlatform = g.fromPlatform ?? (await this.allSourceEmailsFromPlatform(g))
     const { kind, rule: kindRule } = classifyKindDetail(emailTypes, f, { fromPlatform })
-    // (b)/(c) no longer demote to DOCUMENT — surface for human review instead
-    if (kindRule === 'invoice_so_ref')
-      reviewHints.push('invoice-only email with SO-ref only — verify this is a real shipment (not a billing phantom)')
+    if (kindRule === 'bare_orphan')
+      reviewHints.push('no booking/SO/HBL identity and no lifecycle email type — verify this is a real shipment')
     if (kindRule === 'platform_only')
       reviewHints.push('platform/portal email without carrier identity — verify booking_no is not a portal LPO')
 
@@ -332,7 +332,14 @@ export class CommitterService {
     await this.writeIdentifiers(shipmentId, g)
     await this.writeMatchKeyIndex(shipmentId, g)
     await this.writeParties(shipmentId, g)
-    await this.milestones.sync(shipmentId, g.events, g.fields, state)
+    // Defense in depth: re-collect events from identifiers/evidenceIds so a partial ReconGroup
+    // (rebuild path, empty events) still links Related Emails when source_email_id is known.
+    const sourceEvents = collectSourceEvents({
+      events: g.events,
+      identifiers: g.identifiers,
+      evidenceIds: g.evidenceIds,
+    })
+    await this.milestones.sync(shipmentId, sourceEvents, g.fields, state)
     return { action, jobNo, bookingId, shipmentId, state, conflicts: g.conflicts, skippedLockedFields }
   }
 

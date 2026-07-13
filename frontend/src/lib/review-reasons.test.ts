@@ -55,15 +55,13 @@ describe('humanizeReason — engineering audit strings → ops language', () => 
 
   it('humanizes attachment-missing and master/port unmatched reasons without DB field names', () => {
     expect(humanizeReason('email references an attachment but none was ingested — original booking file missing')).toBe(
-      'Referenced attachment is missing from this thread — packing list or cargo quantities may be incomplete',
+      'Referenced attachment is missing from this thread — data may be incomplete',
     )
     expect(
       humanizeReason(
         'referenced attachment not present on this thread — packing list or cargo detail may be incomplete',
       ),
-    ).toBe(
-      'Referenced attachment is missing from this thread — packing list or cargo quantities may be incomplete',
-    )
+    ).toBe('Referenced attachment is missing from this thread — data may be incomplete')
     expect(
       humanizeReason('forwarder_name "Expeditors" did not exact-match a master (LLM matcher owns fuzzy; left unlinked)'),
     ).toBe('Forwarder "Expeditors" did not match master data — left unlinked')
@@ -85,6 +83,26 @@ describe('humanizeReason — engineering audit strings → ops language', () => 
     expect(humanizeReason('some brand new reason')).toBe('some brand new reason')
   })
 
+  it('humanizes FCL/Maersk cut-off schedule notes for ops', () => {
+    expect(
+      humanizeReason(
+        'cutoff: warehouse end set from CY cut-off 2026-07-07 17:00 (cargo — not SI/documentation)',
+      ),
+    ).toBe('Warehouse end set from CY cargo cut-off 2026-07-07 17:00 (not the SI/documentation deadline)')
+    expect(
+      humanizeReason('cutoff: warehouse start set from CY open ETD-6 days → 2026-07-04'),
+    ).toBe('Warehouse start set from CY open ETD-6 days → 2026-07-04')
+    expect(
+      humanizeReason(
+        'cutoff note: SI cut-off 2026-07-06 09:00 (shipping instruction / 截单 — documentation only, not warehouse end)',
+      ),
+    ).toBe('SI (shipping instruction) cut-off: 2026-07-06 09:00 — documentation only, not warehouse end')
+    expect(humanizeReason('cutoff note: VGM submission deadline 2026-07-06 22:00')).toBe(
+      'VGM submission deadline: 2026-07-06 22:00',
+    )
+    expect(humanizeReason('cutoff note: MDGF deadline 2026-07-03 17:00')).toBe('MDGF deadline: 2026-07-03 17:00')
+  })
+
   it('dedupes identical humanized reasons', () => {
     const list = humanizeReasons([
       'output_truncated: model output cut; some records may be miss',
@@ -95,8 +113,8 @@ describe('humanizeReason — engineering audit strings → ops language', () => 
       'pod "USLGB" did not exact/curated-match a port master — left unlinked',
     ])
     expect(list.map((x) => x.text)).toEqual([
-      'The email/attachments were too large to read fully — some records may be missing',
-      'Referenced attachment is missing from this thread — packing list or cargo quantities may be incomplete',
+      'Model output was cut short — some POs or fields may be missing; verify the extract',
+      'Referenced attachment is missing from this thread — data may be incomplete',
       'Forwarder "Expeditors" did not match master data — left unlinked',
       'Port of Discharge "USLGB" did not match a known port — left unlinked',
     ])

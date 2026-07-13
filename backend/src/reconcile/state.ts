@@ -15,8 +15,16 @@ export function deriveState(
     if (ORDER.indexOf(to) > ORDER.indexOf(s)) s = to
   }
   if (emailTypes.has('SO') || has(fields.so_no)) bump('CONFIRMED')
-  // AT_WAREHOUSE = earliest of forwarder CFS / vendor warehouse confirm / Draft B/L (fallback)
-  if (has(fields.warehouse_start_date) || emailTypes.has('Draft B/L')) bump('AT_WAREHOUSE')
+  // AT_WAREHOUSE = cargo is (or was) receiving at CFS/warehouse — NOT a planned future open date,
+  // and never ex-factory/cargo_ready (those stay on cargo_ready_date and must not promote state).
+  // Draft B/L is a document-stage fallback. A warehouse_start_date only counts once the window has
+  // started (date ≤ today); a future CY/CFS open on a booking form is schedule only.
+  if (emailTypes.has('Draft B/L')) bump('AT_WAREHOUSE')
+  if (has(fields.warehouse_start_date)) {
+    const day = String(fields.warehouse_start_date).slice(0, 10)
+    const wsMs = Date.parse(`${day}T00:00:00Z`)
+    if (!Number.isNaN(wsMs) && wsMs <= now.getTime()) bump('AT_WAREHOUSE')
+  }
   if (has(fields.atd)) bump('SAILED')
   // BUG 7: an Invoice/Billing shipment carrying a cut MBL with a PAST ETD has demonstrably sailed even without
   // an explicit ATD (invoices are issued post-departure). Tightly gated to that exact combination — NOT a broad
@@ -32,34 +40,26 @@ export function deriveState(
 }
 
 /**
- * Split a committed leg into SHIPMENT (a real shipment with a shipping identity) vs DOCUMENT (an orphan
- * invoice / customs / misc email — parked in "Unlinked Documents" until a human links it to its shipment).
- * A leg is a DOCUMENT when EITHER:
- *   (a) it carries none of the rotating identity numbers AND was built from no lifecycle email type — a bare
- *       orphan (invoice/customs/other with no id). A Booking Request with no booking# yet stays SHIPMENT.
- *   (b) it was built ENTIRELY from CVP Invoice/Billing (vendor-invoice) notifications AND carries no
- *       booking#/BL/MBL/container — only an order-reference so_no. An SO on a vendor invoice is an ORDER
- *       reference, not proof of a booked move, so such a leg is an invoice record, not a shipment. (A genuine
- *       SO *document* is a lifecycle type → hasLifecycle, so it is unaffected.)
- *   (c) it was built ENTIRELY from the CVP/TradeLinkOne notification platform (every source email sent by
- *       the portal — opts.fromPlatform), carries no lifecycle email, AND carries no real CARRIER identity
- *       (BL/MBL/container). Such a leg is a vendor/PO notification (e.g. a "Vendor Delivery Date – Past due"
- *       alert); the portal leaks its own LPO reference into booking_no, so booking_no here is an order ref,
- *       not a booked move. Field shape alone can't catch this — an invoice carrying a genuine booking# IS a
- *       shipment (see (b)/tests) — so the discriminator is the platform sender. A platform e-invoice that
- *       reports a real BL/MBL/container still falls through to SHIPMENT.
+ * Split a committed leg into SHIPMENT vs DOCUMENT (Unlinked Documents inbox).
+ *
+ * DOCUMENT is reserved for **Invoice/Billing only** — vendor invoices / debit notes parked until a human
+ * links them to the real move. Everything else is SHIPMENT (ops chat, bare PO, booking, B/L, …).
+ *
+ * Review-only rules (kind stays SHIPMENT; committer may flag provisional):
+ *   (a) bare_orphan — no identity + no lifecycle email type (ack/cancel/status with only a PO, etc.)
+ *   (c) platform_only — CVP/TradeLink portal mail without carrier identity (LPO-as-booking risk)
+ *
+ * A genuine SO *document* email type is lifecycle → SHIPMENT. Mixed types that include Invoice/Billing
+ * plus a lifecycle type (Booking/SO/B/L) stay SHIPMENT.
  */
 const IDENTITY_FIELDS = ['booking_no', 'so_no', 'hbl_awb_fcr_no', 'mbl', 'container_no'] as const
-/** Identities that PROVE a booked move — so_no EXCLUDED (an invoice's SO is an order ref, see (b)). */
-const SHIPMENT_IDENTITY = ['booking_no', 'hbl_awb_fcr_no', 'mbl', 'container_no'] as const
 /** Carrier-issued identities — booking_no EXCLUDED (the portal leaks an LPO into it, see (c)). */
 const CARRIER_IDENTITY = ['hbl_awb_fcr_no', 'mbl', 'container_no'] as const
 const LIFECYCLE_TYPES = new Set(['Booking Request', 'SO', 'Draft B/L', 'Final B/L', 'Telex Release'])
 /**
- * Classification rule. STEP 2/3 de-correction (2026-07-12):
- *   (a) bare_orphan → DOCUMENT (genuine no-identity)
- *   (b)/(c) invoice_so_ref / platform_only → SHIPMENT + review flag (no silent demotion;
- *       queue LLM/soul owns classification; track only surfaces doubt)
+ * Classification rule:
+ *   invoice_so_ref → DOCUMENT (Invoice/Billing-only legs)
+ *   bare_orphan / platform_only → SHIPMENT + optional review flag
  */
 export type ClassifyRule = 'bare_orphan' | 'invoice_so_ref' | 'platform_only'
 
@@ -68,15 +68,17 @@ export function classifyKindDetail(
   fields: Record<string, unknown>,
   opts: { fromPlatform?: boolean } = {},
 ): { kind: 'SHIPMENT' | 'DOCUMENT'; rule: ClassifyRule | null } {
+  const invoiceOnly = emailTypes.size > 0 && [...emailTypes].every((t) => t === 'Invoice/Billing')
+  // Unlinked Documents = Invoice/Billing only (ops decision 2026-07-12)
+  if (invoiceOnly) return { kind: 'DOCUMENT', rule: 'invoice_so_ref' }
+
   const hasIdentity = IDENTITY_FIELDS.some((k) => has(fields[k]))
   const hasLifecycle = [...emailTypes].some((t) => LIFECYCLE_TYPES.has(t))
-  if (!hasIdentity && !hasLifecycle) return { kind: 'DOCUMENT', rule: 'bare_orphan' } // (a) bare orphan
-  const invoiceOnly = emailTypes.size > 0 && [...emailTypes].every((t) => t === 'Invoice/Billing')
-  const hasShipmentIdentity = SHIPMENT_IDENTITY.some((k) => has(fields[k]))
-  // (b) was DOCUMENT demotion — now SHIPMENT + flag for human review
-  if (invoiceOnly && !hasShipmentIdentity) return { kind: 'SHIPMENT', rule: 'invoice_so_ref' }
+  // Bare orphan (Other/ack/cancel with no booking/SO/HBL): SHIPMENT, not Document
+  if (!hasIdentity && !hasLifecycle) return { kind: 'SHIPMENT', rule: 'bare_orphan' }
+
   const hasCarrierIdentity = CARRIER_IDENTITY.some((k) => has(fields[k]))
-  // (c) was DOCUMENT demotion for platform-only LPO — now SHIPMENT + flag
+  // Platform portal-only without carrier id — flag, keep SHIPMENT
   if (opts.fromPlatform && !hasLifecycle && !hasCarrierIdentity) return { kind: 'SHIPMENT', rule: 'platform_only' }
   return { kind: 'SHIPMENT', rule: null }
 }

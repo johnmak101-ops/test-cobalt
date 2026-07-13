@@ -15,12 +15,15 @@ export interface EvidenceRow {
   receivedAt: Date | null
   conversationId: string | null
   sender: string | null
+  /** RFC Message-ID on email_message — what shipment_emails / Related Emails join on. */
+  graphMessageId?: string | null
 }
 
 const EVIDENCE_SELECT = [
   'parsedRecord.id', 'parsedRecord.messageId', 'parsedRecord.fields', 'parsedRecord.matchKeys',
   'parsedRecord.emailType', 'parsedRecord.poNo', 'parsedRecord.mode',
   'emailMessage.receivedAt', 'emailMessage.conversationId', 'emailMessage.sender',
+  'emailMessage.graphMessageId',
 ] as const
 
 /**

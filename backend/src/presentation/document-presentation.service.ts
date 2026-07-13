@@ -1,5 +1,5 @@
 /**
- * Unlinked-documents UI presentation: orphan legs (kind='DOCUMENT', not yet linked to a real
+ * Unlinked-documents UI presentation: Invoice/Billing legs (kind='DOCUMENT', not yet linked to a real
  * shipment) — the Unlinked Documents view, plus the dismiss/link actions. Read-mostly.
  */
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common'

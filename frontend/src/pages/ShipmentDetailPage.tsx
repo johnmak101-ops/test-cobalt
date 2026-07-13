@@ -18,10 +18,10 @@ import { ArrowLeft, Mail, Clock, ClipboardList, Package, Ship, Calendar, AlertTr
 type EditType = 'text' | 'number' | 'date'
 interface EditField { db: string; label: string; type: EditType; get: (s: ShipmentDetail) => unknown }
 const EDIT_SECTIONS: { title: string; fields: EditField[] }[] = [
+  // PO# / Item·Style live on the Customer Purchase Orders card (per-PO), not here.
   { title: 'Order Info', fields: [
     { db: 'bookingNo', label: 'Booking No.', type: 'text', get: (s) => s.bookingNo },
     { db: 'soNo', label: 'SO#', type: 'text', get: (s) => s.soNumber },
-    { db: 'itemStyleNo', label: 'Item / Style No.', type: 'text', get: (s) => s.itemStyleNo },
   ] },
   { title: 'Cargo & Logistics', fields: [
     { db: 'qty', label: 'Qty', type: 'number', get: (s) => s.quantityShipped },
@@ -268,54 +268,39 @@ export default function ShipmentDetailPage() {
         />
       </Card>
 
-      {/* Linked POs card */}
+      {/* Linked POs card — PO# + style/item are the useful columns; shipment cargo total lives under Order Details → Qty. */}
       {linkedPOs.length > 0 && (
         <Card>
-          <div className="mb-3 flex items-center gap-2">
-            <Package size={14} className="text-text-muted" />
-            <h4 className="text-sm font-semibold text-text-primary">
-              Customer Purchase Orders
-              <span className="ml-2 text-xs font-normal text-text-muted">
-                {linkedPOs.length} PO{linkedPOs.length !== 1 ? 's' : ''} on this shipment
-              </span>
-            </h4>
-          </div>
-          {/* Booking total stamped on every PO is NOT a per-PO order qty — surface it once, above the table. */}
-          {linkedPOs[0]?.sharedBroadcastTotal != null && (
-            <div className="mb-3 flex items-start gap-2 rounded-lg border border-status-warning/30 bg-status-warning/10 px-3 py-2 text-xs text-status-warning">
-              <AlertTriangle size={13} className="mt-0.5 shrink-0" />
-              <p>
-                <span className="font-medium">Shipment cargo total: </span>
-                {linkedPOs[0].sharedBroadcastTotal}
-                {linkedPOs[0].sharedBroadcastUnit ? ` ${linkedPOs[0].sharedBroadcastUnit}` : ''}
-                <span className="text-text-secondary">
-                  {' '}
-                  — same figure was applied to every PO (not a per-PO split). Per-line style/qty from the packing
-                  list may still be missing.
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <Package size={14} className="text-text-muted" />
+              <h4 className="text-sm font-semibold text-text-primary">
+                Customer Purchase Orders
+                <span className="ml-2 text-xs font-normal text-text-muted">
+                  {linkedPOs.length} PO{linkedPOs.length !== 1 ? 's' : ''} on this shipment
+                </span>
+              </h4>
+            </div>
+            {/* Most bookings only have a shipment carton total, not a per-PO split — show it once, quietly. */}
+            {(linkedPOs[0]?.sharedBroadcastTotal != null || shipment.quantityShipped != null) && (
+              <p className="text-xs text-text-muted">
+                Shipment total:{' '}
+                <span className="font-medium text-text-secondary">
+                  {linkedPOs[0]?.sharedBroadcastTotal ?? shipment.quantityShipped}
+                  {(linkedPOs[0]?.sharedBroadcastUnit ?? shipment.quantityUnit)
+                    ? ` ${linkedPOs[0]?.sharedBroadcastUnit ?? shipment.quantityUnit}`
+                    : ''}
                 </span>
               </p>
-            </div>
-          )}
+            )}
+          </div>
           <div className="overflow-x-auto overflow-y-hidden rounded-lg border border-border">
-            <table className="w-full min-w-[36rem]">
+            <table className="w-full min-w-[20rem]">
               <thead>
                 <tr className="border-b border-border bg-surface-900/50">
-                  <th className="px-3 py-2 text-left text-[11px] font-medium text-text-muted">Customer PO#</th>
-                  <th className="px-3 py-2 text-left text-[11px] font-medium text-text-muted">Style</th>
+                  <th className="px-3 py-2 text-left text-[11px] font-medium text-text-muted">PO#</th>
+                  <th className="px-3 py-2 text-left text-[11px] font-medium text-text-muted">Item / Style</th>
                   <th className="px-3 py-2 text-left text-[11px] font-medium text-text-muted">Vendor</th>
-                  <th
-                    className="px-3 py-2 text-right text-[11px] font-medium text-text-muted"
-                    title="Qty attributed to this PO on this shipment (blank when unknown)"
-                  >
-                    On this shipment
-                  </th>
-                  <th
-                    className="px-3 py-2 text-right text-[11px] font-medium text-text-muted"
-                    title="PO order total when known per-PO — not a shared booking total"
-                  >
-                    PO order total
-                  </th>
-                  <th className="px-3 py-2 text-left text-[11px] font-medium text-text-muted">UOM</th>
                 </tr>
               </thead>
               <tbody>
@@ -326,27 +311,10 @@ export default function ShipmentDetailPage() {
                     className="cursor-pointer border-b border-border last:border-0 transition-colors hover:bg-surface-700"
                   >
                     <td className="px-3 py-2 font-mono text-sm text-cobalt-primary-light">{po.poNumber}</td>
-                    <td className="max-w-[14rem] truncate px-3 py-2 text-sm text-text-secondary" title={po.itemStyleNo ?? undefined}>
+                    <td className="max-w-[20rem] truncate px-3 py-2 text-sm text-text-secondary" title={po.itemStyleNo ?? undefined}>
                       {po.itemStyleNo ?? '—'}
                     </td>
                     <td className="px-3 py-2 text-sm text-text-secondary">{po.vendor?.name ?? '—'}</td>
-                    <td className="px-3 py-2 text-right font-mono text-sm">
-                      {po.qtyIssue ? (
-                        <span
-                          className="inline-flex items-center gap-1 text-status-warning"
-                          title={po.qtyIssueDetail ?? 'inconsistent with the purchase order'}
-                        >
-                          <AlertTriangle size={11} className="shrink-0" />
-                          {po.quantity ?? '—'}
-                        </span>
-                      ) : (
-                        <span className="text-text-primary">{po.quantity ?? '—'}</span>
-                      )}
-                    </td>
-                    <td className="px-3 py-2 text-right font-mono text-sm text-text-muted">
-                      {po.totalQuantity ?? '—'}
-                    </td>
-                    <td className="px-3 py-2 text-xs text-text-muted">{po.quantityUnit ?? ''}</td>
                   </tr>
                 ))}
               </tbody>
@@ -440,7 +408,6 @@ export default function ShipmentDetailPage() {
           <DetailSection title="Order Info" icon={<ClipboardList size={14} className="text-text-muted" />}>
             <DetailRow label="Customer Code" value={shipment.customer?.code ?? null} />
             <DetailRow label="Vendor Code" value={shipment.vendor?.code ?? null} />
-            <DetailRow label="PO#" value={linkedPOs.length > 0 ? linkedPOs.map(p => p.poNumber).join(', ') : '—'} />
             <DetailRow
               label="Booking No."
               value={shipment.bookingNo}
@@ -463,7 +430,6 @@ export default function ShipmentDetailPage() {
                     : 'assigned once the booking is confirmed'
               }
             />
-            <DetailRow label="Item / Style No." value={shipment.itemStyleNo?.replace(/,/g, ', ') ?? null} />
             <DetailRow
               label="Last Email"
               value={lastEmailAt ? formatDate(lastEmailAt) : null}

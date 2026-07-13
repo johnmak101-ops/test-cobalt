@@ -82,6 +82,35 @@ describe('DecisionsService (integration)', () => {
     expect((await decisions.ingest(decision({ confidence: 92 }))).reviewStatus).toBe('confirmed')
   })
 
+  it('cancelled=true always forces provisional with "Booking cancelled" first + leg_status CANCELLED', async () => {
+    // High confidence + autoApply would otherwise confirm — cancel must still await review.
+    const res = await decisions.ingest(
+      decision({ confidence: 95, autoApply: true, cancelled: true }),
+    )
+    expect(res.reviewStatus).toBe('provisional')
+    const [leg] = await db.selectFrom('shipments').selectAll().execute()
+    expect(leg.reviewStatus).toBe('provisional')
+    expect(leg.legStatus).toBe('CANCELLED')
+    const reasons = Array.isArray(leg.reviewReasons) ? (leg.reviewReasons as string[]) : []
+    expect(reasons[0]).toBe('Booking cancelled')
+  })
+
+  it('cancelled=true puts "Booking cancelled" first even when other reasons exist', async () => {
+    const res = await decisions.ingest(
+      decision({
+        confidence: 50,
+        autoApply: false,
+        cancelled: true,
+        reviewReasons: ['backend conflict on qty'],
+      }),
+    )
+    expect(res.reviewStatus).toBe('provisional')
+    const [leg] = await db.selectFrom('shipments').selectAll().execute()
+    const reasons = Array.isArray(leg.reviewReasons) ? (leg.reviewReasons as string[]) : []
+    expect(reasons[0]).toBe('Booking cancelled')
+    expect(reasons).toContain('backend conflict on qty')
+  })
+
   it('a skip disposition (不需處理) is acknowledged but commits NOTHING — no phantom tracker leg, idempotent on re-POST', async () => {
     const res = await decisions.ingest(
       decision({ confidence: 92, autoApply: false, disposition: 'skip', reviewReasons: ['no PO / strong id / shipment data — not actionable (不需處理)'] }),

@@ -38,7 +38,7 @@ export const REVIEW_TRIGGERS: ReviewTrigger[] = [
   },
   {
     id: 'cancellation',
-    label: 'the email is a cancellation',
+    label: 'Booking cancelled',
     predicate: (d) => d.cancelled === true,
   },
   {

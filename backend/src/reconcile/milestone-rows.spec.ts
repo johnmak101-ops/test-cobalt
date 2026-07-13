@@ -46,4 +46,9 @@ describe('deriveEmailRows — related emails deduped by graph id (pure)', () => 
     expect(rows.map((r) => r.graphMessageId)).toEqual(['g1', 'g2'])
     expect(rows.find((r) => r.graphMessageId === 'g2')!.emailType).toBe('Customs')
   })
+
+  it('empty events → empty rows (replaceEmails must not wipe existing links when callers pass this)', () => {
+    expect(deriveEmailRows('s1', [])).toEqual([])
+    expect(deriveEmailRows('s1', [ev('SO', '2026-02-01', null)])).toEqual([])
+  })
 })

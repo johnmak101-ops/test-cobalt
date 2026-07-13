@@ -106,8 +106,14 @@ const TRANSLATIONS: Translation[] = [
     text: () => 'Customer not recognised in master data — confirm who this shipment belongs to',
   },
   {
-    match: /output_truncated|input_truncated/i,
-    text: () => 'The email/attachments were too large to read fully — some records may be missing',
+    // Model JSON cut mid-generation (output token ceiling / salvage) — NOT "email was too big".
+    match: /output_truncated/i,
+    text: () => 'Model output was cut short — some POs or fields may be missing; verify the extract',
+  },
+  {
+    // Input attachment/body text cut to fit context before the model ran.
+    match: /input_truncated/i,
+    text: () => 'Email text was cut to fit the model — some attachment content may be missing',
   },
   {
     match: /neither a strong identity key nor a PO/i,
@@ -119,18 +125,15 @@ const TRANSLATIONS: Translation[] = [
   },
   {
     match: /referenced attachment not present on this thread/i,
-    text: () =>
-      'Referenced attachment is missing from this thread — packing list or cargo quantities may be incomplete',
+    text: () => 'Referenced attachment is missing from this thread — data may be incomplete',
   },
   {
     match: /body says a file was attached but no attachment was ingested/i,
-    text: () =>
-      'Referenced attachment is missing from this thread — packing list or cargo quantities may be incomplete',
+    text: () => 'Referenced attachment is missing from this thread — data may be incomplete',
   },
   {
     match: /email references an attachment but none was ingested/i,
-    text: () =>
-      'Referenced attachment is missing from this thread — packing list or cargo quantities may be incomplete',
+    text: () => 'Referenced attachment is missing from this thread — data may be incomplete',
   },
   // Master / port resolution — keep the quoted value, never the DB field name.
   {
@@ -184,6 +187,38 @@ const TRANSLATIONS: Translation[] = [
   {
     match: /seaport UN\/LOCODE/i,
     text: () => 'Mode is air but a seaport code was used — check airport vs seaport (verify)',
+  },
+  {
+    match: /cutoff:\s*warehouse end set from CY cut-off\s+(.+?)\s*\(cargo/i,
+    text: (m) => `Warehouse end set from CY cargo cut-off ${m[1]} (not the SI/documentation deadline)`,
+  },
+  {
+    match: /cutoff:\s*warehouse start set from\s+(.+)/i,
+    text: (m) => `Warehouse start set from ${m[1]}`,
+  },
+  {
+    match: /cutoff:\s*CY open is ETD-(\d+)\s+days but ETD is missing/i,
+    text: (m) => `CY open is ETD-${m[1]} days but ETD is missing — set warehouse start once ETD is confirmed`,
+  },
+  {
+    match: /cutoff note:\s*SI cut-off\s+(.+?)\s*\(shipping instruction/i,
+    text: (m) => `SI (shipping instruction) cut-off: ${m[1]} — documentation only, not warehouse end`,
+  },
+  {
+    match: /cutoff note:\s*VGM submission deadline\s+(.+)/i,
+    text: (m) => `VGM submission deadline: ${m[1]}`,
+  },
+  {
+    match: /cutoff note:\s*MDGF deadline\s+(.+)/i,
+    text: (m) => `MDGF deadline: ${m[1]}`,
+  },
+  {
+    match: /cutoff note:\s*empty container pickup latest\s+(.+)/i,
+    text: (m) => `Empty container pickup latest: ${m[1]}`,
+  },
+  {
+    match: /cutoff note:\s*voucher cut\s+(.+)/i,
+    text: (m) => `Voucher cut: ${m[1]}`,
   },
   {
     match: /new booking must open a NEW email/i,

@@ -5,6 +5,7 @@ import { IngestRepository } from '../db/repositories/ingest.repository'
 import type { CreateDecisionDto } from './dto'
 import { evaluate } from './review-policy'
 import { resolveEmailDisposition } from './email-disposition'
+import { collectSourceEvents } from '../reconcile/source-events'
 
 export interface DecisionResult extends Omit<CommitResult, 'action'> {
   /** `skip` = the decision was 不需處理 and acknowledged WITHOUT committing a shipment (see ingest). */
@@ -69,6 +70,17 @@ export class DecisionsService {
     ]
     if (!reviewReasons.length) reviewReasons = null
 
+    // Cancel flag: always force Awaiting Review with "Booking cancelled" as the TOP reason.
+    // (Review policy alone only runs on auto-confirmed decisions — cancelled payloads that already
+    // arrive provisional would otherwise set leg_status=CANCELLED without a cancel review bullet.)
+    if (dto.cancelled === true) {
+      reviewStatus = 'provisional'
+      const cancelReason = 'Booking cancelled'
+      const existing = (reviewReasons ?? []).filter((r) => !/cancel/i.test(r))
+      // Prepend so cancel is always first in Awaiting Review (highest priority).
+      reviewReasons = [cancelReason, ...existing]
+    }
+
     // Admin-configured review policy (Settings ▸ Review Policy): an enabled trigger that matches
     // downgrades an auto-confirm to human review — safe direction only, never the reverse. Applies to
     // live agent decisions too. Empty policy (the default) → no-op. v2 lookup triggers read lookupContext.
@@ -80,14 +92,19 @@ export class DecisionsService {
       }
     }
 
-    const events = (dto.events ?? []).map((e) => ({
-      emailType: e.emailType,
-      receivedAt: e.receivedAt,
-      graphId: e.graphId ?? null,
-    }))
+    // Related Emails: union every channel that may carry a graph message id. Relying on
+    // dto.events alone dropped links when events lacked graphId but identifiers/evidence still
+    // named the source mail (leg had history, UI showed no emails).
     const evidenceIds = (dto.evidenceRefs ?? [])
       .map((r) => r.graphMessageId ?? r.graphId)
       .filter((x): x is string => !!x)
+    const events = collectSourceEvents({
+      events: dto.events,
+      evidenceRefs: dto.evidenceRefs,
+      evidence: dto.evidence,
+      identifiers: dto.identifiers,
+      evidenceIds,
+    })
 
     const group: ReconGroup = {
       fields: dto.fields ?? {},

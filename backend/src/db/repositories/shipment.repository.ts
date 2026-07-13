@@ -362,10 +362,12 @@ export class ShipmentRepository {
     if (rows.length) await this.db.insertInto('shipmentMilestones').values(rows as never).execute()
   }
 
-  /** Every source email that contributed to this shipment (the Related Emails list). */
+  /** Every source email that contributed to this shipment (the Related Emails list).
+   *  Empty `rows` is a NO-OP (never wipe existing links) — a partial rematch without events
+   *  must not blank Related Emails on the UI. Non-empty replaces the full set. */
   async replaceEmails(shipmentId: string, rows: Record<string, unknown>[]) {
-    await this.db.deleteFrom('shipmentEmails').where('shipmentId', '=', shipmentId).execute()
     if (!rows.length) return
+    await this.db.deleteFrom('shipmentEmails').where('shipmentId', '=', shipmentId).execute()
     // insert idempotently on (shipment_id, graph_message_id) — check-then-insert per row
     for (const r of rows) {
       const graphMessageId = r.graphMessageId as string | null

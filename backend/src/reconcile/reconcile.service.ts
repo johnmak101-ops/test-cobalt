@@ -38,12 +38,18 @@ export class ReconcileService {
         conflicts: merged.conflicts,
         matchKeys,
         emailTypes: [...new Set(grp.map((r) => r.emailType).filter((t): t is string => !!t))],
-        events: grp.map((r) => ({ emailType: r.emailType ?? 'Other', receivedAt: iso(r.receivedAt) })),
+        // graphId = email_message.graph_message_id (RFC Message-ID) so Related Emails link correctly.
+        // Previously omitted → deriveEmailRows dropped every event → empty Related Emails after rebuild.
+        events: grp.map((r) => ({
+          emailType: r.emailType ?? 'Other',
+          receivedAt: iso(r.receivedAt),
+          graphId: r.graphMessageId ?? null,
+        })),
         // every source email sent by the notification platform → a vendor/PO notification, not a shipment (rule c)
         fromPlatform: grp.length > 0 && grp.every((r) => isNotificationPlatformSender(r.sender)),
         mode: grp.map((r) => r.mode).find((m): m is string => !!m) ?? null,
         conversationId: grp[0].conversationId,
-        evidenceIds: grp.map((r) => r.id),
+        evidenceIds: grp.map((r) => r.graphMessageId).filter((x): x is string => !!x),
         confidence,
         reviewStatus: confidence >= threshold ? 'confirmed' : 'provisional',
       }

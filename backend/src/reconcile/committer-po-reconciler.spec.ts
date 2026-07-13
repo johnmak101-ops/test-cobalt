@@ -15,7 +15,7 @@ const enr = (over: Partial<PoEnrichment> = {}): PoEnrichment => ({
 })
 
 describe('planPoReconcile (PoQtyReconciler pure plan)', () => {
-  it('flags a broadcast-suspected total with the stable reason string', () => {
+  it('does NOT review-flag a broadcast-suspected total (shipment total is normal; UI shows it once)', () => {
     const map = new Map([['POBA', enr({ totalQuantity: 168, quantityUnit: 'cartons', broadcastSuspected: true })]])
     const plan = planPoReconcile({
       pos: ['PO-BA'],
@@ -24,7 +24,7 @@ describe('planPoReconcile (PoQtyReconciler pure plan)', () => {
       unattributed: [],
       gk: new Set(),
     })
-    expect(plan.poFlagReasons.some((r) => /broadcast total/i.test(r))).toBe(true)
+    expect(plan.poFlagReasons.some((r) => /broadcast total/i.test(r))).toBe(false)
     expect(plan.links[0].enr?.totalQuantity).toBe(168)
   })
 

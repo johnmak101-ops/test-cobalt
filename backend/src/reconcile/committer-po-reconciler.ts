@@ -51,10 +51,9 @@ export function planPoReconcile(args: {
     }
     const issue = poQtyIssue(qctx)
     if (issue) poQtyIssues.push(`PO ${poNo}: ${describePoQtyIssue(issue, qctx)}`)
-    if (enr?.broadcastSuspected && enr.totalQuantity != null)
-      poFlagReasons.push(
-        `PO ${poNo}: total_quantity ${enr.totalQuantity} looks like a broadcast total (same value across ≥3 POs) — verify`,
-      )
+    // Broadcast totals (same carton count on every PO) are normal for multi-PO bookings — the UI shows
+    // a single shipment cargo total, not per-PO order qty. Keep the value on purchase_orders; do NOT
+    // review-flag (enr.broadcastSuspected still drives sharedBroadcastTotal presentation only).
     if (enr?.brandConflict)
       poFlagReasons.push(`PO ${poNo}: brand conflict ${enr.brandConflict.join(' vs ')} (kept ${enr.brand}) — verify`)
     if (enr?.styleConflict)

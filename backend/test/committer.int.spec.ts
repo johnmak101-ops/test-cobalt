@@ -435,7 +435,7 @@ describe('CommitterService — de-correction (b): PO-enrichment surfaced as revi
   const legFor = (id: string) => db.selectFrom('shipments').where('id', '=', id).selectAll().executeTakeFirstOrThrow()
   const reasons = (leg: { reviewReasons?: string[] | null }) => leg.reviewReasons ?? []
 
-  it('b1: a suspected broadcast total is KEPT on the PO and the leg is flagged (not silently dropped)', async () => {
+  it('b1: a suspected broadcast total is KEPT on the PO and is NOT review-flagged (UI shows shipment total once)', async () => {
     await seedEmail('bcast', '2026-06-30T05:00:00Z', [
       { poNo: 'PO-BA', fields: { qty: '168', qty_unit: 'cartons' } },
       { poNo: 'PO-BB', fields: { qty: '168', qty_unit: 'cartons' } },
@@ -445,8 +445,7 @@ describe('CommitterService — de-correction (b): PO-enrichment surfaced as revi
     const po = await db.selectFrom('purchaseOrders').where('poNumber', '=', 'PO-BA').selectAll().executeTakeFirstOrThrow()
     expect(po.totalQuantity).toBe(168) // KEPT (raw model value), not nulled
     const leg = await legFor(res.shipmentId)
-    expect(leg.reviewStatus).toBe('provisional')
-    expect(reasons(leg).some((r) => /broadcast total/i.test(r))).toBe(true)
+    expect(reasons(leg).some((r) => /broadcast total/i.test(r))).toBe(false)
   })
 
   it('b2: a per-PO brand conflict keeps the newest value and flags the leg', async () => {
@@ -515,7 +514,7 @@ describe('CommitterService — de-correction STEP 2/3: no silent guards / no sha
     expect(reasonsOf(leg).some((r) => /platform|portal|LPO/i.test(r))).toBe(true)
   })
 
-  it('bare orphan stays DOCUMENT (genuine no-identity)', async () => {
+  it('bare orphan stays SHIPMENT (Documents = Invoice/Billing only)', async () => {
     const res = await committer.apply(
       group({
         pos: [],
@@ -523,6 +522,21 @@ describe('CommitterService — de-correction STEP 2/3: no silent guards / no sha
         matchKeys: {},
         emailTypes: ['Other'],
         events: [{ emailType: 'Other', receivedAt: '2026-01-01T00:00:00Z' }],
+      }),
+    )
+    const leg = await db.selectFrom('shipments').where('id', '=', res.shipmentId).selectAll().executeTakeFirstOrThrow()
+    expect(leg.kind).toBe('SHIPMENT')
+    expect(leg.reviewStatus).toBe('provisional')
+  })
+
+  it('Invoice/Billing-only leg is DOCUMENT (Unlinked Documents)', async () => {
+    const res = await committer.apply(
+      group({
+        pos: [],
+        fields: { so_no: 'CMS-INV-1' },
+        matchKeys: { so_no: 'CMS-INV-1' },
+        emailTypes: ['Invoice/Billing'],
+        events: [{ emailType: 'Invoice/Billing', receivedAt: '2026-01-01T00:00:00Z' }],
       }),
     )
     const leg = await db.selectFrom('shipments').where('id', '=', res.shipmentId).selectAll().executeTakeFirstOrThrow()
