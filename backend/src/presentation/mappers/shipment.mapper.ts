@@ -37,6 +37,7 @@ export interface ShipmentLegRow {
   podRaw: string | null
   forwarderRaw: string | null
   customerRaw: string | null
+  vendorRaw: string | null
   grossWeight: number | null
   measurement: number | null
   htsCode: string | null
@@ -168,7 +169,7 @@ export function toUiShipment(input: ShipmentMapperInput): UiShipment {
     createdAt: isoOrNull(leg.createdAt),
     updatedAt: isoOrNull(leg.updatedAt),
     customer: input.customer ?? (leg.customerRaw ? { id: '', name: leg.customerRaw, code: leg.customerRaw } : null),
-    vendor: input.vendor ?? null,
+    vendor: input.vendor ?? (leg.vendorRaw ? { id: '', name: leg.vendorRaw, code: leg.vendorRaw } : null),
     forwarder: input.forwarder ?? (leg.forwarderRaw ? { id: '', name: leg.forwarderRaw } : null),
     linkedPOs: input.linkedPOs ?? [],
   }

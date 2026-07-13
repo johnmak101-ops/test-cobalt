@@ -45,4 +45,8 @@ describe('mapFieldsToLegColumns — direct field→leg-column mapping (pure, no 
     expect(mapFieldsToLegColumns({ customer_code: 'OTCX' }).customerRaw).toBe('OTCX')
     expect(mapFieldsToLegColumns({}).customerRaw).toBeNull()
   })
+  it('carries vendor_code through as vendorRaw — surfaced when vendorId never resolves', () => {
+    expect(mapFieldsToLegColumns({ vendor_code: 'SOUOCE' }).vendorRaw).toBe('SOUOCE')
+    expect(mapFieldsToLegColumns({}).vendorRaw).toBeNull()
+  })
 })
