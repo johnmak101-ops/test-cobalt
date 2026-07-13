@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common'
-import { type Kysely } from 'kysely'
+import { sql, type Kysely } from 'kysely'
 import type { DB } from '../kysely/db'
 import { KYSELY } from '../kysely.provider'
 import { evidencePoNorm } from '../../reconcile/evidence-po-norm'
@@ -84,7 +84,10 @@ export class IngestRepository {
               declaredMime: a.declaredMime ?? null, sizeBytes: a.sizeBytes ?? 0, sourceKind: a.sourceKind ?? null,
               // the queue-retained original (office/eml/pdf), when forwarded — lets "download attachment"
               // serve the real file from this mirror with no Graph round-trip.
-              rawBytes: a.rawBytesB64 ? Buffer.from(a.rawBytesB64, 'base64') : null,
+              // CRITICAL (MSSQL varbinary trap): a bare JS null binds as nvarchar and SQL Server refuses the
+              // implicit nvarchar→varbinary(max) conversion (CI int specs caught it — any attachment WITHOUT
+              // forwarded bytes 500'd the whole decisions POST). Bind an explicit typed NULL instead.
+              rawBytes: a.rawBytesB64 ? Buffer.from(a.rawBytesB64, 'base64') : sql<Buffer | null>`CAST(NULL AS varbinary(max))`,
             })),
           ).execute()
         }
