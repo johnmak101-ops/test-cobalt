@@ -16,6 +16,7 @@ import { dedupeCsv } from './committer-helpers'
 export function mapFieldsToLegColumns(f: Record<string, unknown>): Record<string, unknown> {
   return {
     forwarderRaw: str(f.forwarder_name), // raw — surfaced when forwarderId doesn't resolve
+    customerRaw: str(f.customer_code), // raw — surfaced when customerId doesn't resolve (see shipment_parties: it only writes when the PRIMARY code resolves, so it can't serve as this fallback)
     polRaw: str(f.poi ?? f.pol), // raw — surfaced when polId doesn't resolve; alias: parser still emits `pol`
     podRaw: str(f.pod),
     bookingNo: str(f.booking_no),

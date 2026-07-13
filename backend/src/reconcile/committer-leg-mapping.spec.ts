@@ -41,4 +41,8 @@ describe('mapFieldsToLegColumns — direct field→leg-column mapping (pure, no 
     }
     expect(cols.soNo).toBe('SO-1') // …but the pure field columns ARE present
   })
+  it('carries customer_code through as customerRaw — surfaced when customerId never resolves', () => {
+    expect(mapFieldsToLegColumns({ customer_code: 'OTCX' }).customerRaw).toBe('OTCX')
+    expect(mapFieldsToLegColumns({}).customerRaw).toBeNull()
+  })
 })
