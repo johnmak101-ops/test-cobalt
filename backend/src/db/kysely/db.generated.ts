@@ -405,6 +405,8 @@ export interface Shipments {
   state: Generated<string>;
   supersededById: string | null;
   updatedAt: Generated<Date>;
+  /** raw parser vendor_code kept when it doesn't resolve to a master vendor (0010) — like customerRaw. */
+  vendorRaw: string | null;
   vesselName: string | null;
   voyageNo: string | null;
   warehouseEndDate: Date | null;

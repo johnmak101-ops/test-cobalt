@@ -22,6 +22,7 @@ const leg = (over: Partial<ShipmentLegRow> = {}): ShipmentLegRow => ({
   podRaw: null,
   forwarderRaw: null,
   customerRaw: null,
+  vendorRaw: null,
   grossWeight: null,
   measurement: null,
   htsCode: null,
@@ -163,6 +164,11 @@ describe('toUiShipment — flat active-leg projection', () => {
     expect(s.customer).toBeNull()
     expect(s.soNumber).toBeNull()
     expect(s.etd).toBeNull()
+  })
+
+  it('falls back to vendorRaw when the vendor never resolved to a master (the SOUOCE case)', () => {
+    const s = toUiShipment({ leg: leg({ vendorRaw: 'SOUOCE' }), booking: { customerId: null, vendorId: null }, vendor: null })
+    expect(s.vendor).toEqual({ id: '', name: 'SOUOCE', code: 'SOUOCE' })
   })
 
   it('falls back to customerRaw/forwarderRaw when the code never resolved to a master', () => {
