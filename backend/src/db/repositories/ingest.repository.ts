@@ -24,7 +24,7 @@ export interface EvidenceInput {
   bodyHtml?: string | null
   /** cobalt-queue soul version (queue.prompt_version.id) that produced this parse — provenance (queue v1, §4.6d). */
   promptVersion?: number | null
-  attachments?: { graphAttachmentId: string; filename: string; declaredMime?: string; sizeBytes?: number; sourceKind?: string }[]
+  attachments?: { graphAttachmentId: string; filename: string; declaredMime?: string; sizeBytes?: number; sourceKind?: string; rawBytesB64?: string | null }[]
 }
 
 /**
@@ -82,6 +82,9 @@ export class IngestRepository {
             e.attachments.map((a) => ({
               messageId: msgId, graphAttachmentId: a.graphAttachmentId, filename: a.filename,
               declaredMime: a.declaredMime ?? null, sizeBytes: a.sizeBytes ?? 0, sourceKind: a.sourceKind ?? null,
+              // the queue-retained original (office/eml/pdf), when forwarded — lets "download attachment"
+              // serve the real file from this mirror with no Graph round-trip.
+              rawBytes: a.rawBytesB64 ? Buffer.from(a.rawBytesB64, 'base64') : null,
             })),
           ).execute()
         }
