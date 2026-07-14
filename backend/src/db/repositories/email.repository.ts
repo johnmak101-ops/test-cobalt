@@ -51,19 +51,20 @@ export class EmailRepository {
   }
 
   async attachmentsFor(graphMessageId: string) {
-    const msg = await this.db
-      .selectFrom('emailMessage')
-      .where('graphMessageId', '=', graphMessageId)
-      .select(['id', 'graphMessageId'])
-      .executeTakeFirst()
-    if (!msg) return []
+    // messageGraphId feeds the same Graph re-fetch as attachmentById (emails.service fills byte-free
+    // attachments here too), so it must be the Graph ITEM id (graph_id / AAMk…), NOT graph_message_id
+    // (the internet <…@host> id, which Graph's /messages/{id}/attachments rejects with 400). Join +
+    // select graph_id, mirroring attachmentById.
     return this.db
       .selectFrom('emailAttachment')
-      .where('messageId', '=', msg.id)
+      .innerJoin('emailMessage', 'emailMessage.id', 'emailAttachment.messageId')
+      .where('emailMessage.graphMessageId', '=', graphMessageId)
       .select([
-        'id as attachmentId', 'filename', 'sourceKind', 'sizeBytes', 'declaredMime', 'rawBytes',
-        'graphAttachmentId',
-        sql<string>`${msg.graphMessageId}`.as('messageGraphId'),
+        'emailAttachment.id as attachmentId', 'emailAttachment.filename as filename',
+        'emailAttachment.sourceKind as sourceKind', 'emailAttachment.sizeBytes as sizeBytes',
+        'emailAttachment.declaredMime as declaredMime', 'emailAttachment.rawBytes as rawBytes',
+        'emailAttachment.graphAttachmentId as graphAttachmentId',
+        'emailMessage.graphId as messageGraphId',
       ])
       .execute()
   }
