@@ -1,12 +1,10 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { useQueryClient } from '@tanstack/react-query'
-import { Search, RefreshCw, Inbox, ExternalLink, Link as LinkIcon, AlertTriangle, ArrowLeft } from 'lucide-react'
+import { Search, Inbox, ExternalLink, Link as LinkIcon, AlertTriangle, ArrowLeft } from 'lucide-react'
 import { useEmails, useMarkEmailRead, type ShippingEmail } from '../hooks/use-emails'
 import { EmailContent, parseSender, type RelatedEmail } from '../components/shipments/EmailContent'
 import { Badge } from '../components/ui/Badge'
 import { Pagination, usePagination, PageSizeSelect } from '../components/ui/Pagination'
-import { toast } from '../components/ui/Toast'
 import { cn, formatRelativeTime } from '../lib/utils'
 
 /** A short, human one-liner drawn from the AI-extracted fields, for the list row's preview line. */
@@ -156,7 +154,6 @@ export default function InboxPage() {
   const [page, setPage] = useState(1)
   const [perPage, setPerPage] = useState(25)
   const [selectedId, setSelectedId] = useState<string | null>(null)
-  const qc = useQueryClient()
   const markRead = useMarkEmailRead()
 
   const emails = (data?.emails ?? []).filter((e) => {
@@ -195,16 +192,6 @@ export default function InboxPage() {
       <div className="mb-4 flex shrink-0 flex-wrap items-center justify-between gap-2">
         <h1 className="text-lg font-semibold text-text-primary">Shipping Inbox</h1>
         <div className="flex items-center gap-2">
-          <button
-            onClick={async () => {
-              await qc.invalidateQueries({ queryKey: ['emails'] })
-              toast('Inbox refreshed')
-            }}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-surface-700 px-3 py-1.5 text-xs font-medium text-text-secondary hover:bg-surface-600 hover:text-text-primary"
-          >
-            <RefreshCw size={14} />
-            Refresh
-          </button>
           <PageSizeSelect value={perPage} onChange={handlePageSizeChange} />
         </div>
       </div>

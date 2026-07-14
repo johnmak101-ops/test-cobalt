@@ -1,6 +1,5 @@
 import { useState } from 'react'
-import { useQueryClient } from '@tanstack/react-query'
-import { RefreshCw, Search, Package, Link2, FileText } from 'lucide-react'
+import { Search, Package, Link2, FileText } from 'lucide-react'
 import { useDocuments, type UnlinkedDocument } from '../hooks/use-documents'
 import { Badge } from '../components/ui/Badge'
 import { LinkShipmentModal } from '../components/documents/LinkShipmentModal'
@@ -49,7 +48,6 @@ export default function UnlinkedDocumentsPage() {
   const [perPage, setPerPage] = useState(25)
   const [linkTarget, setLinkTarget] = useState<UnlinkedDocument | null>(null)
   const [inspectTarget, setInspectTarget] = useState<UnlinkedDocument | null>(null)
-  const qc = useQueryClient()
 
   const documents = data ?? []
 
@@ -92,13 +90,6 @@ export default function UnlinkedDocumentsPage() {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <button
-            onClick={() => qc.invalidateQueries({ queryKey: ['documents'] })}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-surface-700 px-3 py-1.5 text-xs font-medium text-text-secondary hover:bg-surface-600 hover:text-text-primary"
-          >
-            <RefreshCw size={14} />
-            Refresh
-          </button>
           <PageSizeSelect value={perPage} onChange={handlePageSizeChange} />
         </div>
       </div>

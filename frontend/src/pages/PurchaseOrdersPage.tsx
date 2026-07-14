@@ -4,10 +4,8 @@ import { usePurchaseOrders } from '../hooks/use-purchase-orders'
 import { cn } from '../lib/utils'
 import { formatDate } from '../lib/utils'
 import { poProgress, furthestStatusLabel, type PoShipmentLink } from '../lib/po-progress'
-import { toast } from '../components/ui/Toast'
-import { Package, Search, RefreshCw, Download, Calendar, AlertTriangle } from 'lucide-react'
+import { Package, Search, Download, Calendar, AlertTriangle } from 'lucide-react'
 import { Pagination, usePagination, PageSizeSelect } from '../components/ui/Pagination'
-import { useQueryClient } from '@tanstack/react-query'
 
 export default function PurchaseOrdersPage() {
   const navigate = useNavigate()
@@ -18,7 +16,6 @@ export default function PurchaseOrdersPage() {
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
   const [exporting, setExporting] = useState(false)
-  const qc = useQueryClient()
 
   const purchaseOrders = data?.purchaseOrders ?? []
 
@@ -270,16 +267,6 @@ export default function PurchaseOrdersPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <button
-            onClick={async () => {
-              await qc.invalidateQueries({ queryKey: ['purchase-orders'] })
-              toast('Customer POs refreshed')
-            }}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-surface-700 px-3 py-1.5 text-xs font-medium text-text-secondary hover:bg-surface-600 hover:text-text-primary"
-          >
-            <RefreshCw size={14} />
-            Refresh
-          </button>
           <PageSizeSelect value={perPage} onChange={handlePageSizeChange} />
         </div>
       </div>

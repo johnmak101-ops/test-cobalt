@@ -1,8 +1,6 @@
 import { useNavigate } from 'react-router-dom'
-import { useQueryClient } from '@tanstack/react-query'
 import {
   CheckCircle,
-  RefreshCw,
   Ship,
   Package,
   Loader2,
@@ -11,7 +9,6 @@ import { useReviewQueue, useConfirmShipment, type ReviewShipment } from '../hook
 import { Badge } from '../components/ui/Badge'
 import { Pagination, usePagination, PageSizeSelect } from '../components/ui/Pagination'
 import { formatRelativeTime } from '../lib/utils'
-import { toast } from '../components/ui/Toast'
 import { humanizeReasons } from '../lib/review-reasons'
 import { useState } from 'react'
 
@@ -19,7 +16,6 @@ export default function ReviewQueuePage() {
   const { data, isLoading, isError } = useReviewQueue()
   const confirmMutation = useConfirmShipment()
   const navigate = useNavigate()
-  const qc = useQueryClient()
 
   const [page, setPage] = useState(1)
   const [perPage, setPerPage] = useState(25)
@@ -55,19 +51,6 @@ export default function ReviewQueuePage() {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <button
-            onClick={async () => {
-              await Promise.all([
-                qc.invalidateQueries({ queryKey: ['review-queue'] }),
-                qc.invalidateQueries({ queryKey: ['review-counts'] }),
-              ])
-              toast('Review queue refreshed')
-            }}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-surface-700 px-3 py-1.5 text-xs font-medium text-text-secondary hover:bg-surface-600 hover:text-text-primary"
-          >
-            <RefreshCw size={14} />
-            Refresh
-          </button>
           <PageSizeSelect value={perPage} onChange={handlePageSizeChange} />
         </div>
       </div>

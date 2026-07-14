@@ -4,9 +4,7 @@ import { ShipmentTable } from '../components/shipments/ShipmentTable'
 import { ShipmentFilters } from '../components/shipments/ShipmentFilters'
 import { NewShipmentModal } from '../components/shipments/NewShipmentModal'
 import { Pagination, usePagination, PageSizeSelect } from '../components/ui/Pagination'
-import { toast } from '../components/ui/Toast'
-import { Search, RefreshCw, Plus } from 'lucide-react'
-import { useQueryClient } from '@tanstack/react-query'
+import { Search, Plus } from 'lucide-react'
 
 export default function ShipmentTrackerPage() {
   const [statusFilter, setStatusFilter] = useState('ALL')
@@ -15,7 +13,6 @@ export default function ShipmentTrackerPage() {
   const [perPage, setPerPage] = useState(25)
   const [showNew, setShowNew] = useState(false)
   const { data, isLoading } = useShipments({ status: statusFilter })
-  const qc = useQueryClient()
 
   const allShipments = data?.shipments ?? []
 
@@ -75,16 +72,6 @@ export default function ShipmentTrackerPage() {
           >
             <Plus size={14} />
             New shipment
-          </button>
-          <button
-            onClick={async () => {
-              await qc.invalidateQueries({ queryKey: ['shipments'] })
-              toast('Shipments refreshed')
-            }}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-surface-700 px-3 py-1.5 text-xs font-medium text-text-secondary hover:bg-surface-600 hover:text-text-primary"
-          >
-            <RefreshCw size={14} />
-            Refresh
           </button>
           <PageSizeSelect value={perPage} onChange={handlePageSizeChange} />
         </div>
