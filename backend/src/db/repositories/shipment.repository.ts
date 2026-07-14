@@ -169,7 +169,8 @@ export class ShipmentRepository {
       .select([
         'shipments.id as id', 'shipments.bookingNo as bookingNo', 'shipments.soNo as soNo', 'shipments.state as state',
         'shipments.legStatus as legStatus', 'shipments.reviewReasons as reviewReasons', 'shipments.confidence as confidence',
-        'shipments.createdAt as createdAt', 'shipments.dismissedAt as dismissedAt',
+        'shipments.createdAt as createdAt', 'shipments.updatedAt as updatedAt', 'shipments.dismissedAt as dismissedAt',
+        'shipments.criticReview as criticReview',
         'customers.id as customerId', 'customers.name as customerName',
         'customers.code as customerCode', 'forwarders.id as forwarderId', 'forwarders.name as forwarderName',
         'shipments.forwarderRaw as forwarderRaw', 'shipments.mode as mode', 'pol.unlocode as polCode', 'pod.unlocode as podCode',

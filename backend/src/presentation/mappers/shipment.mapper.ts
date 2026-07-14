@@ -3,6 +3,7 @@
  * into the flat `Shipment` shape the new UI consumes. Pure — the controller loads & assembles
  * the input; this only reshapes. The production PO→Booking→Shipment model is never exposed.
  */
+import type { Band, CriticReview } from '../../decisions/critic-review.types'
 import { stateToUiStatus } from '../adapters/enums'
 import { deriveRoute, portLabel, deriveOriginCountry, poNumbersJson, isoOrNull } from '../adapters/derive'
 
@@ -13,6 +14,36 @@ export interface MasterRef {
 }
 
 type Dateish = Date | string | null | undefined
+
+/** design §2.2 short AI-comment types for queue chips — not free-form riskFlag.message. */
+const RISK_SHORT_LABELS: Record<string, string> = {
+  INTRA_EMAIL_MULTI_STRONG_ID: 'Two strong IDs in one email',
+  BACKEND_CONFLICT: 'Stored value disagrees',
+  PO_REASSIGN: 'PO may belong to another shipment',
+  PORTAL_ECHO: 'Portal notification only',
+  AMBIGUOUS_MATCH: 'Multiple matching legs',
+  FIELD_LOCK_CLASH: 'Would overwrite locked field',
+}
+
+export function shortLabelForRisk(code: string): string {
+  return RISK_SHORT_LABELS[code] ?? 'Needs review'
+}
+
+/** Queue-safe projection — band/summary/topConflictType only (never raw confidence score). */
+export function compactCriticReview(cr: CriticReview | null | undefined): {
+  band: Band
+  summary: string
+  topConflictType: string
+} | null {
+  if (!cr?.confidence?.band) return null
+  const top = cr.riskFlags?.[0]
+  const topConflictType = top
+    ? shortLabelForRisk(top.code)
+    : cr.conflicts?.[0]?.label
+      ? `${cr.conflicts[0].label} conflict`
+      : 'Needs review'
+  return { band: cr.confidence.band, summary: cr.summary, topConflictType }
+}
 
 export interface ShipmentLegRow {
   id: string
@@ -55,6 +86,7 @@ export interface ShipmentLegRow {
   reviewStatus?: string | null
   reviewReasons?: string[] | null
   dismissedAt?: Dateish
+  criticReview?: CriticReview | null
   createdAt: Dateish
   updatedAt: Dateish
 }
@@ -112,6 +144,7 @@ export interface UiShipment {
   grossWeight: number | null
   measurement: number | null
   htsCode: string | null
+  criticReview: CriticReview | null
   createdAt: string | null
   updatedAt: string | null
   customer: MasterRef | null
@@ -169,6 +202,7 @@ export function toUiShipment(input: ShipmentMapperInput): UiShipment {
     grossWeight: leg.grossWeight ?? null,
     measurement: leg.measurement ?? null,
     htsCode: leg.htsCode ?? null,
+    criticReview: leg.criticReview ?? null,
     createdAt: isoOrNull(leg.createdAt),
     updatedAt: isoOrNull(leg.updatedAt),
     customer: input.customer ?? (leg.customerRaw ? { id: '', name: leg.customerRaw, code: leg.customerRaw } : null),
