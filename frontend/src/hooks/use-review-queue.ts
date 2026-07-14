@@ -15,6 +15,7 @@ export interface ReviewShipment {
   reviewReasons: string[]
   createdAt: string
   poCount: number
+  dismissedAt: string | null
 }
 
 interface ReviewQueueResponse {
@@ -23,12 +24,15 @@ interface ReviewQueueResponse {
 
 export interface ReviewCounts {
   provisional: number
+  dismissed: number
 }
 
-export function useReviewQueue() {
+export type ReviewQueueView = 'pending' | 'dismissed'
+
+export function useReviewQueue(view: ReviewQueueView = 'pending') {
   return useQuery<ReviewQueueResponse>({
-    queryKey: ['review-queue'],
-    queryFn: () => api.get('/shipments/review-queue'),
+    queryKey: ['review-queue', view],
+    queryFn: () => api.get(`/shipments/review-queue?view=${view}`),
   })
 }
 
@@ -83,6 +87,28 @@ export function useCorrectShipment() {
       fields: Record<string, unknown>
       reason?: string
     }) => api.post(`/review/${shipmentId}/correct`, { fields, ...(reason?.trim() ? { reason: reason.trim() } : {}) }),
+    onSuccess: invalidate,
+  })
+}
+
+/**
+ * Bulk "not a trackable shipment" (#133): stamps dismissed_at so the rows leave the queue WITHOUT
+ * confirming their data (no learning-feed confirm signals). Reversible via useRestoreShipment.
+ */
+export function useDismissShipments() {
+  const invalidate = useInvalidateReview()
+  return useMutation({
+    mutationFn: ({ shipmentIds, note }: { shipmentIds: string[]; note?: string }) =>
+      api.post('/review/dismiss', { shipmentIds, ...(note?.trim() ? { note: note.trim() } : {}) }),
+    onSuccess: invalidate,
+  })
+}
+
+/** Undo a dismiss — the shipment returns to the pending review queue. */
+export function useRestoreShipment() {
+  const invalidate = useInvalidateReview()
+  return useMutation({
+    mutationFn: ({ shipmentId }: { shipmentId: string }) => api.post(`/review/${shipmentId}/restore`, {}),
     onSuccess: invalidate,
   })
 }

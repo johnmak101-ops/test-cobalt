@@ -34,6 +34,7 @@ export interface Shipment {
   riskLevel: string
   reviewStatus?: string | null
   reviewReasons?: string[]
+  dismissedAt?: string | null
   bookingNo: string | null
   soNumber: string | null
   itemStyleNo: string | null

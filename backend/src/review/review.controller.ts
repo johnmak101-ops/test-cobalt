@@ -1,6 +1,6 @@
 import { Body, Controller, Get, Param, Post } from '@nestjs/common'
 import { ReviewService } from './review.service'
-import { ConfirmDto, CorrectDto } from './dto'
+import { ConfirmDto, CorrectDto, DismissDto } from './dto'
 import { Roles, CurrentUser } from '../auth/decorators'
 import type { AuthUser } from '../auth/auth.service'
 
@@ -12,6 +12,16 @@ export class ReviewController {
 
   @Get() queue() {
     return this.review.queue()
+  }
+
+  /** POST /api/review/dismiss — bulk "not a shipment" verdict from the queue. */
+  @Post('dismiss') dismiss(@Body() dto: DismissDto, @CurrentUser() actor: AuthUser) {
+    return this.review.dismiss(dto.shipmentIds, actor.id, dto.note)
+  }
+
+  /** POST /api/review/:id/restore — undo a dismiss; the leg returns to the pending queue. */
+  @Post(':id/restore') restore(@Param('id') id: string, @CurrentUser() actor: AuthUser) {
+    return this.review.restore(id, actor.id)
   }
 
   @Post(':id/confirm') confirm(@Param('id') id: string, @Body() dto: ConfirmDto, @CurrentUser() actor: AuthUser) {

@@ -114,6 +114,41 @@ describe('CommitterService (integration, real SQL Server)', () => {
     const bk = await db.selectFrom('bookings').where('id', '=', a.bookingId).selectAll().executeTakeFirstOrThrow()
     expect(bk.brand).toBe('FENIX')
   })
+
+  it('#133 multi-HBL email: conflicting strong ids never fuse, even with a shared PO and no booking/SO', async () => {
+    // The KOHL/YAQI thread: one email, five invoices, booking_no/so_no null on (almost) every doc,
+    // identity lives in per-attachment HBL+container+MBL. PO 16068229 is split across two containers.
+    const legA = { hbl: 'SE26061400003', cont: 'ONEU0429500', mbl: 'ONEYDACG13378900', pos: ['16068176', '16068227'] }
+    const legB = { hbl: 'SE26061400001', cont: 'TRHU5378918', mbl: 'ONEYDACG13380900', pos: ['16068229'] }
+    const legC = { hbl: 'SE26061400005', cont: 'ONEU1375780', mbl: 'ONEYDACG13372300', pos: ['16068229', '16068195'], so: 'OI-22604713' }
+    const asGroup = (l: { hbl: string; cont: string; mbl: string; pos: string[]; so?: string }) =>
+      group({
+        pos: l.pos,
+        matchKeys: { hbl_awb_fcr_no: l.hbl, container_no: l.cont, mbl: l.mbl, ...(l.so ? { so_no: l.so } : {}) },
+        fields: { hbl_awb_fcr_no: l.hbl, container_no: l.cont, mbl: l.mbl, ...(l.so ? { so_no: l.so } : {}) },
+        emailTypes: ['Final B/L'],
+        events: [{ emailType: 'Final B/L', receivedAt: '2026-07-13T10:45:52Z' }],
+        conversationId: 'conv-kohl-yaqi',
+      })
+
+    const a = await committer.apply(asGroup(legA))
+    const b = await committer.apply(asGroup(legB))
+    const c = await committer.apply(asGroup(legC))
+
+    expect(b.action).toBe('create_booking') // same thread must not fuse
+    expect(c.action).toBe('create_booking') // PO 16068229 also on legB — conflicting HBL/container wins
+    expect(new Set([a.shipmentId, b.shipmentId, c.shipmentId]).size).toBe(3)
+
+    // the shared PO is linked to BOTH bookings (one PO split across two containers)
+    const po = await db.selectFrom('purchaseOrders').where('poNumber', '=', '16068229').selectAll().executeTakeFirstOrThrow()
+    const links = await db.selectFrom('bookingPos').where('poId', '=', po.id).selectAll().execute()
+    expect(new Set(links.map((l) => l.bookingId))).toEqual(new Set([b.bookingId, c.bookingId]))
+
+    // idempotency: re-applying legB amends legB — it never leaks onto legC via the shared PO
+    const b2 = await committer.apply(asGroup(legB))
+    expect(b2.action).toBe('amend_fields')
+    expect(b2.shipmentId).toBe(b.shipmentId)
+  })
 })
 
 describe('CommitterService — strong-key index (shipment_match_keys) write side (integration)', () => {

@@ -2,7 +2,7 @@ import { Fragment, useMemo, useState } from 'react'
 import { useNavigate, useParams, Link } from 'react-router-dom'
 import { useShipment, type FieldConflict } from '../hooks/use-shipments'
 import { useShipmentHistory, type HistoryEntry } from '../hooks/use-shipment-history'
-import { useConfirmShipment, useCorrectShipment } from '../hooks/use-review-queue'
+import { useConfirmShipment, useCorrectShipment, useDismissShipments, useRestoreShipment } from '../hooks/use-review-queue'
 import { Card } from '../components/ui/Card'
 import { Badge } from '../components/ui/Badge'
 import { cn, formatDateTime, parsePONumbers } from '../lib/utils'
@@ -26,8 +26,10 @@ import {
   Mail,
   NotebookPen,
   Plus,
+  RotateCcw,
   Save,
   Trash2,
+  XCircle,
 } from 'lucide-react'
 
 const SECTIONS: EditableField['section'][] = ['Order Info', 'Cargo', 'Shipping IDs', 'Key Dates']
@@ -159,6 +161,8 @@ export default function ReviewShipmentPage() {
   const { data: historyData } = useShipmentHistory(id!)
   const confirmMutation = useConfirmShipment()
   const correctMutation = useCorrectShipment()
+  const dismissMutation = useDismissShipments()
+  const restoreMutation = useRestoreShipment()
 
   const [edits, setEdits] = useState<Record<string, string>>({})
   const [styleRows, setStyleRows] = useState<StyleEntry[] | null>(null)
@@ -214,7 +218,7 @@ export default function ReviewShipmentPage() {
     Object.fromEntries(EDITABLE_FIELDS.map((f) => [f.uiKey, valueOf(f)])),
   )
   const dirtyCount = Object.keys(dirty).length
-  const busy = confirmMutation.isPending || correctMutation.isPending
+  const busy = confirmMutation.isPending || correctMutation.isPending || dismissMutation.isPending || restoreMutation.isPending
 
   const done = () => navigate('/review-queue')
 
@@ -228,6 +232,16 @@ export default function ReviewShipmentPage() {
   const handleCorrectAndApprove = () => {
     if (!id || dirtyCount === 0 || !note.trim()) return
     correctMutation.mutate({ shipmentId: id, fields: dirty, reason: note.trim() }, { onSuccess: done })
+  }
+
+  const isDismissed = !!shipment.dismissedAt
+  const handleDismiss = () => {
+    if (!id) return
+    dismissMutation.mutate({ shipmentIds: [id], note }, { onSuccess: done })
+  }
+  const handleRestore = () => {
+    if (!id) return
+    restoreMutation.mutate({ shipmentId: id })
   }
 
   const poList = parsePONumbers(shipment.poNumbers)
@@ -456,30 +470,58 @@ export default function ReviewShipmentPage() {
 
       {/* Actions */}
       <div className="sticky bottom-4 flex flex-wrap items-center justify-end gap-2 rounded-xl border border-border bg-surface-800/95 p-3 shadow-lg backdrop-blur">
-        {dirtyCount > 0 && (
-          <span className="mr-auto text-xs text-text-muted">
-            {dirtyCount} field{dirtyCount !== 1 ? 's' : ''} edited — corrections lock the field so
-            the agent can never overwrite it
-          </span>
+        {isDismissed ? (
+          <>
+            <span className="mr-auto inline-flex items-center gap-1.5 text-xs text-status-critical">
+              <XCircle size={13} />
+              Dismissed from review — not a trackable shipment. Restore it to approve or correct.
+            </span>
+            <button
+              onClick={handleRestore}
+              disabled={busy}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-surface-700 px-3 py-2 text-xs font-medium text-text-secondary transition-colors hover:bg-surface-600 hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {restoreMutation.isPending ? <Loader2 size={13} className="animate-spin" /> : <RotateCcw size={13} />}
+              Restore to queue
+            </button>
+          </>
+        ) : (
+          <>
+            {dirtyCount > 0 && (
+              <span className="mr-auto text-xs text-text-muted">
+                {dirtyCount} field{dirtyCount !== 1 ? 's' : ''} edited — corrections lock the field so
+                the agent can never overwrite it
+              </span>
+            )}
+            <button
+              onClick={handleDismiss}
+              disabled={busy}
+              title="Not a trackable shipment (portal echo / no carrier move) — removes it from the queue; reversible. Your note is saved to the audit trail."
+              className="inline-flex items-center gap-1.5 rounded-lg bg-status-critical/15 px-3 py-2 text-xs font-medium text-status-critical transition-colors hover:bg-status-critical/25 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {dismissMutation.isPending ? <Loader2 size={13} className="animate-spin" /> : <XCircle size={13} />}
+              Dismiss — not a shipment
+            </button>
+            <button
+              onClick={handleApprove}
+              disabled={busy || dirtyCount > 0}
+              title={dirtyCount > 0 ? 'You have unsaved corrections — use "Save corrections & Approve"' : undefined}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-status-success/15 px-3 py-2 text-xs font-medium text-status-success transition-colors hover:bg-status-success/25 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {confirmMutation.isPending ? <Loader2 size={13} className="animate-spin" /> : <CheckCircle size={13} />}
+              Approve as-is
+            </button>
+            <button
+              onClick={handleCorrectAndApprove}
+              disabled={busy || dirtyCount === 0 || correctBlocked}
+              title={correctBlocked ? 'Add a note for the agent before saving corrections' : undefined}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-cobalt-primary px-3 py-2 text-xs font-medium text-white transition-colors hover:bg-cobalt-primary-light disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {correctMutation.isPending ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />}
+              Save corrections & Approve
+            </button>
+          </>
         )}
-        <button
-          onClick={handleApprove}
-          disabled={busy || dirtyCount > 0}
-          title={dirtyCount > 0 ? 'You have unsaved corrections — use "Save corrections & Approve"' : undefined}
-          className="inline-flex items-center gap-1.5 rounded-lg bg-status-success/15 px-3 py-2 text-xs font-medium text-status-success transition-colors hover:bg-status-success/25 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          {confirmMutation.isPending ? <Loader2 size={13} className="animate-spin" /> : <CheckCircle size={13} />}
-          Approve as-is
-        </button>
-        <button
-          onClick={handleCorrectAndApprove}
-          disabled={busy || dirtyCount === 0 || correctBlocked}
-          title={correctBlocked ? 'Add a note for the agent before saving corrections' : undefined}
-          className="inline-flex items-center gap-1.5 rounded-lg bg-cobalt-primary px-3 py-2 text-xs font-medium text-white transition-colors hover:bg-cobalt-primary-light disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          {correctMutation.isPending ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />}
-          Save corrections & Approve
-        </button>
       </div>
     </div>
   )

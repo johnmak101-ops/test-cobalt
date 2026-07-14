@@ -54,6 +54,7 @@ export interface ShipmentLegRow {
   qtyUnit: string | null
   reviewStatus?: string | null
   reviewReasons?: string[] | null
+  dismissedAt?: Dateish
   createdAt: Dateish
   updatedAt: Dateish
 }
@@ -84,6 +85,7 @@ export interface UiShipment {
   riskLevel: string | null
   reviewStatus: string | null
   reviewReasons: string[]
+  dismissedAt: string | null
   bookingNo: string | null
   soNumber: string | null
   itemStyleNo: string | null
@@ -137,6 +139,7 @@ export function toUiShipment(input: ShipmentMapperInput): UiShipment {
     riskLevel: leg.riskLevel ?? null,
     reviewStatus: leg.reviewStatus ?? null,
     reviewReasons: leg.reviewReasons ?? [],
+    dismissedAt: isoOrNull(leg.dismissedAt ?? null),
     bookingNo: leg.bookingNo ?? null,
     soNumber: leg.soNo ?? null,
     itemStyleNo: leg.itemStyleNo ?? null,

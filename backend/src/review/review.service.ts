@@ -160,4 +160,41 @@ export class ReviewService {
     await this.shipments.updateLeg(shipmentId, { reviewStatus: 'confirmed', reviewedBy: actorId, reviewedAt: new Date() })
     return { shipmentId, reviewStatus: 'confirmed', corrected }
   }
+
+  /** Bulk "not a trackable shipment": stamp dismissed_at so the leg leaves the review queue WITHOUT
+   *  vouching for its data. reviewStatus stays 'provisional' (confirmed would enter alerts/automation)
+   *  and NO confirm-sentinels are posted (approving noise would poison the queue's learning feed).
+   *  Sticky by design: the committer never touches dismissed_at, so a recurring portal echo does not
+   *  resurface daily. Rows that are not pending provisional SHIPMENTs are skipped, not errors — the
+   *  queue may have moved under a stale selection. */
+  async dismiss(shipmentIds: string[], actorId: string, note?: string) {
+    let dismissed = 0
+    for (const id of shipmentIds) {
+      const leg = await this.shipments.findById(id)
+      if (!leg || leg.kind !== 'SHIPMENT' || leg.reviewStatus !== 'provisional' || leg.dismissedAt != null) continue
+      await this.shipments.updateLeg(id, { dismissedAt: new Date(), reviewedBy: actorId, reviewedAt: new Date() })
+      await this.audit.write({
+        entityType: 'shipment', entityId: id, field: null,
+        oldValue: 'provisional', newValue: 'dismissed', changeType: 'update',
+        sourceType: 'manual', actorUserId: actorId,
+        note: note?.trim() ? `review: dismissed — ${note.trim()}` : 'review: dismissed — not a trackable shipment',
+      })
+      dismissed += 1
+    }
+    return { dismissed }
+  }
+
+  /** Undo a dismiss: the leg returns to the pending review queue. No-op when not dismissed. */
+  async restore(shipmentId: string, actorId: string) {
+    const leg = await this.shipments.findById(shipmentId)
+    if (!leg) throw new NotFoundException(`shipment ${shipmentId} not found`)
+    if (leg.dismissedAt == null) return { shipmentId, restored: false }
+    await this.shipments.updateLeg(shipmentId, { dismissedAt: null })
+    await this.audit.write({
+      entityType: 'shipment', entityId: shipmentId, field: null,
+      oldValue: 'dismissed', newValue: 'provisional', changeType: 'update',
+      sourceType: 'manual', actorUserId: actorId, note: 'review: restored to queue',
+    })
+    return { shipmentId, restored: true }
+  }
 }

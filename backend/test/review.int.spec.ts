@@ -114,4 +114,74 @@ describe('ReviewService (integration)', () => {
     await settings.setConfidenceThreshold(70, reviewerId)
     expect(await settings.confidenceThreshold()).toBe(70)
   })
+
+  describe('dismiss / restore (#133)', () => {
+    function spyLearning() {
+      const posts: unknown[] = []
+      const client = { postCorrection: async (p: unknown) => { posts.push(p) } } as unknown as QueueLearningClient
+      return { posts, client }
+    }
+    function svcWith(client: QueueLearningClient) {
+      const r = repos(db)
+      return new ReviewService(r.shipment, r.booking, r.fieldLock, r.audit, client)
+    }
+
+    it('dismiss stamps dismissed_at + reviewer, audits, drops from queue(), and posts NO learning signals', async () => {
+      const { leg } = await seedProvisional('JOB-D-1', 30)
+      const { posts, client } = spyLearning()
+      const svc = svcWith(client)
+
+      const res = await svc.dismiss([leg.id], reviewerId, 'portal echo — no carrier move')
+      expect(res).toEqual({ dismissed: 1 })
+
+      const updated = await db.selectFrom('shipments').where('id', '=', leg.id).selectAll().executeTakeFirstOrThrow()
+      expect(updated.dismissedAt).not.toBeNull()
+      expect(updated.reviewStatus).toBe('provisional') // NEVER confirmed — stays out of alerts/automation
+      expect(updated.reviewedBy).toBe(reviewerId)
+      expect(updated.reviewedAt).not.toBeNull()
+
+      expect((await svc.queue()).find((q) => q.id === leg.id)).toBeUndefined()
+
+      const audit = await db.selectFrom('changeLog').where('entityId', '=', leg.id).selectAll().execute()
+      expect(audit.some((a) => a.newValue === 'dismissed' && /portal echo/.test(a.note ?? ''))).toBe(true)
+      expect(posts).toHaveLength(0) // dismissal teaches nothing — approving noise would poison the feed
+    })
+
+    it('dismiss skips confirmed / DOCUMENT / already-dismissed / unknown ids but processes the rest', async () => {
+      const { leg: ok } = await seedProvisional('JOB-D-2', 30)
+      const { leg: confirmed } = await seedProvisional('JOB-D-3', 30, { reviewStatus: 'confirmed' })
+      const { leg: doc } = await seedProvisional('JOB-D-4', 30, { kind: 'DOCUMENT' })
+      const { leg: gone } = await seedProvisional('JOB-D-5', 30, { dismissedAt: new Date('2026-07-01T00:00:00Z') })
+      const svc = svcWith(spyLearning().client)
+
+      const res = await svc.dismiss(
+        [ok.id, confirmed.id, doc.id, gone.id, '00000000-0000-0000-0000-000000000000'],
+        reviewerId,
+      )
+      expect(res).toEqual({ dismissed: 1 })
+
+      const rows = await db.selectFrom('shipments').where('id', 'in', [ok.id, confirmed.id]).selectAll().execute()
+      expect(rows.find((r) => r.id === ok.id)?.dismissedAt).not.toBeNull()
+      expect(rows.find((r) => r.id === confirmed.id)?.dismissedAt).toBeNull()
+    })
+
+    it('restore clears dismissed_at, audits, and the leg returns to queue()', async () => {
+      const { leg } = await seedProvisional('JOB-D-6', 30)
+      const svc = svcWith(spyLearning().client)
+      await svc.dismiss([leg.id], reviewerId)
+
+      const res = await svc.restore(leg.id, reviewerId)
+      expect(res).toEqual({ shipmentId: leg.id, restored: true })
+
+      const updated = await db.selectFrom('shipments').where('id', '=', leg.id).selectAll().executeTakeFirstOrThrow()
+      expect(updated.dismissedAt).toBeNull()
+      expect((await svc.queue()).find((q) => q.id === leg.id)).toBeTruthy()
+
+      const audit = await db.selectFrom('changeLog').where('entityId', '=', leg.id).selectAll().execute()
+      expect(audit.some((a) => a.note === 'review: restored to queue')).toBe(true)
+
+      // restoring a non-dismissed leg is a no-op
+      expect(await svc.restore(leg.id, reviewerId)).toEqual({ shipmentId: leg.id, restored: false })
+    })
+  })
 })

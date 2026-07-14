@@ -270,3 +270,70 @@ export function humanizeReasons(reasons: string[]): HumanizedReason[] {
   }
   return out
 }
+
+// ---- Reason categories (#133) — drive the Review Queue filter chips + bulk triage. ----
+
+export type ReasonCategory =
+  | 'portal'
+  | 'conflict'
+  | 'multi_id'
+  | 'no_identity'
+  | 'master_miss'
+  | 'extraction'
+  | 'other'
+
+export const CATEGORY_LABEL: Record<ReasonCategory, string> = {
+  portal: 'Portal echo',
+  conflict: 'Field conflict',
+  multi_id: 'Multiple identities',
+  no_identity: 'No identity',
+  master_miss: 'Master-data miss',
+  extraction: 'Extraction issue',
+  other: 'Other',
+}
+
+export const CATEGORY_ORDER: ReasonCategory[] = [
+  'portal', 'conflict', 'multi_id', 'no_identity', 'master_miss', 'extraction', 'other',
+]
+
+/** First match wins — portal before no_identity (the portal hint also mentions missing carrier id),
+ *  conflict before multi_id (a "backend conflict on booking_no" is a field conflict, not a merge risk). */
+const CATEGORY_RULES: Array<{ match: RegExp; category: ReasonCategory }> = [
+  { match: /platform\/portal email without carrier identity/i, category: 'portal' },
+  { match: /only a portal alert/i, category: 'portal' },
+  { match: /backend conflict on /i, category: 'conflict' },
+  { match: /unresolved field conflict/i, category: 'conflict' },
+  { match: /disagrees with what.s already on the shipment/i, category: 'conflict' },
+  { match: /mode change \S+ → \S+/i, category: 'conflict' },
+  { match: /transport switched between sea and air/i, category: 'conflict' },
+  { match: /brand conflict/i, category: 'conflict' },
+  { match: /identity supersede/i, category: 'multi_id' },
+  { match: /distinct co-current values/i, category: 'multi_id' },
+  { match: /matched multiple backend legs/i, category: 'multi_id' },
+  { match: /belongs to a different shipment|already belongs to another shipment/i, category: 'multi_id' },
+  { match: /moved or reassigned/i, category: 'multi_id' },
+  { match: /no booking\/SO\/HBL identity/i, category: 'no_identity' },
+  { match: /neither a strong identity key nor a PO/i, category: 'no_identity' },
+  { match: /no booking, bill of lading, AWB, or container number/i, category: 'no_identity' },
+  { match: /there.s no purchase order/i, category: 'no_identity' },
+  { match: /insufficient identity/i, category: 'no_identity' },
+  { match: /did not exact(?:\/curated)?-match/i, category: 'master_miss' },
+  { match: /customer is new or not recognized/i, category: 'master_miss' },
+  { match: /unknown \/ unresolved customer/i, category: 'master_miss' },
+  { match: /customer not known/i, category: 'master_miss' },
+  { match: /vision_pending|output_truncated|input_truncated|content_filter/i, category: 'extraction' },
+  { match: /attachment|missing cargo detail|screenshot|broadcast total/i, category: 'extraction' },
+]
+
+/** Bucket one raw review reason for the queue's filter chips. Unknown strings → 'other'. */
+export function categorizeReason(raw: string): ReasonCategory {
+  for (const r of CATEGORY_RULES) if (r.match.test(raw)) return r.category
+  return 'other'
+}
+
+/** A shipment's category set = union over its reasons; a reason-less row files under 'other'. */
+export function categoriesOf(reasons: string[]): Set<ReasonCategory> {
+  const s = new Set<ReasonCategory>()
+  for (const r of reasons) s.add(categorizeReason(r))
+  return s.size ? s : new Set<ReasonCategory>(['other'])
+}

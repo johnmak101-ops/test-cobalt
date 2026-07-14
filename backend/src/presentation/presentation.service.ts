@@ -312,9 +312,10 @@ export class PresentationService {
   /**
    * The Review Queue: provisional (low-confidence) real shipments awaiting human approval. Same
    * customer/route resolution as the shipments() list (masters resolve pol/pod → route, customer name).
+   * `view=pending` (default) or `dismissed`.
    */
-  async reviewQueue() {
-    const rows = await this.shipmentRepo.reviewQueue()
+  async reviewQueue(view: 'pending' | 'dismissed' = 'pending') {
+    const rows = await this.shipmentRepo.reviewQueue(view)
     return {
       shipments: rows.map((r) => ({
         id: r.id,
@@ -332,13 +333,15 @@ export class PresentationService {
         reviewReasons: r.reviewReasons ?? [],
         createdAt: isoOrNull(r.createdAt),
         poCount: r.poCount ?? 0,
+        dismissedAt: isoOrNull(r.dismissedAt),
       })),
     }
   }
 
-  /** Nav badge count of provisional shipments awaiting review. */
+  /** Nav badge count of provisional shipments awaiting review (+ dismissed for the queue tab). */
   async reviewQueueCounts() {
-    return { provisional: await this.shipmentRepo.reviewQueueCount() }
+    const c = await this.shipmentRepo.reviewQueueCounts()
+    return { provisional: c.pending, dismissed: c.dismissed }
   }
 
   /** Human "approve": accept a provisional shipment as-is (review_status → confirmed). */

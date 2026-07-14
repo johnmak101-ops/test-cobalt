@@ -76,6 +76,13 @@ describe('toUiShipment — flat active-leg projection', () => {
     expect(toUiShipment(fullInput()).riskLevel).toBe('ON_TRACK')
   })
 
+  it('passes dismissedAt through as ISO (null when absent)', () => {
+    expect(toUiShipment(fullInput()).dismissedAt).toBeNull()
+    expect(
+      toUiShipment({ ...fullInput(), leg: leg({ dismissedAt: new Date('2026-07-14T00:00:00Z') }) }).dismissedAt,
+    ).toBe('2026-07-14T00:00:00.000Z')
+  })
+
   it('AIR legs route by IATA airport code; sea legs keep the UN/LOCODE', () => {
     const air = toUiShipment({
       ...fullInput(),

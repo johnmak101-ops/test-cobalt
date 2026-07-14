@@ -104,7 +104,7 @@ describe('ShipmentRepository (SQL Server)', () => {
     expect(prov[0].confidence).toBeLessThanOrEqual(prov[1].confidence) // lowest confidence first
   })
 
-  it('reviewQueue + reviewQueueCount (kind=SHIPMENT, provisional, not SUPERSEDED)', async () => {
+  it('reviewQueue views + reviewQueueCounts (pending vs dismissed)', async () => {
     const b = await seedBooking()
     const c = await seedCustomer(`RQ${mark}`)
     await db.updateTable('bookings').set({ customerId: c }).where('id', '=', b).execute()
@@ -113,14 +113,26 @@ describe('ShipmentRepository (SQL Server)', () => {
     await db.updateTable('shipments').set({ legStatus: 'ACTIVE' }).where('id', '=', leg.id).execute()
     await seedLeg({ bookingId: b, legNo: 22, reviewStatus: 'provisional', kind: 'DOCUMENT' }) // document excluded
     await seedLeg({ bookingId: b, legNo: 23, reviewStatus: 'confirmed', kind: 'SHIPMENT' }) // confirmed excluded
+    const gone = await seedLeg({ bookingId: b, legNo: 24, reviewStatus: 'provisional', kind: 'SHIPMENT', dismissedAt: new Date() })
 
     const q = await repo.reviewQueue()
     const found = q.find((r) => r.id === leg.id)
     expect(found).toBeTruthy()
     expect(found?.customerCode).toBe(`RQ${mark}`)
     expect(found?.polCode).toBe(`HKHKG${mark}`)
-    const count = await repo.reviewQueueCount()
-    expect(count).toBeGreaterThanOrEqual(1)
+    expect(q.find((r) => r.id === gone.id)).toBeUndefined() // dismissed rows leave the pending queue
+
+    const d = await repo.reviewQueue('dismissed')
+    expect(d.find((r) => r.id === gone.id)).toBeTruthy()
+    expect(d.find((r) => r.id === leg.id)).toBeUndefined()
+
+    const counts = await repo.reviewQueueCounts()
+    expect(counts.pending).toBeGreaterThanOrEqual(1)
+    expect(counts.dismissed).toBeGreaterThanOrEqual(1)
+
+    // provisionalLegs (the /api/review list) must also skip dismissed rows
+    const prov = await repo.provisionalLegs()
+    expect(prov.find((r) => r.id === gone.id)).toBeUndefined()
   })
 
   it('legsForBooking orders by legNo; findById / findByIds (batch, empty→no query)', async () => {

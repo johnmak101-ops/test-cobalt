@@ -135,17 +135,24 @@ export class ShipmentRepository {
       .selectAll()
       .execute()
   }
-  /** Provisional legs awaiting human review (lowest confidence first). */
+  /** Provisional legs awaiting human review (lowest confidence first). Dismissed rows are excluded —
+   *  a human already ruled "not a trackable shipment" (see reviewQueue views). */
   provisionalLegs() {
-    return this.db.selectFrom('shipments').where('reviewStatus', '=', 'provisional').orderBy('confidence', 'asc').selectAll().execute()
+    return this.db
+      .selectFrom('shipments')
+      .where('reviewStatus', '=', 'provisional')
+      .where('dismissedAt', 'is', null)
+      .orderBy('confidence', 'asc')
+      .selectAll()
+      .execute()
   }
 
   /**
    * The shipment-based Review Queue: provisional real shipments awaiting human approval — kind='SHIPMENT',
    * review_status='provisional', not SUPERSEDED. Enriched with booking customer / forwarder / route / po-count.
-   * Lowest confidence first.
+   * Lowest confidence first. `view=pending` (default) excludes dismissed; `view=dismissed` only dismissed.
    */
-  reviewQueue() {
+  reviewQueue(view: 'pending' | 'dismissed' = 'pending') {
     return this.db
       .selectFrom('shipments')
       .innerJoin('bookings', 'shipments.bookingId', 'bookings.id')
@@ -156,12 +163,14 @@ export class ShipmentRepository {
       .where('shipments.kind', '=', 'SHIPMENT')
       .where('shipments.reviewStatus', '=', 'provisional')
       .where('shipments.legStatus', '<>', 'SUPERSEDED')
+      .where('shipments.dismissedAt', view === 'dismissed' ? 'is not' : 'is', null)
       .orderBy('shipments.confidence', 'asc')
       .orderBy('shipments.createdAt', 'desc')
       .select([
         'shipments.id as id', 'shipments.bookingNo as bookingNo', 'shipments.soNo as soNo', 'shipments.state as state',
         'shipments.legStatus as legStatus', 'shipments.reviewReasons as reviewReasons', 'shipments.confidence as confidence',
-        'shipments.createdAt as createdAt', 'customers.id as customerId', 'customers.name as customerName',
+        'shipments.createdAt as createdAt', 'shipments.dismissedAt as dismissedAt',
+        'customers.id as customerId', 'customers.name as customerName',
         'customers.code as customerCode', 'forwarders.id as forwarderId', 'forwarders.name as forwarderName',
         'shipments.forwarderRaw as forwarderRaw', 'shipments.mode as mode', 'pol.unlocode as polCode', 'pod.unlocode as podCode',
         'pol.iata as polIata', 'pod.iata as podIata', 'shipments.polRaw as polRaw', 'shipments.podRaw as podRaw',
@@ -170,16 +179,19 @@ export class ShipmentRepository {
       .execute()
   }
 
-  /** Count of provisional shipments awaiting review — the nav badge. */
-  async reviewQueueCount(): Promise<number> {
+  /** Pending vs dismissed provisional counts — nav badge reads pending; the queue's Dismissed tab reads both. */
+  async reviewQueueCounts(): Promise<{ pending: number; dismissed: number }> {
     const row = await this.db
       .selectFrom('shipments')
       .where('kind', '=', 'SHIPMENT')
       .where('reviewStatus', '=', 'provisional')
       .where('legStatus', '<>', 'SUPERSEDED')
-      .select(sql<number>`count(*)`.as('n'))
+      .select([
+        sql<number>`sum(case when dismissed_at is null then 1 else 0 end)`.as('pending'),
+        sql<number>`sum(case when dismissed_at is not null then 1 else 0 end)`.as('dismissed'),
+      ])
       .executeTakeFirst()
-    return Number(row?.n ?? 0)
+    return { pending: Number(row?.pending ?? 0), dismissed: Number(row?.dismissed ?? 0) }
   }
 
   legsForBooking(bookingId: string) {
