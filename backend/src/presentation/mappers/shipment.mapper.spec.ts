@@ -15,7 +15,7 @@ const sampleCriticReview = (over: Partial<CriticReview> = {}): CriticReview => (
   priorState: { headline: '', fields: [] },
   proposedChanges: [],
   riskFlags: [{ code: 'INTRA_EMAIL_MULTI_STRONG_ID', severity: 'high', message: 'HBL and booking conflict' }],
-  conflicts: [{ field: 'hbl', label: 'HBL', candidates: [], recommended: null, rationale: '' }],
+  conflicts: [{ field: 'hbl', label: 'HBL', candidates: [], rationale: '' }],
   recommendedHumanAction: 'review',
   reasons: [],
   ...over,
@@ -58,7 +58,7 @@ describe('compactCriticReview', () => {
     const out = compactCriticReview(
       sampleCriticReview({
         riskFlags: [],
-        conflicts: [{ field: 'eta', label: 'ETA', candidates: [], recommended: null, rationale: '' }],
+        conflicts: [{ field: 'eta', label: 'ETA', candidates: [], rationale: '' }],
       }),
     )
     expect(out?.topConflictType).toBe('ETA conflict')

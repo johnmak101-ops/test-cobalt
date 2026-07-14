@@ -272,8 +272,6 @@ export default function ReviewShipmentPage() {
   }
 
   const isDismissed = !!shipment.dismissedAt
-  const isConfirmed = shipment.reviewStatus === 'confirmed'
-  const cardReadOnly = isDismissed || isConfirmed
 
   const handleDismiss = () => {
     if (!id) return
@@ -282,35 +280,6 @@ export default function ReviewShipmentPage() {
   const handleRestore = () => {
     if (!id) return
     restoreMutation.mutate({ shipmentId: id })
-  }
-
-  const handleCardSaveAndApprove = async (payload: {
-    fields: Record<string, unknown>
-    note: string
-    expectedUpdatedAt?: string
-  }) => {
-    if (!id) return
-    setStaleBanner(null)
-    try {
-      const hasFields = Object.keys(payload.fields).length > 0
-      if (hasFields) {
-        await correctMutation.mutateAsync({
-          shipmentId: id,
-          fields: payload.fields,
-          reason: payload.note,
-          expectedUpdatedAt: payload.expectedUpdatedAt ?? expectedUpdatedAt,
-        })
-      } else {
-        await confirmMutation.mutateAsync({
-          shipmentId: id,
-          note: payload.note || undefined,
-          expectedUpdatedAt: payload.expectedUpdatedAt ?? expectedUpdatedAt,
-        })
-      }
-      done()
-    } catch (err) {
-      await handleStale(err)
-    }
   }
 
   const poList = parsePONumbers(shipment.poNumbers)
@@ -365,39 +334,16 @@ export default function ReviewShipmentPage() {
         </div>
       )}
 
-      {/* Critic conflict card — primary triage surface (band + conflicts + Save&Approve) */}
+      {/* Critic conflict card — read-only AI triage context (band + AI comment + conflicts). The
+          editable field sections below own the single note + approve path, so there is no duplicate
+          note/approve on this page. Interactive conflict resolution lives in the Review Queue's inline
+          card; the detail page is the deep-edit surface. */}
       {(shipment.criticReview || shipment.reviewStatus === 'provisional') && (
         <ReviewCard
           shipment={shipment}
           criticReview={shipment.criticReview ?? null}
           defaultExpanded
-          readOnly={cardReadOnly}
-          onSaveAndApprove={cardReadOnly ? undefined : handleCardSaveAndApprove}
-          onApprove={
-            cardReadOnly
-              ? undefined
-              : async () => {
-                  setStaleBanner(null)
-                  try {
-                    await confirmMutation.mutateAsync({
-                      shipmentId: id!,
-                      note: note || undefined,
-                      expectedUpdatedAt,
-                    })
-                    done()
-                  } catch (err) {
-                    await handleStale(err)
-                  }
-                }
-          }
-          onDismiss={
-            cardReadOnly
-              ? undefined
-              : async () => {
-                  await dismissMutation.mutateAsync({ shipmentIds: [id!], note: note || undefined })
-                  done()
-                }
-          }
+          readOnly
         />
       )}
 

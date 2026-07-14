@@ -6,7 +6,6 @@ export interface CriticConflict {
   field: string
   label: string
   candidates: { value: string; source: string; confidence?: Band }[]
-  recommended: string | null
   rationale: string
 }
 

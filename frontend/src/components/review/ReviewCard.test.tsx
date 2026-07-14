@@ -12,7 +12,6 @@ const conflictEta: CriticConflict = {
     { value: '2026-07-20', source: 'System' },
     { value: '2026-07-23', source: 'SO' },
   ],
-  recommended: '2026-07-23',
   rationale: 'Newer SO supersedes stored ETA.',
 }
 
@@ -23,7 +22,6 @@ const conflictHbl: CriticConflict = {
     { value: 'SE26061400005', source: 'Final B/L' },
     { value: 'SE26061400006', source: 'Draft B/L' },
   ],
-  recommended: null,
   rationale: 'Two co-current HBLs in one email.',
 }
 
@@ -120,8 +118,8 @@ describe('ReviewCard', () => {
     // Column headers
     expect(within(table).getByText('Existing')).toBeInTheDocument()
     expect(within(table).getByText('Proposed')).toBeInTheDocument()
-    expect(within(table).getByText('Recommended')).toBeInTheDocument()
     expect(within(table).getByText('Resolution')).toBeInTheDocument()
+    expect(within(table).queryByText('Recommended')).toBeNull()
 
     // proposedChanges field must not become a row
     expect(within(table).queryByText(/etd/i)).toBeNull()
@@ -145,7 +143,7 @@ describe('ReviewCard', () => {
     expect(screen.queryByText('2026-08-01')).toBeNull()
   })
 
-  it('requires a note before Save & Approve when resolution differs from recommended', async () => {
+  it('requires a note before Save & Approve when the resolution differs from the stored value', async () => {
     const user = userEvent.setup()
     const onSave = vi.fn().mockResolvedValue(undefined)
 
@@ -160,12 +158,11 @@ describe('ReviewCard', () => {
     )
 
     const resolution = screen.getByLabelText(/resolution for eta/i) as HTMLInputElement
-    expect(resolution.value).toBe('2026-07-23')
+    // No pre-filled recommendation — the operator chooses.
+    expect(resolution.value).toBe('')
 
     const saveBtn = screen.getByRole('button', { name: /save.*approve/i })
-    // Accepting recommended: no note required if nothing else dirty — button may still save fields
-    // Dirty the resolution away from recommended
-    await user.clear(resolution)
+    // Enter a value that differs from the stored (Existing) value → a note becomes mandatory.
     await user.type(resolution, '2026-07-25')
 
     expect(saveBtn).toBeDisabled()
@@ -197,7 +194,7 @@ describe('ReviewCard', () => {
     expect(screen.queryByLabelText(/resolution for eta/i)).toBeNull()
     expect(screen.queryByRole('textbox', { name: /note/i })).toBeNull()
     expect(screen.queryByRole('button', { name: /save.*approve/i })).toBeNull()
-    // Still shows the recommended / candidate values as text
+    // Still shows the Existing / Proposed candidate values as text
     expect(screen.getByText('2026-07-20')).toBeInTheDocument()
     expect(screen.getAllByText('2026-07-23').length).toBeGreaterThanOrEqual(1)
   })

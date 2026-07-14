@@ -1,5 +1,4 @@
 import type { CriticConflict } from '../../lib/critic-review'
-import { cn } from '../../lib/utils'
 
 export interface ConflictRowProps {
   conflict: CriticConflict
@@ -18,15 +17,6 @@ export function splitCandidates(conflict: CriticConflict) {
   const existing = conflict.candidates.find((c) => isSystemSource(c.source)) ?? null
   const proposed = conflict.candidates.filter((c) => !isSystemSource(c.source))
   return { existing, proposed }
-}
-
-/** Label for the Recommended column: Existing | Proposed | value | no safe pick. */
-export function recommendedLabel(conflict: CriticConflict): string {
-  if (conflict.recommended == null || conflict.recommended === '') return 'no safe pick'
-  const { existing, proposed } = splitCandidates(conflict)
-  if (existing && existing.value === conflict.recommended) return 'Existing'
-  if (proposed.some((p) => p.value === conflict.recommended)) return 'Proposed'
-  return conflict.recommended
 }
 
 function CandidateCell({
@@ -52,13 +42,11 @@ function CandidateCell({
 }
 
 /**
- * One contested field: Existing · Proposed · Recommended · Resolution.
+ * One contested field: Existing · Proposed · Resolution.
  * Only renders structured `CriticConflict` data — never invents from proposedChanges.
  */
 export function ConflictRow({ conflict, value, onChange, readOnly }: ConflictRowProps) {
   const { existing, proposed } = splitCandidates(conflict)
-  const recLabel = recommendedLabel(conflict)
-  const recIsHighlight = recLabel === 'Existing' || recLabel === 'Proposed'
   const inputId = `resolution-${conflict.field}`
 
   return (
@@ -79,16 +67,6 @@ export function ConflictRow({ conflict, value, onChange, readOnly }: ConflictRow
             ))}
           </div>
         )}
-      </td>
-      <td className="px-3 py-2.5">
-        <span
-          className={cn(
-            'text-xs font-medium',
-            recIsHighlight ? 'text-cobalt-primary-light' : 'text-text-muted',
-          )}
-        >
-          {recLabel === 'no safe pick' ? '— (no safe pick)' : recIsHighlight ? `${recLabel} ✓` : recLabel}
-        </span>
       </td>
       <td className="px-3 py-2.5">
         {readOnly ? (

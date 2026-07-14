@@ -194,7 +194,7 @@ describe('DecisionsService (integration)', () => {
       conflicts: [{
         field: 'hbl_awb_fcr_no', label: 'HBL',
         candidates: [{ value: 'H1', source: 'Final B/L' }, { value: 'H2', source: 'Draft B/L' }],
-        recommended: null, rationale: 'Split or multi-leg',
+        rationale: 'Split or multi-leg',
       }],
       recommendedHumanAction: 'split_or_multi_leg',
       reasons: ['multi'],

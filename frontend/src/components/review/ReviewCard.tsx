@@ -54,12 +54,14 @@ function identityOf(s: ReviewShipment | ShipmentDetail) {
 }
 
 function compactFromReview(cr: CriticReview): CriticReviewCompact {
+  // Defensive: ShipTrack trusts-and-stores the payload loosely, so a partial/malformed
+  // criticReview must not throw when the card expands.
   return {
-    band: cr.confidence.band,
-    summary: cr.summary,
+    band: cr.confidence?.band ?? 'low',
+    summary: cr.summary ?? '',
     topConflictType:
-      cr.riskFlags[0]?.message
-      ?? cr.reasons[0]
+      cr.riskFlags?.[0]?.message
+      ?? cr.reasons?.[0]
       ?? cr.summary
       ?? 'Needs review',
   }
@@ -67,7 +69,8 @@ function compactFromReview(cr: CriticReview): CriticReviewCompact {
 
 function initialResolutions(conflicts: CriticConflict[]): Record<string, string> {
   const out: Record<string, string> = {}
-  for (const c of conflicts) out[c.field] = c.recommended ?? ''
+  // No pre-filled recommendation — a queued conflict has no safe auto-pick; the operator chooses.
+  for (const c of conflicts) out[c.field] = ''
   return out
 }
 
@@ -103,7 +106,7 @@ export function ReviewCard({
 
   // Re-seed when the conflict set identity changes (new payload / leg).
   const conflictKey = useMemo(
-    () => conflicts.map((c) => `${c.field}:${c.recommended ?? ''}`).join('|'),
+    () => conflicts.map((c) => c.field).join('|'),
     [conflicts],
   )
   const [seededKey, setSeededKey] = useState(conflictKey)
@@ -113,13 +116,8 @@ export function ReviewCard({
   }
 
   const id = identityOf(shipment)
-  const band = compact?.band ?? criticReview?.confidence.band ?? null
+  const band = compact?.band ?? criticReview?.confidence?.band ?? null
   const lineCompact = compact ?? (criticReview ? compactFromReview(criticReview) : null)
-
-  const dirty = useMemo(
-    () => conflicts.some((c) => (resolutions[c.field] ?? '') !== (c.recommended ?? '')),
-    [conflicts, resolutions],
-  )
 
   const fieldsToApply = useMemo(() => {
     const fields: Record<string, unknown> = {}
@@ -132,6 +130,10 @@ export function ReviewCard({
     return fields
   }, [conflicts, resolutions])
 
+  // A note is mandatory whenever a value is actually changed (differs from the STORED value) — not
+  // merely when it differs from a suggestion. Matches the detail page's correctBlocked rule, and
+  // prevents a silent human-wins field lock with no reason.
+  const dirty = Object.keys(fieldsToApply).length > 0
   const noteRequired = dirty && !note.trim()
   const canSave = !readOnly && !noteRequired && !busy && (onSaveAndApprove || onApprove)
 
@@ -146,7 +148,7 @@ export function ReviewCard({
 
   const handleSaveAndApprove = () => {
     if (noteRequired || busy) return
-    const hasFieldEdits = Object.keys(fieldsToApply).length > 0 || dirty
+    const hasFieldEdits = Object.keys(fieldsToApply).length > 0
     if (hasFieldEdits && onSaveAndApprove) {
       void run(() =>
         onSaveAndApprove({
@@ -271,7 +273,6 @@ export function ReviewCard({
                     <th className="px-3 py-2">Field</th>
                     <th className="px-3 py-2">Existing</th>
                     <th className="px-3 py-2">Proposed</th>
-                    <th className="px-3 py-2">Recommended</th>
                     <th className="px-3 py-2">Resolution</th>
                   </tr>
                 </thead>
@@ -300,7 +301,7 @@ export function ReviewCard({
                   <NotebookPen size={12} className="text-text-muted" />
                   Note
                   {dirty && (
-                    <span className="font-normal text-status-warning">· required when overriding recommendation</span>
+                    <span className="font-normal text-status-warning">· required when you change a value</span>
                   )}
                 </label>
                 <textarea
@@ -309,7 +310,7 @@ export function ReviewCard({
                   value={note}
                   onChange={(e) => setNote(e.target.value)}
                   rows={2}
-                  placeholder="Why this resolution? (required when you change a recommended value)"
+                  placeholder="Why this resolution? (required when you change a value)"
                   className={cn(
                     'w-full rounded-lg border bg-surface-900 p-2.5 text-sm text-text-primary placeholder:text-text-muted',
                     noteRequired ? 'border-status-warning/60' : 'border-border',
@@ -317,7 +318,7 @@ export function ReviewCard({
                 />
                 {noteRequired && (
                   <p className="mt-1 text-xs text-status-warning">
-                    Add a note before Save & Approve — you changed a recommended value.
+                    Add a note before Save & Approve — you changed a value.
                   </p>
                 )}
               </div>
@@ -342,7 +343,7 @@ export function ReviewCard({
                     className="inline-flex items-center gap-1.5 rounded-lg bg-cobalt-primary px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-cobalt-primary-light disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     {busy ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />}
-                    Save & Approve
+                    Save changes & Approve
                   </button>
                 )}
               </div>
