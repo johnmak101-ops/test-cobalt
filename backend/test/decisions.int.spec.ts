@@ -184,36 +184,6 @@ describe('DecisionsService (integration)', () => {
   })
 })
 
-describe('DecisionsService review policy (integration)', () => {
-  it('downgrades an auto-confirm to review when an enabled trigger matches (safe direction)', async () => {
-    await settings.setReviewPolicy(['conflict'], null)
-    const res = await decisions.ingest(decision({ autoApply: true, confidence: 95, conflicts: ['SO number disagreement'] }))
-    expect(res.reviewStatus).toBe('provisional') // downgraded even though the agent auto-confirmed
-    const [leg] = await db.selectFrom('shipments').selectAll().execute()
-    expect(leg.reviewStatus).toBe('provisional')
-    expect(leg.reviewReasons).toContain('the email disagrees with what’s already on the shipment') // reason surfaced in the review queue
-  })
-
-  it('leaves an auto-confirm alone when no enabled trigger matches', async () => {
-    await settings.setReviewPolicy(['conflict'], null)
-    const res = await decisions.ingest(decision({ autoApply: true, conflicts: [] }))
-    expect(res.reviewStatus).toBe('confirmed')
-  })
-
-  it('an empty policy never downgrades (default behaviour unchanged)', async () => {
-    const res = await decisions.ingest(decision({ autoApply: true, conflicts: ['x'] }))
-    expect(res.reviewStatus).toBe('confirmed')
-  })
-
-  it('v2 lookup trigger: mode_change downgrades auto-confirm when enabled', async () => {
-    await settings.setReviewPolicy(['mode_change'], null)
-    const res = await decisions.ingest(
-      decision({ autoApply: true, confidence: 95, lookupContext: { modeChange: true } }),
-    )
-    expect(res.reviewStatus).toBe('provisional')
-  })
-})
-
 describe('DecisionsService email disposition (integration)', () => {
   it('lookupContext modeChange forces review even when agent autoApply:true', async () => {
     const res = await decisions.ingest(

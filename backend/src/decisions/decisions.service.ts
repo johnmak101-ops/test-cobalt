@@ -3,7 +3,6 @@ import { CommitterService, type ReconGroup, type CommitResult } from '../reconci
 import { SettingsService } from '../settings/settings.service'
 import { IngestRepository } from '../db/repositories/ingest.repository'
 import type { CreateDecisionDto } from './dto'
-import { evaluate } from './review-policy'
 import { resolveEmailDisposition } from './email-disposition'
 import { collectSourceEvents } from '../reconcile/source-events'
 
@@ -71,8 +70,8 @@ export class DecisionsService {
     if (!reviewReasons.length) reviewReasons = null
 
     // Cancel flag: always force Awaiting Review with "Booking cancelled" as the TOP reason.
-    // (Review policy alone only runs on auto-confirmed decisions — cancelled payloads that already
-    // arrive provisional would otherwise set leg_status=CANCELLED without a cancel review bullet.)
+    // Cancelled payloads that already arrive provisional would otherwise set leg_status=CANCELLED
+    // without a cancel review bullet.
     if (dto.cancelled === true) {
       reviewStatus = 'provisional'
       const cancelReason = 'Booking cancelled'
@@ -81,16 +80,8 @@ export class DecisionsService {
       reviewReasons = [cancelReason, ...existing]
     }
 
-    // Admin-configured review policy (Settings ▸ Review Policy): an enabled trigger that matches
-    // downgrades an auto-confirm to human review — safe direction only, never the reverse. Applies to
-    // live agent decisions too. Empty policy (the default) → no-op. v2 lookup triggers read lookupContext.
-    if (reviewStatus === 'confirmed') {
-      const fired = evaluate(await this.settings.reviewPolicy(), dto)
-      if (fired.length) {
-        reviewStatus = 'provisional'
-        reviewReasons = [...(reviewReasons ?? []), ...fired]
-      }
-    }
+    // Review Policy settings feature removed (#124). Configurable checklist triggers no longer exist.
+    // Review routing is: email disposition, cancel flag, confidence threshold, agent autoApply/reasons.
 
     // Related Emails: union every channel that may carry a graph message id. Relying on
     // dto.events alone dropped links when events lacked graphId but identifiers/evidence still

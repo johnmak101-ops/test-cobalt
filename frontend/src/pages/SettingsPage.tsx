@@ -6,7 +6,6 @@ import { AlertRulesSettings } from '../components/settings/AlertRulesSettings'
 import { UsersSettings } from '../components/settings/UsersSettings'
 import { ResolutionRulesSettings } from '../components/settings/ResolutionRulesSettings'
 import { AccessControlSettings } from '../components/settings/AccessControlSettings'
-import { ReviewPolicySettings } from '../components/settings/ReviewPolicySettings'
 
 export default function SettingsPage() {
   const location = useLocation()
@@ -17,15 +16,13 @@ export default function SettingsPage() {
   const isUsersSettings = location.pathname.includes('/settings/users')
   const isResolution = location.pathname.includes('/settings/resolution')
   const isAccess = location.pathname.includes('/settings/access')
-  const isReviewPolicy = location.pathname.includes('/settings/review-policy')
 
   // No empty "General" tab — only real config panels. Superadmin-only vs access-matrix tabs.
-  // Vendors list UI removed (#127) — masters stay Mesh-mirrored; no Settings destination.
+  // Vendors (#127) and Review Policy (#124) settings UIs removed.
   const navItems = [
     { to: '/settings/alerts', label: 'Alert Rules', end: false, show: canView('alert_rules') },
     { to: '/settings/users', label: 'Users', end: false, show: isSuper },
     { to: '/settings/resolution', label: 'Resolution Rules', end: false, show: canView('resolution_rules') },
-    { to: '/settings/review-policy', label: 'Review Policy', end: false, show: canView('review_policy') },
     { to: '/settings/access', label: 'Access Control', end: false, show: isSuper },
   ].filter((i) => i.show)
 
@@ -63,9 +60,7 @@ export default function SettingsPage() {
       </nav>
 
       <div className="flex-1">
-        {isReviewPolicy ? (
-          <ReviewPolicySettings />
-        ) : isAccess ? (
+        {isAccess ? (
           <AccessControlSettings />
         ) : isResolution ? (
           <ResolutionRulesSettings />

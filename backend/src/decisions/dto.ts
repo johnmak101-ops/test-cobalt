@@ -71,7 +71,7 @@ export class CreateDecisionDto {
   @IsOptional() @IsIn(['auto', 'review', 'skip']) disposition?: 'auto' | 'review' | 'skip'
 
   /** Cross-leg / master-lookup signals the agent attaches so track can gate review without a full DB scan
-   *  (review-policy v2 + email disposition). Omitted by legacy callers → payload-only gates. */
+   *  (email disposition). Omitted by legacy callers → payload-only gates. */
   @IsOptional() @IsObject() lookupContext?: {
     knownCustomer?: boolean
     newCustomer?: boolean

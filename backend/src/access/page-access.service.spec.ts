@@ -55,14 +55,14 @@ describe('PageAccessService', () => {
   it('forUser returns a level for every governed page', async () => {
     const s = new PageAccessService(fakeRepo())
     const levels = await s.forUser('ADMIN')
-    expect(Object.keys(levels).sort()).toEqual(['alert_rules', 'resolution_rules', 'review_policy'])
+    expect(Object.keys(levels).sort()).toEqual(['alert_rules', 'resolution_rules'])
     expect(levels.alert_rules).toBe('edit')
   })
 
   it('matrix lists every page × configurable role', async () => {
     const s = new PageAccessService(fakeRepo())
     const { pages } = await s.matrix()
-    expect(pages.map((p) => p.id)).toEqual(['alert_rules', 'resolution_rules', 'review_policy'])
+    expect(pages.map((p) => p.id)).toEqual(['alert_rules', 'resolution_rules'])
     expect(Object.keys(pages[0].levels).sort()).toEqual(['ADMIN', 'EDITOR', 'VIEWER'])
   })
 })

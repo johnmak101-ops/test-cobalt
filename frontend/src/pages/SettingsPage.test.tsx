@@ -13,7 +13,6 @@ vi.mock('../components/settings/ResolutionRulesSettings', () => ({ ResolutionRul
 vi.mock('../components/settings/UsersSettings', () => ({ UsersSettings: () => <div>users</div> }))
 vi.mock('../components/settings/AlertRulesSettings', () => ({ AlertRulesSettings: () => <div>alerts</div> }))
 vi.mock('../components/settings/AccessControlSettings', () => ({ AccessControlSettings: () => <div>access</div> }))
-vi.mock('../components/settings/ReviewPolicySettings', () => ({ ReviewPolicySettings: () => <div>review-policy</div> }))
 
 describe('SettingsPage nav (access-aware)', () => {
   it('an ADMIN sees access-granted config tabs (Alert Rules, Resolution) but not superadmin-only tabs', () => {
@@ -24,8 +23,9 @@ describe('SettingsPage nav (access-aware)', () => {
     expect(screen.queryByRole('link', { name: /^users$/i })).not.toBeInTheDocument()
     expect(screen.queryByRole('link', { name: /access control/i })).not.toBeInTheDocument()
     expect(screen.queryByRole('link', { name: /^vendors$/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: /review policy/i })).not.toBeInTheDocument()
   })
-  it('a SUPERADMIN sees config tabs but not Vendors (removed #127)', () => {
+  it('a SUPERADMIN sees config tabs but not Vendors or Review Policy', () => {
     mockUser.role = 'SUPERADMIN'
     render(<MemoryRouter initialEntries={['/settings/users']}><SettingsPage /></MemoryRouter>)
     expect(screen.queryByRole('link', { name: /^general$/i })).not.toBeInTheDocument()
@@ -33,5 +33,6 @@ describe('SettingsPage nav (access-aware)', () => {
     expect(screen.getByRole('link', { name: /^users$/i })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: /access control/i })).toBeInTheDocument()
     expect(screen.queryByRole('link', { name: /^vendors$/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: /review policy/i })).not.toBeInTheDocument()
   })
 })

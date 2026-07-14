@@ -21,8 +21,6 @@ export interface ConfigPage {
 export const CONFIG_PAGES: ConfigPage[] = [
   { id: 'alert_rules', label: 'Alert Rules', defaults: { VIEWER: 'view', EDITOR: 'view', ADMIN: 'edit' } },
   { id: 'resolution_rules', label: 'Resolution Rules', defaults: { VIEWER: 'none', EDITOR: 'none', ADMIN: 'edit' } },
-  // Review Policy is an operational tunable → EDITOR (Manager) edits by default; superadmin can adjust.
-  { id: 'review_policy', label: 'Review Policy', defaults: { VIEWER: 'none', EDITOR: 'edit', ADMIN: 'edit' } },
 ]
 
 export const CONFIG_PAGE_IDS = CONFIG_PAGES.map((p) => p.id)
