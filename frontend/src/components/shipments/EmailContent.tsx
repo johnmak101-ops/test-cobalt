@@ -1,4 +1,5 @@
-import { Paperclip, FileText, Download } from 'lucide-react'
+import { useState } from 'react'
+import { Paperclip, FileText, Download, Loader2, AlertCircle } from 'lucide-react'
 import { useEmailBody, useEmailAttachments } from '../../hooks/use-emails'
 import { downloadAttachment } from '../../lib/api'
 import { Badge } from '../ui/Badge'
@@ -148,20 +149,58 @@ export function EmailAttachments({
       </p>
       <div className="flex flex-wrap gap-2">
         {attachments.map((a) => (
-          <button
-            key={a.id}
-            onClick={() => void downloadAttachment(a.id, a.filename)}
-            title={`Download ${a.filename}`}
-            className="group flex cursor-pointer items-center gap-2 rounded-lg border border-border bg-surface-700 px-3 py-1.5 text-xs text-text-secondary transition-colors hover:border-cobalt-primary hover:text-text-primary"
-          >
-            <FileText size={13} className="shrink-0 text-text-muted" />
-            <span className="max-w-[220px] truncate">{a.filename}</span>
-            {a.sizeBytes ? <span className="text-text-muted">{Math.round(a.sizeBytes / 1024)} KB</span> : null}
-            <Download size={12} className="shrink-0 text-text-muted group-hover:text-cobalt-primary-light" />
-          </button>
+          <AttachmentChip key={a.id} att={a} />
         ))}
       </div>
     </div>
+  )
+}
+
+/**
+ * One download chip. The download re-fetches the original from Graph (byte-free decisions keep no local
+ * copy), so it's a network round-trip that can take a beat — show an in-flight spinner and DISABLE the
+ * button while it runs so an impatient user can't fire a dozen concurrent fetches. Surfaces a failed
+ * fetch (e.g. Graph unavailable) instead of failing silently; click again to retry.
+ */
+function AttachmentChip({ att }: { att: { id: string; filename: string; sizeBytes: number } }) {
+  const [status, setStatus] = useState<'idle' | 'loading' | 'error'>('idle')
+  const run = async () => {
+    if (status === 'loading') return
+    setStatus('loading')
+    try {
+      await downloadAttachment(att.id, att.filename)
+      setStatus('idle')
+    } catch {
+      setStatus('error')
+    }
+  }
+  return (
+    <button
+      onClick={() => void run()}
+      disabled={status === 'loading'}
+      title={
+        status === 'loading' ? `Downloading ${att.filename}…`
+        : status === 'error' ? `Download failed — click to retry`
+        : `Download ${att.filename}`
+      }
+      aria-busy={status === 'loading'}
+      className={`group flex items-center gap-2 rounded-lg border px-3 py-1.5 text-xs transition-colors disabled:cursor-wait ${
+        status === 'error'
+          ? 'border-red-500/50 bg-surface-700 text-red-300 hover:border-red-500'
+          : 'cursor-pointer border-border bg-surface-700 text-text-secondary hover:border-cobalt-primary hover:text-text-primary'
+      }`}
+    >
+      <FileText size={13} className="shrink-0 text-text-muted" />
+      <span className="max-w-[220px] truncate">{att.filename}</span>
+      {att.sizeBytes ? <span className="text-text-muted">{Math.round(att.sizeBytes / 1024)} KB</span> : null}
+      {status === 'loading' ? (
+        <Loader2 size={12} className="shrink-0 animate-spin text-cobalt-primary-light" />
+      ) : status === 'error' ? (
+        <AlertCircle size={12} className="shrink-0 text-red-400" />
+      ) : (
+        <Download size={12} className="shrink-0 text-text-muted group-hover:text-cobalt-primary-light" />
+      )}
+    </button>
   )
 }
 
