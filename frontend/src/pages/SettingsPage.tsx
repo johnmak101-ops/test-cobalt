@@ -2,7 +2,6 @@ import { NavLink, Navigate, useLocation } from 'react-router-dom'
 import { cn } from '../lib/utils'
 import { useAuth } from '../hooks/use-auth'
 import { usePageAccess } from '../hooks/use-page-access'
-import { VendorsSettings } from '../components/settings/VendorsSettings'
 import { AlertRulesSettings } from '../components/settings/AlertRulesSettings'
 import { UsersSettings } from '../components/settings/UsersSettings'
 import { ResolutionRulesSettings } from '../components/settings/ResolutionRulesSettings'
@@ -15,16 +14,15 @@ export default function SettingsPage() {
   const { canView } = usePageAccess()
   const isSuper = user?.role === 'SUPERADMIN'
   const isAlertsSettings = location.pathname.includes('/settings/alerts')
-  const isVendorsSettings = location.pathname.includes('/settings/vendors')
   const isUsersSettings = location.pathname.includes('/settings/users')
   const isResolution = location.pathname.includes('/settings/resolution')
   const isAccess = location.pathname.includes('/settings/access')
   const isReviewPolicy = location.pathname.includes('/settings/review-policy')
 
   // No empty "General" tab — only real config panels. Superadmin-only vs access-matrix tabs.
+  // Vendors list UI removed (#127) — masters stay Mesh-mirrored; no Settings destination.
   const navItems = [
     { to: '/settings/alerts', label: 'Alert Rules', end: false, show: canView('alert_rules') },
-    { to: '/settings/vendors', label: 'Vendors', end: false, show: isSuper },
     { to: '/settings/users', label: 'Users', end: false, show: isSuper },
     { to: '/settings/resolution', label: 'Resolution Rules', end: false, show: canView('resolution_rules') },
     { to: '/settings/review-policy', label: 'Review Policy', end: false, show: canView('review_policy') },
@@ -75,8 +73,6 @@ export default function SettingsPage() {
           <UsersSettings />
         ) : isAlertsSettings ? (
           <AlertRulesSettings />
-        ) : isVendorsSettings ? (
-          <VendorsSettings />
         ) : (
           <Navigate to={navItems[0]?.to ?? '/'} replace />
         )}

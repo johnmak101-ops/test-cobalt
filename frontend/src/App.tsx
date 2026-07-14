@@ -133,7 +133,8 @@ function AppRoutes() {
         <Route path="/alerts/rules" element={<PageAccessRoute page="alert_rules"><AlertRulesPage /></PageAccessRoute>} />
         <Route path="/settings" element={<SuperadminRoute><SettingsPage /></SuperadminRoute>} />
         <Route path="/settings/alerts" element={<PageAccessRoute page="alert_rules"><SettingsPage /></PageAccessRoute>} />
-        <Route path="/settings/vendors" element={<SuperadminRoute><SettingsPage /></SuperadminRoute>} />
+        {/* Vendors settings removed (#127) — Mesh mirror only; redirect bookmarks. */}
+        <Route path="/settings/vendors" element={<Navigate to="/settings" replace />} />
         <Route path="/settings/users" element={<SuperadminRoute><SettingsPage /></SuperadminRoute>} />
         <Route path="/settings/resolution" element={<PageAccessRoute page="resolution_rules"><SettingsPage /></PageAccessRoute>} />
         <Route path="/settings/review-policy" element={<PageAccessRoute page="review_policy"><SettingsPage /></PageAccessRoute>} />
