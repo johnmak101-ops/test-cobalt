@@ -107,10 +107,15 @@ export default function PurchaseOrdersPage() {
         return furthestStatusLabel(ls)
       }
 
-      // "CNSZX→GBFXT" → two filterable cells (arrows defeat spreadsheet filters)
+      // "CNSZX→GBFXT" → two filterable cells (arrows defeat spreadsheet filters). A missing end comes
+      // through as the "-" placeholder (deriveRoute, #115) — drop it so the export cell stays empty.
       const splitRoute = (r?: string | null): [string, string] => {
         const [pol = '', pod = ''] = (r ?? '').split('→')
-        return [pol.trim(), pod.trim()]
+        const cell = (x: string): string => {
+          const t = x.trim()
+          return t === '-' ? '' : t
+        }
+        return [cell(pol), cell(pod)]
       }
 
       for (const po of sorted) {

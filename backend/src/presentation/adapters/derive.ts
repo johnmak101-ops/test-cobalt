@@ -3,13 +3,20 @@
  * Pure functions — no DB access; the caller passes already-loaded values.
  */
 
-/** "POL→POD" route string from the two port identifiers (unlocode or short code). */
+/**
+ * "POL→POD" route string from the two port identifiers (unlocode or short code). Always shows BOTH sides:
+ * when one end is missing, a "-" placeholder fills it (`CNSZX → -` / `- → USLAX`) so the value reads as a
+ * route rather than a lone code (#115). Both-present stays the compact `POL→POD`; neither → null (the UI
+ * renders its own "—" dash). NB: consumers that split this back into cells must treat "-" as empty — see
+ * splitRoute in PurchaseOrdersPage.
+ */
 export function deriveRoute(
   pol: string | null | undefined,
   pod: string | null | undefined,
 ): string | null {
+  if (!pol && !pod) return null
   if (pol && pod) return `${pol}→${pod}`
-  return pol || pod || null
+  return `${pol ?? '-'} → ${pod ?? '-'}`
 }
 
 /** The port code a leg should DISPLAY: AIR legs show the IATA airport code (CNCAN → CAN, the code
