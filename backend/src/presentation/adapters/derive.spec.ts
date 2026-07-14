@@ -1,17 +1,19 @@
 import { describe, it, expect } from 'vitest'
 import { deriveRoute, portLabel, deriveOriginCountry, poNumbersJson, isoOrNull } from './derive'
 
-describe('deriveRoute — POL/POD -> "POL→POD" string', () => {
-  it('joins both ends with an arrow', () => {
+describe('deriveRoute — POL/POD -> "POL→POD", both sides always shown (#115)', () => {
+  it('joins both ends with an arrow (unchanged)', () => {
     expect(deriveRoute('CNYTN', 'GBFXT')).toBe('CNYTN→GBFXT')
   })
 
-  it('returns the single known end when the other is missing', () => {
-    expect(deriveRoute('CNYTN', null)).toBe('CNYTN')
-    expect(deriveRoute(null, 'GBFXT')).toBe('GBFXT')
+  it('renders the known end + a "-" placeholder for the missing one (not the lone code)', () => {
+    expect(deriveRoute('CNYTN', null)).toBe('CNYTN → -')
+    expect(deriveRoute('CNYTN', undefined)).toBe('CNYTN → -')
+    expect(deriveRoute(null, 'GBFXT')).toBe('- → GBFXT')
+    expect(deriveRoute(undefined, 'GBFXT')).toBe('- → GBFXT')
   })
 
-  it('returns null when neither end is known', () => {
+  it('returns null when neither end is known (frontend renders the "—" dash)', () => {
     expect(deriveRoute(null, null)).toBeNull()
     expect(deriveRoute(undefined, undefined)).toBeNull()
   })

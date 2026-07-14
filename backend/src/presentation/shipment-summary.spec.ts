@@ -22,7 +22,7 @@ describe('buildShipmentSummary — pure per-shipment summary from preloaded rows
     expect(s).toEqual({ id: 'leg1', poNumbers: '["PO-1","PO-2"]', route: 'CNYTN→GBFXT', customer: { name: 'Cole Haan' } })
   })
 
-  it('AIR legs display the IATA code in the route; unknown customer/POs → null/[]', () => {
+  it('AIR legs display the IATA code in the route; missing POD → "-" placeholder (#115); unknown customer/POs → null/[]', () => {
     const airMaps = {
       customers: new Map(),
       vendors: new Map(),
@@ -30,7 +30,7 @@ describe('buildShipmentSummary — pure per-shipment summary from preloaded rows
       ports: new Map([['p1', { id: 'p1', unlocode: 'CNCAN', iata: 'CAN', country: 'CN' }]]),
     } as never
     const s = buildShipmentSummary({ id: 'leg2', bookingId: 'b2', mode: 'AIR', polId: 'p1', podId: null }, null, [], airMaps)
-    expect(s.route).toBe('CAN')
+    expect(s.route).toBe('CAN → -') // IATA code for the origin, placeholder for the absent destination
     expect(s.customer).toBeNull()
     expect(s.poNumbers).toBe('[]')
   })
