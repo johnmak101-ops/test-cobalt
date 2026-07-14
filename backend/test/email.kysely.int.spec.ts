@@ -39,6 +39,7 @@ afterAll(async () => {
 let seq = 0
 async function seedMessage(opts: {
   graphMessageId?: string
+  graphId?: string
   subject?: string
   sender?: string
   receivedAt?: Date
@@ -52,6 +53,7 @@ async function seedMessage(opts: {
     .insertInto('emailMessage')
     .values({
       graphMessageId: gmid,
+      graphId: opts.graphId ?? null,
       subject: opts.subject ?? `Subject ${seq}`,
       sender: opts.sender ?? `s${seq}@x.co`,
       receivedAt: opts.receivedAt ?? new Date(Date.now() + seq * 1000),
@@ -82,14 +84,16 @@ describe('EmailRepository (SQL Server)', () => {
     expect(await repo.findIngested('does-not-exist')).toBeNull()
   })
 
-  it('attachmentById + attachmentsFor join the message graph id', async () => {
-    const m = await seedMessage({ graphMessageId: 'gmid-att' })
+  it('attachmentById + attachmentsFor carry the message Graph ITEM id (graph_id) for re-fetch, looked up by graph_message_id', async () => {
+    // messageGraphId must be the Graph item id (AAMk…) — Graph /messages/{id}/attachments rejects the
+    // internet graph_message_id with 400. Look the message up by its internet id, return its item id.
+    const m = await seedMessage({ graphMessageId: 'gmid-att', graphId: 'AAMk-item-att' })
     const attId = await seedAttachment(m.id, 'doc.pdf')
     const byId = await repo.attachmentById(attId)
-    expect(byId[0]).toMatchObject({ attachmentId: attId, filename: 'doc.pdf', messageGraphId: 'gmid-att' })
+    expect(byId[0]).toMatchObject({ attachmentId: attId, filename: 'doc.pdf', messageGraphId: 'AAMk-item-att' })
     const forMsg = await repo.attachmentsFor('gmid-att')
     expect(forMsg.length).toBe(1)
-    expect(forMsg[0].messageGraphId).toBe('gmid-att')
+    expect(forMsg[0].messageGraphId).toBe('AAMk-item-att')
     // miss
     expect(await repo.attachmentsFor('no-such-gmid')).toEqual([])
   })
