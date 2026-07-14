@@ -4,6 +4,19 @@ Shipment-tracking app for Cobalt Knitwear. An upstream AI agent reads logistics 
 decisions to this app, which turns them into a tracked **PO → Booking → Shipment** picture with alerts and
 a human review queue.
 
+## Critic Review (Phase 1-UI, advisory)
+
+Optional agent payload on decisions; **does not change** confirmed/provisional routing (`autoApply` / gate disposition).
+
+| Piece | Where |
+|-------|--------|
+| Column | `shipments.critic_review` nvarchar(max) NULL — migration `0012_shipment_critic_review` (register in `migrate-cli.ts`) |
+| Ingest | `POST /api/decisions` optional `criticReview?: object` (`CreateDecisionDto`) → persisted on the leg |
+| Queue UI | Review Queue tabs **Active** / **Rejected** / **Approved**; **Band** badge (Low/Medium); expandable **conflict-only** card (Existing / Proposed / Recommended / Resolution); no **Why review?** column |
+| Fixture (agent) | cobalt-queue `test/fixtures/critic-review.sample.json` (`CRITIC_REVIEW=deterministic\|openpave`); includes `conflicts[]` for contested fields |
+
+Legacy decisions without `criticReview` render as before (no band, no conflict expand). Design: `docs/superpowers/specs/2026-07-14-critic-review-ui-design.md`.
+
 ## Stack
 
 - **Frontend**: React 19 + TypeScript + Vite + Zustand + TanStack Query + Tailwind

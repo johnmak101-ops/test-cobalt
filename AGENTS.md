@@ -27,6 +27,12 @@ Orientation for AI coding agents working in this repo.
   Shared enum value arrays: `backend/src/db/enums.ts`.
 - Runtime config/tunables: the `app_settings` table + the Settings UI (review policy, page access, …).
 - Decisions ingest → commit: `backend/src/decisions/` + `backend/src/reconcile/committer.service.ts`.
+  Optional advisory `criticReview` on `POST /api/decisions` lands in `shipments.critic_review`
+  (migration `0012`); shapes in `backend/src/decisions/critic-review.types.ts`. Does **not** change
+  routing — gate `autoApply` / `disposition` still own provisional vs confirmed.
+- Review Queue UI: Active / Rejected / Approved tabs; band badge + conflict-only card
+  (`frontend/src/components/review/`, `frontend/src/lib/critic-review.ts`). Agent golden fixture:
+  cobalt-queue `test/fixtures/critic-review.sample.json` (`conflicts[]` for contested fields).
 - Presentation/adapters (flat UI shapes): `backend/src/presentation/`.
 - Frontend API client: `frontend/src/lib/api.ts` (relative `/api`, same-origin).
 
@@ -65,5 +71,6 @@ Orientation for AI coding agents working in this repo.
 - Match the surrounding style (no semicolons, single quotes, 2-space indent). ESLint must pass.
 - Masters (customers/vendors/ports) are ERP-owned and **read-only** in-app; resolution facts are managed
   at runtime (Settings → Resolution Rules). Don't hard-code business facts — extend the data model.
-- Keep the app ↔ agent contract stable: `POST /api/decisions` + `GET /api/masters/resolution`.
+- Keep the app ↔ agent contract stable: `POST /api/decisions` (+ optional `criticReview`) +
+  `GET /api/masters/resolution`.
 - In plans/task breakdowns, list phases and items — no time estimates (e.g. no "Week 1-2").
