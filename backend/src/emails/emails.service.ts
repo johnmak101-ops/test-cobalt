@@ -191,15 +191,16 @@ export class EmailsService {
    * degrade to `[]` so callers fall through to their own parsedOnly/unavailable handling.
    */
   private async fetchGraphOriginals(
-    rows: { rawBytes: Buffer | null; graphAttachmentId: string | null; messageGraphId: string; filename: string }[],
+    rows: { rawBytes: Buffer | null; graphAttachmentId: string | null; messageGraphId: string | null; filename: string }[],
   ) {
     // graphAttachmentId is absent for attachments ingested via the raw-MIME (mailparser) path — those
     // still need this fetch (matched back by filename, see matchGraphOriginal), so only messageGraphId gates it.
-    const needsGraph = rows.find((r) => !r.rawBytes && r.messageGraphId)
+    // messageGraphId is the Graph ITEM id (email_message.graph_id) and is nullable — skip when absent.
+    const needsGraph = rows.find((r) => !r.rawBytes && r.messageGraphId)?.messageGraphId
     if (!needsGraph) return []
     try {
       if (!this.graph.configured()) return []
-      return await this.graph.fetchAttachments(needsGraph.messageGraphId)
+      return await this.graph.fetchAttachments(needsGraph)
     } catch (err) {
       this.log.warn(`attachment Graph fetch failed: ${String(err).slice(0, 80)}`)
       return []

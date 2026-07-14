@@ -41,7 +41,11 @@ export class EmailRepository {
         'emailAttachment.sourceKind as sourceKind', 'emailAttachment.sizeBytes as sizeBytes',
         'emailAttachment.declaredMime as declaredMime', 'emailAttachment.rawBytes as rawBytes',
         'emailAttachment.graphAttachmentId as graphAttachmentId',
-        'emailMessage.graphMessageId as messageGraphId',
+        // Graph re-fetch (getAttachmentOriginal → graph.fetchAttachments) addresses the message by its
+        // Graph ITEM id in the URL path — use graph_id (AAMk…), NOT graph_message_id (the internet
+        // <…@host> id, which Graph rejects with 400). Latent until byte-free decisions made this the
+        // only path (attachments used to carry inline raw_bytes).
+        'emailMessage.graphId as messageGraphId',
       ])
       .execute()
   }
