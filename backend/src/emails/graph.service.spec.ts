@@ -1,5 +1,27 @@
-import { expect, it } from 'vitest'
-import { mapGraphAttachments } from './graph.service'
+import { expect, it, vi } from 'vitest'
+import { GraphService, mapGraphAttachments } from './graph.service'
+
+it('fetchAttachments qualifies contentBytes with the fileAttachment type cast (bare $select=contentBytes 400s on the base attachment type)', async () => {
+  const urls: string[] = []
+  vi.stubEnv('GRAPH_TENANT_ID', 't')
+  vi.stubEnv('GRAPH_CLIENT_ID', 'c')
+  vi.stubEnv('GRAPH_CLIENT_SECRET', 's')
+  vi.stubEnv('GRAPH_MAILBOX', 'mbx@x.com')
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+    urls.push(url)
+    const body = url.includes('login.microsoftonline.com') ? { access_token: 'T', expires_in: 3600 } : { value: [] }
+    return new Response(JSON.stringify(body), { status: 200 })
+  }))
+  try {
+    await new GraphService().fetchAttachments('MSG-ID')
+    const attUrl = urls.find((u) => u.includes('/attachments'))!
+    expect(attUrl).toContain('microsoft.graph.fileAttachment/contentBytes')
+    expect(attUrl).not.toContain('size,contentBytes') // the old, 400-ing bare form
+  } finally {
+    vi.unstubAllGlobals()
+    vi.unstubAllEnvs()
+  }
+})
 
 it('maps Graph fileAttachments to download rows (decoding contentBytes)', () => {
   const rows = mapGraphAttachments({

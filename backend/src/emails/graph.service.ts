@@ -126,9 +126,15 @@ export class GraphService {
   async fetchAttachments(graphMessageId: string): Promise<GraphAttachment[]> {
     const c = this.cfg()
     const token = await this.accessToken()
+    // `contentBytes` is declared on the derived microsoft.graph.fileAttachment, NOT the base
+    // microsoft.graph.attachment — a bare `$select=…,contentBytes` 400s ("Could not find a property named
+    // 'contentBytes' on type 'microsoft.graph.attachment'"). Qualify it with the type cast so the collection
+    // $select validates. (This path is now load-bearing: decisions send attachment refs only, so the mirror
+    // has no local bytes and every "download attachment" re-fetches here.)
     const url =
       `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(c.mailbox)}` +
-      `/messages/${encodeURIComponent(graphMessageId)}/attachments?$select=id,name,contentType,size,contentBytes`
+      `/messages/${encodeURIComponent(graphMessageId)}/attachments` +
+      `?$select=id,name,contentType,size,microsoft.graph.fileAttachment/contentBytes`
     const res = await fetch(url, { headers: { authorization: `Bearer ${token}` } })
     if (!res.ok) throw new Error(`graph attachments ${res.status}`)
     return mapGraphAttachments((await res.json()) as { value?: any[] })
