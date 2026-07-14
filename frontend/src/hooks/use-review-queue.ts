@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../lib/api'
 import type { CriticReviewCompact } from '../lib/critic-review'
+import { mapCriticFieldsToColumns } from '../lib/review-fields'
 
 /** A provisional shipment awaiting human confirmation. Shape fixed by the backend contract for
  *  GET /api/shipments/review-queue. `reviewReasons` explains WHY the matcher held it back. */
@@ -32,12 +33,27 @@ export interface ReviewCounts {
   dismissed: number
 }
 
-export type ReviewQueueView = 'pending' | 'dismissed'
+/** UI tab keys — mapped to backend `view=` query params. */
+export type ReviewQueueView = 'active' | 'rejected' | 'approved'
 
-export function useReviewQueue(view: ReviewQueueView = 'pending') {
+/** Backend GET /shipments/review-queue?view= values. */
+export type ReviewQueueApiView = 'pending' | 'dismissed' | 'approved'
+
+const VIEW_TO_API: Record<ReviewQueueView, ReviewQueueApiView> = {
+  active: 'pending',
+  rejected: 'dismissed',
+  approved: 'approved',
+}
+
+export function reviewQueueApiView(view: ReviewQueueView): ReviewQueueApiView {
+  return VIEW_TO_API[view]
+}
+
+export function useReviewQueue(view: ReviewQueueView = 'active') {
+  const apiView = reviewQueueApiView(view)
   return useQuery<ReviewQueueResponse>({
     queryKey: ['review-queue', view],
-    queryFn: () => api.get(`/shipments/review-queue?view=${view}`),
+    queryFn: () => api.get(`/shipments/review-queue?view=${apiView}`),
   })
 }
 
@@ -58,6 +74,11 @@ function useInvalidateReview() {
     queryClient.invalidateQueries({ queryKey: ['shipment'] })
     queryClient.invalidateQueries({ queryKey: ['dashboard'] })
   }
+}
+
+function isStaleConflict(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err ?? '')
+  return /\b409\b/.test(msg) || /modified|reload/i.test(msg)
 }
 
 /**
@@ -90,6 +111,7 @@ export function useConfirmShipment() {
 /**
  * Correct fields on a provisional shipment and approve it. Each edited field is locked
  * (human-wins — the agent can never overwrite it) and audited with the reviewer's reason.
+ * Critic snake_case field keys are mapped to camelCase leg columns before POST.
  */
 export function useCorrectShipment() {
   const invalidate = useInvalidateReview()
@@ -108,13 +130,15 @@ export function useCorrectShipment() {
       expectedUpdatedAt?: string
     }) =>
       api.post(`/review/${shipmentId}/correct`, {
-        fields,
+        fields: mapCriticFieldsToColumns(fields),
         ...(reason?.trim() ? { reason: reason.trim() } : {}),
         ...(expectedUpdatedAt ? { expectedUpdatedAt } : {}),
       }),
     onSuccess: invalidate,
   })
 }
+
+export { isStaleConflict }
 
 /**
  * Bulk "not a trackable shipment" (#133): stamps dismissed_at so the rows leave the queue WITHOUT

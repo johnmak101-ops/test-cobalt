@@ -1,10 +1,18 @@
 import { Fragment, useMemo, useState } from 'react'
 import { useNavigate, useParams, Link } from 'react-router-dom'
+import { useQueryClient } from '@tanstack/react-query'
 import { useShipment, type FieldConflict } from '../hooks/use-shipments'
 import { useShipmentHistory, type HistoryEntry } from '../hooks/use-shipment-history'
-import { useConfirmShipment, useCorrectShipment, useDismissShipments, useRestoreShipment } from '../hooks/use-review-queue'
+import {
+  useConfirmShipment,
+  useCorrectShipment,
+  useDismissShipments,
+  useRestoreShipment,
+  isStaleConflict,
+} from '../hooks/use-review-queue'
 import { Card } from '../components/ui/Card'
 import { Badge } from '../components/ui/Badge'
+import { ReviewCard } from '../components/review/ReviewCard'
 import { cn, formatDateTime, parsePONumbers } from '../lib/utils'
 import {
   EDITABLE_FIELDS,
@@ -157,7 +165,8 @@ function ConflictEvidence({
 export default function ReviewShipmentPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
-  const { data: shipment, isLoading } = useShipment(id!)
+  const queryClient = useQueryClient()
+  const { data: shipment, isLoading, refetch } = useShipment(id!)
   const { data: historyData } = useShipmentHistory(id!)
   const confirmMutation = useConfirmShipment()
   const correctMutation = useCorrectShipment()
@@ -167,6 +176,7 @@ export default function ReviewShipmentPage() {
   const [edits, setEdits] = useState<Record<string, string>>({})
   const [styleRows, setStyleRows] = useState<StyleEntry[] | null>(null)
   const [note, setNote] = useState('')
+  const [staleBanner, setStaleBanner] = useState<string | null>(null)
 
   // Contested fields come from two sources: reason strings that NAME fields ("backend conflict on qty,…")
   // and — when the reason is a bare count ("N unresolved field conflict(s)") — the backend-computed
@@ -222,19 +232,49 @@ export default function ReviewShipmentPage() {
 
   const done = () => navigate('/review-queue')
 
+  const handleStale = async (err: unknown) => {
+    if (!isStaleConflict(err)) throw err
+    setStaleBanner('This shipment was modified elsewhere — reloading so you can retry with the latest values.')
+    await refetch()
+    void queryClient.invalidateQueries({ queryKey: ['shipment', id] })
+  }
+
+  const expectedUpdatedAt = shipment.updatedAt
+
   const handleApprove = () => {
     if (!id) return
-    confirmMutation.mutate({ shipmentId: id, note }, { onSuccess: done })
+    setStaleBanner(null)
+    confirmMutation.mutate(
+      { shipmentId: id, note, expectedUpdatedAt },
+      {
+        onSuccess: done,
+        onError: (err) => {
+          void handleStale(err).catch(() => setStaleBanner('Approve failed.'))
+        },
+      },
+    )
   }
 
   // A note is mandatory when saving corrections — it's the feedback harvested for agent-soul iteration.
   const correctBlocked = dirtyCount > 0 && !note.trim()
   const handleCorrectAndApprove = () => {
     if (!id || dirtyCount === 0 || !note.trim()) return
-    correctMutation.mutate({ shipmentId: id, fields: dirty, reason: note.trim() }, { onSuccess: done })
+    setStaleBanner(null)
+    correctMutation.mutate(
+      { shipmentId: id, fields: dirty, reason: note.trim(), expectedUpdatedAt },
+      {
+        onSuccess: done,
+        onError: (err) => {
+          void handleStale(err).catch(() => setStaleBanner('Save failed.'))
+        },
+      },
+    )
   }
 
   const isDismissed = !!shipment.dismissedAt
+  const isConfirmed = shipment.reviewStatus === 'confirmed'
+  const cardReadOnly = isDismissed || isConfirmed
+
   const handleDismiss = () => {
     if (!id) return
     dismissMutation.mutate({ shipmentIds: [id], note }, { onSuccess: done })
@@ -242,6 +282,35 @@ export default function ReviewShipmentPage() {
   const handleRestore = () => {
     if (!id) return
     restoreMutation.mutate({ shipmentId: id })
+  }
+
+  const handleCardSaveAndApprove = async (payload: {
+    fields: Record<string, unknown>
+    note: string
+    expectedUpdatedAt?: string
+  }) => {
+    if (!id) return
+    setStaleBanner(null)
+    try {
+      const hasFields = Object.keys(payload.fields).length > 0
+      if (hasFields) {
+        await correctMutation.mutateAsync({
+          shipmentId: id,
+          fields: payload.fields,
+          reason: payload.note,
+          expectedUpdatedAt: payload.expectedUpdatedAt ?? expectedUpdatedAt,
+        })
+      } else {
+        await confirmMutation.mutateAsync({
+          shipmentId: id,
+          note: payload.note || undefined,
+          expectedUpdatedAt: payload.expectedUpdatedAt ?? expectedUpdatedAt,
+        })
+      }
+      done()
+    } catch (err) {
+      await handleStale(err)
+    }
   }
 
   const poList = parsePONumbers(shipment.poNumbers)
@@ -289,6 +358,48 @@ export default function ReviewShipmentPage() {
           </ul>
         )}
       </div>
+
+      {staleBanner && (
+        <div className="rounded-lg border border-status-warning/40 bg-status-warning/10 px-3 py-2 text-xs text-status-warning">
+          {staleBanner}
+        </div>
+      )}
+
+      {/* Critic conflict card — primary triage surface (band + conflicts + Save&Approve) */}
+      {(shipment.criticReview || shipment.reviewStatus === 'provisional') && (
+        <ReviewCard
+          shipment={shipment}
+          criticReview={shipment.criticReview ?? null}
+          defaultExpanded
+          readOnly={cardReadOnly}
+          onSaveAndApprove={cardReadOnly ? undefined : handleCardSaveAndApprove}
+          onApprove={
+            cardReadOnly
+              ? undefined
+              : async () => {
+                  setStaleBanner(null)
+                  try {
+                    await confirmMutation.mutateAsync({
+                      shipmentId: id!,
+                      note: note || undefined,
+                      expectedUpdatedAt,
+                    })
+                    done()
+                  } catch (err) {
+                    await handleStale(err)
+                  }
+                }
+          }
+          onDismiss={
+            cardReadOnly
+              ? undefined
+              : async () => {
+                  await dismissMutation.mutateAsync({ shipmentIds: [id!], note: note || undefined })
+                  done()
+                }
+          }
+        />
+      )}
 
       {/* Which fields conflict, what each email said, and where to cross-check */}
       <ConflictEvidence

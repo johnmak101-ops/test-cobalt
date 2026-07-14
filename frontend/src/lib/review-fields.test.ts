@@ -3,6 +3,8 @@ import {
   EDITABLE_FIELDS,
   buildCorrections,
   conflictColumns,
+  mapCriticFieldToColumn,
+  mapCriticFieldsToColumns,
   toInputValue,
   parseStyleEntries,
   serializeStyleEntries,
@@ -63,6 +65,44 @@ describe('conflictColumns — parse "why review?" reasons into column names', ()
   it('ignores reasons that name no known fields', () => {
     expect(conflictColumns(['matched multiple backend legs (ambiguous)'])).toEqual([])
     expect(conflictColumns(['5 unresolved field conflict(s)'])).toEqual([])
+  })
+})
+
+describe('mapCriticFieldToColumn / mapCriticFieldsToColumns', () => {
+  it('maps critic snake_case parser fields to camelCase leg columns', () => {
+    expect(mapCriticFieldToColumn('eta')).toBe('eta')
+    expect(mapCriticFieldToColumn('etd')).toBe('etd')
+    expect(mapCriticFieldToColumn('so_no')).toBe('soNo')
+    expect(mapCriticFieldToColumn('booking_no')).toBe('bookingNo')
+    expect(mapCriticFieldToColumn('hbl_awb_fcr_no')).toBe('hblAwbFcrNo')
+    expect(mapCriticFieldToColumn('mbl')).toBe('mbl')
+    expect(mapCriticFieldToColumn('container_no')).toBe('containerNo')
+    expect(mapCriticFieldToColumn('vessel_name')).toBe('vesselName')
+  })
+
+  it('accepts already-camelCase columns and drops unknowns', () => {
+    expect(mapCriticFieldToColumn('hblAwbFcrNo')).toBe('hblAwbFcrNo')
+    expect(mapCriticFieldToColumn('not_a_real_field')).toBeNull()
+    expect(mapCriticFieldToColumn('')).toBeNull()
+  })
+
+  it('rewrites a fields bag for CorrectDto (idempotent on camelCase)', () => {
+    expect(
+      mapCriticFieldsToColumns({
+        eta: '2026-07-23',
+        hbl_awb_fcr_no: 'HBL1',
+        so_no: 'SO9',
+        vessel_name: 'MSC LORETO',
+        bookingNo: 'BK1',
+        garbage: 'x',
+      }),
+    ).toEqual({
+      eta: '2026-07-23',
+      hblAwbFcrNo: 'HBL1',
+      soNo: 'SO9',
+      vesselName: 'MSC LORETO',
+      bookingNo: 'BK1',
+    })
   })
 })
 

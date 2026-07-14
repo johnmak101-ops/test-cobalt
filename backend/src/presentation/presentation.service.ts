@@ -316,11 +316,10 @@ export class PresentationService {
   // ---- review queue (provisional shipments) ----
 
   /**
-   * The Review Queue: provisional (low-confidence) real shipments awaiting human approval. Same
-   * customer/route resolution as the shipments() list (masters resolve pol/pod → route, customer name).
-   * `view=pending` (default) or `dismissed`.
+   * The Review Queue: Active (`pending`), Rejected (`dismissed`), or Approved (`approved` confirmed
+   * with criticReview). Same customer/route resolution as the shipments() list.
    */
-  async reviewQueue(view: 'pending' | 'dismissed' = 'pending') {
+  async reviewQueue(view: 'pending' | 'dismissed' | 'approved' = 'pending') {
     const rows = await this.shipmentRepo.reviewQueue(view)
     return {
       shipments: rows.map((r) => ({
