@@ -25,6 +25,9 @@ build
 *.swp
 *.swo
 
+# Local pave state (agent scratch/todos)
+.pave/
+
 # OS
 .DS_Store
 Thumbs.db
