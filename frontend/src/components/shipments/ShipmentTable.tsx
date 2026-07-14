@@ -172,24 +172,38 @@ export function ShipmentTable({ shipments }: ShipmentTableProps) {
     })
   }
 
+  // Columns: expand · Booking · Customer PO# · Customer · Forwarder · Route · Status · ETD · ETA · Last · Risk
+  // SO No removed from tracker (#119); detail pages still show SO.
   return (
     <div className="overflow-hidden rounded-xl border border-border bg-surface-800">
       <div className="overflow-x-auto">
-        <table className="w-full">
+        <table className="w-full table-fixed min-w-[960px]">
+          <colgroup>
+            <col className="w-8" />
+            <col className="w-[12%]" />
+            <col className="w-[9%]" />
+            <col className="w-[12%]" />
+            <col className="w-[11%]" />
+            <col className="w-[12%]" />
+            <col className="w-[11%]" />
+            <col className="w-[8%]" />
+            <col className="w-[8%]" />
+            <col className="w-[10%]" />
+            <col className="w-14" />
+          </colgroup>
           <thead>
             <tr className="border-b border-border bg-surface-900/50">
-              <th className="w-8 px-2 py-3"></th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-text-muted">Booking No</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-text-muted">SO No</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-text-muted">Customer PO#</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-text-muted">Customer</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-text-muted">Forwarder</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-text-muted">Route</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-text-muted">Status</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-text-muted">ETD</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-text-muted">ETA</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-text-muted">Last Activity</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-text-muted">Risk</th>
+              <th className="px-2 py-3"></th>
+              <th className="px-3 py-3 text-left text-xs font-medium text-text-muted">Booking No</th>
+              <th className="px-3 py-3 text-left text-xs font-medium text-text-muted">Customer PO#</th>
+              <th className="px-3 py-3 text-left text-xs font-medium text-text-muted">Customer</th>
+              <th className="px-3 py-3 text-left text-xs font-medium text-text-muted">Forwarder</th>
+              <th className="px-3 py-3 text-left text-xs font-medium text-text-muted">Route</th>
+              <th className="px-3 py-3 text-left text-xs font-medium text-text-muted">Status</th>
+              <th className="px-3 py-3 text-left text-xs font-medium text-text-muted">ETD</th>
+              <th className="px-3 py-3 text-left text-xs font-medium text-text-muted">ETA</th>
+              <th className="px-3 py-3 text-left text-xs font-medium text-text-muted">Last Activity</th>
+              <th className="px-2 py-3 text-left text-xs font-medium text-text-muted">Risk</th>
             </tr>
           </thead>
           <tbody>
@@ -214,13 +228,10 @@ export function ShipmentTable({ shipments }: ShipmentTableProps) {
                         </button>
                       ) : null}
                     </td>
-                    <td className="px-4 py-3 font-mono text-sm font-medium text-cobalt-primary-light">
+                    <td className="truncate px-3 py-3 font-mono text-sm font-medium text-cobalt-primary-light">
                       {s.bookingNo ?? '—'}
                     </td>
-                    <td className="px-4 py-3 font-mono text-sm text-text-secondary">
-                      {s.soNumber ?? '—'}
-                    </td>
-                    <td className="px-4 py-3">
+                    <td className="px-3 py-3">
                       <CustomerPoChip
                         linkedPOs={s.linkedPOs ?? []}
                         shipmentId={s.id}
@@ -229,35 +240,43 @@ export function ShipmentTable({ shipments }: ShipmentTableProps) {
                         }
                       />
                     </td>
-                    <td className="px-4 py-3 text-sm text-text-secondary">
+                    <td className="truncate px-3 py-3 text-sm text-text-secondary">
                       {s.customer?.name ?? '—'}
                     </td>
-                    <td className="px-4 py-3 text-sm text-text-secondary">
+                    <td className="truncate px-3 py-3 text-sm text-text-secondary">
                       {s.forwarder?.name ?? '—'}
                     </td>
-                    <td className="px-4 py-3 text-sm text-text-secondary">{s.route ?? '—'}</td>
-                    <td className="px-4 py-3">
-                      <span className="inline-flex items-center gap-1.5">
-                        <Badge variant="status" value={s.status} />
+                    <td className="truncate px-3 py-3 text-sm text-text-secondary">{s.route ?? '—'}</td>
+                    <td className="px-3 py-3">
+                      <Badge variant="status" value={s.status} />
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-3 text-sm text-text-secondary">
+                      {formatShortDate(s.etd)}
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-3 text-sm text-text-secondary">
+                      {formatShortDate(s.eta)}
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-3 text-sm text-text-muted">
+                      {formatRelativeTime(s.updatedAt)}
+                    </td>
+                    <td className="px-2 py-3">
+                      <span className="inline-flex items-center gap-1">
+                        {s.riskLevel === 'DELAYED' && (
+                          <span title="Delayed" className="inline-flex shrink-0">
+                            <AlertTriangle size={16} className="text-status-critical" />
+                          </span>
+                        )}
+                        {s.riskLevel === 'AT_RISK' && (
+                          <span title="At risk" className="inline-flex shrink-0">
+                            <AlertTriangle size={16} className="text-status-warning" />
+                          </span>
+                        )}
                         {s.reviewStatus === 'provisional' && (
-                          <span title="Awaiting review" className="inline-flex shrink-0">
-                            <AlertTriangle size={13} className="text-status-warning" />
+                          <span title="Awaiting review" data-testid="risk-awaiting-review" className="inline-flex shrink-0">
+                            <AlertTriangle size={16} className="text-status-warning" />
                           </span>
                         )}
                       </span>
-                    </td>
-                    <td className="px-4 py-3 text-sm text-text-secondary">{formatShortDate(s.etd)}</td>
-                    <td className="px-4 py-3 text-sm text-text-secondary">{formatShortDate(s.eta)}</td>
-                    <td className="px-4 py-3 text-sm text-text-muted">
-                      {formatRelativeTime(s.updatedAt)}
-                    </td>
-                    <td className="px-4 py-3">
-                      {s.riskLevel === 'DELAYED' && (
-                        <AlertTriangle size={16} className="text-status-critical" />
-                      )}
-                      {s.riskLevel === 'AT_RISK' && (
-                        <AlertTriangle size={16} className="text-status-warning" />
-                      )}
                     </td>
                   </tr>
 
@@ -269,20 +288,19 @@ export function ShipmentTable({ shipments }: ShipmentTableProps) {
                       className="cursor-pointer border-b border-border last:border-0 bg-surface-900/40 hover:bg-surface-700/50 transition-colors"
                     >
                       <td className="px-2 py-2"></td>
-                      <td className="px-4 py-2 pl-8">
+                      <td className="px-3 py-2 pl-8">
                         <span className="text-[11px] text-text-muted">└</span>
                       </td>
-                      <td className="px-4 py-2"></td>
-                      <td className="px-4 py-2 font-mono text-xs text-cobalt-primary-light/80">
+                      <td className="px-3 py-2 font-mono text-xs text-cobalt-primary-light/80">
                         {po.poNumber}
                       </td>
-                      <td className="px-4 py-2 text-xs text-text-muted">
+                      <td className="px-3 py-2 text-xs text-text-muted">
                         {po.vendor?.name ?? '—'}
                       </td>
-                      <td className="px-4 py-2 text-xs text-text-muted" colSpan={2}>
+                      <td className="px-3 py-2 text-xs text-text-muted" colSpan={2}>
                         {po.quantity ?? '—'} / {po.totalQuantity ?? '—'} {po.quantityUnit ?? ''}
                       </td>
-                      <td className="px-4 py-2" colSpan={5}></td>
+                      <td className="px-3 py-2" colSpan={5}></td>
                     </tr>
                   ))}
                 </Fragment>
@@ -290,7 +308,7 @@ export function ShipmentTable({ shipments }: ShipmentTableProps) {
             })}
             {shipments.length === 0 && (
               <tr>
-                <td colSpan={12} className="px-4 py-12 text-center text-sm text-text-muted">
+                <td colSpan={11} className="px-4 py-12 text-center text-sm text-text-muted">
                   No shipments found
                 </td>
               </tr>

@@ -117,3 +117,25 @@ describe('ShipmentTable — Customer PO popover (#118)', () => {
     expect(screen.getByTestId('customer-po-chip').textContent).toMatch(/2 POs/)
   })
 })
+
+describe('ShipmentTable — column layout (#119)', () => {
+  it('does not render an SO No column', () => {
+    renderTable([baseShipment({ soNumber: 'SO-SHOULD-NOT-SHOW' })])
+    expect(screen.queryByRole('columnheader', { name: /so no/i })).not.toBeInTheDocument()
+    expect(screen.queryByText('SO-SHOULD-NOT-SHOW')).not.toBeInTheDocument()
+  })
+
+  it('puts the provisional awaiting-review icon in Risk, not next to Status', () => {
+    renderTable([
+      baseShipment({
+        reviewStatus: 'provisional',
+        riskLevel: 'ON_TRACK',
+        status: 'BOOKED',
+      }),
+    ])
+    const icon = screen.getByTestId('risk-awaiting-review')
+    expect(icon).toHaveAttribute('title', 'Awaiting review')
+    // Status column still shows the badge label only
+    expect(screen.getByText(/booking request/i)).toBeInTheDocument()
+  })
+})
