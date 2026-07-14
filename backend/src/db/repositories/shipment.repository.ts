@@ -212,11 +212,11 @@ export class ShipmentRepository {
     return map
   }
 
-  /** matchKeys + reviewReasons are JSON nvarchar(max) columns — stringify when present (callers pass
-   *  raw objects/arrays like they did to Drizzle jsonb; tedious rejects non-strings). */
+  /** matchKeys + reviewReasons + criticReview are JSON nvarchar(max) columns — stringify when present
+   *  (callers pass raw objects/arrays like they did to Drizzle jsonb; tedious rejects non-strings). */
   private jsonifyLegColumns(values: Record<string, unknown>): Record<string, unknown> {
     const payload: Record<string, unknown> = { ...values }
-    for (const k of ['matchKeys', 'reviewReasons']) {
+    for (const k of ['matchKeys', 'reviewReasons', 'criticReview']) {
       if (k in payload) payload[k] = payload[k] != null ? JSON.stringify(payload[k]) : null
     }
     return payload

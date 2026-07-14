@@ -85,6 +85,10 @@ export class CreateDecisionDto {
   /** Why the gate withheld auto-apply (empty when autoApply) — surfaced in the review queue ahead of raw conflicts. */
   @IsOptional() @IsArray() @IsString({ each: true }) reviewReasons?: string[]
 
+  /** Critic advisory JSON (confidence band, conflicts, risk flags) — persisted on the leg for the review UI.
+   *  Loose object at the HTTP boundary; shape documented in critic-review.types.ts. Omitted by legacy callers. */
+  @IsOptional() @IsObject() criticReview?: object
+
   /** True when EVERY source email came from the CVP/TradeLinkOne notification platform — the leg is a
    *  vendor/PO notification, not a booked move (routed to Documents, classifyKind rule (c)). Omitted by
    *  legacy callers → the committer resolves it from the source emails' senders (defense in depth). */

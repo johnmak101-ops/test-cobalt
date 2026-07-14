@@ -25,6 +25,7 @@ import type {
   ALERT_WATCH_FOR,
   COMPUTE_TZ,
 } from '../enums'
+import type { CriticReview } from '../../decisions/critic-review.types'
 
 /**
  * Curated overlay over the kysely-codegen types (`db.generated.ts`).
@@ -62,8 +63,7 @@ export interface Shipments
   qtyUnit: U<typeof QTY_UNIT> | null
   reviewReasons: Json<string[] | null>
   matchKeys: Json<Record<string, unknown> | null>
-  /** Temporary loose type; Task 4 can tighten to CriticReviewPayload. */
-  criticReview: Json<Record<string, unknown> | null>
+  criticReview: Json<CriticReview | null>
 }
 
 export interface Bookings extends Omit<GenBookings, 'status'> {

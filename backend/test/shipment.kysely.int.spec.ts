@@ -155,10 +155,25 @@ describe('ShipmentRepository (SQL Server)', () => {
     const pol = await seedPort(`CNSHA${mark}`)
     const pod = await seedPort(`USLAX${mark}`)
     await db.updateTable('bookings').set({ customerId: c, forwarderId: f }).where('id', '=', b).execute()
-    const leg = await repo.insertLeg({ bookingId: b, state: 'BOOKED', mode: 'SEA', forwarderId: f, polId: pol, podId: pod, matchKeys: { booking_no: 'B1' } })
-    // matchKeys stored as JSON nvarchar(max); the ParseJSONResultsPlugin parses it back to an object on read
-    const persisted = (await db.selectFrom('shipments').where('id', '=', leg.id).select('matchKeys').executeTakeFirst())?.matchKeys
-    expect(persisted).toEqual({ booking_no: 'B1' })
+    const criticReview = {
+      confidence: { score: 38, band: 'low' as const, label: 'Low' },
+      summary: 'Two HBLs',
+      observations: [] as string[],
+      priorState: { headline: 'New', fields: [] as unknown[] },
+      proposedChanges: [] as unknown[],
+      riskFlags: [] as { code: string; severity: 'low' | 'medium' | 'high'; message: string }[],
+      recommendedHumanAction: 'split_or_multi_leg',
+      reasons: ['multi'],
+    }
+    const leg = await repo.insertLeg({
+      bookingId: b, state: 'BOOKED', mode: 'SEA', forwarderId: f, polId: pol, podId: pod,
+      matchKeys: { booking_no: 'B1' },
+      criticReview,
+    })
+    // matchKeys / criticReview stored as JSON nvarchar(max); ParseJSONResultsPlugin parses back on read
+    const persisted = await db.selectFrom('shipments').where('id', '=', leg.id).select(['matchKeys', 'criticReview']).executeTakeFirst()
+    expect(persisted?.matchKeys).toEqual({ booking_no: 'B1' })
+    expect(persisted?.criticReview).toMatchObject({ confidence: { band: 'low' }, summary: 'Two HBLs' })
 
     await repo.updateLeg(leg.id, { state: 'SAILED', bookingNo: 'B-NEW' })
     const detail = await repo.legDetailById(leg.id)
@@ -167,6 +182,9 @@ describe('ShipmentRepository (SQL Server)', () => {
     expect(detail?.customerCode).toBe(`DT${mark}`)
     expect(detail?.polCode).toBe(`CNSHA${mark}`)
     expect(detail?.podCode).toBe(`USLAX${mark}`)
+    // update without criticReview must not wipe the column (jsonify only touches keys present in the patch)
+    const after = await db.selectFrom('shipments').where('id', '=', leg.id).select('criticReview').executeTakeFirst()
+    expect(after?.criticReview).toMatchObject({ summary: 'Two HBLs' })
 
     // linkedPosForBooking
     const po = await seedPo()
