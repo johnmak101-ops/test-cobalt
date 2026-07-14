@@ -1,4 +1,5 @@
 import { cn } from '../../lib/utils'
+import { bandLabel, type Band } from '../../lib/critic-review'
 
 const severityStyles: Record<string, string> = {
   CRITICAL: 'bg-status-critical/15 text-status-critical border-status-critical/30',
@@ -26,6 +27,13 @@ const emailTypeStyles: Record<string, string> = {
   OTHER: 'bg-surface-700 text-text-muted',
 }
 
+/** Confidence band → severity tokens (low=critical, medium=warning, high=success). */
+const confidenceStyles: Record<string, string> = {
+  low: 'bg-status-critical/15 text-status-critical border-status-critical/30',
+  medium: 'bg-status-warning/15 text-status-warning border-status-warning/30',
+  high: 'bg-status-success/15 text-status-success border-status-success/30',
+}
+
 const emailTypeLabels: Record<string, string> = {
   BOOKING_REQUEST: 'BOOKING',
   SHIPPING_ORDER: 'SO',
@@ -48,21 +56,30 @@ export const statusLabels: Record<string, string> = {
 }
 
 interface BadgeProps {
-  variant?: 'severity' | 'status' | 'emailType'
+  variant?: 'severity' | 'status' | 'emailType' | 'confidence'
   value: string
   className?: string
 }
 
-export function Badge({ variant = 'severity', value, className }: BadgeProps) {
-  const styles =
-    variant === 'status'
-      ? statusStyles
-      : variant === 'emailType'
-        ? emailTypeStyles
-        : severityStyles
+function stylesFor(variant: NonNullable<BadgeProps['variant']>): Record<string, string> {
+  if (variant === 'status') return statusStyles
+  if (variant === 'emailType') return emailTypeStyles
+  if (variant === 'confidence') return confidenceStyles
+  return severityStyles
+}
 
-  const label = variant === 'emailType' ? emailTypeLabels[value] ?? value : value
-  const displayLabel = variant === 'status' ? statusLabels[value] ?? value.replace('_', ' ') : label
+function displayLabelFor(variant: NonNullable<BadgeProps['variant']>, value: string): string {
+  if (variant === 'emailType') return emailTypeLabels[value] ?? value
+  if (variant === 'status') return statusLabels[value] ?? value.replace('_', ' ')
+  if (variant === 'confidence' && (value === 'low' || value === 'medium' || value === 'high')) {
+    return bandLabel(value as Band)
+  }
+  return value
+}
+
+export function Badge({ variant = 'severity', value, className }: BadgeProps) {
+  const styles = stylesFor(variant)
+  const displayLabel = displayLabelFor(variant, value)
 
   return (
     <span

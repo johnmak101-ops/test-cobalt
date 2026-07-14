@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../lib/api'
+import type { CriticReviewCompact } from '../lib/critic-review'
 
 /** A provisional shipment awaiting human confirmation. Shape fixed by the backend contract for
  *  GET /api/shipments/review-queue. `reviewReasons` explains WHY the matcher held it back. */
@@ -13,7 +14,11 @@ export interface ReviewShipment {
   state: string | null
   status: string
   reviewReasons: string[]
+  /** Queue-safe AI critic projection (never raw confidence score). */
+  criticReviewCompact: CriticReviewCompact | null
   createdAt: string
+  /** ISO timestamp for optimistic concurrency on confirm/correct. */
+  updatedAt: string
   poCount: number
   dismissedAt: string | null
 }
@@ -64,8 +69,20 @@ export function useConfirmShipment() {
   const invalidate = useInvalidateReview()
 
   return useMutation({
-    mutationFn: ({ shipmentId, note }: { shipmentId: string; note?: string }) =>
-      api.post(`/review/${shipmentId}/confirm`, note?.trim() ? { note: note.trim() } : {}),
+    mutationFn: ({
+      shipmentId,
+      note,
+      expectedUpdatedAt,
+    }: {
+      shipmentId: string
+      note?: string
+      /** ISO from load; backend 409s if leg was modified since. */
+      expectedUpdatedAt?: string
+    }) =>
+      api.post(`/review/${shipmentId}/confirm`, {
+        ...(note?.trim() ? { note: note.trim() } : {}),
+        ...(expectedUpdatedAt ? { expectedUpdatedAt } : {}),
+      }),
     onSuccess: invalidate,
   })
 }
@@ -82,11 +99,19 @@ export function useCorrectShipment() {
       shipmentId,
       fields,
       reason,
+      expectedUpdatedAt,
     }: {
       shipmentId: string
       fields: Record<string, unknown>
       reason?: string
-    }) => api.post(`/review/${shipmentId}/correct`, { fields, ...(reason?.trim() ? { reason: reason.trim() } : {}) }),
+      /** ISO from load; backend 409s if leg was modified since. */
+      expectedUpdatedAt?: string
+    }) =>
+      api.post(`/review/${shipmentId}/correct`, {
+        fields,
+        ...(reason?.trim() ? { reason: reason.trim() } : {}),
+        ...(expectedUpdatedAt ? { expectedUpdatedAt } : {}),
+      }),
     onSuccess: invalidate,
   })
 }
