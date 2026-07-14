@@ -42,7 +42,16 @@ type U<T extends readonly string[]> = T[number]
 export interface Shipments
   extends Omit<
     GenShipments,
-    'kind' | 'mode' | 'state' | 'legStatus' | 'riskLevel' | 'reviewStatus' | 'qtyUnit' | 'reviewReasons' | 'matchKeys'
+    | 'kind'
+    | 'mode'
+    | 'state'
+    | 'legStatus'
+    | 'riskLevel'
+    | 'reviewStatus'
+    | 'qtyUnit'
+    | 'reviewReasons'
+    | 'matchKeys'
+    | 'criticReview'
   > {
   kind: Generated<'SHIPMENT' | 'DOCUMENT'>
   mode: U<typeof SHIPMENT_MODE> | null
@@ -53,6 +62,8 @@ export interface Shipments
   qtyUnit: U<typeof QTY_UNIT> | null
   reviewReasons: Json<string[] | null>
   matchKeys: Json<Record<string, unknown> | null>
+  /** Temporary loose type; Task 4 can tighten to CriticReviewPayload. */
+  criticReview: Json<Record<string, unknown> | null>
 }
 
 export interface Bookings extends Omit<GenBookings, 'status'> {

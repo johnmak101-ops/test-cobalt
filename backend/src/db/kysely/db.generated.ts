@@ -361,6 +361,8 @@ export interface Shipments {
   cfsCutoff: Date | null;
   confidence: number | null;
   confirmedByEmail: Generated<boolean>;
+  /** Agent critic review JSON blob (0012) — nvarchar(max), ParseJSONResultsPlugin-parsed at runtime via overlay. */
+  criticReview: string | null;
   consigneeAddress: string | null;
   consigneeId: string | null;
   consigneeName: string | null;
