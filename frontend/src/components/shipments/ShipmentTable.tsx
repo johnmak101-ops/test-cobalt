@@ -1,12 +1,161 @@
-import { Fragment, useState } from 'react'
+import { Fragment, useState, useRef, useEffect, useCallback } from 'react'
+import { createPortal } from 'react-dom'
 import { Badge } from '../ui/Badge'
 import { formatShortDate, formatRelativeTime } from '../../lib/utils'
 import { useNavigate } from 'react-router-dom'
 import { AlertTriangle, ChevronRight, ChevronDown, Package } from 'lucide-react'
-import type { Shipment } from '../../hooks/use-shipments'
+import type { LinkedPO, Shipment } from '../../hooks/use-shipments'
 
 interface ShipmentTableProps {
   shipments: Shipment[]
+}
+
+/** PO chip + hover panel portaled to body so table overflow does not clip it (#118). */
+function CustomerPoChip({
+  linkedPOs,
+  shipmentId,
+  onSelectPo,
+}: {
+  linkedPOs: LinkedPO[]
+  shipmentId: string
+  onSelectPo: (poId: string, shipmentId: string) => void
+}) {
+  const poCount = linkedPOs.length
+  const anchorRef = useRef<HTMLSpanElement>(null)
+  const [open, setOpen] = useState(false)
+  const [coords, setCoords] = useState<{
+    top: number
+    left: number
+    maxHeight: number
+    placeAbove: boolean
+  } | null>(null)
+  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const clearClose = () => {
+    if (closeTimer.current) {
+      clearTimeout(closeTimer.current)
+      closeTimer.current = null
+    }
+  }
+
+  const scheduleClose = () => {
+    clearClose()
+    closeTimer.current = setTimeout(() => setOpen(false), 120)
+  }
+
+  const place = useCallback(() => {
+    const el = anchorRef.current
+    if (!el) return
+    const r = el.getBoundingClientRect()
+    const width = 288 // w-72
+    const left = Math.max(8, Math.min(r.left, window.innerWidth - width - 8))
+    const spaceBelow = window.innerHeight - r.bottom - 8
+    const spaceAbove = r.top - 8
+    const placeAbove = spaceBelow < 160 && spaceAbove > spaceBelow
+    const maxHeight = Math.max(120, placeAbove ? spaceAbove : spaceBelow)
+    setCoords({
+      top: placeAbove ? r.top - 4 : r.bottom + 4,
+      left,
+      maxHeight,
+      placeAbove,
+    })
+  }, [])
+
+  const openPopover = () => {
+    if (poCount === 0) return
+    clearClose()
+    place()
+    setOpen(true)
+  }
+
+  // Close on scroll/resize so the panel never sits stranded after the table moves.
+  useEffect(() => {
+    if (!open) return
+    const close = () => setOpen(false)
+    window.addEventListener('scroll', close, true)
+    window.addEventListener('resize', close)
+    return () => {
+      window.removeEventListener('scroll', close, true)
+      window.removeEventListener('resize', close)
+    }
+  }, [open])
+
+  useEffect(() => () => clearClose(), [])
+
+  const panel =
+    open && coords && poCount > 0
+      ? createPortal(
+          <div
+            role="dialog"
+            aria-label="Customer Purchase Orders"
+            data-testid="customer-po-popover"
+            style={{
+              position: 'fixed',
+              top: coords.top,
+              left: coords.left,
+              maxHeight: coords.maxHeight,
+              transform: coords.placeAbove ? 'translateY(-100%)' : undefined,
+              zIndex: 9999,
+            }}
+            className="w-72 overflow-y-auto rounded-lg border border-border bg-surface-800 p-3 shadow-xl"
+            onMouseEnter={clearClose}
+            onMouseLeave={scheduleClose}
+          >
+            <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-text-muted">
+              Customer Purchase Orders
+            </p>
+            <div className="divide-y divide-border">
+              {linkedPOs.map((po) => (
+                <div
+                  key={po.id}
+                  role="link"
+                  tabIndex={0}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setOpen(false)
+                    onSelectPo(po.id, shipmentId)
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault()
+                      e.stopPropagation()
+                      setOpen(false)
+                      onSelectPo(po.id, shipmentId)
+                    }
+                  }}
+                  className="cursor-pointer rounded-md px-2 py-2 transition-colors hover:bg-surface-700"
+                >
+                  <span className="font-mono text-xs font-medium text-cobalt-primary-light">{po.poNumber}</span>
+                  <div className="mt-0.5 flex items-center justify-between gap-2 text-[11px] text-text-muted">
+                    <span className="min-w-0 truncate">{po.vendor?.name ?? '—'}</span>
+                    <span className="ml-2 shrink-0">
+                      {po.quantity ?? '—'} {po.totalQuantity ? `/ ${po.totalQuantity}` : ''}{' '}
+                      {po.quantityUnit ?? ''}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>,
+          document.body,
+        )
+      : null
+
+  return (
+    <>
+      <span
+        ref={anchorRef}
+        data-testid="customer-po-chip"
+        className="inline-flex cursor-default items-center gap-1.5 rounded-md bg-surface-600 px-2 py-0.5 text-xs font-medium text-text-secondary"
+        onMouseEnter={openPopover}
+        onMouseLeave={scheduleClose}
+      >
+        <Package size={12} className="text-text-muted" />
+        {poCount} PO{poCount !== 1 ? 's' : ''}
+      </span>
+      {panel}
+    </>
+  )
 }
 
 export function ShipmentTable({ shipments }: ShipmentTableProps) {
@@ -72,39 +221,13 @@ export function ShipmentTable({ shipments }: ShipmentTableProps) {
                       {s.soNumber ?? '—'}
                     </td>
                     <td className="px-4 py-3">
-                      <div className="group relative inline-block">
-                        <span className="inline-flex items-center gap-1.5 rounded-md bg-surface-600 px-2 py-0.5 text-xs font-medium text-text-secondary cursor-default">
-                          <Package size={12} className="text-text-muted" />
-                          {poCount} PO{poCount !== 1 ? 's' : ''}
-                        </span>
-                        {poCount > 0 && (
-                          <div className="pointer-events-none absolute left-0 top-full z-50 mt-1 hidden w-72 rounded-lg border border-border bg-surface-800 p-3 shadow-xl group-hover:pointer-events-auto group-hover:block">
-                            <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-text-muted">
-                              Customer Purchase Orders
-                            </p>
-                            <div className="divide-y divide-border">
-                              {s.linkedPOs?.map((po) => (
-                                <div
-                                  key={po.id}
-                                  onClick={(e) => {
-                                    e.stopPropagation()
-                                    navigate(`/purchase-orders/${po.id}`, { state: { fromShipment: s.id } })
-                                  }}
-                                  className="rounded-md px-2 py-2 transition-colors hover:bg-surface-700 cursor-pointer"
-                                >
-                                  <span className="font-mono text-xs font-medium text-cobalt-primary-light">{po.poNumber}</span>
-                                  <div className="mt-0.5 flex items-center justify-between text-[11px] text-text-muted">
-                                    <span className="truncate">{po.vendor?.name ?? '—'}</span>
-                                    <span className="shrink-0 ml-3">
-                                      {po.quantity ?? '—'} {po.totalQuantity ? `/ ${po.totalQuantity}` : ''} {po.quantityUnit ?? ''}
-                                    </span>
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-                      </div>
+                      <CustomerPoChip
+                        linkedPOs={s.linkedPOs ?? []}
+                        shipmentId={s.id}
+                        onSelectPo={(poId, fromShipment) =>
+                          navigate(`/purchase-orders/${poId}`, { state: { fromShipment } })
+                        }
+                      />
                     </td>
                     <td className="px-4 py-3 text-sm text-text-secondary">
                       {s.customer?.name ?? '—'}
