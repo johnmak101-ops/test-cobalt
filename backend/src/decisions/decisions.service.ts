@@ -116,6 +116,7 @@ export class DecisionsService {
       confidence: dto.confidence,
       reviewStatus,
       reviewReasons,
+      criticReview: dto.criticReview ?? null,
     }
 
     const result = await this.committer.apply(group)

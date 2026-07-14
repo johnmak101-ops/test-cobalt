@@ -104,7 +104,7 @@ describe('ShipmentRepository (SQL Server)', () => {
     expect(prov[0].confidence).toBeLessThanOrEqual(prov[1].confidence) // lowest confidence first
   })
 
-  it('reviewQueue views + reviewQueueCounts (pending vs dismissed)', async () => {
+  it('reviewQueue views + reviewQueueCounts (pending vs dismissed vs approved)', async () => {
     const b = await seedBooking()
     const c = await seedCustomer(`RQ${mark}`)
     await db.updateTable('bookings').set({ customerId: c }).where('id', '=', b).execute()
@@ -112,8 +112,33 @@ describe('ShipmentRepository (SQL Server)', () => {
     const leg = await seedLeg({ bookingId: b, legNo: 21, reviewStatus: 'provisional', kind: 'SHIPMENT', confidence: 25, polId })
     await db.updateTable('shipments').set({ legStatus: 'ACTIVE' }).where('id', '=', leg.id).execute()
     await seedLeg({ bookingId: b, legNo: 22, reviewStatus: 'provisional', kind: 'DOCUMENT' }) // document excluded
-    await seedLeg({ bookingId: b, legNo: 23, reviewStatus: 'confirmed', kind: 'SHIPMENT' }) // confirmed excluded
+    const confirmedBare = await seedLeg({ bookingId: b, legNo: 23, reviewStatus: 'confirmed', kind: 'SHIPMENT' }) // confirmed without critic — not in approved
     const gone = await seedLeg({ bookingId: b, legNo: 24, reviewStatus: 'provisional', kind: 'SHIPMENT', dismissedAt: new Date() })
+    const confirmedCritic = await seedLeg({
+      bookingId: b,
+      legNo: 25,
+      reviewStatus: 'confirmed',
+      kind: 'SHIPMENT',
+      confidence: 40,
+    })
+    await db
+      .updateTable('shipments')
+      .set({
+        legStatus: 'ACTIVE',
+        reviewedAt: new Date('2026-07-14T10:00:00.000Z'),
+        criticReview: JSON.stringify({
+          confidence: { score: 0.4, band: 'medium', label: 'Medium' },
+          summary: 'ok',
+          observations: [],
+          priorState: { headline: '', fields: [] },
+          proposedChanges: [],
+          riskFlags: [],
+          reasons: [],
+          recommendedHumanAction: 'none',
+        }),
+      } as never)
+      .where('id', '=', confirmedCritic.id)
+      .execute()
 
     const q = await repo.reviewQueue()
     const found = q.find((r) => r.id === leg.id)
@@ -125,6 +150,11 @@ describe('ShipmentRepository (SQL Server)', () => {
     const d = await repo.reviewQueue('dismissed')
     expect(d.find((r) => r.id === gone.id)).toBeTruthy()
     expect(d.find((r) => r.id === leg.id)).toBeUndefined()
+
+    const a = await repo.reviewQueue('approved')
+    expect(a.find((r) => r.id === confirmedCritic.id)).toBeTruthy()
+    expect(a.find((r) => r.id === confirmedBare.id)).toBeUndefined() // no criticReview → excluded
+    expect(a.find((r) => r.id === leg.id)).toBeUndefined() // still provisional
 
     const counts = await repo.reviewQueueCounts()
     expect(counts.pending).toBeGreaterThanOrEqual(1)
@@ -155,10 +185,25 @@ describe('ShipmentRepository (SQL Server)', () => {
     const pol = await seedPort(`CNSHA${mark}`)
     const pod = await seedPort(`USLAX${mark}`)
     await db.updateTable('bookings').set({ customerId: c, forwarderId: f }).where('id', '=', b).execute()
-    const leg = await repo.insertLeg({ bookingId: b, state: 'BOOKED', mode: 'SEA', forwarderId: f, polId: pol, podId: pod, matchKeys: { booking_no: 'B1' } })
-    // matchKeys stored as JSON nvarchar(max); the ParseJSONResultsPlugin parses it back to an object on read
-    const persisted = (await db.selectFrom('shipments').where('id', '=', leg.id).select('matchKeys').executeTakeFirst())?.matchKeys
-    expect(persisted).toEqual({ booking_no: 'B1' })
+    const criticReview = {
+      confidence: { score: 38, band: 'low' as const, label: 'Low' },
+      summary: 'Two HBLs',
+      observations: [] as string[],
+      priorState: { headline: 'New', fields: [] as unknown[] },
+      proposedChanges: [] as unknown[],
+      riskFlags: [] as { code: string; severity: 'low' | 'medium' | 'high'; message: string }[],
+      recommendedHumanAction: 'split_or_multi_leg',
+      reasons: ['multi'],
+    }
+    const leg = await repo.insertLeg({
+      bookingId: b, state: 'BOOKED', mode: 'SEA', forwarderId: f, polId: pol, podId: pod,
+      matchKeys: { booking_no: 'B1' },
+      criticReview,
+    })
+    // matchKeys / criticReview stored as JSON nvarchar(max); ParseJSONResultsPlugin parses back on read
+    const persisted = await db.selectFrom('shipments').where('id', '=', leg.id).select(['matchKeys', 'criticReview']).executeTakeFirst()
+    expect(persisted?.matchKeys).toEqual({ booking_no: 'B1' })
+    expect(persisted?.criticReview).toMatchObject({ confidence: { band: 'low' }, summary: 'Two HBLs' })
 
     await repo.updateLeg(leg.id, { state: 'SAILED', bookingNo: 'B-NEW' })
     const detail = await repo.legDetailById(leg.id)
@@ -167,6 +212,9 @@ describe('ShipmentRepository (SQL Server)', () => {
     expect(detail?.customerCode).toBe(`DT${mark}`)
     expect(detail?.polCode).toBe(`CNSHA${mark}`)
     expect(detail?.podCode).toBe(`USLAX${mark}`)
+    // update without criticReview must not wipe the column (jsonify only touches keys present in the patch)
+    const after = await db.selectFrom('shipments').where('id', '=', leg.id).select('criticReview').executeTakeFirst()
+    expect(after?.criticReview).toMatchObject({ summary: 'Two HBLs' })
 
     // linkedPosForBooking
     const po = await seedPo()

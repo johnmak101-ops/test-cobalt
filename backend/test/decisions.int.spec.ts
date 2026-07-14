@@ -182,6 +182,33 @@ describe('DecisionsService (integration)', () => {
     const so = ms.find((m) => m.milestoneType === 'SO_RECEIVED')
     expect(so?.emailMessageId).toBe('g-so-1')
   })
+
+  it('persists criticReview JSON on the leg and round-trips', async () => {
+    const criticReview = {
+      confidence: { score: 38, band: 'low', label: 'Low' },
+      summary: 'Two HBLs',
+      observations: [],
+      priorState: { headline: 'New', fields: [] },
+      proposedChanges: [],
+      riskFlags: [{ code: 'INTRA_EMAIL_MULTI_STRONG_ID', severity: 'high', message: 'multi' }],
+      conflicts: [{
+        field: 'hbl_awb_fcr_no', label: 'HBL',
+        candidates: [{ value: 'H1', source: 'Final B/L' }, { value: 'H2', source: 'Draft B/L' }],
+        rationale: 'Split or multi-leg',
+      }],
+      recommendedHumanAction: 'split_or_multi_leg',
+      reasons: ['multi'],
+    }
+    const r = await decisions.ingest(decision({
+      autoApply: false,
+      disposition: 'review',
+      confidence: 38,
+      criticReview,
+    }))
+    const [leg] = await db.selectFrom('shipments').where('id', '=', r.shipmentId).selectAll().execute()
+    expect(leg?.criticReview).toMatchObject({ confidence: { band: 'low' } })
+    expect((leg?.criticReview as { conflicts: unknown[] }).conflicts).toHaveLength(1)
+  })
 })
 
 describe('DecisionsService email disposition (integration)', () => {

@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../lib/api'
+import type { CriticReview } from '../lib/critic-review'
 
 export interface LinkedPO {
   id: string
@@ -61,6 +62,8 @@ export interface Shipment {
   grossWeight: number | null
   measurement: number | null
   htsCode: string | null
+  /** Full agent critic payload on detail (queue uses criticReviewCompact only). */
+  criticReview?: CriticReview | null
   createdAt: string
   updatedAt: string
   customer?: { id: string; name: string; code: string } | null

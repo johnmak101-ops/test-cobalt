@@ -1,5 +1,74 @@
 import { describe, it, expect } from 'vitest'
-import { toUiShipment, type ShipmentMapperInput, type ShipmentLegRow } from './shipment.mapper'
+import type { CriticReview } from '../../decisions/critic-review.types'
+import {
+  compactCriticReview,
+  shortLabelForRisk,
+  toUiShipment,
+  type ShipmentMapperInput,
+  type ShipmentLegRow,
+} from './shipment.mapper'
+
+const sampleCriticReview = (over: Partial<CriticReview> = {}): CriticReview => ({
+  confidence: { score: 0.32, band: 'low', label: 'Low' },
+  summary: 'Two strong IDs in one email',
+  observations: [],
+  priorState: { headline: '', fields: [] },
+  proposedChanges: [],
+  riskFlags: [{ code: 'INTRA_EMAIL_MULTI_STRONG_ID', severity: 'high', message: 'HBL and booking conflict' }],
+  conflicts: [{ field: 'hbl', label: 'HBL', candidates: [], rationale: '' }],
+  recommendedHumanAction: 'review',
+  reasons: [],
+  ...over,
+})
+
+describe('shortLabelForRisk', () => {
+  it('maps known RISK codes to short AI-comment types', () => {
+    expect(shortLabelForRisk('INTRA_EMAIL_MULTI_STRONG_ID')).toBe('Two strong IDs in one email')
+    expect(shortLabelForRisk('BACKEND_CONFLICT')).toBe('Stored value disagrees')
+    expect(shortLabelForRisk('PO_REASSIGN')).toBe('PO may belong to another shipment')
+    expect(shortLabelForRisk('PORTAL_ECHO')).toBe('Portal notification only')
+    expect(shortLabelForRisk('AMBIGUOUS_MATCH')).toBe('Multiple matching legs')
+    expect(shortLabelForRisk('FIELD_LOCK_CLASH')).toBe('Would overwrite locked field')
+  })
+
+  it('defaults unknown codes to Needs review', () => {
+    expect(shortLabelForRisk('SOMETHING_NEW')).toBe('Needs review')
+  })
+})
+
+describe('compactCriticReview', () => {
+  it('returns null when criticReview or confidence.band is missing', () => {
+    expect(compactCriticReview(null)).toBeNull()
+    expect(compactCriticReview(undefined)).toBeNull()
+    expect(compactCriticReview(sampleCriticReview({ confidence: undefined as unknown as CriticReview['confidence'] }))).toBeNull()
+  })
+
+  it('projects band + summary + topConflictType from first riskFlag (not raw score)', () => {
+    const out = compactCriticReview(sampleCriticReview())
+    expect(out).toEqual({
+      band: 'low',
+      summary: 'Two strong IDs in one email',
+      topConflictType: 'Two strong IDs in one email',
+    })
+    expect(out).not.toHaveProperty('score')
+    expect(JSON.stringify(out)).not.toMatch(/0\.32/)
+  })
+
+  it('falls back to first conflict label when riskFlags empty', () => {
+    const out = compactCriticReview(
+      sampleCriticReview({
+        riskFlags: [],
+        conflicts: [{ field: 'eta', label: 'ETA', candidates: [], rationale: '' }],
+      }),
+    )
+    expect(out?.topConflictType).toBe('ETA conflict')
+  })
+
+  it('falls back to Needs review when no riskFlags and no conflict labels', () => {
+    const out = compactCriticReview(sampleCriticReview({ riskFlags: [], conflicts: [] }))
+    expect(out?.topConflictType).toBe('Needs review')
+  })
+})
 
 const leg = (over: Partial<ShipmentLegRow> = {}): ShipmentLegRow => ({
   id: 'leg-1',
@@ -192,5 +261,19 @@ describe('toUiShipment — flat active-leg projection', () => {
   it('prefers the resolved master over the raw fallback when both are present', () => {
     const s = toUiShipment({ ...fullInput(), leg: leg({ customerRaw: 'OTCX' }) })
     expect(s.customer).toEqual({ id: 'cust-1', name: 'Cole Haan', code: 'COLE' })
+  })
+
+  it('surfaces full criticReview and updatedAt ISO for detail concurrency', () => {
+    const cr = sampleCriticReview()
+    const s = toUiShipment({
+      ...fullInput(),
+      leg: leg({ criticReview: cr, updatedAt: new Date('2026-07-14T12:00:00.000Z') }),
+    })
+    expect(s.criticReview).toEqual(cr)
+    expect(s.updatedAt).toBe('2026-07-14T12:00:00.000Z')
+  })
+
+  it('nulls criticReview when the leg has none', () => {
+    expect(toUiShipment(fullInput()).criticReview).toBeNull()
   })
 })

@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
+import { ConflictException, NotFoundException } from '@nestjs/common'
 import { ReviewService } from './review.service'
 import type { ShipmentRepository } from '../db/repositories/shipment.repository'
 import type { BookingRepository } from '../db/repositories/booking.repository'
@@ -6,12 +7,13 @@ import type { FieldLockRepository } from '../db/repositories/field-lock.reposito
 import type { AuditRepository } from '../db/repositories/audit.repository'
 import type { QueueLearningClient, CorrectionPayload } from './queue-learning.client'
 
-const leg = { id: 'leg-1', reviewStatus: 'provisional', grossWeight: 5, etd: null }
+const UPDATED_AT = new Date('2026-07-01T12:00:00.000Z')
+const leg = { id: 'leg-1', reviewStatus: 'provisional', grossWeight: 5, etd: null, updatedAt: UPDATED_AT }
 
-function makeService(legOverride: Record<string, unknown> = {}) {
-  const theLeg = { ...leg, ...legOverride }
+function makeService(legOverride: Record<string, unknown> | null = {}) {
+  const theLeg = legOverride === null ? null : { ...leg, ...legOverride }
   const shipments = {
-    findById: vi.fn(async () => ({ ...theLeg })),
+    findById: vi.fn(async () => (theLeg == null ? null : { ...theLeg })),
     updateLeg: vi.fn(async () => undefined),
     sourceGraphIdFor: vi.fn(async () => 'graph-1'),
   }
@@ -28,6 +30,78 @@ function makeService(legOverride: Record<string, unknown> = {}) {
   )
   return { svc, shipments, locks, audit, queueLearning }
 }
+
+describe('ReviewService.confirm/correct — provisional-only + optimistic concurrency', () => {
+  it('confirm throws NotFoundException when the leg is missing', async () => {
+    const { svc } = makeService(null)
+    await expect(svc.confirm('missing', 'user-1')).rejects.toBeInstanceOf(NotFoundException)
+  })
+
+  it('correct throws NotFoundException when the leg is missing', async () => {
+    const { svc } = makeService(null)
+    await expect(svc.correct('missing', { fields: { soNo: 'X' } }, 'user-1')).rejects.toBeInstanceOf(NotFoundException)
+  })
+
+  it('confirm rejects non-provisional legs with 409', async () => {
+    const { svc, shipments } = makeService({ reviewStatus: 'confirmed' })
+    await expect(svc.confirm('leg-1', 'user-1')).rejects.toBeInstanceOf(ConflictException)
+    await expect(svc.confirm('leg-1', 'user-1')).rejects.toThrow(/not provisional/i)
+    expect(shipments.updateLeg).not.toHaveBeenCalled()
+  })
+
+  it('correct rejects non-provisional legs with 409', async () => {
+    const { svc, shipments } = makeService({ reviewStatus: 'confirmed' })
+    await expect(svc.correct('leg-1', { fields: { soNo: 'X' } }, 'user-1')).rejects.toBeInstanceOf(ConflictException)
+    await expect(svc.correct('leg-1', { fields: { soNo: 'X' } }, 'user-1')).rejects.toThrow(/not provisional/i)
+    expect(shipments.updateLeg).not.toHaveBeenCalled()
+  })
+
+  it('confirm rejects stale expectedUpdatedAt with 409', async () => {
+    const { svc, shipments } = makeService()
+    await expect(
+      svc.confirm('leg-1', 'user-1', undefined, '2026-06-01T00:00:00.000Z'),
+    ).rejects.toBeInstanceOf(ConflictException)
+    expect(shipments.updateLeg).not.toHaveBeenCalled()
+  })
+
+  it('correct rejects stale expectedUpdatedAt with 409', async () => {
+    const { svc, shipments } = makeService()
+    await expect(
+      svc.correct(
+        'leg-1',
+        { fields: { soNo: 'X' }, expectedUpdatedAt: '2026-06-01T00:00:00.000Z' },
+        'user-1',
+      ),
+    ).rejects.toBeInstanceOf(ConflictException)
+    expect(shipments.updateLeg).not.toHaveBeenCalled()
+  })
+
+  it('confirm succeeds when expectedUpdatedAt matches leg.updatedAt', async () => {
+    const { svc, shipments } = makeService()
+    await svc.confirm('leg-1', 'user-1', undefined, UPDATED_AT.toISOString())
+    expect(shipments.updateLeg).toHaveBeenCalledWith(
+      'leg-1',
+      expect.objectContaining({ reviewStatus: 'confirmed' }),
+    )
+  })
+
+  it('correct succeeds when expectedUpdatedAt matches leg.updatedAt', async () => {
+    const { svc, shipments } = makeService()
+    await svc.correct(
+      'leg-1',
+      { fields: { soNo: 'NEW' }, expectedUpdatedAt: UPDATED_AT.toISOString() },
+      'user-1',
+    )
+    expect(shipments.updateLeg).toHaveBeenCalled()
+  })
+
+  it('confirm/correct skip the concurrency check when expectedUpdatedAt is omitted', async () => {
+    const { svc, shipments } = makeService()
+    await svc.confirm('leg-1', 'user-1')
+    await svc.correct('leg-1', { fields: { soNo: 'Y' } }, 'user-1')
+    expect(shipments.updateLeg).toHaveBeenCalled()
+  })
+})
 
 describe('ReviewService.confirm — reviewer note lands in the audit trail', () => {
   it('uses the reviewer note as the audit note when given', async () => {

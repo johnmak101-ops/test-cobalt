@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common'
+import { ConflictException, Injectable, NotFoundException } from '@nestjs/common'
 import { ShipmentRepository } from '../db/repositories/shipment.repository'
 import { BookingRepository } from '../db/repositories/booking.repository'
 import { FieldLockRepository } from '../db/repositories/field-lock.repository'
@@ -90,13 +90,29 @@ export class ReviewService {
     }))
   }
 
+  /** Load a leg and enforce confirm/correct preconditions: exists, provisional, optional optimistic concurrency. */
+  private async loadLegForReview(shipmentId: string, expectedUpdatedAt?: string) {
+    const leg = await this.shipments.findById(shipmentId)
+    if (!leg) throw new NotFoundException(`shipment ${shipmentId} not found`)
+    if (leg.reviewStatus !== 'provisional') {
+      throw new ConflictException('shipment is not provisional')
+    }
+    if (expectedUpdatedAt != null && expectedUpdatedAt !== '') {
+      const expectedMs = new Date(expectedUpdatedAt).getTime()
+      const actualMs = new Date(leg.updatedAt).getTime()
+      if (expectedMs !== actualMs) {
+        throw new ConflictException('shipment was modified; reload and try again')
+      }
+    }
+    return leg
+  }
+
   /** Accept a provisional shipment as-is. An optional reviewer note is audited (soul feedback). A "looks
    *  right" acceptance also vouches for every parse-derived field, so we emit a confirm-sentinel per field
    *  to the queue's learning feed (guards its held-out eval — a soul that starts mis-parsing a confirmed
    *  field regresses the score). Nothing was edited → the edited set is empty. */
-  async confirm(shipmentId: string, actorId: string, note?: string) {
-    const leg = await this.shipments.findById(shipmentId)
-    if (!leg) throw new NotFoundException(`shipment ${shipmentId} not found`)
+  async confirm(shipmentId: string, actorId: string, note?: string, expectedUpdatedAt?: string) {
+    const leg = await this.loadLegForReview(shipmentId, expectedUpdatedAt)
     await this.shipments.updateLeg(shipmentId, { reviewStatus: 'confirmed', reviewedBy: actorId, reviewedAt: new Date() })
     await this.audit.write({
       entityType: 'shipment', entityId: shipmentId, field: null,
@@ -126,8 +142,7 @@ export class ReviewService {
 
   /** Correct fields on a provisional shipment: edits win, lock, are audited, and confirm the leg. */
   async correct(shipmentId: string, dto: CorrectDto, actorId: string) {
-    const leg = await this.shipments.findById(shipmentId)
-    if (!leg) throw new NotFoundException(`shipment ${shipmentId} not found`)
+    const leg = await this.loadLegForReview(shipmentId, dto.expectedUpdatedAt)
     const current = leg as Record<string, unknown>
     const corrected: string[] = []
     // Attribute the corrections to a source email (graph id → the queue resolves it to the parsed record);

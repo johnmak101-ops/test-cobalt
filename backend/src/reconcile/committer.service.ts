@@ -58,6 +58,8 @@ export interface ReconGroup {
   reviewStatus?: 'provisional' | 'confirmed'
   /** the agent gate's reasons for routing to review — preferred over raw conflicts in the review queue */
   reviewReasons?: string[] | null
+  /** Critic advisory JSON (agent path). Undefined on legacy reconcile — do not wipe existing column on amend. */
+  criticReview?: object | null
   /** every value each identity field ever held (current + alternates) — persisted as searchable history */
   identifiers?: {
     type: string
@@ -251,6 +253,8 @@ export class CommitterService {
         metaPatch.confidence = g.confidence ?? null
         metaPatch.reviewReasons = effReasons
       }
+      // Only write criticReview when the group carried it — legacy / field-only amends must not wipe.
+      if (g.criticReview !== undefined) metaPatch.criticReview = g.criticReview ?? null
       if (g.cancelled) metaPatch.legStatus = 'CANCELLED'
       if (Object.keys(metaPatch).length) await this.shipments.updateLeg(shipmentId, metaPatch)
     } else {
@@ -265,6 +269,7 @@ export class CommitterService {
         reviewStatus: effReviewStatus ?? 'confirmed',
         confidence: g.confidence ?? null,
         reviewReasons: effReviewStatus !== undefined ? effReasons : null,
+        criticReview: g.criticReview ?? null,
       })
       shipmentId = leg.id
       action = 'create_booking'

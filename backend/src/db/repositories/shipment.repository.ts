@@ -148,12 +148,14 @@ export class ShipmentRepository {
   }
 
   /**
-   * The shipment-based Review Queue: provisional real shipments awaiting human approval — kind='SHIPMENT',
-   * review_status='provisional', not SUPERSEDED. Enriched with booking customer / forwarder / route / po-count.
-   * Lowest confidence first. `view=pending` (default) excludes dismissed; `view=dismissed` only dismissed.
+   * The shipment-based Review Queue — kind='SHIPMENT', not SUPERSEDED, enriched with booking customer /
+   * forwarder / route / po-count.
+   * - `pending` (default): provisional, not dismissed; lowest confidence first
+   * - `dismissed`: provisional, dismissed only
+   * - `approved`: confirmed legs that still carry criticReview (history); reviewedAt desc, then confidence asc
    */
-  reviewQueue(view: 'pending' | 'dismissed' = 'pending') {
-    return this.db
+  reviewQueue(view: 'pending' | 'dismissed' | 'approved' = 'pending') {
+    const base = this.db
       .selectFrom('shipments')
       .innerJoin('bookings', 'shipments.bookingId', 'bookings.id')
       .leftJoin('customers', 'bookings.customerId', 'customers.id')
@@ -161,21 +163,37 @@ export class ShipmentRepository {
       .leftJoin('ports as pol', 'shipments.polId', 'pol.id')
       .leftJoin('ports as pod', 'shipments.podId', 'pod.id')
       .where('shipments.kind', '=', 'SHIPMENT')
-      .where('shipments.reviewStatus', '=', 'provisional')
       .where('shipments.legStatus', '<>', 'SUPERSEDED')
+
+    const selectCols = [
+      'shipments.id as id', 'shipments.bookingNo as bookingNo', 'shipments.soNo as soNo', 'shipments.state as state',
+      'shipments.legStatus as legStatus', 'shipments.reviewReasons as reviewReasons', 'shipments.confidence as confidence',
+      'shipments.createdAt as createdAt', 'shipments.updatedAt as updatedAt', 'shipments.dismissedAt as dismissedAt',
+      'shipments.criticReview as criticReview',
+      'customers.id as customerId', 'customers.name as customerName',
+      'customers.code as customerCode', 'forwarders.id as forwarderId', 'forwarders.name as forwarderName',
+      'shipments.forwarderRaw as forwarderRaw', 'shipments.mode as mode', 'pol.unlocode as polCode', 'pod.unlocode as podCode',
+      'pol.iata as polIata', 'pod.iata as podIata', 'shipments.polRaw as polRaw', 'shipments.podRaw as podRaw',
+      sql<number>`(select count(*) from booking_pos bp where bp.booking_id = ${sql.ref('shipments.bookingId')})`.as('poCount'),
+    ] as const
+
+    if (view === 'approved') {
+      // Prefer legs with criticReview so Approved is a useful resolved-history tab (not every confirmed leg).
+      return base
+        .where('shipments.reviewStatus', '=', 'confirmed')
+        .where('shipments.criticReview', 'is not', null)
+        .orderBy('shipments.reviewedAt', 'desc')
+        .orderBy('shipments.confidence', 'asc')
+        .select(selectCols)
+        .execute()
+    }
+
+    return base
+      .where('shipments.reviewStatus', '=', 'provisional')
       .where('shipments.dismissedAt', view === 'dismissed' ? 'is not' : 'is', null)
       .orderBy('shipments.confidence', 'asc')
       .orderBy('shipments.createdAt', 'desc')
-      .select([
-        'shipments.id as id', 'shipments.bookingNo as bookingNo', 'shipments.soNo as soNo', 'shipments.state as state',
-        'shipments.legStatus as legStatus', 'shipments.reviewReasons as reviewReasons', 'shipments.confidence as confidence',
-        'shipments.createdAt as createdAt', 'shipments.dismissedAt as dismissedAt',
-        'customers.id as customerId', 'customers.name as customerName',
-        'customers.code as customerCode', 'forwarders.id as forwarderId', 'forwarders.name as forwarderName',
-        'shipments.forwarderRaw as forwarderRaw', 'shipments.mode as mode', 'pol.unlocode as polCode', 'pod.unlocode as podCode',
-        'pol.iata as polIata', 'pod.iata as podIata', 'shipments.polRaw as polRaw', 'shipments.podRaw as podRaw',
-        sql<number>`(select count(*) from booking_pos bp where bp.booking_id = ${sql.ref('shipments.bookingId')})`.as('poCount'),
-      ])
+      .select(selectCols)
       .execute()
   }
 
@@ -212,11 +230,11 @@ export class ShipmentRepository {
     return map
   }
 
-  /** matchKeys + reviewReasons are JSON nvarchar(max) columns — stringify when present (callers pass
-   *  raw objects/arrays like they did to Drizzle jsonb; tedious rejects non-strings). */
+  /** matchKeys + reviewReasons + criticReview are JSON nvarchar(max) columns — stringify when present
+   *  (callers pass raw objects/arrays like they did to Drizzle jsonb; tedious rejects non-strings). */
   private jsonifyLegColumns(values: Record<string, unknown>): Record<string, unknown> {
     const payload: Record<string, unknown> = { ...values }
-    for (const k of ['matchKeys', 'reviewReasons']) {
+    for (const k of ['matchKeys', 'reviewReasons', 'criticReview']) {
       if (k in payload) payload[k] = payload[k] != null ? JSON.stringify(payload[k]) : null
     }
     return payload

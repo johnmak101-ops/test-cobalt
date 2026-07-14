@@ -108,6 +108,30 @@ const COLUMN_SET = new Set(EDITABLE_FIELDS.map((f) => f.column))
 const snakeToCamel = (s: string) => s.replace(/_([a-z0-9])/g, (_, c: string) => c.toUpperCase())
 
 /**
+ * Critic `conflict.field` (parser snake_case e.g. `hbl_awb_fcr_no`, or already-camel leg column)
+ * → POST /api/review/:id/correct leg column. Unknown keys → null (do not invent columns).
+ */
+export function mapCriticFieldToColumn(field: string): string | null {
+  if (!field) return null
+  if (COLUMN_SET.has(field)) return field
+  const camel = snakeToCamel(field)
+  return COLUMN_SET.has(camel) ? camel : null
+}
+
+/**
+ * Map a ReviewCard / critic payload field bag to CorrectDto keys (camelCase leg columns).
+ * Drops keys that do not map to an editable leg column so we never POST snake_case garbage.
+ */
+export function mapCriticFieldsToColumns(fields: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {}
+  for (const [k, v] of Object.entries(fields ?? {})) {
+    const col = mapCriticFieldToColumn(k)
+    if (col) out[col] = v
+  }
+  return out
+}
+
+/**
  * Parse "why review?" reason strings (e.g. "backend conflict on qty, gross_weight, measurement")
  * into the leg columns they name, so the form can highlight the contested fields.
  */
