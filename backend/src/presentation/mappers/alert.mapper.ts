@@ -21,6 +21,8 @@ export interface UiAlertShipment {
   poNumbers: string
   route: string | null
   customer?: { name: string } | null
+  /** Leg free-text consignee; alert cards show this (not customer) after PO#. */
+  consigneeName?: string | null
 }
 
 export interface AlertMapperInput {

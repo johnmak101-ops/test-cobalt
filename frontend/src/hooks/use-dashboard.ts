@@ -22,7 +22,8 @@ interface DashboardData {
       id: string
       poNumbers: string
       route: string | null
-      customer: { name: string } | null
+      consigneeName?: string | null
+      customer?: { name: string } | null
     }
   }>
   recentActivity: Array<{

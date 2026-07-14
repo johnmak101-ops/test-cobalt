@@ -64,3 +64,10 @@ export function parsePONumbers(json: string): string[] {
     return [json]
   }
 }
+
+/** Alert/header PO label: single `PO# x`, multi `PO# first +N`, empty → null (omit chrome). */
+export function formatPoHeader(poNumbers: string[]): string | null {
+  if (poNumbers.length === 0) return null
+  if (poNumbers.length === 1) return `PO# ${poNumbers[0]}`
+  return `PO# ${poNumbers[0]} +${poNumbers.length - 1}`
+}

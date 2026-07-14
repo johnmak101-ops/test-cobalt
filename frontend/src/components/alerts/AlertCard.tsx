@@ -1,5 +1,5 @@
 import { Badge } from '../ui/Badge'
-import { parsePONumbers, formatRelativeTime } from '../../lib/utils'
+import { parsePONumbers, formatPoHeader, formatRelativeTime } from '../../lib/utils'
 import { useNavigate } from 'react-router-dom'
 import { useMarkAlertRead, useMarkAlertUnread } from '../../hooks/use-alerts'
 import { CheckCircle, CircleDot } from 'lucide-react'
@@ -19,6 +19,7 @@ interface AlertCardProps {
       id: string
       poNumbers: string
       route: string | null
+      consigneeName?: string | null
       customer?: { name: string } | null
     }
   }
@@ -37,7 +38,8 @@ export function AlertCard({ alert, compact }: AlertCardProps) {
   const markUnread = useMarkAlertUnread()
 
   const isRead = !!alert.readAt
-  const poNumbers = alert.shipment ? parsePONumbers(alert.shipment.poNumbers) : []
+  const poHeader = alert.shipment ? formatPoHeader(parsePONumbers(alert.shipment.poNumbers)) : null
+  const consignee = alert.shipment?.consigneeName?.trim() || null
 
   return (
     <div
@@ -51,20 +53,16 @@ export function AlertCard({ alert, compact }: AlertCardProps) {
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
+          <div className="flex min-w-0 items-center gap-2">
             <Badge variant="severity" value={alert.severity} />
-            {poNumbers.length > 0 && (
-              <span className="font-mono text-sm text-text-primary">
-                PO# {poNumbers.join(', ')}
-              </span>
+            {poHeader && (
+              <span className="shrink-0 font-mono text-sm text-text-primary">{poHeader}</span>
             )}
-            {alert.shipment?.customer && (
-              <span className="text-sm text-text-secondary">
-                {alert.shipment.customer.name}
-              </span>
+            {consignee && (
+              <span className="min-w-0 truncate text-sm text-text-secondary">{consignee}</span>
             )}
             {isRead && (
-              <span className="text-xs text-text-muted">(read)</span>
+              <span className="shrink-0 text-xs text-text-muted">(read)</span>
             )}
           </div>
           <p className="mt-1.5 text-sm text-text-secondary">{alert.message}</p>

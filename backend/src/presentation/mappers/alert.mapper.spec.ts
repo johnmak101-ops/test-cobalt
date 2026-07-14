@@ -19,7 +19,13 @@ describe('toUiAlert — alert row -> UI alert', () => {
   it('renames firedAt -> triggeredAt and nests the shipment summary', () => {
     const a = toUiAlert({
       alert: alert(),
-      shipment: { id: 'leg-1', poNumbers: '["PO-1"]', route: 'CNYTN→GBFXT', customer: { name: 'Cole Haan' } },
+      shipment: {
+        id: 'leg-1',
+        poNumbers: '["PO-1"]',
+        route: 'CNYTN→GBFXT',
+        customer: { name: 'Cole Haan' },
+        consigneeName: 'Acme Consignee',
+      },
     })
     expect(a.id).toBe('al-1')
     expect(a.ruleId).toBe('A1')
@@ -28,7 +34,13 @@ describe('toUiAlert — alert row -> UI alert', () => {
     expect(a.status).toBe('ACTIVE')
     expect(a.triggeredAt).toBe('2026-02-10T00:00:00.000Z')
     expect(a.readAt).toBeNull()
-    expect(a.shipment).toEqual({ id: 'leg-1', poNumbers: '["PO-1"]', route: 'CNYTN→GBFXT', customer: { name: 'Cole Haan' } })
+    expect(a.shipment).toEqual({
+      id: 'leg-1',
+      poNumbers: '["PO-1"]',
+      route: 'CNYTN→GBFXT',
+      customer: { name: 'Cole Haan' },
+      consigneeName: 'Acme Consignee',
+    })
   })
 
   it('serializes the action timestamps and tolerates a missing shipment', () => {

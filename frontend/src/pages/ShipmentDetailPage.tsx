@@ -531,6 +531,13 @@ export default function ShipmentDetailPage() {
                     alert={{
                       ...alert,
                       shipmentId: shipment.id,
+                      // Detail alerts omit nested summary server-side; pass parent PO/consignee for header.
+                      shipment: {
+                        id: shipment.id,
+                        poNumbers: shipment.poNumbers,
+                        route: shipment.route,
+                        consigneeName: shipment.consigneeName ?? null,
+                      },
                     }}
                     compact
                   />

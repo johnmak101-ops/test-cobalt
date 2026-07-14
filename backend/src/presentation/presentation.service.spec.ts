@@ -15,6 +15,7 @@ const legs = [
   {
     id: 'leg1', bookingId: 'b1', legStatus: 'ACTIVE', state: 'SAILED', forwarderId: 'f1',
     polId: 'p1', podId: 'p2', riskLevel: 'AT_RISK', soNo: 'SO1', qty: 100, qtyUnit: 'cartons',
+    consigneeName: 'Acme Consignee',
     updatedAt: D('2026-02-10T00:00:00.000Z'),
   },
   {
@@ -147,7 +148,11 @@ describe('PresentationService.alerts + alertRules', () => {
     expect(out).toHaveLength(1)
     expect(out[0].triggeredAt).toBe('2026-02-10T00:00:00.000Z')
     expect(out[0].shipment).toEqual({
-      id: 'leg1', poNumbers: '["PO-1"]', route: 'CNYTN→GBFXT', customer: { name: 'Cole Haan' },
+      id: 'leg1',
+      poNumbers: '["PO-1"]',
+      route: 'CNYTN→GBFXT',
+      customer: { name: 'Cole Haan' },
+      consigneeName: 'Acme Consignee',
     })
   })
 

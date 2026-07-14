@@ -13,6 +13,7 @@ interface Alert {
     id: string
     poNumbers: string
     route: string | null
+    consigneeName?: string | null
     customer?: { name: string } | null
   }
 }

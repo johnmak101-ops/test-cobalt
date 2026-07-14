@@ -42,10 +42,17 @@ interface MasterMaps {
   ports: Map<string, PortRow>
 }
 
-/** Pure per-shipment summary (id + PO JSON + route + customer) from preloaded rows + master maps — the
+/** Pure per-shipment summary (id + PO JSON + route + customer + consignee) from preloaded rows + master maps — the
  *  batch-friendly core of the old per-alert shipmentSummary(). No I/O. */
 export function buildShipmentSummary(
-  leg: { id: string; bookingId: string; mode: string | null; polId: string | null; podId: string | null },
+  leg: {
+    id: string
+    bookingId: string
+    mode: string | null
+    polId: string | null
+    podId: string | null
+    consigneeName?: string | null
+  },
   booking: { customerId: string | null } | null,
   poNumbers: string[],
   maps: MasterMaps,
@@ -53,11 +60,13 @@ export function buildShipmentSummary(
   const customer = booking?.customerId ? maps.customers.get(booking.customerId) : undefined
   const pol = leg.polId ? maps.ports.get(leg.polId) : undefined
   const pod = leg.podId ? maps.ports.get(leg.podId) : undefined
+  const consignee = (leg.consigneeName ?? '').trim()
   return {
     id: leg.id,
     poNumbers: poNumbersJson(poNumbers),
     route: deriveRoute(portLabel(leg.mode, pol?.unlocode, pol?.iata), portLabel(leg.mode, pod?.unlocode, pod?.iata)),
     customer: customer ? { name: customer.name } : null,
+    consigneeName: consignee || null,
   }
 }
 
