@@ -7,6 +7,7 @@ import { CriticCalibrationRepository } from '../db/repositories/critic-calibrati
 import type { CalibrationOutcome } from '../db/kysely/db'
 import type { CriticReview } from '../decisions/critic-review.types'
 import { QueueLearningClient } from './queue-learning.client'
+import { syncIdentityMatchKeys } from '../shipments/identity-keys'
 import type { CorrectDto } from './dto'
 
 const DATE_FIELDS = new Set([
@@ -191,6 +192,7 @@ export class ReviewService {
     const messageId = (await this.shipments.sourceGraphIdFor(shipmentId)) ?? shipmentId
     const forwarder = ((leg as Record<string, unknown>).forwarderRaw as string | null) ?? null
 
+    const correctedValues: Record<string, unknown> = {}
     for (const [field, raw] of Object.entries(dto.fields ?? {})) {
       const value = coerce(field, raw)
       await this.shipments.updateLeg(shipmentId, { [field]: value })
@@ -201,6 +203,7 @@ export class ReviewService {
         sourceType: 'manual', actorUserId: actorId, note: dto.reason ?? 'review: corrected',
       })
       corrected.push(field)
+      correctedValues[field] = value
       // Feed the correction to the queue learning loop (best-effort; never breaks the review save). Post the
       // queue's snake_case parse-field name — the leg column `soNo` is the parser's `so_no`, and the queue
       // scores on the parse field, so a camelCase name would silently never match.
@@ -209,6 +212,8 @@ export class ReviewService {
         forwarder, note: dto.reason ?? null, kind: 'correction',
       })
     }
+
+    await syncIdentityMatchKeys(this.shipments, shipmentId, correctedValues)
 
     // The parse-derived fields the reviewer looked at and left untouched are an implicit "looks right".
     await this.emitConfirms(current, new Set(corrected), messageId, forwarder)

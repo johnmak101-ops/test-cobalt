@@ -16,6 +16,7 @@ function makeService(legOverride: Record<string, unknown> | null = {}) {
   const shipments = {
     findById: vi.fn(async () => (theLeg == null ? null : { ...theLeg })),
     updateLeg: vi.fn(async () => undefined),
+    replaceMatchKeys: vi.fn(async () => undefined),
     sourceGraphIdFor: vi.fn(async () => 'graph-1'),
   }
   const bookings = {}

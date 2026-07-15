@@ -6,6 +6,7 @@ import { AuditRepository } from '../db/repositories/audit.repository'
 import { CommitterService, type ReconGroup } from '../reconcile/committer.service'
 import { strongKeys, keysOverlap, normKey, str } from '../reconcile/match-keys'
 import { deriveRoute } from '../presentation/adapters/derive'
+import { syncIdentityMatchKeys } from './identity-keys'
 
 /** A human-entered new-shipment form. Every field optional; at least one identity OR a PO is required. */
 export interface ManualShipmentInput {
@@ -160,6 +161,7 @@ export class ShipmentsService {
     // legacy/no-note callers (the UI blocks a note-less save).
     const feedback = (note ?? '').trim() || 'edited on shipment detail'
     const edited: string[] = []
+    const editedValues: Record<string, unknown> = {}
     for (const [field, raw] of Object.entries(fields ?? {})) {
       if (!EDITABLE_FIELDS.has(field)) continue
       const value = coerceField(field, raw)
@@ -172,7 +174,9 @@ export class ShipmentsService {
         sourceType: 'manual', actorUserId: actorId, note: feedback,
       })
       edited.push(field)
+      editedValues[field] = value
     }
+    await syncIdentityMatchKeys(this.shipments, id, editedValues)
     return { id, edited }
   }
 
