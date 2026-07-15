@@ -23,7 +23,12 @@ import { resolvePoEnrichment, unattributedBrandStyle } from './po-enrichment'
 import { needsHumanReview } from './committer-helpers'
 import type { CriticReview } from '../decisions/critic-review.types'
 import { mapFieldsToLegColumns } from './committer-leg-mapping'
-import { findExistingLeg, findAdoptableZeroIdLeg, findSupersededByIdentityCorrection } from './committer-match'
+import {
+  findExistingLeg,
+  findAdoptableZeroIdLeg,
+  findSupersededByIdentityCorrection,
+  findSiblingBooking,
+} from './committer-match'
 import { aliasMapsFromFacts, MasterResolver } from './committer-master-resolver'
 import { planPoReconcile } from './committer-po-reconciler'
 import { MilestoneSynchronizer } from './committer-milestones'
@@ -31,7 +36,7 @@ import { isAuditedBookingFill } from './fill-booking-audit'
 import { collectSourceEvents } from './source-events'
 
 // Re-export for any external import sites that still pull findExistingLeg from the service module.
-export { findExistingLeg, findSupersededByIdentityCorrection } from './committer-match'
+export { findExistingLeg, findSupersededByIdentityCorrection, findSiblingBooking } from './committer-match'
 
 /** One reconciled shipment picture, ready to commit. */
 export interface ReconGroup {
@@ -300,23 +305,71 @@ export class CommitterService {
       if (g.cancelled) metaPatch.legStatus = 'CANCELLED'
       if (Object.keys(metaPatch).length) await this.shipments.updateLeg(shipmentId, metaPatch)
     } else {
-      jobNo = await this.nextJobNo()
-      const booking = await this.bookings.create({ jobNo, customerId, vendorId: effVendorId, forwarderId: effForwarderId, brand: str(f.brand), crd: date(f.cargo_ready_date) })
-      bookingId = booking.id
-      const leg = await this.shipments.insertLeg({
-        bookingId,
-        legNo: 1,
-        legStatus,
-        ...(legValues as object),
-        reviewStatus: effReviewStatus ?? 'confirmed',
-        confidence: g.confidence ?? null,
-        reviewReasons: effReviewStatus !== undefined ? effReasons : null,
-        criticReview: g.criticReview ?? null,
-      })
-      shipmentId = leg.id
-      action = 'create_booking'
-      await this.writeAudit('booking', bookingId, 'create', null, jobNo, g)
-      await this.writeAudit('shipment', shipmentId, 'create', null, state, g)
+      // #151 Phase 2: same booking-layer value + own HBL → sibling ship of an EXISTING booking.
+      // Attach as next legNo instead of minting a new jobNo/booking. UNIQUE (booking_id, leg_no) backstops.
+      const siblingBookingId = findSiblingBooking(legs, gk)
+      if (siblingBookingId) {
+        bookingId = siblingBookingId
+        const siblings = await this.shipments.legsForBooking(bookingId)
+        const legNo = Math.max(0, ...siblings.map((s) => (s as { legNo?: number | null }).legNo ?? 0)) + 1
+        const bk = await this.bookings.findById(bookingId)
+        jobNo = bk?.jobNo ?? '(unknown)'
+        const leg = await this.shipments.insertLeg({
+          bookingId,
+          legNo,
+          legStatus,
+          ...(legValues as object),
+          reviewStatus: effReviewStatus ?? 'confirmed',
+          confidence: g.confidence ?? null,
+          reviewReasons: effReviewStatus !== undefined ? effReasons : null,
+          criticReview: g.criticReview ?? null,
+        })
+        shipmentId = leg.id
+        action = 'create_booking'
+        await this.fillBooking(
+          bookingId,
+          shipmentId,
+          { customerId, vendorId: effVendorId, forwarderId: effForwarderId, brand: str(f.brand), crd: date(f.cargo_ready_date) },
+          g,
+        )
+        await this.writeAudit('shipment', shipmentId, 'create', null, state, g)
+        await this.audit.write({
+          entityType: 'shipment',
+          entityId: shipmentId,
+          field: 'leg_no',
+          oldValue: null,
+          newValue: String(legNo),
+          changeType: 'create',
+          sourceType: 'system',
+          actorUserId: null,
+          note: `sibling leg ${legNo} under existing booking ${jobNo} (#151)`,
+        })
+      } else {
+        jobNo = await this.nextJobNo()
+        const booking = await this.bookings.create({
+          jobNo,
+          customerId,
+          vendorId: effVendorId,
+          forwarderId: effForwarderId,
+          brand: str(f.brand),
+          crd: date(f.cargo_ready_date),
+        })
+        bookingId = booking.id
+        const leg = await this.shipments.insertLeg({
+          bookingId,
+          legNo: 1,
+          legStatus,
+          ...(legValues as object),
+          reviewStatus: effReviewStatus ?? 'confirmed',
+          confidence: g.confidence ?? null,
+          reviewReasons: effReviewStatus !== undefined ? effReasons : null,
+          criticReview: g.criticReview ?? null,
+        })
+        shipmentId = leg.id
+        action = 'create_booking'
+        await this.writeAudit('booking', bookingId, 'create', null, jobNo, g)
+        await this.writeAudit('shipment', shipmentId, 'create', null, state, g)
+      }
     }
 
     // #146: strongKeysConflict blocked matching a provisional sibling whose SO/booking was corrected by
