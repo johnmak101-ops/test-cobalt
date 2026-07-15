@@ -119,16 +119,28 @@ export function findAdoptableZeroIdLeg<
   return adoptable.length === 1 ? adoptable[0] : undefined
 }
 
+/** Booking-layer identity types — one booking legitimately spans N legs, so a conflict CONFINED to the
+ *  leg layer (hbl) while the booking layer agrees is a SIBLING, not a re-keyed zombie (#151). */
+const BOOKING_LAYER = new Set(['booking_no', 'so_no'])
+
+function bookingLayerOnly(keys: Set<string>): Set<string> {
+  return new Set([...keys].filter((k) => BOOKING_LAYER.has(k.slice(0, k.indexOf(':')))))
+}
+
 /**
- * After committing a keyed group, retire provisional siblings whose identity CONFLICTS on one
- * strong-id type while OVERLAPPING on another — a re-parse corrected one of the shipment's ids
- * (the BEFF01 case: old leg so_no=Shipment-REF, new group so_no=order-no, both share booking_no).
+ * After committing a keyed group, retire provisional siblings whose BOOKING-LAYER identity CONFLICTS
+ * on one type while OVERLAPPING on another — a re-parse corrected one of the shipment's booking-layer
+ * ids (the BEFF01 case: old leg so_no=Shipment-REF, new group so_no=order-no, both share booking_no).
  * Conflict + overlap is the signature of the SAME shipment re-keyed; the overlap requirement is
  * load-bearing. Conflict + merely sharing the CONVERSATION must NEVER retire: a consolidated thread
  * legitimately holds several REAL shipments with conflicting ids (BSTI: UK + NL legs, one thread,
  * different SOs; KOHL/YAQI: five HBL legs, one thread) — a conversation branch here dismissed all of
- * them on re-ingest (probe-verified). A zombie whose ONLY strong id was corrected (no overlap left)
- * is not auto-retired; that rare case goes through the operator's duplicate fold instead.
+ * them on re-ingest (probe-verified).
+ *
+ * #151: a conflict CONFINED to the leg layer (different HBLs under one shared booking) is a sibling
+ * consolidation — Phase 2 files it as legNo N, never retires it. Retire ONLY when the booking-layer
+ * keys themselves conflict AND overlap.
+ *
  * Does NOT loosen findExistingLeg / strongKeysConflict itself.
  */
 export function findSupersededByIdentityCorrection<L extends {
@@ -145,6 +157,9 @@ export function findSupersededByIdentityCorrection<L extends {
     // Missing status (index/partial rows) → treat as provisional; present status must be provisional.
     if (l.reviewStatus != null && l.reviewStatus !== 'provisional') return false
     const legStrong = strongKeys((l.matchKeys ?? {}) as Record<string, unknown>)
-    return strongKeysConflict(newGroupKeys, legStrong) && keysOverlap(newGroupKeys, legStrong)
+    // Retire ONLY on a booking-layer re-key (BEFF01: so_no conflicts, booking_no shared).
+    const gkBooking = bookingLayerOnly(newGroupKeys)
+    const legBooking = bookingLayerOnly(legStrong)
+    return strongKeysConflict(gkBooking, legBooking) && keysOverlap(gkBooking, legBooking)
   })
 }

@@ -208,6 +208,19 @@ describe('findSupersededByIdentityCorrection (#146 re-parse zombies) — conflic
     expect(findSupersededByIdentityCorrection(siblings, docAKeys, 'LEG-A')).toEqual([])
   })
 
+  it('a SIBLING leg (booking-layer agrees, only hbl differs) is NEVER retired — that is a consolidation, not a zombie (#151)', () => {
+    // post-#151 world: one booking, two legs, each with its own HBL
+    const legA = sleg('LEG-A', { booking_no: 'B1368248010', hbl_awb_fcr_no: 'HBL-NL', conversation_id: 'C1' })
+    const groupB = gkOf({ booking_no: 'B1368248010', hbl_awb_fcr_no: 'HBL-UK' })
+    expect(findSupersededByIdentityCorrection([legA], groupB, 'LEG-B')).toEqual([])
+  })
+
+  it('the BEFF01 ghost still retires (booking-layer conflict + booking-layer overlap) (#151)', () => {
+    const ghost = sleg('GHOST', { booking_no: 'B1368248010', so_no: 'BEFF01-001627' })
+    const groupNew = gkOf({ booking_no: 'B1368248010', so_no: '29954607' })
+    expect(findSupersededByIdentityCorrection([ghost], groupNew, 'NEW').map((x) => x.id)).toEqual(['GHOST'])
+  })
+
   it('missing reviewStatus is treated as provisional', () => {
     const zombie = sleg('OLD', { booking_no: 'BX1', so_no: 'SO-OLD' }, { reviewStatus: undefined })
     delete (zombie as { reviewStatus?: string }).reviewStatus
