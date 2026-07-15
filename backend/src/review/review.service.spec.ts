@@ -15,7 +15,12 @@ const leg = { id: 'leg-1', reviewStatus: 'provisional', grossWeight: 5, etd: nul
 function makeService(legOverride: Record<string, unknown> | null = {}) {
   const theLeg = legOverride === null ? null : { ...leg, ...legOverride }
   const shipments = {
-    findById: vi.fn(async () => (theLeg == null ? null : { ...theLeg })),
+    // Takes the id and returns a LOOSE shape on purpose: link() looks up two different legs (source +
+    // target), so its cases need per-id mockImplementation / mockResolvedValueOnce with shapes other
+    // than `leg`. A zero-arg narrow fake made those un-typecheckable (CI: backend tsc covers specs).
+    findById: vi.fn(
+      async (_id: string): Promise<Record<string, unknown> | null> => (theLeg == null ? null : { ...theLeg }),
+    ),
     updateLeg: vi.fn(async () => undefined),
     replaceMatchKeys: vi.fn(async () => undefined),
     sourceGraphIdFor: vi.fn(async () => 'graph-1'),
