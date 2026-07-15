@@ -2,9 +2,11 @@ import { Body, Controller, Get, Put, Query } from '@nestjs/common'
 import { IsIn, IsInt, Max, Min } from 'class-validator'
 import { SettingsService } from './settings.service'
 import { aggregateRoutingShadow } from './routing-shadow-report'
+import { aggregateCriticCalibration } from './critic-calibration-report'
 import { Roles, CurrentUser } from '../auth/decorators'
 import type { AuthUser } from '../auth/auth.service'
 import { RoutingShadowRepository } from '../db/repositories/routing-shadow.repository'
+import { CriticCalibrationRepository } from '../db/repositories/critic-calibration.repository'
 
 class ThresholdDto {
   @IsInt() @Min(0) @Max(100) value!: number
@@ -20,6 +22,7 @@ export class SettingsController {
   constructor(
     private readonly settings: SettingsService,
     private readonly routingShadow: RoutingShadowRepository,
+    private readonly criticCalibration: CriticCalibrationRepository,
   ) {}
 
   @Roles('EDITOR', 'ADMIN')
@@ -56,5 +59,15 @@ export class SettingsController {
     const since = new Date(Date.now() - days * 86400000)
     const rows = await this.routingShadow.listSince(since, 2000)
     return aggregateRoutingShadow(rows, days)
+  }
+
+  /** Band vs human-outcome calibration for Phase 2b flip decision (EDITOR+). */
+  @Roles('EDITOR', 'ADMIN')
+  @Get('critic-calibration')
+  async criticCalibrationReport(@Query('days') daysRaw?: string) {
+    const days = Math.min(180, Math.max(1, Number(daysRaw) || 90))
+    const since = new Date(Date.now() - days * 86400000)
+    const rows = await this.criticCalibration.listSince(since, 5000)
+    return aggregateCriticCalibration(rows, days)
   }
 }
