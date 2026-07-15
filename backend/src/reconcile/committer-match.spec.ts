@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest'
-import { findExistingLeg, findAdoptableZeroIdLeg, findSupersededByIdentityCorrection } from './committer-match'
+import {
+  findExistingLeg,
+  findAdoptableZeroIdLeg,
+  findSupersededByIdentityCorrection,
+  findSiblingBooking,
+} from './committer-match'
 import { strongKeys, normKey } from './match-keys'
 
 type Leg = { id: string; bookingId: string; matchKeys: Record<string, unknown> }
@@ -226,5 +231,39 @@ describe('findSupersededByIdentityCorrection (#146 re-parse zombies) — conflic
     delete (zombie as { reviewStatus?: string }).reviewStatus
     const newKeys = gkOf({ booking_no: 'BX1', so_no: 'SO-NEW' })
     expect(findSupersededByIdentityCorrection([zombie], newKeys, 'NEW').map((x) => x.id)).toEqual(['OLD'])
+  })
+})
+
+describe('findSiblingBooking (#151 — same booking value, different HBL → legNo N, not a new booking)', () => {
+  const legNL = {
+    id: 'LEG-NL',
+    bookingId: 'BOOK-1',
+    matchKeys: { booking_no: 'B1368248010', hbl_awb_fcr_no: 'HBL-NL' },
+    dismissedAt: null as Date | null,
+    linkedShipmentId: null as string | null,
+  }
+
+  it('group with the SAME booking value and its OWN hbl → that bookingId', () => {
+    const gk = gkOf({ booking_no: 'B1368248010', hbl_awb_fcr_no: 'HBL-UK' })
+    expect(findSiblingBooking([legNL], gk)).toBe('BOOK-1')
+  })
+  it('different booking VALUE → undefined (a different booking is a different shipment family)', () => {
+    const gk = gkOf({ booking_no: 'B-OTHER', hbl_awb_fcr_no: 'HBL-UK' })
+    expect(findSiblingBooking([legNL], gk)).toBeUndefined()
+  })
+  it('group without its own hbl → undefined (nothing to file the leg under)', () => {
+    expect(findSiblingBooking([legNL], gkOf({ booking_no: 'B1368248010' }))).toBeUndefined()
+  })
+  it("same hbl on both sides → undefined (that is findExistingLeg's match, not a sibling)", () => {
+    expect(findSiblingBooking([legNL], gkOf({ booking_no: 'B1368248010', hbl_awb_fcr_no: 'HBL-NL' }))).toBeUndefined()
+  })
+  it('candidates spanning TWO bookings → undefined (ambiguous — create a fresh booking instead)', () => {
+    const legX = { ...legNL, id: 'LEG-X', bookingId: 'BOOK-2' }
+    const gk = gkOf({ booking_no: 'B1368248010', hbl_awb_fcr_no: 'HBL-UK' })
+    expect(findSiblingBooking([legNL, legX], gk)).toBeUndefined()
+  })
+  it('linked husks never anchor a sibling attach', () => {
+    const husk = { ...legNL, linkedShipmentId: 'GONE' }
+    expect(findSiblingBooking([husk], gkOf({ booking_no: 'B1368248010', hbl_awb_fcr_no: 'HBL-UK' }))).toBeUndefined()
   })
 })

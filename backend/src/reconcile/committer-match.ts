@@ -163,3 +163,30 @@ export function findSupersededByIdentityCorrection<L extends {
     return strongKeysConflict(gkBooking, legBooking) && keysOverlap(gkBooking, legBooking)
   })
 }
+
+/**
+ * #151 Phase 2: the group shares a BOOKING-LAYER value (booking_no / so_no) with existing leg(s) but
+ * carries its OWN leg-layer id (hbl) — that is a sibling ship of the same booking, not a new booking
+ * and not (per Task 2.0) a zombie. Returns the bookingId to attach a new legNo under, or undefined.
+ * Conservative: the group must have exactly its own DISTINCT hbl; all matching candidates must agree on
+ * ONE bookingId; linked husks excluded. findExistingLeg / strongKeysConflict are untouched — this runs
+ * only after findExistingLeg found no match.
+ */
+export function findSiblingBooking<
+  L extends { bookingId: string; matchKeys: unknown; linkedShipmentId?: string | null },
+>(legs: L[], gk: Set<string>): string | undefined {
+  const gkBooking = new Set([...gk].filter((k) => k.startsWith('booking_no:') || k.startsWith('so_no:')))
+  const gkHbl = new Set([...gk].filter((k) => k.startsWith('hbl_awb_fcr_no:')))
+  if (!gkBooking.size || gkHbl.size !== 1) return undefined
+  const bookingIds = new Set<string>()
+  for (const l of legs) {
+    if (l.linkedShipmentId != null) continue
+    const legStrong = strongKeys(l.matchKeys as Record<string, unknown>)
+    const legBooking = new Set([...legStrong].filter((k) => k.startsWith('booking_no:') || k.startsWith('so_no:')))
+    const legHbl = new Set([...legStrong].filter((k) => k.startsWith('hbl_awb_fcr_no:')))
+    if (!keysOverlap(gkBooking, legBooking)) continue // must SHARE a booking-layer value
+    if (legHbl.size && keysOverlap(gkHbl, legHbl)) continue // same hbl = findExistingLeg's territory
+    bookingIds.add(l.bookingId)
+  }
+  return bookingIds.size === 1 ? [...bookingIds][0] : undefined
+}
