@@ -11,6 +11,7 @@ import {
 import type { ReviewShipment } from '../../hooks/use-review-queue'
 import type { ShipmentDetail } from '../../hooks/use-shipments'
 import { cn } from '../../lib/utils'
+import { humanizeReasons } from '../../lib/review-reasons'
 
 export interface ReviewCardSavePayload {
   fields: Record<string, unknown>
@@ -123,6 +124,20 @@ export function ReviewCard({
     () => criticReview?.conflicts ?? [],
     [criticReview],
   )
+  // WHY this leg is queued — risk flags from the critic payload; legacy rows fall back to the
+  // gate's raw reviewReasons. Rendered expanded-only (collapsed stays identity-only by design).
+  const whyReview = useMemo(() => {
+    const flags = (criticReview?.riskFlags ?? [])
+      .filter((f) => f?.message)
+      .map((f, i) => ({ key: `${f.code}-${i}`, severity: f.severity, text: f.message }))
+    if (flags.length > 0) return flags
+    const reasons = (shipment as { reviewReasons?: string[] | null }).reviewReasons ?? []
+    return humanizeReasons(reasons).map(({ raw, text }) => ({
+      key: raw,
+      severity: 'medium' as const,
+      text,
+    }))
+  }, [criticReview, shipment])
   const [resolutions, setResolutions] = useState<Record<string, string>>(() =>
     initialResolutions(conflicts),
   )
@@ -305,11 +320,30 @@ export function ReviewCard({
             </div>
           )}
 
-          {conflicts.length === 0 ? (
-            <p className="rounded-lg bg-surface-900 px-3 py-2 text-xs text-text-muted">
-              No field conflicts — review reasons may still apply
-            </p>
-          ) : (
+          {whyReview.length > 0 && (
+            <div className="rounded-lg bg-surface-900 px-3 py-2" data-testid="why-review">
+              <p className="text-[11px] font-medium text-text-muted">Why review?</p>
+              <ul className="mt-1 space-y-1">
+                {whyReview.map((r) => (
+                  <li key={r.key} className="flex items-start gap-1.5 text-xs text-text-secondary">
+                    <span
+                      className={cn(
+                        'mt-1 inline-block h-1.5 w-1.5 shrink-0 rounded-full',
+                        r.severity === 'high'
+                          ? 'bg-status-critical'
+                          : r.severity === 'medium'
+                            ? 'bg-status-warning'
+                            : 'bg-surface-600',
+                      )}
+                    />
+                    {r.text}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {conflicts.length > 0 && (
             <div className="overflow-x-auto rounded-lg border border-border">
               <table className="w-full min-w-[36rem]">
                 <thead>

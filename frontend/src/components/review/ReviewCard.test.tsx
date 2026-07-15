@@ -91,6 +91,7 @@ describe('ReviewCard', () => {
 
     expect(screen.queryByText('Low · Two strong IDs in one email')).toBeNull()
     expect(screen.queryByRole('table')).toBeNull()
+    expect(screen.queryByTestId('why-review')).toBeNull()
     expect(screen.queryByText('ETA')).toBeNull()
     expect(screen.queryByText('HBL')).toBeNull()
     // proposedChanges must not surface when collapsed either
@@ -126,21 +127,57 @@ describe('ReviewCard', () => {
     expect(screen.queryByText('2026-08-01')).toBeNull()
   })
 
-  it('expanded with empty conflicts: short empty state, no invented rows', async () => {
+  it('expanded with empty conflicts: shows WHY it is queued (risk flags), no invented rows', async () => {
     render(
       <ReviewCard
         shipment={baseShipment()}
-        criticReview={baseReview({ conflicts: [] })}
+        criticReview={baseReview({
+          conflicts: [],
+          riskFlags: [
+            {
+              code: 'WEAK_IDENTITY',
+              severity: 'medium',
+              message: 'No strong booking/SO/B/L identity and no PO — hard to place this email on a shipment.',
+            },
+          ],
+        })}
         compact={compact}
         defaultExpanded={true}
       />,
     )
 
-    expect(
-      screen.getByText(/No field conflicts — review reasons may still apply/i),
-    ).toBeInTheDocument()
+    const why = screen.getByTestId('why-review')
+    expect(within(why).getByText(/No strong booking\/SO\/B\/L identity/)).toBeInTheDocument()
+    expect(screen.queryByText(/No field conflicts/i)).toBeNull()
     expect(screen.queryByRole('table')).toBeNull()
     expect(screen.queryByText('2026-08-01')).toBeNull()
+  })
+
+  it('why-review renders alongside the conflict table when both exist', async () => {
+    render(
+      <ReviewCard
+        shipment={baseShipment()}
+        criticReview={baseReview()}
+        compact={compact}
+        defaultExpanded={true}
+      />,
+    )
+    expect(screen.getByTestId('why-review')).toBeInTheDocument()
+    expect(within(screen.getByTestId('why-review')).getByText('Two strong IDs in one email')).toBeInTheDocument()
+    expect(screen.getByRole('table')).toBeInTheDocument()
+  })
+
+  it('why-review falls back to humanized reviewReasons when the critic payload is absent', () => {
+    render(
+      <ReviewCard
+        shipment={baseShipment({ reviewReasons: ['conflicting_identifiers'] })}
+        criticReview={null}
+        compact={null}
+        defaultExpanded={true}
+      />,
+    )
+    const why = screen.getByTestId('why-review')
+    expect(why.textContent!.length).toBeGreaterThan(0)
   })
 
   it('requires a note before Save & Approve when the resolution differs from the stored value', async () => {
