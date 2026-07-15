@@ -164,6 +164,9 @@ export function ReviewCard({
   const [note, setNote] = useState('')
   const [busy, setBusy] = useState(false)
   const isWeakIdentity = (criticReview?.riskFlags ?? []).some((f) => f.code === 'WEAK_IDENTITY')
+  const isAmbiguousMatch = (criticReview?.riskFlags ?? []).some((f) => f.code === 'AMBIGUOUS_MATCH')
+  // Identify/link: weak-identity fold OR ambiguous-match (which real shipment?) — #146
+  const showIdentify = !readOnly && !!onIdentify && (isWeakIdentity || isAmbiguousMatch)
   const [identField, setIdentField] = useState<'booking_no' | 'so_no' | 'hbl_awb_fcr_no'>('booking_no')
   const [identValue, setIdentValue] = useState('')
   const [identResult, setIdentResult] = useState<IdentifyResult | null>(null)
@@ -417,10 +420,18 @@ export function ReviewCard({
             </div>
           )}
 
-          {isWeakIdentity && !readOnly && onIdentify && (
+          {criticReview == null && (
+            <p className="text-[11px] text-text-muted" data-testid="no-critic-note">
+              No agent analysis on this leg (committed before the critic payload, or created manually) — open the full shipment to compare values.
+            </p>
+          )}
+
+          {showIdentify && (
             <div className="rounded-lg border border-border bg-surface-900 px-3 py-2 space-y-2" data-testid="identify-shipment">
               <p className="text-[11px] font-medium text-text-muted">
-                Identify this shipment — type its booking / SO / B/L; if it already exists you can link into it.
+                {isAmbiguousMatch && !isWeakIdentity
+                  ? 'Multiple matching shipments — identify the real one and fold this leg into it if it is a duplicate.'
+                  : 'Identify this shipment — type its booking / SO / B/L; if it already exists you can link into it.'}
               </p>
               <div className="flex flex-wrap items-center gap-1.5">
                 <select
