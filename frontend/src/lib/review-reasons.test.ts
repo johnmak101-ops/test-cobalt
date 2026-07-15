@@ -172,4 +172,25 @@ describe('humanizeReason — engineering audit strings → ops language', () => 
       'Port of Discharge "USLGB" did not match a known port — left unlinked',
     ])
   })
+
+  // #146: when the review card has no critic conflict table, do not promise "below" / highlighted fields.
+  it('fieldDetailAvailable:false rewrites conflict copy without pointing at a missing table', () => {
+    expect(
+      humanizeReason('backend conflict on qty, gross_weight, measurement', { fieldDetailAvailable: false }),
+    ).toBe(
+      'Emails disagree about: Qty, Gross Weight, Measurement — open the full shipment to compare values (no field breakdown on this card)',
+    )
+    expect(humanizeReason('3 unresolved field conflict(s)', { fieldDetailAvailable: false })).toBe(
+      '3 field(s) received different values from different emails — open the full shipment to compare',
+    )
+    // default / true still use the table-pointing copy
+    expect(humanizeReason('backend conflict on qty', { fieldDetailAvailable: true })).toMatch(/highlighted fields below/)
+    expect(humanizeReason('1 unresolved field conflict')).toMatch(/compare them below/)
+  })
+
+  it('humanizeReasons passes fieldDetailAvailable through', () => {
+    const list = humanizeReasons(['backend conflict on qty'], { fieldDetailAvailable: false })
+    expect(list[0]!.text).not.toMatch(/below|highlighted fields/)
+    expect(list[0]!.text).toMatch(/open the full shipment/)
+  })
 })

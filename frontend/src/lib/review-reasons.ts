@@ -57,19 +57,38 @@ const prettifyFields = (list: string) =>
 const scrubFieldTokens = (s: string): string =>
   s.replace(/\b([a-z]+(?:_[a-z0-9]+)+)\b/g, (tok) => FIELD_WORDS[tok] ?? tok.replace(/_/g, ' '))
 
+export interface HumanizeOpts {
+  /**
+   * When true (default), conflict copy may point at a field table / highlights "below".
+   * Pass false when the card has no critic conflict breakdown so we do not promise UI that is not there (#146).
+   */
+  fieldDetailAvailable?: boolean
+}
+
 interface Translation {
   match: RegExp
-  text: (m: RegExpMatchArray) => string
+  text: (m: RegExpMatchArray, opts?: HumanizeOpts) => string
 }
 
 const TRANSLATIONS: Translation[] = [
   {
     match: /backend conflict on (.+)/i,
-    text: (m) => `Emails disagree about: ${prettifyFields(m[1]!)} — check the highlighted fields below`,
+    text: (m, opts) => {
+      const fields = prettifyFields(m[1]!)
+      if (opts?.fieldDetailAvailable === false) {
+        return `Emails disagree about: ${fields} — open the full shipment to compare values (no field breakdown on this card)`
+      }
+      return `Emails disagree about: ${fields} — check the highlighted fields below`
+    },
   },
   {
     match: /(\d+) unresolved field conflict/i,
-    text: (m) => `${m[1]} field(s) received different values from different emails — compare them below`,
+    text: (m, opts) => {
+      if (opts?.fieldDetailAvailable === false) {
+        return `${m[1]} field(s) received different values from different emails — open the full shipment to compare`
+      }
+      return `${m[1]} field(s) received different values from different emails — compare them below`
+    },
   },
   {
     match: /matched multiple backend legs/i,
@@ -243,10 +262,10 @@ const TRANSLATIONS: Translation[] = [
 ]
 
 /** Plain-language version of a review reason; never surfaces raw DB field names. */
-export function humanizeReason(reason: string): string {
+export function humanizeReason(reason: string, opts?: HumanizeOpts): string {
   for (const t of TRANSLATIONS) {
     const m = reason.match(t.match)
-    if (m) return t.text(m)
+    if (m) return t.text(m, opts)
   }
   return scrubFieldTokens(reason)
 }
@@ -259,11 +278,11 @@ export interface HumanizedReason {
 }
 
 /** Humanize + de-duplicate (same human text once) while preserving first raw for tooltips. */
-export function humanizeReasons(reasons: string[]): HumanizedReason[] {
+export function humanizeReasons(reasons: string[], opts?: HumanizeOpts): HumanizedReason[] {
   const out: HumanizedReason[] = []
   const seen = new Set<string>()
   for (const raw of reasons) {
-    const text = humanizeReason(raw)
+    const text = humanizeReason(raw, opts)
     if (seen.has(text)) continue
     seen.add(text)
     out.push({ raw, text })

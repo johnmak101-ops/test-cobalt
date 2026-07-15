@@ -191,12 +191,13 @@ export function ReviewCard({
       text: f.message,
     }))
     const reasons = (shipment as { reviewReasons?: string[] | null }).reviewReasons ?? []
-    for (const { raw, text } of humanizeReasons(reasons)) {
+    // Do not promise a field table "below" when critic conflicts are absent (#146).
+    for (const { raw, text } of humanizeReasons(reasons, { fieldDetailAvailable: conflicts.length > 0 })) {
       if (explained.has(categorizeReason(raw))) continue
       out.push({ key: `reason-${raw}`, severity: 'medium', text })
     }
     return out
-  }, [criticReview, shipment])
+  }, [criticReview, shipment, conflicts.length])
   const [resolutions, setResolutions] = useState<Record<string, string>>(() =>
     initialResolutions(conflicts),
   )

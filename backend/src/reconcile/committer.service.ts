@@ -23,7 +23,7 @@ import { resolvePoEnrichment, unattributedBrandStyle } from './po-enrichment'
 import { needsHumanReview } from './committer-helpers'
 import type { CriticReview } from '../decisions/critic-review.types'
 import { mapFieldsToLegColumns } from './committer-leg-mapping'
-import { findExistingLeg, findAdoptableZeroIdLeg } from './committer-match'
+import { findExistingLeg, findAdoptableZeroIdLeg, findSupersededByIdentityCorrection } from './committer-match'
 import { MasterResolver } from './committer-master-resolver'
 import { planPoReconcile } from './committer-po-reconciler'
 import { MilestoneSynchronizer } from './committer-milestones'
@@ -31,7 +31,7 @@ import { isAuditedBookingFill } from './fill-booking-audit'
 import { collectSourceEvents } from './source-events'
 
 // Re-export for any external import sites that still pull findExistingLeg from the service module.
-export { findExistingLeg } from './committer-match'
+export { findExistingLeg, findSupersededByIdentityCorrection } from './committer-match'
 
 /** One reconciled shipment picture, ready to commit. */
 export interface ReconGroup {
@@ -313,6 +313,34 @@ export class CommitterService {
       action = 'create_booking'
       await this.writeAudit('booking', bookingId, 'create', null, jobNo, g)
       await this.writeAudit('shipment', shipmentId, 'create', null, state, g)
+    }
+
+    // #146: strongKeysConflict blocked matching a provisional sibling whose SO/booking was corrected by
+    // re-parse — either we just minted a new leg, or we amended the live successor. Retire the zombie so
+    // the review queue is not left with an unreachable empty card. The predicate requires conflict on one
+    // strong-id type + OVERLAP on another (same shipment re-keyed) — mere conversation co-residence must
+    // never retire (a consolidated thread holds several REAL shipments). Because overlap is required, the
+    // strong-key-indexed `legs` candidates already contain every possible sibling — no conversation scan.
+    // Retire = dismissedAt + linkedShipmentId(successor): dismissal alone leaves the zombie visible to
+    // candidate lookups (2 candidates → phantom 'ambiguous' → the REAL leg gets stuck in review); the
+    // linked stamp is what findExistingLeg's husk guard and the lookup filter key on.
+    if (gk.size > 0) {
+      const superseded = findSupersededByIdentityCorrection(legs, gk, shipmentId)
+      const now = new Date()
+      for (const z of superseded) {
+        await this.shipments.updateLeg(z.id, { dismissedAt: now, linkedShipmentId: shipmentId })
+        await this.audit.write({
+          entityType: 'shipment',
+          entityId: z.id,
+          field: null,
+          oldValue: null,
+          newValue: `superseded:${shipmentId}`,
+          changeType: 'update',
+          sourceType: 'system',
+          actorUserId: null,
+          note: 'identity corrected by re-parse — superseded by a newer leg',
+        })
+      }
     }
 
     // Per-PO master enrichment (brand / item_style_no / total_quantity + unit): pulled from the parsed_record

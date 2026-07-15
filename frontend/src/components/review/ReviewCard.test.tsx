@@ -181,6 +181,22 @@ describe('ReviewCard', () => {
     expect(why.textContent!.length).toBeGreaterThan(0)
   })
 
+  // #146: no critic conflicts → conflict-style reviewReasons must not say "below" (no field table on card).
+  it('why-review does not promise field table when criticReview is null and reasons cite backend conflict', () => {
+    render(
+      <ReviewCard
+        shipment={baseShipment({ reviewReasons: ['backend conflict on qty, gross_weight'] })}
+        criticReview={null}
+        compact={null}
+        defaultExpanded={true}
+      />,
+    )
+    const why = screen.getByTestId('why-review')
+    expect(why.textContent).toMatch(/Emails disagree about/)
+    expect(why.textContent).not.toMatch(/below|highlighted fields/)
+    expect(why.textContent).toMatch(/open the full shipment/)
+  })
+
   // The queue's riskFlags and ShipTrack's committer reviewReasons are two DIFFERENT sources, not a
   // primary + backup: master-data misses exist only on the ShipTrack side. Real leg 31DFB19C.
   it('why-review shows a ShipTrack reason no risk flag explains (master-data miss), alongside the flags', () => {

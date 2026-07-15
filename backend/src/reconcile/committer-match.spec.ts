@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { findExistingLeg, findAdoptableZeroIdLeg } from './committer-match'
+import { findExistingLeg, findAdoptableZeroIdLeg, findSupersededByIdentityCorrection } from './committer-match'
 import { strongKeys, normKey } from './match-keys'
 
 type Leg = { id: string; bookingId: string; matchKeys: Record<string, unknown> }
@@ -132,5 +132,86 @@ describe('findAdoptableZeroIdLeg (thread gains its first identity → adopt, nev
       aleg('L2', 'B2', { conversation_id: 'CONV-1' }),
     ]
     expect(findAdoptableZeroIdLeg(legs, new Map(), 'CONV-1')).toBeUndefined()
+  })
+})
+
+type SuperLeg = {
+  id: string
+  matchKeys: Record<string, unknown>
+  reviewStatus?: string | null
+  dismissedAt?: Date | string | null
+  linkedShipmentId?: string | null
+}
+const sleg = (
+  id: string,
+  matchKeys: Record<string, unknown>,
+  over: Partial<SuperLeg> = {},
+): SuperLeg => ({ id, matchKeys, reviewStatus: 'provisional', dismissedAt: null, linkedShipmentId: null, ...over })
+
+describe('findSupersededByIdentityCorrection (#146 re-parse zombies) — conflict + OVERLAP required', () => {
+  it('shares booking + conflicting so → superseded (the BEFF01 ghost)', () => {
+    const zombie = sleg('OLD', { booking_no: 'BX1', so_no: 'SO-OLD', conversation_id: 'CONV-1' })
+    const newKeys = gkOf({ booking_no: 'BX1', so_no: 'SO-NEW' })
+    const r = findSupersededByIdentityCorrection([zombie], newKeys, 'NEW')
+    expect(r.map((x) => x.id)).toEqual(['OLD'])
+  })
+
+  it('different conversation + no shared key → not superseded', () => {
+    const other = sleg('OTHER', { booking_no: 'BX-OTHER', so_no: 'SO-OTHER', conversation_id: 'CONV-OTHER' })
+    const newKeys = gkOf({ booking_no: 'BX1', so_no: 'SO-NEW' })
+    expect(findSupersededByIdentityCorrection([other], newKeys, 'NEW')).toEqual([])
+  })
+
+  it('already dismissed → not superseded', () => {
+    const dismissed = sleg('D', { booking_no: 'BX1', so_no: 'SO-OLD' }, { dismissedAt: new Date() })
+    const newKeys = gkOf({ booking_no: 'BX1', so_no: 'SO-NEW' })
+    expect(findSupersededByIdentityCorrection([dismissed], newKeys, 'NEW')).toEqual([])
+  })
+
+  it('confirmed leg → not superseded', () => {
+    const confirmed = sleg('C', { booking_no: 'BX1', so_no: 'SO-OLD' }, { reviewStatus: 'confirmed' })
+    const newKeys = gkOf({ booking_no: 'BX1', so_no: 'SO-NEW' })
+    expect(findSupersededByIdentityCorrection([confirmed], newKeys, 'NEW')).toEqual([])
+  })
+
+  it('new leg itself → not superseded', () => {
+    const self = sleg('NEW', { booking_no: 'BX1', so_no: 'SO-NEW' })
+    const newKeys = gkOf({ booking_no: 'BX1', so_no: 'SO-NEW' })
+    // no strongKeysConflict with itself either, but id guard is the primary exclusion
+    expect(findSupersededByIdentityCorrection([self], newKeys, 'NEW')).toEqual([])
+  })
+
+  // ⚠️ FLIPPED from the original PR: conversation co-residence must NEVER retire. A consolidated
+  // thread legitimately holds several REAL shipments with conflicting ids — the conversation branch
+  // dismissed all of them on re-ingest (probe-verified on live BSTI + KOHL/YAQI data below).
+  it('same conversation alone + conflicting strong id (NO shared key) → NOT superseded', () => {
+    const realSibling = sleg('SIBLING', { booking_no: 'BX-OLD', conversation_id: 'CONV-1' })
+    const newKeys = gkOf({ booking_no: 'BX-NEW' })
+    expect(findSupersededByIdentityCorrection([realSibling], newKeys, 'NEW')).toEqual([])
+  })
+
+  it('BSTI regression: committing the NL group retires the ghost but NOT the real UK sibling in the same thread', () => {
+    // real data: NL group {booking B1368248010, so 29954607}; UK leg {so 29954612} same conversation;
+    // ghost {booking B1368248010, so BEFF01-001627} (Shipment REF mis-parsed into so_no)
+    const ukLeg = sleg('UK', { so_no: '29954612', conversation_id: 'CONV-BSTI' })
+    const ghost = sleg('GHOST', { booking_no: 'B1368248010', so_no: 'BEFF01-001627', conversation_id: 'CONV-BSTI' })
+    const nlKeys = gkOf({ booking_no: 'B1368248010', so_no: '29954607' })
+    const r = findSupersededByIdentityCorrection([ukLeg, ghost], nlKeys, 'NL-NEW')
+    expect(r.map((x) => x.id)).toEqual(['GHOST'])
+  })
+
+  it('KOHL/YAQI regression: committing one HBL doc retires NONE of the sibling HBL legs of the thread', () => {
+    const siblings = ['SE26061400001', 'SE26061400005', 'SE26061400006', 'SE26061400002'].map((hbl, i) =>
+      sleg(`LEG-${hbl}`, { hbl_awb_fcr_no: hbl, mbl: `ONEYDACG1337${i}900`, conversation_id: 'CONV-KY' }),
+    )
+    const docAKeys = gkOf({ hbl_awb_fcr_no: 'SE26061400003', mbl: 'ONEYDACG13378900', container_no: 'ONEU0429500' })
+    expect(findSupersededByIdentityCorrection(siblings, docAKeys, 'LEG-A')).toEqual([])
+  })
+
+  it('missing reviewStatus is treated as provisional', () => {
+    const zombie = sleg('OLD', { booking_no: 'BX1', so_no: 'SO-OLD' }, { reviewStatus: undefined })
+    delete (zombie as { reviewStatus?: string }).reviewStatus
+    const newKeys = gkOf({ booking_no: 'BX1', so_no: 'SO-NEW' })
+    expect(findSupersededByIdentityCorrection([zombie], newKeys, 'NEW').map((x) => x.id)).toEqual(['OLD'])
   })
 })
