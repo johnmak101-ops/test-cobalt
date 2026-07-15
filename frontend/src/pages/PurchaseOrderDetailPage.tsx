@@ -115,8 +115,13 @@ export default function PurchaseOrderDetailPage() {
           <div className="mt-4">
             <div className="mb-1 flex items-center justify-between text-xs text-text-muted">
               <span>Fulfillment Progress</span>
-              <span className="font-mono capitalize">
-                {progressLabel(po.totalQuantity, po.linkedShipments ?? [])}
+              <span className="font-mono">
+                <span className="whitespace-nowrap text-text-secondary">
+                  {Math.round(Math.min(100, Math.max(0, progress)))}%
+                </span>
+                <span className="ml-2 capitalize">
+                  {progressLabel(po.totalQuantity, po.linkedShipments ?? [])}
+                </span>
               </span>
             </div>
             <div className="h-3 w-full overflow-hidden rounded-full bg-surface-600">

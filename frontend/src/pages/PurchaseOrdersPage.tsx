@@ -101,7 +101,9 @@ export default function PurchaseOrdersPage() {
               ? [{ status: po.status }]
               : []
         if (ls.length === 0 && !po.totalQuantity) return ''
-        return furthestStatusLabel(ls)
+        const pct = Math.round(Math.min(100, Math.max(0, poProgress(po.totalQuantity, ls).pct)))
+        const stage = furthestStatusLabel(ls)
+        return `${pct}% ${stage}`
       }
 
       // "CNSZX→GBFXT" → two filterable cells (arrows defeat spreadsheet filters). A missing end comes
@@ -376,6 +378,8 @@ UOM
                       ? [{ status: po.status }]
                       : []
                   const progress = poProgress(po.totalQuantity, links).pct
+                  const pctRounded = Math.round(Math.min(100, Math.max(0, progress)))
+                  const hasProgress = !!(po.totalQuantity || links.length > 0)
 
                   return (
                     <tr
@@ -399,22 +403,25 @@ UOM
                         {po.quantityUnit ?? po.shippedUnit ?? '—'}
                       </td>
                       <td className="px-4 py-3">
-                        {po.totalQuantity || po.status ? (
-                          <div className="flex items-center gap-2">
-                            <div className="h-2 w-20 overflow-hidden rounded-full bg-surface-600">
+                        {hasProgress ? (
+                          <div className="flex min-w-0 items-center gap-2">
+                            <div className="h-2 w-20 shrink-0 overflow-hidden rounded-full bg-surface-600">
                               <div
                                 className={cn(
                                   'h-full rounded-full transition-all',
-                                  progress >= 100
+                                  pctRounded >= 100
                                     ? 'bg-status-success'
-                                    : progress > 0
+                                    : pctRounded > 0
                                       ? 'bg-cobalt-primary'
                                       : 'bg-surface-600'
                                 )}
-                                style={{ width: `${progress}%` }}
+                                style={{ width: `${pctRounded}%` }}
                               />
                             </div>
-                            <span className="font-mono text-xs text-text-muted capitalize">
+                            <span className="whitespace-nowrap font-mono text-xs text-text-secondary">
+                              {po.totalQuantity || links.length ? `${pctRounded}%` : '—'}
+                            </span>
+                            <span className="truncate text-xs text-text-muted capitalize">
                               {furthestStatusLabel(links)}
                             </span>
                           </div>
