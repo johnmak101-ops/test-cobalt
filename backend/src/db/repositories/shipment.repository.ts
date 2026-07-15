@@ -98,9 +98,13 @@ export class ShipmentRepository {
    */
   async candidateLegs(strongPairs: { type: string; value: string }[], posNorm: string[]) {
     if (!strongPairs.length && !posNorm.length) return []
+    // Linked husks (folded into another leg) must not poison matching: lookup + committer
+    // both use this set. Do NOT filter dismissedAt — portal-echo dismissed legs still match
+    // so re-ingest does not mint duplicates (#146).
     return this.db
       .selectFrom('shipments')
       .selectAll()
+      .where('linkedShipmentId', 'is', null)
       .where((eb) => {
         const ors: Expression<SqlBool>[] = []
         if (strongPairs.length) {
@@ -368,6 +372,25 @@ export class ShipmentRepository {
 
   posFor(shipmentId: string) {
     return this.db.selectFrom('shipmentPos').where('shipmentId', '=', shipmentId).selectAll().execute()
+  }
+
+  /** PO numbers linked via shipment_pos for many legs in ONE query (shipmentId → poNumbers).
+   *  Companion to bookingRepo.poNumbersByBooking — summaries union both sources (#121). */
+  async poNumbersByShipment(shipmentIds: string[]): Promise<Map<string, string[]>> {
+    const map = new Map<string, string[]>()
+    if (!shipmentIds.length) return map
+    const rows = await this.db
+      .selectFrom('shipmentPos')
+      .innerJoin('purchaseOrders', 'shipmentPos.poId', 'purchaseOrders.id')
+      .where('shipmentPos.shipmentId', 'in', shipmentIds)
+      .select(['shipmentPos.shipmentId as shipmentId', 'purchaseOrders.poNumber as poNumber'])
+      .execute()
+    for (const r of rows) {
+      const arr = map.get(r.shipmentId)
+      if (arr) arr.push(r.poNumber)
+      else map.set(r.shipmentId, [r.poNumber])
+    }
+    return map
   }
 
   // --- shipment_milestones ---

@@ -17,7 +17,7 @@ export default function DashboardPage() {
     )
   }
 
-  const stats = data?.stats ?? { activeShipments: 0, atRiskShipments: 0, criticalAlerts: 0, newEmails: 0 }
+  const stats = data?.stats ?? { activeShipments: 0, warningAlerts: 0, criticalAlerts: 0, newEmails: 0 }
 
   return (
     <div className="space-y-6">
@@ -32,10 +32,10 @@ export default function DashboardPage() {
         />
         <KPICard
           icon={AlertTriangle}
-          label="At Risk"
-          value={stats.atRiskShipments}
+          label="Warning Alerts"
+          value={stats.warningAlerts}
           color="bg-status-warning/15 text-status-warning"
-          onClick={() => navigate('/alerts')}
+          onClick={() => navigate('/alerts?severity=WARNING')}
         />
         <KPICard
           icon={AlertCircle}

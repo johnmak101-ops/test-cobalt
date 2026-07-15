@@ -179,6 +179,36 @@ describe('ReviewCard', () => {
     )
     const why = screen.getByTestId('why-review')
     expect(why.textContent!.length).toBeGreaterThan(0)
+    expect(screen.getByTestId('no-critic-note')).toBeInTheDocument()
+    expect(screen.getByTestId('no-critic-note').textContent).toMatch(/No agent analysis/)
+  })
+
+  it('shows no-critic-note whenever criticReview is null (even with no reasons)', () => {
+    render(
+      <ReviewCard
+        shipment={baseShipment({ reviewReasons: [] })}
+        criticReview={null}
+        compact={null}
+        defaultExpanded={true}
+      />,
+    )
+    expect(screen.getByTestId('no-critic-note')).toBeInTheDocument()
+  })
+
+  // #146: no critic conflicts → conflict-style reviewReasons must not say "below" (no field table on card).
+  it('why-review does not promise field table when criticReview is null and reasons cite backend conflict', () => {
+    render(
+      <ReviewCard
+        shipment={baseShipment({ reviewReasons: ['backend conflict on qty, gross_weight'] })}
+        criticReview={null}
+        compact={null}
+        defaultExpanded={true}
+      />,
+    )
+    const why = screen.getByTestId('why-review')
+    expect(why.textContent).toMatch(/Emails disagree about/)
+    expect(why.textContent).not.toMatch(/below|highlighted fields/)
+    expect(why.textContent).toMatch(/open the full shipment/)
   })
 
   // The queue's riskFlags and ShipTrack's committer reviewReasons are two DIFFERENT sources, not a
@@ -352,7 +382,7 @@ const weakIdentityReview = () =>
     riskFlags: [{ code: 'WEAK_IDENTITY', severity: 'medium', message: 'No strong booking/SO/B/L identity and no PO — hard to place this email on a shipment.' }],
   })
 
-describe('identify section (WEAK_IDENTITY legs)', () => {
+describe('identify section (WEAK_IDENTITY / AMBIGUOUS_MATCH legs)', () => {
   it('renders only for WEAK_IDENTITY legs with an onIdentify handler', () => {
     const { rerender } = render(
       <ReviewCard shipment={baseShipment()} criticReview={weakIdentityReview()} compact={compact} defaultExpanded onIdentify={vi.fn()} />,
@@ -362,6 +392,23 @@ describe('identify section (WEAK_IDENTITY legs)', () => {
       <ReviewCard shipment={baseShipment()} criticReview={baseReview()} compact={compact} defaultExpanded onIdentify={vi.fn()} />,
     )
     expect(screen.queryByTestId('identify-shipment')).toBeNull()
+  })
+
+  it('renders for a leg whose only flag is AMBIGUOUS_MATCH', () => {
+    render(
+      <ReviewCard
+        shipment={baseShipment()}
+        criticReview={baseReview({
+          conflicts: [],
+          riskFlags: [{ code: 'AMBIGUOUS_MATCH', severity: 'high', message: 'Could belong to more than one shipment.' }],
+        })}
+        compact={compact}
+        defaultExpanded
+        onIdentify={vi.fn()}
+      />,
+    )
+    expect(screen.getByTestId('identify-shipment')).toBeInTheDocument()
+    expect(screen.getByText(/Multiple matching shipments/i)).toBeInTheDocument()
   })
 
   it('typed key that exists elsewhere → shows the candidate + one-click link', async () => {

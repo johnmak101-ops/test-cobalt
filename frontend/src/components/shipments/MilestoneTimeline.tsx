@@ -28,18 +28,16 @@ interface MilestoneTimelineProps {
   warehouseStartDate?: string | null
 }
 
-// BUG 11: AT_WAREHOUSE is a first-class stage the backend emits (derived from warehouse_start_date). It was
-// missing here, so an at-warehouse date had no stage to render. Inserted between SO Received and Draft BOL.
-const milestoneOrder = ['BOOKING_SENT', 'SO_RECEIVED', 'AT_WAREHOUSE', 'DRAFT_BL_RECEIVED', 'FINAL_BL_RECEIVED', 'DEPARTED', 'ARRIVED', 'DELIVERED']
+// Display order only — AT_WAREHOUSE and ARRIVED still exist in data (committer-derived) but are
+// not shown on the timeline (#126). Stored milestones of those types are ignored (skip, don't crash).
+const milestoneOrder = ['BOOKING_SENT', 'SO_RECEIVED', 'DRAFT_BL_RECEIVED', 'FINAL_BL_RECEIVED', 'DEPARTED', 'DELIVERED']
 
 const milestoneLabels: Record<string, string> = {
   BOOKING_SENT: 'Booking Request',
   SO_RECEIVED: 'SO Received',
-  AT_WAREHOUSE: 'At Warehouse',
   DRAFT_BL_RECEIVED: 'Draft BOL',
   FINAL_BL_RECEIVED: 'Final BOL',
   DEPARTED: 'Departure',
-  ARRIVED: 'Arrived',
   DELIVERED: 'Delivered',
 }
 
@@ -100,10 +98,20 @@ export function MilestoneTimeline({
   // the derived STATE implies progress even with no per-stage milestone EVENT — e.g. a shipment whose emails
   // are all "Other" but carry an so_no sits in CONFIRMED with zero milestones. Never show less than the
   // state's stage, so the timeline agrees with the status badge.
-  // BUG 4: keyed on the UI-translated status the component actually receives (stateToUiStatus:
-  // RELEASED→DEPARTED, DELIVERED→ARRIVED), NOT the raw leg states — the old RELEASED/DELIVERED keys were dead
-  // and SAILED/DEPARTED/ARRIVED never matched. Indices track milestoneOrder (AT_WAREHOUSE inserted at 2).
-  const STATE_TO_INDEX: Record<string, number> = { BOOKED: 0, CONFIRMED: 1, AT_WAREHOUSE: 2, SAILED: 5, DEPARTED: 5, ARRIVED: 6 }
+  // Keyed on the UI-translated status (stateToUiStatus: RELEASED→DEPARTED, DELIVERED→ARRIVED).
+  // Indices track the lean milestoneOrder (AT_WAREHOUSE / ARRIVED are no longer display stages — #126),
+  // and must never LOWER a state's floor: AT_WAREHOUSE folds back to SO Received, and SAILED/ARRIVED fold
+  // FORWARD to the stage that means the same thing. SAILED = the vessel left (state.ts bumps it from atd,
+  // or BUG-7 from Invoice/Billing + carrier doc + past ETD with NO atd) → Departure; a lower floor made
+  // those atd-less legs advertise an ESTIMATED departure for a ship already at sea.
+  const STATE_TO_INDEX: Record<string, number> = {
+    BOOKED: 0,
+    CONFIRMED: 1,
+    AT_WAREHOUSE: 1, // stage removed from display — floor at SO Received, never below
+    SAILED: 4, // Departure — the vessel has left
+    DEPARTED: 4, // Departure (UI status for leg state RELEASED)
+    ARRIVED: 5, // Delivered — stage removed from display, fold forward (UI status for leg state DELIVERED)
+  }
   currentIndex = Math.max(currentIndex, STATE_TO_INDEX[currentStatus] ?? -1)
 
   const lastIndex = milestoneOrder.length - 1

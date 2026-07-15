@@ -1,5 +1,19 @@
 import { describe, it, expect } from 'vitest'
-import { buildShipmentSummary } from './presentation.service'
+import { buildShipmentSummary, mergePoNumbers } from './presentation.service'
+
+describe('mergePoNumbers — booking_pos ∪ shipment_pos', () => {
+  it('uses booking POs when present and unions shipment-side extras with stable first-seen order', () => {
+    expect(mergePoNumbers(['PO-A', 'PO-B'], ['PO-B', 'PO-C'])).toEqual(['PO-A', 'PO-B', 'PO-C'])
+  })
+
+  it('falls back to shipment_pos when booking has none', () => {
+    expect(mergePoNumbers([], ['LEG-PO-1', 'LEG-PO-2'])).toEqual(['LEG-PO-1', 'LEG-PO-2'])
+  })
+
+  it('dedupes case-insensitively and skips blanks', () => {
+    expect(mergePoNumbers(['po-1', ''], ['PO-1', '  ', 'PO-2'])).toEqual(['po-1', 'PO-2'])
+  })
+})
 
 const maps = {
   customers: new Map([['c1', { id: 'c1', code: 'COLE', name: 'Cole Haan' }]]),

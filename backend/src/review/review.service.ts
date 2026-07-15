@@ -8,7 +8,7 @@ import type { CalibrationOutcome } from '../db/kysely/db'
 import type { CriticReview } from '../decisions/critic-review.types'
 import { QueueLearningClient } from './queue-learning.client'
 import { syncIdentityMatchKeys } from '../shipments/identity-keys'
-import { normBookingKey, normKey, strongKeys } from '../reconcile/match-keys'
+import { keysOverlap, normBookingKey, normKey, strongKeys } from '../reconcile/match-keys'
 import type { CorrectDto, IdentifyDto, LinkDto } from './dto'
 
 /** IdentifyDto snake_case strong-key field → camelCase shipment column. */
@@ -297,10 +297,15 @@ export class ReviewService {
     if (!source) throw new NotFoundException('shipment not found')
     if (source.kind !== 'SHIPMENT' || source.reviewStatus !== 'provisional' || source.dismissedAt != null)
       throw new BadRequestException('only an active provisional shipment leg can be linked')
-    if (strongKeys((source.matchKeys ?? {}) as Record<string, unknown>).size > 0)
-      throw new BadRequestException('leg already carries a strong identity — edit it on the shipment page instead')
     const target = await this.shipments.findById(dto.targetShipmentId)
     if (!target || target.kind !== 'SHIPMENT') throw new NotFoundException('target shipment not found')
+    const srcKeys = strongKeys((source.matchKeys ?? {}) as Record<string, unknown>)
+    const tgtKeys = strongKeys((target.matchKeys ?? {}) as Record<string, unknown>)
+    // zero-identity fold (Wave 2) stays; a STRONG-keyed source is allowed ONLY as a duplicate fold —
+    // it must share at least one strong key with the target (overlapping identity = same shipment).
+    // Disjoint identities are two different shipments; folding them is over-merge.
+    if (srcKeys.size > 0 && !keysOverlap(srcKeys, tgtKeys))
+      throw new BadRequestException('leg carries a different identity than the target — not a duplicate; edit it on the shipment page instead')
 
     await this.shipments.linkProvisionalLeg(shipmentId, dto.targetShipmentId)
     await this.audit.write({

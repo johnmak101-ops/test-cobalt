@@ -360,14 +360,33 @@ describe('link — fold a zero-identity provisional leg into an existing shipmen
     }))
   })
 
-  it('rejects when the source already carries a strong identity', async () => {
+  it('link allows a STRONG-keyed provisional that SHARES a strong key with the target (duplicate fold)', async () => {
     const { svc, shipments } = makeService()
     shipments.findById.mockImplementation(async (id: string) => {
-      if (id === 'SRC') return { ...zeroIdSource, matchKeys: { booking_no: 'BX1' } }
-      if (id === 'TARGET') return { id: 'TARGET', kind: 'SHIPMENT' }
+      if (id === 'SRC') return {
+        ...zeroIdSource,
+        matchKeys: { booking_no: 'BX1', so_no: 'GHOST-REF' },
+      }
+      if (id === 'TARGET') return {
+        id: 'TARGET',
+        kind: 'SHIPMENT',
+        matchKeys: { booking_no: 'BX1', so_no: 'REAL' },
+      }
       return null
     })
-    await expect(svc.link('SRC', { targetShipmentId: 'TARGET' }, 'user-1')).rejects.toThrow(/identity/)
+    const r = await svc.link('SRC', { targetShipmentId: 'TARGET' }, 'user-1')
+    expect(r).toEqual({ ok: true, targetShipmentId: 'TARGET' })
+    expect(shipments.linkProvisionalLeg).toHaveBeenCalledWith('SRC', 'TARGET')
+  })
+
+  it('link still rejects a strong-keyed provisional with NO shared strong key (not a duplicate — a different shipment)', async () => {
+    const { svc, shipments } = makeService()
+    shipments.findById.mockImplementation(async (id: string) => {
+      if (id === 'SRC') return { ...zeroIdSource, matchKeys: { booking_no: 'BX9' } }
+      if (id === 'TARGET') return { id: 'TARGET', kind: 'SHIPMENT', matchKeys: { booking_no: 'BX1' } }
+      return null
+    })
+    await expect(svc.link('SRC', { targetShipmentId: 'TARGET' }, 'user-1')).rejects.toThrow(/identity|duplicate/)
     expect(shipments.linkProvisionalLeg).not.toHaveBeenCalled()
   })
 
