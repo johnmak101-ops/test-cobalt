@@ -352,5 +352,9 @@ describe('Phase 2 routing shadow + mode', () => {
       }),
     )
     expect(res.reviewStatus).toBe('provisional')
+    const [leg] = await db.selectFrom('shipments').selectAll().execute()
+    const reasons = Array.isArray(leg.reviewReasons) ? (leg.reviewReasons as string[]) : []
+    expect(reasons).toContain('Booking cancelled')
+    expect(reasons.some((r) => /band auto-confirm/i.test(r))).toBe(false)
   })
 })

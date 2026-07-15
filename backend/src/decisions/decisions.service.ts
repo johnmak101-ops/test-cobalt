@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common'
+import { Injectable, Logger } from '@nestjs/common'
 import { CommitterService, type ReconGroup, type CommitResult } from '../reconcile/committer.service'
 import { SettingsService } from '../settings/settings.service'
 import { IngestRepository } from '../db/repositories/ingest.repository'
@@ -37,6 +37,8 @@ const SKIP_RESULT = {
  */
 @Injectable()
 export class DecisionsService {
+  private readonly logger = new Logger(DecisionsService.name)
+
   constructor(
     private readonly committer: CommitterService,
     private readonly settings: SettingsService,
@@ -52,26 +54,33 @@ export class DecisionsService {
 
     if (disp.disposition === 'skip') {
       // Shadow even on skip when critic present (shipmentId null — nothing committed).
+      // Shadow write must never fail ingest (advisory dual-route only).
       if (critic) {
-        const mode = await this.settings.criticRoutingMode()
-        const bandRouting = resolveBandRouting({
-          recommendedRouting: dto.recommendedRouting,
-          criticReview: critic,
-        }) ?? 'skip'
-        const gateRouting = 'skip' as const
-        await this.routingShadow.insert({
-          shipmentId: null,
-          gateRouting,
-          bandRouting,
-          band: critic.confidence?.band ?? null,
-          differs: gateRouting !== bandRouting,
-          reasons: [
-            ...(dto.reviewReasons ?? []),
-            `gate=${gateRouting}`,
-            `band=${bandRouting}`,
-            mode === 'band' ? 'mode=band' : 'mode=gate',
-          ],
-        })
+        try {
+          const mode = await this.settings.criticRoutingMode()
+          const bandRouting = resolveBandRouting({
+            recommendedRouting: dto.recommendedRouting,
+            criticReview: critic,
+          }) ?? 'skip'
+          const gateRouting = 'skip' as const
+          await this.routingShadow.insert({
+            shipmentId: null,
+            gateRouting,
+            bandRouting,
+            band: critic.confidence?.band ?? null,
+            differs: gateRouting !== bandRouting,
+            reasons: [
+              ...(dto.reviewReasons ?? []),
+              `gate=${gateRouting}`,
+              `band=${bandRouting}`,
+              mode === 'band' ? 'mode=band' : 'mode=gate',
+            ],
+          })
+        } catch (err) {
+          this.logger.warn(
+            `routing_shadow insert failed: ${err instanceof Error ? err.message : String(err)}`,
+          )
+        }
       }
       return { ...SKIP_RESULT, confidence: dto.confidence, reviewStatus: 'skip' }
     }
@@ -122,14 +131,17 @@ export class DecisionsService {
     })
     const mode = await this.settings.criticRoutingMode()
 
-    // Mode select: band only when setting is band and bandRouting is a commit-path status.
+    // Mode select: band only when setting is band, critic present, and bandRouting is a commit-path status.
     // Default gate leaves reviewStatus as-is (zero behavior change).
-    // Append audit-ish reason so leg history shows band took over (not gate alone).
-    if (mode === 'band' && bandRouting && bandRouting !== 'skip') {
+    // Append audit-ish reason so leg history shows band took over (not gate alone);
+    // skip band reason on cancel — cancel audit already owns the reasons list.
+    if (mode === 'band' && critic && bandRouting && bandRouting !== 'skip') {
       reviewStatus = bandRouting === 'confirmed' ? 'confirmed' : 'provisional'
-      const bandReason =
-        reviewStatus === 'confirmed' ? 'band auto-confirmed' : 'band held for review'
-      reviewReasons = [...(reviewReasons ?? []), bandReason]
+      if (dto.cancelled !== true) {
+        const bandReason =
+          reviewStatus === 'confirmed' ? 'band auto-confirmed' : 'band held for review'
+        reviewReasons = [...(reviewReasons ?? []), bandReason]
+      }
     }
 
     // Cancel remains authoritative over band mode — re-apply after mode select.
@@ -176,20 +188,27 @@ export class DecisionsService {
     const result = await this.committer.apply(group)
 
     // Shadow write after commit so shipmentId is available; only when critic present.
+    // Shadow write must never fail ingest (advisory dual-route only).
     if (critic && bandRouting) {
-      await this.routingShadow.insert({
-        shipmentId: result.shipmentId || null,
-        gateRouting,
-        bandRouting,
-        band: critic.confidence?.band ?? null,
-        differs: gateRouting !== bandRouting,
-        reasons: [
-          ...(dto.reviewReasons ?? []),
-          `gate=${gateRouting}`,
-          `band=${bandRouting}`,
-          mode === 'band' ? 'mode=band' : 'mode=gate',
-        ],
-      })
+      try {
+        await this.routingShadow.insert({
+          shipmentId: result.shipmentId || null,
+          gateRouting,
+          bandRouting,
+          band: critic.confidence?.band ?? null,
+          differs: gateRouting !== bandRouting,
+          reasons: [
+            ...(dto.reviewReasons ?? []),
+            `gate=${gateRouting}`,
+            `band=${bandRouting}`,
+            mode === 'band' ? 'mode=band' : 'mode=gate',
+          ],
+        })
+      } catch (err) {
+        this.logger.warn(
+          `routing_shadow insert failed: ${err instanceof Error ? err.message : String(err)}`,
+        )
+      }
     }
 
     return { ...result, confidence: dto.confidence, reviewStatus }
