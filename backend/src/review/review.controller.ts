@@ -1,6 +1,6 @@
 import { Body, Controller, Get, Param, Post } from '@nestjs/common'
 import { ReviewService } from './review.service'
-import { ConfirmDto, CorrectDto, DismissDto } from './dto'
+import { ConfirmDto, CorrectDto, DismissDto, IdentifyDto, LinkDto } from './dto'
 import { Roles, CurrentUser } from '../auth/decorators'
 import type { AuthUser } from '../auth/auth.service'
 
@@ -30,5 +30,15 @@ export class ReviewController {
 
   @Post(':id/correct') correct(@Param('id') id: string, @Body() dto: CorrectDto, @CurrentUser() actor: AuthUser) {
     return this.review.correct(id, dto, actor.id)
+  }
+
+  /** POST /api/review/:id/identify — type a strong ID on a zero-identity leg (candidate / set / ambiguous). */
+  @Post(':id/identify') identify(@Param('id') id: string, @Body() dto: IdentifyDto, @CurrentUser() actor: AuthUser) {
+    return this.review.identify(id, dto, actor.id)
+  }
+
+  /** POST /api/review/:id/link — fold a zero-identity provisional into an existing shipment. */
+  @Post(':id/link') link(@Param('id') id: string, @Body() dto: LinkDto, @CurrentUser() actor: AuthUser) {
+    return this.review.link(id, dto, actor.id)
   }
 }

@@ -595,6 +595,39 @@ export class ShipmentRepository {
         .execute()
     })
   }
+
+  /**
+   * Fold a zero-identity provisional SHIPMENT leg into an existing shipment: copy POs + source-emails
+   * onto the target (same idempotent upserts as linkDocument), then stamp linkedShipmentId + dismissedAt
+   * so the source leaves the Active queue. Deliberately does NOT clear the source's match_keys — a matcher
+   * re-ingest of the still-keyless thread must A2-match this retired husk (committer never touches
+   * dismissedAt) instead of minting a fresh queue item.
+   */
+  async linkProvisionalLeg(sourceShipmentId: string, targetShipmentId: string) {
+    await this.db.transaction().execute(async (tx) => {
+      const poRows = await tx
+        .selectFrom('shipmentPos')
+        .where('shipmentId', '=', sourceShipmentId)
+        .select(['poId', 'quantity', 'quantityUnit'])
+        .execute()
+      for (const r of poRows) {
+        await upsertShipmentPo(tx, targetShipmentId, r.poId, r.quantity, r.quantityUnit)
+      }
+      const emailRows = await tx
+        .selectFrom('shipmentEmails')
+        .where('shipmentId', '=', sourceShipmentId)
+        .select(['graphMessageId', 'emailType', 'receivedAt'])
+        .execute()
+      for (const r of emailRows) {
+        await upsertShipmentEmail(tx, targetShipmentId, r.graphMessageId, r.emailType, r.receivedAt)
+      }
+      await tx
+        .updateTable('shipments')
+        .set({ linkedShipmentId: targetShipmentId, dismissedAt: new Date(), updatedAt: new Date() })
+        .where('id', '=', sourceShipmentId)
+        .execute()
+    })
+  }
 }
 
 /** Split the STRING_AGG'd po_numbers column into the string[] the consumer expects ('' → []). */

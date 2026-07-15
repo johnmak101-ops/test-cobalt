@@ -1,4 +1,4 @@
-import { ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common'
+import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common'
 import { ShipmentRepository } from '../db/repositories/shipment.repository'
 import { BookingRepository } from '../db/repositories/booking.repository'
 import { FieldLockRepository } from '../db/repositories/field-lock.repository'
@@ -8,7 +8,17 @@ import type { CalibrationOutcome } from '../db/kysely/db'
 import type { CriticReview } from '../decisions/critic-review.types'
 import { QueueLearningClient } from './queue-learning.client'
 import { syncIdentityMatchKeys } from '../shipments/identity-keys'
-import type { CorrectDto } from './dto'
+import { normBookingKey, normKey, strongKeys } from '../reconcile/match-keys'
+import type { CorrectDto, IdentifyDto, LinkDto } from './dto'
+
+/** IdentifyDto snake_case strong-key field → camelCase shipment column. */
+const KEY_TO_LEG_COLUMN: Record<IdentifyDto['field'], string> = {
+  booking_no: 'bookingNo',
+  so_no: 'soNo',
+  hbl_awb_fcr_no: 'hblAwbFcrNo',
+  mbl: 'mbl',
+  container_no: 'containerNo',
+}
 
 const DATE_FIELDS = new Set([
   'cargoReadyDate', 'cfsCutoff', 'warehouseStartDate', 'warehouseEndDate', 'etd', 'atd', 'eta', 'ata', 'inDcDate',
@@ -182,6 +192,36 @@ export class ReviewService {
     }
   }
 
+  /** One human field write with the full review guarantees: column + human-wins lock + audit + learning feed. */
+  private async applyHumanFieldWrite(
+    shipmentId: string,
+    current: Record<string, unknown>,
+    field: string,
+    raw: unknown,
+    actorId: string,
+    note: string,
+    messageId: string,
+    forwarder: string | null,
+    learningNote: string | null = note,
+  ): Promise<unknown> {
+    const value = coerce(field, raw)
+    await this.shipments.updateLeg(shipmentId, { [field]: value })
+    await this.fieldLocks.lock('shipment', shipmentId, field, toStr(value), actorId)
+    await this.audit.write({
+      entityType: 'shipment', entityId: shipmentId, field,
+      oldValue: toStr(current[field]), newValue: toStr(value), changeType: 'update',
+      sourceType: 'manual', actorUserId: actorId, note,
+    })
+    // Feed the correction to the queue learning loop (best-effort; never breaks the review save). Post the
+    // queue's snake_case parse-field name — the leg column `soNo` is the parser's `so_no`, and the queue
+    // scores on the parse field, so a camelCase name would silently never match.
+    await this.queueLearning.postCorrection({
+      messageId, field: toQueueField(field), agentSaid: toStr(current[field]), humanCorrected: toStr(value),
+      forwarder, note: learningNote, kind: 'correction',
+    })
+    return value
+  }
+
   /** Correct fields on a provisional shipment: edits win, lock, are audited, and confirm the leg. */
   async correct(shipmentId: string, dto: CorrectDto, actorId: string) {
     const leg = await this.loadLegForReview(shipmentId, dto.expectedUpdatedAt)
@@ -194,23 +234,12 @@ export class ReviewService {
 
     const correctedValues: Record<string, unknown> = {}
     for (const [field, raw] of Object.entries(dto.fields ?? {})) {
-      const value = coerce(field, raw)
-      await this.shipments.updateLeg(shipmentId, { [field]: value })
-      await this.fieldLocks.lock('shipment', shipmentId, field, toStr(value), actorId)
-      await this.audit.write({
-        entityType: 'shipment', entityId: shipmentId, field,
-        oldValue: toStr(current[field]), newValue: toStr(value), changeType: 'update',
-        sourceType: 'manual', actorUserId: actorId, note: dto.reason ?? 'review: corrected',
-      })
+      const value = await this.applyHumanFieldWrite(
+        shipmentId, current, field, raw, actorId,
+        dto.reason ?? 'review: corrected', messageId, forwarder, dto.reason ?? null,
+      )
       corrected.push(field)
       correctedValues[field] = value
-      // Feed the correction to the queue learning loop (best-effort; never breaks the review save). Post the
-      // queue's snake_case parse-field name — the leg column `soNo` is the parser's `so_no`, and the queue
-      // scores on the parse field, so a camelCase name would silently never match.
-      await this.queueLearning.postCorrection({
-        messageId, field: toQueueField(field), agentSaid: toStr(current[field]), humanCorrected: toStr(value),
-        forwarder, note: dto.reason ?? null, kind: 'correction',
-      })
     }
 
     await syncIdentityMatchKeys(this.shipments, shipmentId, correctedValues)
@@ -226,6 +255,69 @@ export class ReviewService {
       reasons: dto.reason ? [dto.reason] : null,
     })
     return { shipmentId, reviewStatus: 'confirmed', corrected }
+  }
+
+  /** The zero-identity resolution flow: typed key exists elsewhere → offer a link candidate (never a
+   *  silent merge — a typo must not fuse two shipments); exists nowhere → set it as a normal correction
+   *  WITHOUT confirming the leg. */
+  async identify(shipmentId: string, dto: IdentifyDto, actorId: string) {
+    const norm = dto.field === 'booking_no' ? normBookingKey(dto.value) : normKey(dto.value)
+    if (!norm) throw new BadRequestException('value normalizes to nothing')
+    const others = (await this.shipments.candidateLegs([{ type: dto.field, value: norm }], []))
+      .filter((l) => l.id !== shipmentId)
+    if (others.length === 1) {
+      const target = others[0]!
+      const booking = await this.bookings.findById(target.bookingId)
+      return {
+        outcome: 'candidate' as const,
+        candidate: { shipmentId: target.id, jobNo: booking?.jobNo ?? '(unknown)', matchedValue: dto.value },
+      }
+    }
+    if (others.length > 1) return { outcome: 'ambiguous' as const, count: others.length }
+
+    const leg = await this.loadLegForReview(shipmentId, undefined)
+    const current = leg as Record<string, unknown>
+    const messageId = (await this.shipments.sourceGraphIdFor(shipmentId)) ?? shipmentId
+    const forwarder = (current.forwarderRaw as string | null) ?? null
+    const col = KEY_TO_LEG_COLUMN[dto.field]
+    const value = await this.applyHumanFieldWrite(
+      shipmentId, current, col, dto.value, actorId, 'review: identified', messageId, forwarder,
+    )
+    await syncIdentityMatchKeys(this.shipments, shipmentId, { [col]: value })
+    return { outcome: 'set' as const, field: dto.field, value: dto.value }
+  }
+
+  /** One-click fold of a zero-identity provisional leg into the existing shipment that carries the typed
+   *  key. Emails+POs are copied to the target (linkDocument pattern); the source is stamped
+   *  linkedShipmentId + dismissedAt so it leaves the Active queue but keeps its match_keys — a matcher
+   *  re-ingest A2-matches the retired husk instead of recreating a queue item. */
+  async link(shipmentId: string, dto: LinkDto, actorId: string) {
+    if (dto.targetShipmentId === shipmentId) throw new BadRequestException('cannot link a leg into itself')
+    const source = await this.shipments.findById(shipmentId)
+    if (!source) throw new NotFoundException('shipment not found')
+    if (source.kind !== 'SHIPMENT' || source.reviewStatus !== 'provisional' || source.dismissedAt != null)
+      throw new BadRequestException('only an active provisional shipment leg can be linked')
+    if (strongKeys((source.matchKeys ?? {}) as Record<string, unknown>).size > 0)
+      throw new BadRequestException('leg already carries a strong identity — edit it on the shipment page instead')
+    const target = await this.shipments.findById(dto.targetShipmentId)
+    if (!target || target.kind !== 'SHIPMENT') throw new NotFoundException('target shipment not found')
+
+    await this.shipments.linkProvisionalLeg(shipmentId, dto.targetShipmentId)
+    await this.audit.write({
+      entityType: 'shipment', entityId: shipmentId, field: null,
+      oldValue: 'provisional', newValue: `linked:${dto.targetShipmentId}`, changeType: 'update',
+      sourceType: 'manual', actorUserId: actorId, note: 'review: linked into existing shipment',
+    })
+    await this.audit.write({
+      entityType: 'shipment', entityId: dto.targetShipmentId, field: null,
+      oldValue: null, newValue: `absorbed:${shipmentId}`, changeType: 'update',
+      sourceType: 'manual', actorUserId: actorId, note: 'review: absorbed a zero-identity provisional leg (emails + POs copied)',
+    })
+    await this.recordCalibration({
+      shipmentId, leg: source, outcome: 'corrected', correctedFieldCount: 0, actorId,
+      reasons: ['linked-into-existing'],
+    })
+    return { ok: true as const, targetShipmentId: dto.targetShipmentId }
   }
 
   /** Bulk "not a trackable shipment": stamp dismissed_at so the leg leaves the review queue WITHOUT

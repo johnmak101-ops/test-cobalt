@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { ConflictException, NotFoundException } from '@nestjs/common'
+import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common'
 import { ReviewService } from './review.service'
 import type { ShipmentRepository } from '../db/repositories/shipment.repository'
 import type { BookingRepository } from '../db/repositories/booking.repository'
@@ -7,6 +7,7 @@ import type { FieldLockRepository } from '../db/repositories/field-lock.reposito
 import type { AuditRepository } from '../db/repositories/audit.repository'
 import type { CriticCalibrationRepository } from '../db/repositories/critic-calibration.repository'
 import type { QueueLearningClient, CorrectionPayload } from './queue-learning.client'
+import { normBookingKey } from '../reconcile/match-keys'
 
 const UPDATED_AT = new Date('2026-07-01T12:00:00.000Z')
 const leg = { id: 'leg-1', reviewStatus: 'provisional', grossWeight: 5, etd: null, updatedAt: UPDATED_AT }
@@ -18,8 +19,12 @@ function makeService(legOverride: Record<string, unknown> | null = {}) {
     updateLeg: vi.fn(async () => undefined),
     replaceMatchKeys: vi.fn(async () => undefined),
     sourceGraphIdFor: vi.fn(async () => 'graph-1'),
+    candidateLegs: vi.fn(async () => [] as Record<string, unknown>[]),
+    linkProvisionalLeg: vi.fn(async () => undefined),
   }
-  const bookings = {}
+  const bookings = {
+    findById: vi.fn(async () => null as { jobNo: string } | null),
+  }
   const locks = { lock: vi.fn(async () => undefined) }
   const audit = { write: vi.fn(async () => undefined) }
   const queueLearning = { postCorrection: vi.fn(async (_payload: CorrectionPayload) => undefined) }
@@ -34,7 +39,7 @@ function makeService(legOverride: Record<string, unknown> | null = {}) {
     queueLearning as unknown as QueueLearningClient,
     calibration as unknown as CriticCalibrationRepository,
   )
-  return { svc, shipments, locks, audit, queueLearning, calibration }
+  return { svc, shipments, bookings, locks, audit, queueLearning, calibration }
 }
 
 describe('ReviewService.confirm/correct — provisional-only + optimistic concurrency', () => {
@@ -266,5 +271,115 @@ describe('ReviewService — Phase 3 critic calibration capture', () => {
     calibration.insert.mockRejectedValueOnce(new Error('db down'))
     await expect(svc.confirm('leg-1', 'user-1')).resolves.toMatchObject({ reviewStatus: 'confirmed' })
     expect(shipments.updateLeg).toHaveBeenCalled()
+  })
+})
+
+describe('identify — typed strong ID on a zero-identity leg', () => {
+  it('key exists on exactly one other leg → returns a link candidate, writes NOTHING', async () => {
+    const { svc, shipments, bookings } = makeService({ id: 'SRC', matchKeys: {} })
+    shipments.candidateLegs.mockResolvedValue([
+      { id: 'TARGET', bookingId: 'B9', matchKeys: { booking_no: 'BX845666' } },
+    ])
+    bookings.findById.mockResolvedValue({ jobNo: 'JOB-2026-0017' })
+    const r = await svc.identify('SRC', { field: 'booking_no', value: 'BX845666' }, 'user-1')
+    expect(r).toEqual({
+      outcome: 'candidate',
+      candidate: { shipmentId: 'TARGET', jobNo: 'JOB-2026-0017', matchedValue: 'BX845666' },
+    })
+    expect(shipments.updateLeg).not.toHaveBeenCalled()
+  })
+
+  it('key exists nowhere → sets the field like a correction (write + lock + audit + learning + key sync), leg STAYS provisional', async () => {
+    const { svc, shipments } = makeService({ id: 'SRC', matchKeys: {} })
+    shipments.candidateLegs.mockResolvedValue([])
+    const r = await svc.identify('SRC', { field: 'booking_no', value: 'BXNEW1' }, 'user-1')
+    expect(r).toEqual({ outcome: 'set', field: 'booking_no', value: 'BXNEW1' })
+    expect(shipments.updateLeg).toHaveBeenCalledWith('SRC', { bookingNo: 'BXNEW1' })
+    // must NOT confirm the leg — the operator still reviews the rest
+    expect(shipments.updateLeg).not.toHaveBeenCalledWith('SRC', expect.objectContaining({ reviewStatus: 'confirmed' }))
+  })
+
+  it('key exists on several legs → ambiguous, no link offered', async () => {
+    const { svc, shipments } = makeService({ id: 'SRC', matchKeys: {} })
+    shipments.candidateLegs.mockResolvedValue([
+      { id: 'T1', bookingId: 'B1', matchKeys: { booking_no: 'BX845666' } },
+      { id: 'T2', bookingId: 'B2', matchKeys: { booking_no: 'BX845666' } },
+    ])
+    const r = await svc.identify('SRC', { field: 'booking_no', value: 'BX845666' }, 'user-1')
+    expect(r).toEqual({ outcome: 'ambiguous', count: 2 })
+    expect(shipments.updateLeg).not.toHaveBeenCalled()
+  })
+
+  it('normalizes booking revisions before lookup (BX845666 REV2 finds BX845666)', async () => {
+    const { svc, shipments } = makeService({ id: 'SRC', matchKeys: {} })
+    shipments.candidateLegs.mockResolvedValue([])
+    await svc.identify('SRC', { field: 'booking_no', value: 'BX845666 REV2' }, 'user-1')
+    expect(shipments.candidateLegs).toHaveBeenCalledWith(
+      [{ type: 'booking_no', value: normBookingKey('BX845666 REV2') }],
+      [],
+    )
+  })
+})
+
+describe('link — fold a zero-identity provisional leg into an existing shipment', () => {
+  const zeroIdSource = {
+    id: 'SRC',
+    kind: 'SHIPMENT',
+    reviewStatus: 'provisional',
+    dismissedAt: null,
+    matchKeys: { conversation_id: 'CONV-1' },
+  }
+
+  it('happy path: copies POs+emails, stamps linkedShipmentId+dismissedAt, audits both sides, calibrates corrected', async () => {
+    const { svc, shipments, audit, calibration } = makeService()
+    shipments.findById.mockImplementation(async (id: string) => {
+      if (id === 'SRC') return { ...zeroIdSource }
+      if (id === 'TARGET') return { id: 'TARGET', kind: 'SHIPMENT', matchKeys: { booking_no: 'BX1' } }
+      return null
+    })
+    const r = await svc.link('SRC', { targetShipmentId: 'TARGET' }, 'user-1')
+    expect(r).toEqual({ ok: true, targetShipmentId: 'TARGET' })
+    expect(shipments.linkProvisionalLeg).toHaveBeenCalledWith('SRC', 'TARGET')
+    expect(audit.write).toHaveBeenCalledWith(expect.objectContaining({
+      entityId: 'SRC', newValue: 'linked:TARGET', note: 'review: linked into existing shipment',
+    }))
+    expect(audit.write).toHaveBeenCalledWith(expect.objectContaining({
+      entityId: 'TARGET', newValue: 'absorbed:SRC',
+    }))
+    // calibration outcome MUST be 'corrected' (0014 CHECK); linked-ness goes in reasons
+    expect(calibration.insert).toHaveBeenCalledWith(expect.objectContaining({
+      shipmentId: 'SRC',
+      outcome: 'corrected',
+      correctedFieldCount: 0,
+      reasons: ['linked-into-existing'],
+    }))
+  })
+
+  it('rejects when the source already carries a strong identity', async () => {
+    const { svc, shipments } = makeService()
+    shipments.findById.mockImplementation(async (id: string) => {
+      if (id === 'SRC') return { ...zeroIdSource, matchKeys: { booking_no: 'BX1' } }
+      if (id === 'TARGET') return { id: 'TARGET', kind: 'SHIPMENT' }
+      return null
+    })
+    await expect(svc.link('SRC', { targetShipmentId: 'TARGET' }, 'user-1')).rejects.toThrow(/identity/)
+    expect(shipments.linkProvisionalLeg).not.toHaveBeenCalled()
+  })
+
+  it('rejects self-link and missing target', async () => {
+    const { svc, shipments } = makeService()
+    shipments.findById.mockImplementation(async (id: string) => {
+      if (id === 'SRC') return { ...zeroIdSource }
+      return null
+    })
+    await expect(svc.link('SRC', { targetShipmentId: 'SRC' }, 'user-1')).rejects.toThrow()
+    await expect(svc.link('SRC', { targetShipmentId: 'TARGET' }, 'user-1')).rejects.toBeInstanceOf(NotFoundException)
+    expect(shipments.linkProvisionalLeg).not.toHaveBeenCalled()
+  })
+
+  it('rejects non-provisional / dismissed / non-SHIPMENT sources', async () => {
+    const { svc, shipments } = makeService()
+    shipments.findById.mockResolvedValueOnce({ ...zeroIdSource, reviewStatus: 'confirmed' })
+    await expect(svc.link('SRC', { targetShipmentId: 'TARGET' }, 'user-1')).rejects.toBeInstanceOf(BadRequestException)
   })
 })
