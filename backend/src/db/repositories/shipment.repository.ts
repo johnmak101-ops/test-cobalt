@@ -122,6 +122,17 @@ export class ShipmentRepository {
       })
       .execute()
   }
+
+  /** Live legs of one email thread — the adoption candidate set (A2's index can't cover this:
+   *  a zero-identity leg has no strong keys, so it only exists in match_keys JSON). */
+  async legsByConversationId(conversationId: string) {
+    return this.db
+      .selectFrom('shipments')
+      .selectAll()
+      .where(sql<boolean>`JSON_VALUE(match_keys, '$.conversation_id') = ${conversationId}`)
+      .execute()
+  }
+
   /** Legs for the tracker/dashboard: ACTIVE plus CANCELLED. Only SUPERSEDED legs are hidden. */
   activeLegs() {
     return this.db.selectFrom('shipments').where('legStatus', 'in', ['ACTIVE', 'CANCELLED']).selectAll().execute()
