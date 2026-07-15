@@ -181,6 +181,67 @@ describe('ReviewCard', () => {
     expect(why.textContent!.length).toBeGreaterThan(0)
   })
 
+  // The queue's riskFlags and ShipTrack's committer reviewReasons are two DIFFERENT sources, not a
+  // primary + backup: master-data misses exist only on the ShipTrack side. Real leg 31DFB19C.
+  it('why-review shows a ShipTrack reason no risk flag explains (master-data miss), alongside the flags', () => {
+    render(
+      <ReviewCard
+        shipment={baseShipment({
+          reviewReasons: [
+            '3 unresolved field conflict(s)',
+            'forwarder_name "A.P. Moller - Maersk" did not exact-match a master (LLM matcher owns fuzzy; left unlinked)',
+          ],
+        })}
+        criticReview={baseReview({
+          conflicts: [],
+          riskFlags: [
+            {
+              code: 'INTRA_EMAIL_FIELD_CONFLICT',
+              severity: 'high',
+              message: '3 unresolved field conflict(s) across the email thread — values disagree.',
+            },
+          ],
+        })}
+        compact={compact}
+        defaultExpanded={true}
+      />,
+    )
+    const why = screen.getByTestId('why-review')
+    // the flag itself
+    expect(within(why).getByText(/3 unresolved field conflict\(s\) across the email thread/)).toBeInTheDocument()
+    // the ShipTrack-only reason must NOT be swallowed
+    expect(within(why).getByText(/Forwarder "A.P. Moller - Maersk" did not match master data/)).toBeInTheDocument()
+    // ...and its duplicate-of-the-flag sibling must not be repeated
+    expect(within(why).queryByText(/field\(s\) received different values from different emails/)).toBeNull()
+  })
+
+  it('why-review does not repeat a reason a risk flag already explains', () => {
+    render(
+      <ReviewCard
+        shipment={baseShipment({
+          reviewReasons: [
+            "Email references an attachment that wasn't received — information may be incomplete",
+          ],
+        })}
+        criticReview={baseReview({
+          conflicts: [],
+          riskFlags: [
+            {
+              code: 'MISSING_ATTACHMENT',
+              severity: 'high',
+              message: 'Email references an attachment that was not received — cargo details may be incomplete.',
+            },
+          ],
+        })}
+        compact={compact}
+        defaultExpanded={true}
+      />,
+    )
+    const items = within(screen.getByTestId('why-review')).getAllByRole('listitem')
+    expect(items).toHaveLength(1)
+    expect(items[0]!.textContent).toMatch(/cargo details may be incomplete/)
+  })
+
   it('requires a note before Save & Approve when the resolution differs from the stored value', async () => {
     const user = userEvent.setup()
     const onSave = vi.fn().mockResolvedValue(undefined)

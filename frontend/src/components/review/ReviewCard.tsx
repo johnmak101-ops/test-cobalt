@@ -12,7 +12,35 @@ import {
 import type { ReviewShipment } from '../../hooks/use-review-queue'
 import type { ShipmentDetail } from '../../hooks/use-shipments'
 import { cn } from '../../lib/utils'
-import { humanizeReasons } from '../../lib/review-reasons'
+import { categorizeReason, humanizeReasons, type ReasonCategory } from '../../lib/review-reasons'
+
+/**
+ * Which reason category a queue risk-flag code already explains, so ShipTrack's own committer reason
+ * saying the same thing is not repeated below it. A code absent here explains NOTHING and therefore
+ * suppresses no reason — the safe default: a redundant bullet is cheap, a hidden reason is not.
+ * Mirrors the queue's RISK catalog (cobalt-queue src/critic-agent/review/types.ts).
+ * NOTE: no flag maps to 'master_miss' except PARTY_UNRESOLVED — master-data misses are raised by
+ * ShipTrack's committer, which is exactly why the union (not a fallback) is required here.
+ */
+const RISK_CODE_CATEGORY: Record<string, ReasonCategory> = {
+  INTRA_EMAIL_FIELD_CONFLICT: 'conflict',
+  INTRA_EMAIL_CARGO_CONFLICT: 'conflict',
+  BACKEND_CONFLICT: 'conflict',
+  FIELD_LOCK_CLASH: 'conflict',
+  INTRA_EMAIL_MULTI_STRONG_ID: 'multi_id',
+  AMBIGUOUS_MATCH: 'multi_id',
+  PO_REASSIGN: 'multi_id',
+  PO_ONLY_WEAK_MATCH: 'multi_id',
+  MULTI_LEG_SUSPECT: 'multi_id',
+  THREAD_SUPERSEDE: 'multi_id',
+  WEAK_IDENTITY: 'no_identity',
+  PORTAL_ECHO: 'portal',
+  PARTY_UNRESOLVED: 'master_miss',
+  MISSING_ATTACHMENT: 'extraction',
+  EXTRACTION_INCOMPLETE: 'extraction',
+  SCAN_OCR_RISK: 'extraction',
+  CARGO_SANITY: 'extraction',
+}
 
 export interface ReviewCardSavePayload {
   fields: Record<string, unknown>
@@ -128,19 +156,29 @@ export function ReviewCard({
     () => criticReview?.conflicts ?? [],
     [criticReview],
   )
-  // WHY this leg is queued — risk flags from the critic payload; legacy rows fall back to the
-  // gate's raw reviewReasons. Rendered expanded-only (collapsed stays identity-only by design).
+  // WHY this leg is queued — the UNION of two INDEPENDENT sources, not a primary + fallback:
+  // the queue critic's riskFlags (what the agent saw in the email) and ShipTrack's own committer
+  // reviewReasons (master-data resolution misses the queue never sees). Showing only the flags hid
+  // the master-data reasons on every flagged leg. Reasons whose category a flag already explains are
+  // dropped so the same problem is not stated twice.
   const whyReview = useMemo(() => {
-    const flags = (criticReview?.riskFlags ?? [])
-      .filter((f) => f?.message)
-      .map((f, i) => ({ key: `${f.code}-${i}`, severity: f.severity, text: f.message }))
-    if (flags.length > 0) return flags
-    const reasons = (shipment as { reviewReasons?: string[] | null }).reviewReasons ?? []
-    return humanizeReasons(reasons).map(({ raw, text }) => ({
-      key: raw,
-      severity: 'medium' as const,
-      text,
+    const flags = (criticReview?.riskFlags ?? []).filter((f) => f?.message)
+    const explained = new Set<ReasonCategory>()
+    for (const f of flags) {
+      const c = RISK_CODE_CATEGORY[f.code]
+      if (c) explained.add(c)
+    }
+    const out = flags.map((f, i) => ({
+      key: `${f.code}-${i}`,
+      severity: f.severity as 'low' | 'medium' | 'high',
+      text: f.message,
     }))
+    const reasons = (shipment as { reviewReasons?: string[] | null }).reviewReasons ?? []
+    for (const { raw, text } of humanizeReasons(reasons)) {
+      if (explained.has(categorizeReason(raw))) continue
+      out.push({ key: `reason-${raw}`, severity: 'medium', text })
+    }
+    return out
   }, [criticReview, shipment])
   const [resolutions, setResolutions] = useState<Record<string, string>>(() =>
     initialResolutions(conflicts),
