@@ -24,12 +24,16 @@ describe('mergeShipment — Critic merge policy', () => {
     expect(r.conflicts).toHaveLength(0) // maturation isn't penalized
   })
 
-  it('identity: two EQUAL-authority different values are a real conflict', () => {
+  it('identity: two EQUAL-authority different values are co-current (not a conflict) — #117', () => {
+    // Matches queue: multi-HBL / consolidation at equal rank is NOT a field-value conflict.
     const r = mergeShipment([
       e('2026-01-01', 'Final B/L', { hbl_awb_fcr_no: 'AAA' }),
       e('2026-01-02', 'Final B/L', { hbl_awb_fcr_no: 'BBB' }),
     ])
-    expect(r.conflicts.length).toBeGreaterThan(0)
+    expect(r.conflicts).toEqual([])
+    expect(r.notes.some((n) => n.includes('hbl_awb_fcr_no') && n.includes('co-current'))).toBe(true)
+    // kept field is one of the co-current values (arrival-order first when ranks equal)
+    expect(r.fields.hbl_awb_fcr_no).toBe('AAA')
   })
 
   it('entity names: the authoritative doc wins a lower-rank mis-extraction; equal-rank party clash flags', () => {
