@@ -250,11 +250,9 @@ export class CommitterService {
     // Thread-gains-its-first-identity: a keyed group that matched nothing may still be the SAME nascent
     // shipment as the thread's zero-identity provisional leg (created before any booking/SO/HBL arrived).
     // Adopt it — the normal amend path fills the identity + match_keys — instead of spawning a duplicate.
-    // Also reused below when retiring identity-correction zombies (conversation siblings may miss the index).
     let adoptedZeroId = false
-    let threadLegs: Awaited<ReturnType<ShipmentRepository['legsByConversationId']>> | null = null
     if (!existing && gk.size > 0 && g.conversationId) {
-      threadLegs = await this.shipments.legsByConversationId(g.conversationId)
+      const threadLegs = await this.shipments.legsByConversationId(g.conversationId)
       const threadPos = await this.bookings.poNumbersByBooking(threadLegs.map((l) => l.bookingId))
       const adopted = findAdoptableZeroIdLeg(threadLegs, threadPos, g.conversationId)
       if (adopted) {
@@ -318,33 +316,25 @@ export class CommitterService {
     }
 
     // #146: strongKeysConflict blocked matching a provisional sibling whose SO/booking was corrected by
-    // re-parse — either we just minted a new leg, or we amended the live successor. In both cases retire
-    // the zombie so the review queue is not left with an unreachable empty card. Safe: requires conflict
-    // + (shared exact strong key OR same conversation); does not loosen findExistingLeg.
+    // re-parse — either we just minted a new leg, or we amended the live successor. Retire the zombie so
+    // the review queue is not left with an unreachable empty card. The predicate requires conflict on one
+    // strong-id type + OVERLAP on another (same shipment re-keyed) — mere conversation co-residence must
+    // never retire (a consolidated thread holds several REAL shipments). Because overlap is required, the
+    // strong-key-indexed `legs` candidates already contain every possible sibling — no conversation scan.
+    // Retire = dismissedAt + linkedShipmentId(successor): dismissal alone leaves the zombie visible to
+    // candidate lookups (2 candidates → phantom 'ambiguous' → the REAL leg gets stuck in review); the
+    // linked stamp is what findExistingLeg's husk guard and the lookup filter key on.
     if (gk.size > 0) {
-      let retireCandidates: Array<{
-        id: string
-        matchKeys: unknown
-        reviewStatus?: string | null
-        dismissedAt?: Date | string | null
-        linkedShipmentId?: string | null
-      }> = legs
-      if (g.conversationId) {
-        const convLegs = threadLegs ?? await this.shipments.legsByConversationId(g.conversationId)
-        const byId = new Map(retireCandidates.map((l) => [l.id, l]))
-        for (const tl of convLegs) byId.set(tl.id, tl)
-        retireCandidates = [...byId.values()]
-      }
-      const superseded = findSupersededByIdentityCorrection(retireCandidates, gk, g.conversationId, shipmentId)
+      const superseded = findSupersededByIdentityCorrection(legs, gk, shipmentId)
       const now = new Date()
       for (const z of superseded) {
-        await this.shipments.updateLeg(z.id, { dismissedAt: now })
+        await this.shipments.updateLeg(z.id, { dismissedAt: now, linkedShipmentId: shipmentId })
         await this.audit.write({
           entityType: 'shipment',
           entityId: z.id,
           field: null,
           oldValue: null,
-          newValue: shipmentId,
+          newValue: `superseded:${shipmentId}`,
           changeType: 'update',
           sourceType: 'system',
           actorUserId: null,

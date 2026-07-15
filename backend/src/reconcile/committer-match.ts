@@ -120,10 +120,16 @@ export function findAdoptableZeroIdLeg<
 }
 
 /**
- * After minting a NEW leg because strongKeysConflict blocked a match, retire provisional siblings
- * that conflict on a strong-id type but still share another strong key (or the same conversation).
- * Those are re-parse corrections of the same shipment, not second shipments. Does NOT loosen
- * findExistingLeg / strongKeysConflict itself.
+ * After committing a keyed group, retire provisional siblings whose identity CONFLICTS on one
+ * strong-id type while OVERLAPPING on another — a re-parse corrected one of the shipment's ids
+ * (the BEFF01 case: old leg so_no=Shipment-REF, new group so_no=order-no, both share booking_no).
+ * Conflict + overlap is the signature of the SAME shipment re-keyed; the overlap requirement is
+ * load-bearing. Conflict + merely sharing the CONVERSATION must NEVER retire: a consolidated thread
+ * legitimately holds several REAL shipments with conflicting ids (BSTI: UK + NL legs, one thread,
+ * different SOs; KOHL/YAQI: five HBL legs, one thread) — a conversation branch here dismissed all of
+ * them on re-ingest (probe-verified). A zombie whose ONLY strong id was corrected (no overlap left)
+ * is not auto-retired; that rare case goes through the operator's duplicate fold instead.
+ * Does NOT loosen findExistingLeg / strongKeysConflict itself.
  */
 export function findSupersededByIdentityCorrection<L extends {
   id: string
@@ -131,19 +137,14 @@ export function findSupersededByIdentityCorrection<L extends {
   reviewStatus?: string | null
   dismissedAt?: Date | string | null
   linkedShipmentId?: string | null
-}>(legs: L[], newGroupKeys: Set<string>, conversationId: string | null, newLegId: string): L[] {
-  const conv = conversationId ? normKey(conversationId) : null
+}>(legs: L[], newGroupKeys: Set<string>, newLegId: string): L[] {
   return legs.filter((l) => {
     if (l.id === newLegId) return false
     if (l.linkedShipmentId != null) return false
     if (l.dismissedAt != null) return false
     // Missing status (index/partial rows) → treat as provisional; present status must be provisional.
     if (l.reviewStatus != null && l.reviewStatus !== 'provisional') return false
-    const mk = (l.matchKeys ?? {}) as Record<string, unknown>
-    const legStrong = strongKeys(mk)
-    if (!strongKeysConflict(newGroupKeys, legStrong)) return false
-    if (keysOverlap(newGroupKeys, legStrong)) return true
-    if (conv && normKey(mk.conversation_id) === conv) return true
-    return false
+    const legStrong = strongKeys((l.matchKeys ?? {}) as Record<string, unknown>)
+    return strongKeysConflict(newGroupKeys, legStrong) && keysOverlap(newGroupKeys, legStrong)
   })
 }
