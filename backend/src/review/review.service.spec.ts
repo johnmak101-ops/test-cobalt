@@ -5,6 +5,7 @@ import type { ShipmentRepository } from '../db/repositories/shipment.repository'
 import type { BookingRepository } from '../db/repositories/booking.repository'
 import type { FieldLockRepository } from '../db/repositories/field-lock.repository'
 import type { AuditRepository } from '../db/repositories/audit.repository'
+import type { CriticCalibrationRepository } from '../db/repositories/critic-calibration.repository'
 import type { QueueLearningClient, CorrectionPayload } from './queue-learning.client'
 
 const UPDATED_AT = new Date('2026-07-01T12:00:00.000Z')
@@ -21,14 +22,18 @@ function makeService(legOverride: Record<string, unknown> | null = {}) {
   const locks = { lock: vi.fn(async () => undefined) }
   const audit = { write: vi.fn(async () => undefined) }
   const queueLearning = { postCorrection: vi.fn(async (_payload: CorrectionPayload) => undefined) }
+  const calibration = {
+    insert: vi.fn(async () => undefined),
+  }
   const svc = new ReviewService(
     shipments as unknown as ShipmentRepository,
     bookings as unknown as BookingRepository,
     locks as unknown as FieldLockRepository,
     audit as unknown as AuditRepository,
     queueLearning as unknown as QueueLearningClient,
+    calibration as unknown as CriticCalibrationRepository,
   )
-  return { svc, shipments, locks, audit, queueLearning }
+  return { svc, shipments, locks, audit, queueLearning, calibration }
 }
 
 describe('ReviewService.confirm/correct — provisional-only + optimistic concurrency', () => {
@@ -201,5 +206,64 @@ describe('ReviewService — "looks right" confirm-sentinels feed the queue eval'
     expect(calls).not.toContainEqual(expect.objectContaining({ field: 'gross_weight', kind: 'confirm' }))
     // soNo was left untouched → implicitly confirmed.
     expect(calls).toContainEqual(expect.objectContaining({ field: 'so_no', kind: 'confirm' }))
+  })
+})
+
+describe('ReviewService — Phase 3 critic calibration capture', () => {
+  const criticHigh = {
+    confidence: { score: 90, band: 'high', label: 'High' },
+    summary: 'ok', observations: [], priorState: { headline: '', fields: [] },
+    proposedChanges: [], riskFlags: [], recommendedHumanAction: 'approve_ok', reasons: [],
+  }
+
+  it('confirm → approved / 0 fields / band snapshot', async () => {
+    const { svc, calibration } = makeService({ criticReview: criticHigh })
+    await svc.confirm('leg-1', 'user-1')
+    expect(calibration.insert).toHaveBeenCalledWith(expect.objectContaining({
+      shipmentId: 'leg-1',
+      band: 'high',
+      outcome: 'approved',
+      correctedFieldCount: 0,
+      actorId: 'user-1',
+    }))
+  })
+
+  it('correct → corrected + field count', async () => {
+    const { svc, calibration } = makeService({ criticReview: criticHigh })
+    await svc.correct('leg-1', { fields: { soNo: 'X', bookingNo: 'Y' } }, 'user-1')
+    expect(calibration.insert).toHaveBeenCalledWith(expect.objectContaining({
+      outcome: 'corrected',
+      correctedFieldCount: 2,
+      band: 'high',
+    }))
+  })
+
+  it('dismiss → dismissed; actor + band', async () => {
+    const { svc, calibration } = makeService({
+      kind: 'SHIPMENT', reviewStatus: 'provisional', dismissedAt: null, criticReview: criticHigh,
+    })
+    await svc.dismiss(['leg-1'], 'user-1', 'portal noise')
+    expect(calibration.insert).toHaveBeenCalledWith(expect.objectContaining({
+      outcome: 'dismissed',
+      correctedFieldCount: 0,
+      band: 'high',
+      actorId: 'user-1',
+    }))
+  })
+
+  it('legacy leg (no criticReview) → band null', async () => {
+    const { svc, calibration } = makeService({ criticReview: null })
+    await svc.confirm('leg-1', 'user-1')
+    expect(calibration.insert).toHaveBeenCalledWith(expect.objectContaining({
+      band: null,
+      outcome: 'approved',
+    }))
+  })
+
+  it('calibration insert throw does NOT fail confirm', async () => {
+    const { svc, calibration, shipments } = makeService({ criticReview: criticHigh })
+    calibration.insert.mockRejectedValueOnce(new Error('db down'))
+    await expect(svc.confirm('leg-1', 'user-1')).resolves.toMatchObject({ reviewStatus: 'confirmed' })
+    expect(shipments.updateLeg).toHaveBeenCalled()
   })
 })

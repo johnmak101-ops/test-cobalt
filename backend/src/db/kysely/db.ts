@@ -113,6 +113,20 @@ export interface RoutingShadow {
   reasonsJson: Json<string[] | null>
 }
 
+export type CalibrationOutcome = 'approved' | 'corrected' | 'dismissed'
+
+/** Append-only critic band vs human outcome (Phase 3 calibration). Not in codegen until regenerating after 0014. */
+export interface CriticCalibration {
+  id: Generated<string>
+  shipmentId: string | null
+  decidedAt: Generated<Date>
+  band: 'low' | 'medium' | 'high' | null
+  outcome: CalibrationOutcome
+  correctedFieldCount: number
+  actorId: string | null
+  reasonsJson: Json<string[] | null>
+}
+
 export interface DB
   extends Omit<GeneratedDB, 'shipments' | 'bookings' | 'shipmentMilestones' | 'alertRules' | 'reviewEmail' | 'parsedRecord'> {
   shipments: Shipments
@@ -122,4 +136,5 @@ export interface DB
   reviewEmail: ReviewEmail
   parsedRecord: ParsedRecord
   routingShadow: RoutingShadow
+  criticCalibration: CriticCalibration
 }

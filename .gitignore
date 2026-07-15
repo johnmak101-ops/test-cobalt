@@ -50,3 +50,6 @@ tmp/
 # dev server logs
 frontend/_vite.*.log
 .gstack/
+
+# agent scratch: subagent-driven-development task reports (process artifacts, not product docs)
+.superpowers/

@@ -15,7 +15,7 @@ beforeAll(async () => {
   const t = await getTestDb()
   db = t.db
   const r = repos(db)
-  review = new ReviewService(r.shipment, r.booking, r.fieldLock, r.audit, new QueueLearningClient())
+  review = new ReviewService(r.shipment, r.booking, r.fieldLock, r.audit, new QueueLearningClient(), r.criticCalibration)
   settings = new SettingsService(r.settings)
 })
 afterAll(closeTestDb)
@@ -123,7 +123,7 @@ describe('ReviewService (integration)', () => {
     }
     function svcWith(client: QueueLearningClient) {
       const r = repos(db)
-      return new ReviewService(r.shipment, r.booking, r.fieldLock, r.audit, client)
+      return new ReviewService(r.shipment, r.booking, r.fieldLock, r.audit, client, r.criticCalibration)
     }
 
     it('dismiss stamps dismissed_at + reviewer, audits, drops from queue(), and posts NO learning signals', async () => {
