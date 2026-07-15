@@ -14,6 +14,7 @@ import { EvidenceRepository } from '../src/db/repositories/evidence.repository'
 import { UsersRepository } from '../src/db/repositories/users.repository'
 import { SettingsRepository } from '../src/db/repositories/settings.repository'
 import { IngestRepository } from '../src/db/repositories/ingest.repository'
+import { RoutingShadowRepository } from '../src/db/repositories/routing-shadow.repository'
 
 const TEST_URL =
   process.env.SQL_SERVER_TEST_URL ??
@@ -76,5 +77,6 @@ export function repos(db: TestDB) {
     users: new UsersRepository(db),
     settings: new SettingsRepository(db),
     ingest: new IngestRepository(db),
+    routingShadow: new RoutingShadowRepository(db),
   }
 }

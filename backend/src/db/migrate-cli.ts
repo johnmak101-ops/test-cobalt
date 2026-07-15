@@ -27,6 +27,7 @@ import * as m0009_milestone_type_sailed from './kysely-migrations/0009_milestone
 import * as m0010_shipment_vendor_raw from './kysely-migrations/0010_shipment_vendor_raw'
 import * as m0011_shipment_list_fields_widen from './kysely-migrations/0011_shipment_list_fields_widen'
 import * as m0012_shipment_critic_review from './kysely-migrations/0012_shipment_critic_review'
+import * as m0013_routing_shadow from './kysely-migrations/0013_routing_shadow'
 
 const MIGRATIONS = {
   '0000_init': m0000_init,
@@ -42,6 +43,7 @@ const MIGRATIONS = {
   '0010_shipment_vendor_raw': m0010_shipment_vendor_raw,
   '0011_shipment_list_fields_widen': m0011_shipment_list_fields_widen,
   '0012_shipment_critic_review': m0012_shipment_critic_review,
+  '0013_routing_shadow': m0013_routing_shadow,
 }
 
 const URL =

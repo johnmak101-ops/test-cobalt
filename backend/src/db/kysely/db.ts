@@ -101,6 +101,18 @@ export interface ParsedRecord extends Omit<GenParsedRecord, 'fields' | 'matchKey
   matchKeys: Json<Record<string, unknown> | null>
 }
 
+/** Append-only shadow log of gate vs band routing at decision ingest (Phase 2a). Not in codegen until regenerating after 0013. */
+export interface RoutingShadow {
+  id: Generated<string>
+  shipmentId: string | null
+  ingestedAt: Generated<Date>
+  gateRouting: 'confirmed' | 'provisional' | 'skip'
+  bandRouting: 'confirmed' | 'provisional' | 'skip'
+  band: 'low' | 'medium' | 'high' | null
+  differs: boolean
+  reasonsJson: Json<string[] | null>
+}
+
 export interface DB
   extends Omit<GeneratedDB, 'shipments' | 'bookings' | 'shipmentMilestones' | 'alertRules' | 'reviewEmail' | 'parsedRecord'> {
   shipments: Shipments
@@ -109,4 +121,5 @@ export interface DB
   alertRules: AlertRules
   reviewEmail: ReviewEmail
   parsedRecord: ParsedRecord
+  routingShadow: RoutingShadow
 }
