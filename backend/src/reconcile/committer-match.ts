@@ -86,3 +86,26 @@ export function findExistingLeg<L extends { bookingId: string; matchKeys: unknow
   }
   return existing
 }
+
+/**
+ * Thread-gains-its-first-identity adoption: when a KEYED group found no existing leg, a strictly
+ * zero-identity leg (no strong key AND no PO) of the SAME conversation is the same nascent shipment
+ * finally receiving its booking/SO/HBL — adopt it instead of spawning a duplicate. Mirrors the
+ * shared-PO nascent fill-in philosophy; the strictly-zero guard preserves the A2 invariant that a
+ * conversationId can never bridge two IDENTIFIED legs. Dismissed/linked husks are never adopted
+ * (a human retired them), and any ambiguity (≥2 zero-identity legs in one thread) adopts nothing.
+ */
+export function findAdoptableZeroIdLeg<
+  L extends { bookingId: string; matchKeys: unknown; dismissedAt?: Date | string | null; linkedShipmentId?: string | null },
+>(legs: L[], posByBooking: Map<string, string[]>, conversationId: string): L | undefined {
+  const conv = normKey(conversationId)
+  if (!conv) return undefined
+  const adoptable = legs.filter((l) => {
+    if (l.dismissedAt != null || l.linkedShipmentId != null) return false
+    const mk = (l.matchKeys ?? {}) as Record<string, unknown>
+    if (strongKeys(mk).size !== 0) return false
+    if ((posByBooking.get(l.bookingId) ?? []).length > 0) return false
+    return normKey(mk.conversation_id) === conv
+  })
+  return adoptable.length === 1 ? adoptable[0] : undefined
+}

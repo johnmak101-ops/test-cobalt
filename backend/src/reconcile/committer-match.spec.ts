@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { findExistingLeg } from './committer-match'
+import { findExistingLeg, findAdoptableZeroIdLeg } from './committer-match'
 import { strongKeys, normKey } from './match-keys'
 
 type Leg = { id: string; bookingId: string; matchKeys: Record<string, unknown> }
@@ -56,5 +56,48 @@ describe('findExistingLeg (committer leg-matching, pure + N+1-free)', () => {
     const legs = [leg('L1', 'B1', { booking_no: 'BX1' })]
     const r = findExistingLeg(legs, new Map(), gkOf({ so_no: 'SO-ZZZ' }), new Set(), null)
     expect(r).toBeUndefined()
+  })
+})
+
+type AdoptLeg = Leg & { dismissedAt?: Date | null; linkedShipmentId?: string | null }
+const aleg = (id: string, bookingId: string, matchKeys: Record<string, unknown>, over: Partial<AdoptLeg> = {}): AdoptLeg =>
+  ({ id, bookingId, matchKeys, dismissedAt: null, linkedShipmentId: null, ...over })
+
+describe('findAdoptableZeroIdLeg (thread gains its first identity → adopt, never duplicate)', () => {
+  it('adopts the single zero-identity leg of the same thread', () => {
+    const legs = [aleg('L1', 'B1', { conversation_id: 'CONV-1' })]
+    const r = findAdoptableZeroIdLeg(legs, new Map(), 'CONV-1')
+    expect(r?.id).toBe('L1')
+  })
+
+  it('never adopts a leg that already carries a strong id', () => {
+    const legs = [aleg('L1', 'B1', { booking_no: 'BX1', conversation_id: 'CONV-1' })]
+    expect(findAdoptableZeroIdLeg(legs, new Map(), 'CONV-1')).toBeUndefined()
+  })
+
+  it('never adopts a leg whose booking carries POs (that is the shared-PO path, not this one)', () => {
+    const legs = [aleg('L1', 'B1', { conversation_id: 'CONV-1' })]
+    const posByBooking = new Map([['B1', ['PO-123']]])
+    expect(findAdoptableZeroIdLeg(legs, posByBooking, 'CONV-1')).toBeUndefined()
+  })
+
+  it('never adopts across threads', () => {
+    const legs = [aleg('L1', 'B1', { conversation_id: 'CONV-OTHER' })]
+    expect(findAdoptableZeroIdLeg(legs, new Map(), 'CONV-1')).toBeUndefined()
+  })
+
+  it('never adopts a dismissed or already-linked leg', () => {
+    const dismissed = [aleg('L1', 'B1', { conversation_id: 'CONV-1' }, { dismissedAt: new Date() })]
+    const linked = [aleg('L2', 'B2', { conversation_id: 'CONV-1' }, { linkedShipmentId: 'X' })]
+    expect(findAdoptableZeroIdLeg(dismissed, new Map(), 'CONV-1')).toBeUndefined()
+    expect(findAdoptableZeroIdLeg(linked, new Map(), 'CONV-1')).toBeUndefined()
+  })
+
+  it('ambiguity (two zero-identity legs in one thread) → adopt NOTHING', () => {
+    const legs = [
+      aleg('L1', 'B1', { conversation_id: 'CONV-1' }),
+      aleg('L2', 'B2', { conversation_id: 'CONV-1' }),
+    ]
+    expect(findAdoptableZeroIdLeg(legs, new Map(), 'CONV-1')).toBeUndefined()
   })
 })
