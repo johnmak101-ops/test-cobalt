@@ -42,6 +42,8 @@ export const MASTER_RESOLUTION_KIND = [
   'port_abbreviation', 'port_alias', 'port_iata', 'port_fragment',
   // Iterator MOVE 3 — party facts as data (queue party-rules + track platform scrub consume these)
   'platform_not_forwarder', 'genuine_short_brand', 'self_identity',
+  // Wave 4 #145 — curated exact forwarder name → code (committer pre-lookup; exact-only)
+  'forwarder_alias',
 ] as const
 export const MASTER_RESOLUTION_STATUS = ['approved', 'proposed', 'rejected'] as const
 export const MASTER_RESOLUTION_SOURCE = ['seed', 'curator', 'ops'] as const

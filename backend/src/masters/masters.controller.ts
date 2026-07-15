@@ -30,6 +30,10 @@ export class MastersController {
   @Get('consignees') consignees() { return this.masters.consignees() }
   @Get('carriers') carriers() { return this.masters.carriers() }
 
+  /** Unmatched forwarder/port raw values (admin curation) — #145. */
+  @PageRead('resolution_rules')
+  @Get('unmatched') unmatched() { return this.masters.unmatched() }
+
   // Candidate retrieval for the LLM Master Matcher — agent-consumed (cobalt-queue Bearer EDITOR+).
   // Access-control v2: hard page-read gate for VIEWER/none + EDITOR+ service-account carve-out.
   @AgentPageRead('resolution_rules')

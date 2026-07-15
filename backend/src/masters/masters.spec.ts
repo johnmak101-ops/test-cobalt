@@ -15,6 +15,18 @@ function fakeRepo() {
   return { svc: new MastersService(repo as unknown as MastersRepository), calls }
 }
 
+describe('MastersService.unmatched', () => {
+  it('returns field/value/legsAffected from the repo query', async () => {
+    const rows = [
+      { field: 'forwarder', value: 'VENA SAIL', legsAffected: 4 },
+      { field: 'pol', value: 'CHATTOGRAM', legsAffected: 2 },
+    ]
+    const repo = { unmatchedRawValues: async () => rows }
+    const svc = new MastersService(repo as unknown as MastersRepository)
+    expect(await svc.unmatched()).toEqual(rows)
+  })
+})
+
 describe('MastersService — normalization', () => {
   it('uppercases the UN/LOCODE and trims fields on port create', async () => {
     const { svc, calls } = fakeRepo()

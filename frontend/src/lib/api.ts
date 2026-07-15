@@ -119,6 +119,8 @@ export const api = {
     request<{ ok: true }>(`/documents/${id}/dismiss`, { method: 'POST' }),
 
   // --- master_resolution (curated facts) ---
+  getUnmatchedMasters: () =>
+    request<Array<{ field: string; value: string; legsAffected: number }>>('/masters/unmatched'),
   getResolutionManage: () => request<ResolutionFact[]>('/masters/resolution/manage'),
   getProposals: () => request<ResolutionFact[]>('/masters/proposals'),
   createFact: (body: { kind: string; lhs: string; rhs?: string; reason?: string }) =>
