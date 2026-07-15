@@ -315,10 +315,13 @@ export class CommitterService {
       action = 'create_booking'
       await this.writeAudit('booking', bookingId, 'create', null, jobNo, g)
       await this.writeAudit('shipment', shipmentId, 'create', null, state, g)
+    }
 
-      // #146: re-parse corrected a strong id → strongKeysConflict blocked amend and we minted a new leg.
-      // Retire provisional siblings that conflict on one strong type but still share another key (or the
-      // same conversation) so the review queue is not left with zombie cards for the old identity.
+    // #146: strongKeysConflict blocked matching a provisional sibling whose SO/booking was corrected by
+    // re-parse — either we just minted a new leg, or we amended the live successor. In both cases retire
+    // the zombie so the review queue is not left with an unreachable empty card. Safe: requires conflict
+    // + (shared exact strong key OR same conversation); does not loosen findExistingLeg.
+    if (gk.size > 0) {
       let retireCandidates: Array<{
         id: string
         matchKeys: unknown
