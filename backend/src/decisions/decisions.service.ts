@@ -124,8 +124,12 @@ export class DecisionsService {
 
     // Mode select: band only when setting is band and bandRouting is a commit-path status.
     // Default gate leaves reviewStatus as-is (zero behavior change).
+    // Append audit-ish reason so leg history shows band took over (not gate alone).
     if (mode === 'band' && bandRouting && bandRouting !== 'skip') {
       reviewStatus = bandRouting === 'confirmed' ? 'confirmed' : 'provisional'
+      const bandReason =
+        reviewStatus === 'confirmed' ? 'band auto-confirmed' : 'band held for review'
+      reviewReasons = [...(reviewReasons ?? []), bandReason]
     }
 
     // Cancel remains authoritative over band mode — re-apply after mode select.
