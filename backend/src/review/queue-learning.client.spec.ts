@@ -45,9 +45,11 @@ describe('QueueLearningClient.postCorrection — auth + loud failure (#116)', ()
     })
     vi.stubGlobal('fetch', f)
     await new QueueLearningClient(f as never).postCorrection(payload)
-    const correction = f.mock.calls.find((c) => String(c[0]).includes('/review/correction'))
+    const correction = f.mock.calls.find((c) => String(c[0]).includes('/review/correction')) as
+      | [string, { method: string; headers: Record<string, string>; body: string }]
+      | undefined
     expect(correction).toBeTruthy()
-    const init = correction![1] as { method: string; headers: Record<string, string>; body: string }
+    const init = correction![1]
     expect(init.method).toBe('POST')
     expect(init.headers.authorization).toBeUndefined()
     expect(JSON.parse(init.body)).toEqual(payload)
