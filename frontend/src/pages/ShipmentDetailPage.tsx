@@ -307,7 +307,6 @@ export default function ShipmentDetailPage() {
               <thead>
                 <tr className="border-b border-border bg-surface-900/50">
                   <th className="px-3 py-2 text-left text-[11px] font-medium text-text-muted">Customer PO#</th>
-                  <th className="px-3 py-2 text-left text-[11px] font-medium text-text-muted">Vendor</th>
                   <th className="px-3 py-2 text-right text-[11px] font-medium text-text-muted">Total Quantity</th>
                   <th className="px-3 py-2 text-left text-[11px] font-medium text-text-muted">UOM</th>
                 </tr>
@@ -320,7 +319,6 @@ export default function ShipmentDetailPage() {
                     className="cursor-pointer border-b border-border last:border-0 transition-colors hover:bg-surface-700"
                   >
                     <td className="px-3 py-2 font-mono text-sm text-cobalt-primary-light">{po.poNumber}</td>
-                    <td className="px-3 py-2 text-sm text-text-secondary">{po.vendor?.name ?? '—'}</td>
                     <td className="px-3 py-2 text-right font-mono text-sm text-text-secondary">
                       {po.totalQuantity != null ? po.totalQuantity : '—'}
                     </td>
