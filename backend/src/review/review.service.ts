@@ -1,8 +1,11 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common'
+import { ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common'
 import { ShipmentRepository } from '../db/repositories/shipment.repository'
 import { BookingRepository } from '../db/repositories/booking.repository'
 import { FieldLockRepository } from '../db/repositories/field-lock.repository'
 import { AuditRepository } from '../db/repositories/audit.repository'
+import { CriticCalibrationRepository } from '../db/repositories/critic-calibration.repository'
+import type { CalibrationOutcome } from '../db/kysely/db'
+import type { CriticReview } from '../decisions/critic-review.types'
 import { QueueLearningClient } from './queue-learning.client'
 import type { CorrectDto } from './dto'
 
@@ -65,13 +68,47 @@ function confirmValue(isDate: boolean, value: unknown): string | null {
  */
 @Injectable()
 export class ReviewService {
+  private readonly logger = new Logger(ReviewService.name)
+
   constructor(
     private readonly shipments: ShipmentRepository,
     private readonly bookings: BookingRepository,
     private readonly fieldLocks: FieldLockRepository,
     private readonly audit: AuditRepository,
     private readonly queueLearning: QueueLearningClient,
+    private readonly calibration: CriticCalibrationRepository,
   ) {}
+
+  private bandFromLeg(leg: { criticReview?: CriticReview | null | unknown }): 'low' | 'medium' | 'high' | null {
+    const cr = leg.criticReview as CriticReview | null | undefined
+    const b = cr?.confidence?.band
+    return b === 'low' || b === 'medium' || b === 'high' ? b : null
+  }
+
+  /** Best-effort: never fail the human review action if calibration logging fails. */
+  private async recordCalibration(opts: {
+    shipmentId: string
+    leg: { criticReview?: unknown }
+    outcome: CalibrationOutcome
+    correctedFieldCount: number
+    actorId: string
+    reasons?: string[] | null
+  }): Promise<void> {
+    try {
+      await this.calibration.insert({
+        shipmentId: opts.shipmentId,
+        band: this.bandFromLeg(opts.leg),
+        outcome: opts.outcome,
+        correctedFieldCount: opts.correctedFieldCount,
+        actorId: opts.actorId,
+        reasons: opts.reasons ?? null,
+      })
+    } catch (err) {
+      this.logger.warn(
+        `critic_calibration insert failed: ${err instanceof Error ? err.message : String(err)}`,
+      )
+    }
+  }
 
   /** Provisional shipments awaiting review, lowest confidence first, with booking context. */
   async queue() {
@@ -122,6 +159,10 @@ export class ReviewService {
     const messageId = (await this.shipments.sourceGraphIdFor(shipmentId)) ?? shipmentId
     const forwarder = ((leg as Record<string, unknown>).forwarderRaw as string | null) ?? null
     await this.emitConfirms(leg as Record<string, unknown>, new Set(), messageId, forwarder)
+    await this.recordCalibration({
+      shipmentId, leg, outcome: 'approved', correctedFieldCount: 0, actorId,
+      reasons: note?.trim() ? [note.trim()] : null,
+    })
     return { shipmentId, reviewStatus: 'confirmed' }
   }
 
@@ -173,6 +214,12 @@ export class ReviewService {
     await this.emitConfirms(current, new Set(corrected), messageId, forwarder)
 
     await this.shipments.updateLeg(shipmentId, { reviewStatus: 'confirmed', reviewedBy: actorId, reviewedAt: new Date() })
+    await this.recordCalibration({
+      shipmentId, leg, outcome: 'corrected',
+      correctedFieldCount: corrected.length,
+      actorId,
+      reasons: dto.reason ? [dto.reason] : null,
+    })
     return { shipmentId, reviewStatus: 'confirmed', corrected }
   }
 
@@ -193,6 +240,10 @@ export class ReviewService {
         oldValue: 'provisional', newValue: 'dismissed', changeType: 'update',
         sourceType: 'manual', actorUserId: actorId,
         note: note?.trim() ? `review: dismissed — ${note.trim()}` : 'review: dismissed — not a trackable shipment',
+      })
+      await this.recordCalibration({
+        shipmentId: id, leg, outcome: 'dismissed', correctedFieldCount: 0, actorId,
+        reasons: note?.trim() ? [note.trim()] : null,
       })
       dismissed += 1
     }
