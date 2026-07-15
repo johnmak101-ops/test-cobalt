@@ -22,7 +22,14 @@ export type CriticCalibrationRow = {
 
 export type CriticCalibrationReport = {
   windowDays: number
+  /** Rows ANALYSED — `byBand` and every rate below are computed over exactly these. */
   total: number
+  /** True row count in the window. Exceeds `total` when the read was capped — see `truncated`. */
+  windowTotal: number
+  /** True when the window holds more rows than were analysed (the rates are over the newest `total`
+   *  rows, not the whole window). Surfaced so the 2b flip decision is never read off a silently
+   *  truncated denominator. */
+  truncated: boolean
   byBand: Record<CalibrationBandKey, CalibrationBandStats>
   /** THE 2b gate: corrected / total among high-band rows */
   highBandCorrectionRate: number
@@ -54,10 +61,15 @@ function rate(n: number, d: number): number {
  * Aggregate critic-calibration rows (newest-first assumed) into a report window.
  * highBandCorrectionRate / lowMediumApprovedRate are 0 when denominators are empty (never NaN).
  * Samples: high-band corrected first, then other rows, capped at 50.
+ *
+ * `windowTotal` is the TRUE row count in the window (the caller reads it with a count, since `rows`
+ * may be capped). When it exceeds rows.length the report says so via `truncated` — the rates stay
+ * meaningful (newest N) but the reader must not mistake `total` for the window's real volume.
  */
 export function aggregateCriticCalibration(
   rows: CriticCalibrationRow[],
   windowDays: number,
+  windowTotal?: number,
 ): CriticCalibrationReport {
   const byBand: Record<CalibrationBandKey, CalibrationBandStats> = {
     high: emptyStats(),
@@ -87,9 +99,14 @@ export function aggregateCriticCalibration(
   const rest = rows.filter((r) => !(r.band === 'high' && r.outcome === 'corrected'))
   const sampleRows = [...highMisses, ...rest].slice(0, 50)
 
+  const analysed = rows.length
+  const inWindow = windowTotal ?? analysed
+
   return {
     windowDays,
-    total: rows.length,
+    total: analysed,
+    windowTotal: inWindow,
+    truncated: inWindow > analysed,
     byBand,
     highBandCorrectionRate: rate(high.corrected, high.total),
     lowMediumApprovedRate: rate(lmApproved, lmTotal),

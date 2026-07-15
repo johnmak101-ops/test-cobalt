@@ -45,6 +45,17 @@ export class CriticCalibrationRepository {
     return this.db.deleteFrom('criticCalibration').where('decidedAt', '<', cutoff).execute()
   }
 
+  /** TRUE row count in the window — `listSince` is capped, so the report needs this to tell the
+   *  reader when it analysed only the newest slice (indexed on decided_at). */
+  async countSince(since: Date): Promise<number> {
+    const row = await this.db
+      .selectFrom('criticCalibration')
+      .where('decidedAt', '>=', since)
+      .select(({ fn }) => fn.countAll<number>().as('n'))
+      .executeTakeFirst()
+    return Number(row?.n ?? 0)
+  }
+
   listSince(since: Date, limit = 2000) {
     const capped = Math.max(1, Math.floor(limit))
     return this.db.selectFrom('criticCalibration')

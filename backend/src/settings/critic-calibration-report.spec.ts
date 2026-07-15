@@ -55,4 +55,33 @@ describe('aggregateCriticCalibration', () => {
     expect(r.samples[0].shipmentId).toBe('miss')
     expect(r.samples[0].outcome).toBe('corrected')
   })
+
+  it('not truncated when the window count matches the rows analysed', () => {
+    const rows = [row({ band: 'high', outcome: 'approved' })]
+    const r = aggregateCriticCalibration(rows, 90, 1)
+    expect(r.total).toBe(1)
+    expect(r.windowTotal).toBe(1)
+    expect(r.truncated).toBe(false)
+  })
+
+  it('flags truncation when the window holds more rows than were analysed', () => {
+    // The caller capped the read: 2 rows analysed out of 5000 in the window. Rates stay over the
+    // analysed slice, but the reader must see that `total` is not the window's real volume —
+    // otherwise the 2b gate gets decided on a silently truncated denominator.
+    const rows = [
+      row({ band: 'high', outcome: 'approved' }),
+      row({ band: 'high', outcome: 'corrected', correctedFieldCount: 1 }),
+    ]
+    const r = aggregateCriticCalibration(rows, 90, 5000)
+    expect(r.total).toBe(2) // analysed
+    expect(r.windowTotal).toBe(5000) // real
+    expect(r.truncated).toBe(true)
+    expect(r.highBandCorrectionRate).toBeCloseTo(1 / 2) // still computed over the analysed slice
+  })
+
+  it('windowTotal defaults to rows analysed when the caller omits it', () => {
+    const r = aggregateCriticCalibration([row({ band: 'low' })], 90)
+    expect(r.windowTotal).toBe(1)
+    expect(r.truncated).toBe(false)
+  })
 })

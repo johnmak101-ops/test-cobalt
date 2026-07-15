@@ -67,7 +67,12 @@ export class SettingsController {
   async criticCalibrationReport(@Query('days') daysRaw?: string) {
     const days = Math.min(180, Math.max(1, Number(daysRaw) || 90))
     const since = new Date(Date.now() - days * 86400000)
-    const rows = await this.criticCalibration.listSince(since, 5000)
-    return aggregateCriticCalibration(rows, days)
+    // Read the TRUE window count alongside the (capped) rows, so a busy window reports
+    // `truncated: true` instead of silently understating the 2b gate's denominator.
+    const [rows, windowTotal] = await Promise.all([
+      this.criticCalibration.listSince(since, 5000),
+      this.criticCalibration.countSince(since),
+    ])
+    return aggregateCriticCalibration(rows, days, windowTotal)
   }
 }

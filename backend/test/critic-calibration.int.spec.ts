@@ -256,4 +256,31 @@ describe('critic calibration (integration)', () => {
     expect(report.samples[0].band).toBe('high')
     expect(report.samples[0].outcome).toBe('corrected')
   })
+
+  it('countSince returns the TRUE window count (so a capped read reports truncated)', async () => {
+    const cal = repos(db).criticCalibration
+    for (let i = 0; i < 3; i++) {
+      await cal.insert({
+        shipmentId: null, band: 'high', outcome: 'approved',
+        correctedFieldCount: 0, actorId: null, reasons: null,
+      })
+    }
+    const since = new Date(Date.now() - 90 * 86400000)
+    expect(await cal.countSince(since)).toBe(3)
+
+    // A capped read analyses fewer rows than the window holds → the report must say so.
+    const capped = await cal.listSince(since, 1)
+    expect(capped).toHaveLength(1)
+    const report = aggregateCriticCalibration(
+      capped.map((r) => ({
+        shipmentId: r.shipmentId, decidedAt: r.decidedAt, band: r.band,
+        outcome: r.outcome, correctedFieldCount: r.correctedFieldCount, actorId: r.actorId,
+      })),
+      90,
+      await cal.countSince(since),
+    )
+    expect(report.total).toBe(1)
+    expect(report.windowTotal).toBe(3)
+    expect(report.truncated).toBe(true)
+  })
 })
