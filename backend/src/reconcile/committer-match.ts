@@ -127,6 +127,11 @@ function bookingLayerOnly(keys: Set<string>): Set<string> {
   return new Set([...keys].filter((k) => BOOKING_LAYER.has(k.slice(0, k.indexOf(':')))))
 }
 
+/** Leg-layer identity: the hbl/awb/fcr — one per real ship (#151). */
+function legLayerOnly(keys: Set<string>): Set<string> {
+  return new Set([...keys].filter((k) => k.startsWith('hbl_awb_fcr_no:')))
+}
+
 /**
  * After committing a keyed group, retire provisional siblings whose BOOKING-LAYER identity CONFLICTS
  * on one type while OVERLAPPING on another — a re-parse corrected one of the shipment's booking-layer
@@ -157,6 +162,14 @@ export function findSupersededByIdentityCorrection<L extends {
     // Missing status (index/partial rows) → treat as provisional; present status must be provisional.
     if (l.reviewStatus != null && l.reviewStatus !== 'provisional') return false
     const legStrong = strongKeys((l.matchKeys ?? {}) as Record<string, unknown>)
+    // A leg carrying its OWN distinct leg-layer id is a REAL SHIP — a sibling, never a zombie, whatever
+    // the booking layer says. Two ships under one booking may each carry their own SO (BSTI: NL 29954607
+    // / UK 29954612), which a booking-layer-only rule read as a re-key and retired — while
+    // findSiblingBooking simultaneously claimed the same leg as a sibling to attach, so one apply()
+    // would file legNo 2 AND dismiss the other ship. The BEFF01 ghost has NO hbl: nothing marks it as a
+    // separate ship, which is exactly what makes it a re-key of this one.
+    const legHbl = legLayerOnly(legStrong)
+    if (legHbl.size && !keysOverlap(legHbl, legLayerOnly(newGroupKeys))) return false
     // Retire ONLY on a booking-layer re-key (BEFF01: so_no conflicts, booking_no shared).
     const gkBooking = bookingLayerOnly(newGroupKeys)
     const legBooking = bookingLayerOnly(legStrong)

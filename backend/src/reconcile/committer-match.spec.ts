@@ -220,6 +220,30 @@ describe('findSupersededByIdentityCorrection (#146 re-parse zombies) — conflic
     expect(findSupersededByIdentityCorrection([legA], groupB, 'LEG-B')).toEqual([])
   })
 
+  // Two ships under one booking may EACH carry their own SO (BSTI: NL=29954607, UK=29954612). A
+  // booking-layer-only rule retired the sibling — and contradicted findSiblingBooking, which claimed the
+  // same leg as a sibling to attach: one apply() would file legNo 2 AND dismiss the other ship.
+  // What makes a leg a real ship is its OWN leg-layer id; the BEFF01 ghost has no hbl at all.
+  it('a SIBLING with its OWN so_no AND its own hbl is NEVER retired (#151)', () => {
+    const ukSibling = sleg('LEG-UK', { booking_no: 'B1368248010', so_no: '29954612', hbl_awb_fcr_no: 'HBL-UK' })
+    const nlGroup = gkOf({ booking_no: 'B1368248010', so_no: '29954607', hbl_awb_fcr_no: 'HBL-NL' })
+    expect(findSupersededByIdentityCorrection([ukSibling], nlGroup, 'LEG-NL')).toEqual([])
+    // and the two functions must AGREE about what that leg is
+    expect(findSiblingBooking([{ ...ukSibling, bookingId: 'BOOK-1' }], nlGroup)).toBe('BOOK-1')
+  })
+
+  it('an hbl-bearing leg is spared even when the committed group has no hbl of its own (#151)', () => {
+    // a booking-layer-only SO email must never retire a leg that already has its own B/L
+    const legWithBl = sleg('LEG-BL', { booking_no: 'B1', so_no: 'SO-OLD', hbl_awb_fcr_no: 'HBL-1' })
+    expect(findSupersededByIdentityCorrection([legWithBl], gkOf({ booking_no: 'B1', so_no: 'SO-NEW' }), 'NEW')).toEqual([])
+  })
+
+  it('the SAME hbl on both sides + a booking-layer re-key still retires (same ship, re-keyed)', () => {
+    const reKeyed = sleg('OLD', { booking_no: 'B1', so_no: 'SO-OLD', hbl_awb_fcr_no: 'HBL-1' })
+    const group = gkOf({ booking_no: 'B1', so_no: 'SO-NEW', hbl_awb_fcr_no: 'HBL-1' })
+    expect(findSupersededByIdentityCorrection([reKeyed], group, 'NEW').map((x) => x.id)).toEqual(['OLD'])
+  })
+
   it('the BEFF01 ghost still retires (booking-layer conflict + booking-layer overlap) (#151)', () => {
     const ghost = sleg('GHOST', { booking_no: 'B1368248010', so_no: 'BEFF01-001627' })
     const groupNew = gkOf({ booking_no: 'B1368248010', so_no: '29954607' })
