@@ -11,6 +11,11 @@ vi.mock('../../hooks/use-resolution', () => ({
     isLoading: false, isError: false,
   }),
   useProposals: () => ({ data: [], isLoading: false }),
+  useUnmatchedMasters: () => ({
+    data: [{ field: 'pol', value: 'CHATTOGRAM', legsAffected: 2 }],
+    isLoading: false,
+    isError: false,
+  }),
   useCreateFact: () => ({ mutate: vi.fn(), isPending: false }),
   usePatchFact: () => ({ mutate: vi.fn(), isPending: false }),
   useDeactivateFact: () => ({ mutate: vi.fn(), isPending: false }),

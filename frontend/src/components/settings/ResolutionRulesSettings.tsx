@@ -3,7 +3,7 @@ import { Card } from '../ui/Card'
 import { cn } from '../../lib/utils'
 import { Plus, Pencil, Ban, RotateCcw, Check, X } from 'lucide-react'
 import {
-  useResolutionFacts, useProposals,
+  useResolutionFacts, useProposals, useUnmatchedMasters,
   useCreateFact, usePatchFact, useDeactivateFact, useReactivateFact,
   useApproveProposal, useRejectProposal,
 } from '../../hooks/use-resolution'
@@ -21,6 +21,7 @@ const KIND_OPTIONS: { value: string; label: string; hint: string }[] = [
   { value: 'port_alias', label: 'Port alias', hint: 'Alternate port name → UN/LOCODE' },
   { value: 'port_iata', label: 'Port IATA', hint: 'Airport IATA → UN/LOCODE' },
   { value: 'port_fragment', label: 'Port name fragment', hint: 'Name fragment → UN/LOCODE' },
+  { value: 'forwarder_alias', label: 'Forwarder alias', hint: 'Raw forwarder name → master code (exact, committer)' },
   { value: 'platform_not_forwarder', label: 'Not a forwarder (platform)', hint: 'Portal/notification name pattern (never link as forwarder)' },
   { value: 'genuine_short_brand', label: 'Genuine short brand', hint: 'Short brand codes that are real brands (not customer echoes)' },
   { value: 'self_identity', label: 'Our company name', hint: 'Pattern for Cobalt / self identity in party text' },
@@ -67,6 +68,7 @@ export function ResolutionRulesSettings() {
   const [showCreate, setShowCreate] = useState(false)
   const [editReason, setEditReason] = useState<{ id: string; label: string; reason: string } | null>(null)
   const [confirmDeactivate, setConfirmDeactivate] = useState<{ id: string; label: string } | null>(null)
+  const unmatched = useUnmatchedMasters()
 
   return (
     <div className="space-y-4">
@@ -89,6 +91,40 @@ export function ResolutionRulesSettings() {
           <span className="shrink-0 text-xs text-text-muted">View-only access</span>
         )}
       </div>
+
+      {/* Unmatched raw values — teach via port_alias / forwarder_alias above (#145) */}
+      <Card className="overflow-x-auto p-0">
+        <div className="border-b border-border px-4 py-2.5 text-xs font-medium text-text-muted">
+          Unmatched values on live legs
+          {unmatched.data ? ` (${unmatched.data.length})` : ''} — add a Port alias or Forwarder alias rule to resolve
+        </div>
+        {unmatched.isLoading ? (
+          <p className="px-4 py-3 text-sm text-text-muted">Loading unmatched…</p>
+        ) : unmatched.isError ? (
+          <p className="px-4 py-3 text-sm text-status-critical">Could not load unmatched values.</p>
+        ) : !unmatched.data?.length ? (
+          <p className="px-4 py-3 text-sm text-text-muted">No unmatched forwarder/port raw values.</p>
+        ) : (
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-border bg-surface-900/50 text-left text-[11px] text-text-muted">
+                <th className="px-4 py-2 font-medium">Field</th>
+                <th className="px-4 py-2 font-medium">Value</th>
+                <th className="px-4 py-2 font-medium text-right">Legs affected</th>
+              </tr>
+            </thead>
+            <tbody>
+              {unmatched.data.map((row) => (
+                <tr key={`${row.field}:${row.value}`} className="border-b border-border/60 last:border-0">
+                  <td className="px-4 py-2 text-text-secondary">{row.field}</td>
+                  <td className="px-4 py-2 font-mono text-text-primary">{row.value}</td>
+                  <td className="px-4 py-2 text-right font-mono text-text-secondary">{row.legsAffected}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </Card>
 
       {proposals && proposals.length > 0 && (
         <Card className="overflow-x-auto p-0">

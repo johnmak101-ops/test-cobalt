@@ -415,4 +415,44 @@ export class MastersRepository {
       GROUP BY JSON_VALUE(fields, '$.customer_code'), JSON_VALUE(fields, '$.consignee_name'), JSON_VALUE(fields, '$.vendor_code')`.execute(this.db)
     return res.rows
   }
+
+  /**
+   * Distinct unresolved forwarder/port raw values on non-dismissed SHIPMENT legs, with counts.
+   * Sources: forwarder_raw (no forwarder_id), pol_raw (no pol_id), pod_raw (no pod_id).
+   */
+  async unmatchedRawValues(): Promise<Array<{ field: string; value: string; legsAffected: number }>> {
+    const res = await sql<{ field: string; value: string; legsAffected: number }>`
+      SELECT field, value, COUNT(*) AS legsAffected FROM (
+        SELECT 'forwarder' AS field, LTRIM(RTRIM(forwarder_raw)) AS value
+        FROM shipments
+        WHERE kind = 'SHIPMENT'
+          AND dismissed_at IS NULL
+          AND forwarder_id IS NULL
+          AND forwarder_raw IS NOT NULL
+          AND LTRIM(RTRIM(forwarder_raw)) <> ''
+        UNION ALL
+        SELECT 'pol' AS field, LTRIM(RTRIM(pol_raw)) AS value
+        FROM shipments
+        WHERE kind = 'SHIPMENT'
+          AND dismissed_at IS NULL
+          AND pol_id IS NULL
+          AND pol_raw IS NOT NULL
+          AND LTRIM(RTRIM(pol_raw)) <> ''
+        UNION ALL
+        SELECT 'pod' AS field, LTRIM(RTRIM(pod_raw)) AS value
+        FROM shipments
+        WHERE kind = 'SHIPMENT'
+          AND dismissed_at IS NULL
+          AND pod_id IS NULL
+          AND pod_raw IS NOT NULL
+          AND LTRIM(RTRIM(pod_raw)) <> ''
+      ) u
+      GROUP BY field, value
+      ORDER BY COUNT(*) DESC, field, value`.execute(this.db)
+    return res.rows.map((r) => ({
+      field: r.field,
+      value: r.value,
+      legsAffected: Number(r.legsAffected),
+    }))
+  }
 }

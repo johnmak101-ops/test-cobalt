@@ -56,4 +56,62 @@ describe('MasterResolver', () => {
     expect(out.polLink?.id).toBe('p-sha')
     expect(out.podLink?.id).toBe('p-hkg')
   })
+
+  it('port_alias fact: CHATTOGRAM → BDCGP port id via pre-lookup', async () => {
+    const masters = {
+      portLinkByCodeOrName: vi.fn(async (code: string) =>
+        code === 'BDCGP' ? { id: 'port-cgp', country: 'BD', tier: 'unlocode_exact' as const } : null,
+      ),
+      forwarderIdByCode: vi.fn(async () => null),
+      forwarderLinkByName: vi.fn(async () => null),
+      canonicalCode: vi.fn(async (c: string) => c),
+      customerIdByCode: vi.fn(async () => null),
+      vendorIdByCode: vi.fn(async () => null),
+    }
+    const r = new MasterResolver(masters as never)
+    const aliases = {
+      portAlias: new Map([['CHATTOGRAM', 'BDCGP']]),
+      forwarderAlias: new Map<string, string>(),
+    }
+    const out = await r.resolveAll({ pol: 'CHATTOGRAM' }, aliases)
+    expect(out.polLink?.id).toBe('port-cgp')
+    expect(masters.portLinkByCodeOrName).toHaveBeenCalledWith('BDCGP')
+  })
+
+  it('forwarder_alias fact: raw name → code_exact link', async () => {
+    const masters = {
+      forwarderIdByCode: vi.fn(async (c: string) => (c === 'VENA' ? 'fwd-vena' : null)),
+      forwarderLinkByName: vi.fn(async () => null),
+      portLinkByCodeOrName: vi.fn(async () => null),
+      canonicalCode: vi.fn(async (c: string) => c),
+      customerIdByCode: vi.fn(async () => null),
+      vendorIdByCode: vi.fn(async () => null),
+    }
+    const r = new MasterResolver(masters as never)
+    const aliases = {
+      portAlias: new Map<string, string>(),
+      forwarderAlias: new Map([['VENA SAIL (BD) SUPPLY CHAIN CO. LTD.', 'VENA']]),
+    }
+    const out = await r.resolveAll(
+      { forwarder_name: 'VENA SAIL (BD) SUPPLY CHAIN CO. LTD.' },
+      aliases,
+    )
+    expect(out.forwarderLink).toEqual({ id: 'fwd-vena', tier: 'code_exact' })
+    expect(masters.forwarderLinkByName).not.toHaveBeenCalled()
+  })
+
+  it('no alias fact → behavior unchanged (still unlinked when no exact match)', async () => {
+    const masters = {
+      forwarderIdByCode: vi.fn(async () => null),
+      forwarderLinkByName: vi.fn(async () => null),
+      portLinkByCodeOrName: vi.fn(async () => null),
+      canonicalCode: vi.fn(async (c: string) => c),
+      customerIdByCode: vi.fn(async () => null),
+      vendorIdByCode: vi.fn(async () => null),
+    }
+    const r = new MasterResolver(masters as never)
+    const out = await r.resolveAll({ forwarder_name: 'UNKNOWN CO', pol: 'NOWHERE' })
+    expect(out.forwarderLink).toEqual({ id: null, tier: null })
+    expect(out.polLink).toBeNull()
+  })
 })

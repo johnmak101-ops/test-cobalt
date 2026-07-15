@@ -24,7 +24,7 @@ import { needsHumanReview } from './committer-helpers'
 import type { CriticReview } from '../decisions/critic-review.types'
 import { mapFieldsToLegColumns } from './committer-leg-mapping'
 import { findExistingLeg, findAdoptableZeroIdLeg, findSupersededByIdentityCorrection } from './committer-match'
-import { MasterResolver } from './committer-master-resolver'
+import { aliasMapsFromFacts, MasterResolver } from './committer-master-resolver'
 import { planPoReconcile } from './committer-po-reconciler'
 import { MilestoneSynchronizer } from './committer-milestones'
 import { isAuditedBookingFill } from './fill-booking-audit'
@@ -125,10 +125,13 @@ export class CommitterService {
 
     // MOVE 3: overlay platform_not_forwarder patterns from Resolution Rules (lhs = regex/substring).
     // SEED patterns in vendor-forwarder-guard always apply; admin facts extend without redeploy.
-    const platformFacts = (await this.masters.listResolution('approved')).filter(
+    const approvedFacts = await this.masters.listResolution('approved')
+    const platformFacts = approvedFacts.filter(
       (row) => row.kind === 'platform_not_forwarder' && row.lhs,
     )
     setPlatformNotForwarderPatterns(platformFacts.map((row) => row.lhs))
+    // Curated exact aliases for forwarder/port — load once per apply, pass into resolver (#145)
+    const aliasMaps = aliasMapsFromFacts(approvedFacts)
 
     // de-correction STEP 2/3 (2026-07-12): no silent model-corrections, no shadow metering.
     // Platform names stay on the field for display but never link (LLM master-matcher on queue owns
@@ -148,6 +151,7 @@ export class CommitterService {
 
     const { customerId, vendorId, forwarderLink, polLink, podLink } = await this.mastersResolver.resolveAll(
       platformForwarder ? { ...f, forwarder_name: null } : f,
+      aliasMaps,
     )
     // Exact-only link; unresolved free-text is a MASTER-DATA gap (queue LLM should have resolved codes
     // upstream), not a shipment defect — needsHumanReview gates it on the band.

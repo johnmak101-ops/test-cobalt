@@ -45,6 +45,11 @@ export class MastersService {
     return this.repo.listCarriers()
   }
 
+  /** Unmatched forwarder/port raw values on live legs — curation surface for #145. */
+  unmatched() {
+    return this.repo.unmatchedRawValues()
+  }
+
   // --- writes (Ops-maintained masters only) ---
   createForwarder(dto: CreateForwarderDto) {
     return this.repo.createForwarder({ code: nn(dto.code), name: dto.name.trim() })

@@ -7,12 +7,17 @@ export type { ResolutionFact }
 
 const FACTS = ['resolution-facts'] as const
 const PROPOSALS = ['resolution-proposals'] as const
+const UNMATCHED = ['masters-unmatched'] as const
 
 export function useResolutionFacts() {
   return useQuery({ queryKey: FACTS, queryFn: () => api.getResolutionManage() })
 }
 export function useProposals() {
   return useQuery({ queryKey: PROPOSALS, queryFn: () => api.getProposals() })
+}
+/** Live legs with unresolved forwarder/port raw values (#145). */
+export function useUnmatchedMasters() {
+  return useQuery({ queryKey: UNMATCHED, queryFn: () => api.getUnmatchedMasters() })
 }
 
 /** A mutation that toasts success/failure and invalidates the given query keys on success. */
