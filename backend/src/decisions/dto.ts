@@ -89,6 +89,10 @@ export class CreateDecisionDto {
    *  Loose object at the HTTP boundary; shape documented in critic-review.types.ts. Omitted by legacy callers. */
   @IsOptional() @IsObject() criticReview?: object
 
+  /** Queue band-routing recommendation (Phase 2 shadow). Independent of disposition/autoApply gate.
+   *  ShipTrack dual-computes band vs gate; under default critic_routing_mode=gate this is shadow-only. */
+  @IsOptional() @IsIn(['auto', 'review', 'skip']) recommendedRouting?: 'auto' | 'review' | 'skip'
+
   /** True when EVERY source email came from the CVP/TradeLinkOne notification platform — the leg is a
    *  vendor/PO notification, not a booked move (routed to Documents, classifyKind rule (c)). Omitted by
    *  legacy callers → the committer resolves it from the source emails' senders (defense in depth). */

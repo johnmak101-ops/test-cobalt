@@ -15,7 +15,7 @@ beforeAll(async () => {
   const r = repos(db)
   const committer = new CommitterService(r.masters, r.booking, r.shipment, r.fieldLock, r.audit, r.evidence, r.purchaseOrder)
   settings = new SettingsService(r.settings)
-  decisions = new DecisionsService(committer, settings, r.ingest)
+  decisions = new DecisionsService(committer, settings, r.ingest, r.routingShadow)
 })
 afterAll(closeTestDb)
 beforeEach(() => resetDb(db))

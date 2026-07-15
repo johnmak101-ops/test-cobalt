@@ -2,9 +2,12 @@ import { Injectable } from '@nestjs/common'
 import { CommitterService, type ReconGroup, type CommitResult } from '../reconcile/committer.service'
 import { SettingsService } from '../settings/settings.service'
 import { IngestRepository } from '../db/repositories/ingest.repository'
+import { RoutingShadowRepository } from '../db/repositories/routing-shadow.repository'
 import type { CreateDecisionDto } from './dto'
 import { resolveEmailDisposition } from './email-disposition'
 import { collectSourceEvents } from '../reconcile/source-events'
+import { resolveBandRouting } from './band-routing'
+import type { CriticReview } from './critic-review.types'
 
 export interface DecisionResult extends Omit<CommitResult, 'action'> {
   /** `skip` = the decision was 不需處理 and acknowledged WITHOUT committing a shipment (see ingest). */
@@ -28,6 +31,9 @@ const SKIP_RESULT = {
  * The HTTP seam: receive a scored decision from the Agent VM, route it by confidence
  * (commit-first), and hand it to the deterministic committer. The committer owns the safety
  * invariants (upsert by match-key, field-locks, audit); we only add the review gate.
+ *
+ * Phase 2a: dual-computes gate vs band routing and writes routing_shadow when criticReview
+ * is present. Default critic_routing_mode=gate leaves reviewStatus unchanged.
  */
 @Injectable()
 export class DecisionsService {
@@ -35,13 +41,38 @@ export class DecisionsService {
     private readonly committer: CommitterService,
     private readonly settings: SettingsService,
     private readonly ingestRepo: IngestRepository,
+    private readonly routingShadow: RoutingShadowRepository,
   ) {}
 
   async ingest(dto: CreateDecisionDto): Promise<DecisionResult> {
     // Email disposition (matcher gates review): derive / escalate from lookupContext + payload.
     // `skip` must NOT commit — empty match-key would mint phantom JOB-XXXX legs on every ingest.
     const disp = resolveEmailDisposition(dto)
+    const critic = (dto.criticReview ?? null) as CriticReview | null
+
     if (disp.disposition === 'skip') {
+      // Shadow even on skip when critic present (shipmentId null — nothing committed).
+      if (critic) {
+        const mode = await this.settings.criticRoutingMode()
+        const bandRouting = resolveBandRouting({
+          recommendedRouting: dto.recommendedRouting,
+          criticReview: critic,
+        }) ?? 'skip'
+        const gateRouting = 'skip' as const
+        await this.routingShadow.insert({
+          shipmentId: null,
+          gateRouting,
+          bandRouting,
+          band: critic.confidence?.band ?? null,
+          differs: gateRouting !== bandRouting,
+          reasons: [
+            ...(dto.reviewReasons ?? []),
+            `gate=${gateRouting}`,
+            `band=${bandRouting}`,
+            mode === 'band' ? 'mode=band' : 'mode=gate',
+          ],
+        })
+      }
       return { ...SKIP_RESULT, confidence: dto.confidence, reviewStatus: 'skip' }
     }
 
@@ -83,6 +114,25 @@ export class DecisionsService {
     // Review Policy settings feature removed (#124). Configurable checklist triggers no longer exist.
     // Review routing is: email disposition, cancel flag, confidence threshold, agent autoApply/reasons.
 
+    // Dual-route (Phase 2a): gate is what we'd apply today; band is what critic/recommended would apply.
+    const gateRouting = reviewStatus
+    const bandRouting = resolveBandRouting({
+      recommendedRouting: dto.recommendedRouting,
+      criticReview: critic,
+    })
+    const mode = await this.settings.criticRoutingMode()
+
+    // Mode select: band only when setting is band and bandRouting is a commit-path status.
+    // Default gate leaves reviewStatus as-is (zero behavior change).
+    if (mode === 'band' && bandRouting && bandRouting !== 'skip') {
+      reviewStatus = bandRouting === 'confirmed' ? 'confirmed' : 'provisional'
+    }
+
+    // Cancel remains authoritative over band mode — re-apply after mode select.
+    if (dto.cancelled === true) {
+      reviewStatus = 'provisional'
+    }
+
     // Related Emails: union every channel that may carry a graph message id. Relying on
     // dto.events alone dropped links when events lacked graphId but identifiers/evidence still
     // named the source mail (leg had history, UI showed no emails).
@@ -120,6 +170,24 @@ export class DecisionsService {
     }
 
     const result = await this.committer.apply(group)
+
+    // Shadow write after commit so shipmentId is available; only when critic present.
+    if (critic && bandRouting) {
+      await this.routingShadow.insert({
+        shipmentId: result.shipmentId || null,
+        gateRouting,
+        bandRouting,
+        band: critic.confidence?.band ?? null,
+        differs: gateRouting !== bandRouting,
+        reasons: [
+          ...(dto.reviewReasons ?? []),
+          `gate=${gateRouting}`,
+          `band=${bandRouting}`,
+          mode === 'band' ? 'mode=band' : 'mode=gate',
+        ],
+      })
+    }
+
     return { ...result, confidence: dto.confidence, reviewStatus }
   }
 }
