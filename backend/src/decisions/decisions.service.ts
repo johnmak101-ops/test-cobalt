@@ -58,10 +58,11 @@ export class DecisionsService {
       if (critic) {
         try {
           const mode = await this.settings.criticRoutingMode()
-          const bandRouting = resolveBandRouting({
-            recommendedRouting: dto.recommendedRouting,
-            criticReview: critic,
-          }) ?? 'skip'
+          // Band NEVER overrides a not-actionable (skip) decision — the design pins skip, so gate and
+          // band always agree here. Deriving from the critic instead would log a phantom
+          // skip→provisional "diff" for legacy payloads that carry criticReview but no
+          // recommendedRouting (Phase-1-era), polluting the shadow report the flip decision rests on.
+          const bandRouting = 'skip' as const
           const gateRouting = 'skip' as const
           await this.routingShadow.insert({
             shipmentId: null,

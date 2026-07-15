@@ -357,4 +357,43 @@ describe('Phase 2 routing shadow + mode', () => {
     expect(reasons).toContain('Booking cancelled')
     expect(reasons.some((r) => /band auto-confirm/i.test(r))).toBe(false)
   })
+
+  it('skip: band is pinned to skip — no phantom diff for a legacy payload without recommendedRouting', async () => {
+    // Phase-1-era payload: criticReview present (HIGH band) but recommendedRouting ABSENT. Deriving
+    // band routing from the critic would log skip→confirmed as a "diff"; band never overrides skip.
+    const res = await decisions.ingest(
+      decision({
+        matchKey: {},
+        pos: [],
+        fields: { note: 'fyi' },
+        confidence: 92,
+        autoApply: false,
+        disposition: undefined,
+        lookupContext: { statusUpdate: false },
+        criticReview: criticHigh,
+      }),
+    )
+    expect(res.reviewStatus).toBe('skip')
+    const shadows = await db.selectFrom('routingShadow').selectAll().execute()
+    expect(shadows).toHaveLength(1)
+    expect(shadows[0].gateRouting).toBe('skip')
+    expect(shadows[0].bandRouting).toBe('skip')
+    expect(shadows[0].differs).toBe(false)
+  })
+
+  it('retention: pruneOlderThan drops rows outside the window (diagnostic log is disposable)', async () => {
+    await decisions.ingest(
+      decision({
+        confidence: 92,
+        autoApply: false,
+        disposition: 'review',
+        recommendedRouting: 'auto',
+        criticReview: criticHigh,
+      }),
+    )
+    expect(await db.selectFrom('routingShadow').selectAll().execute()).toHaveLength(1)
+    // negative window → cutoff in the future → every row counts as older and is pruned
+    await repos(db).routingShadow.pruneOlderThan(-1)
+    expect(await db.selectFrom('routingShadow').selectAll().execute()).toHaveLength(0)
+  })
 })
