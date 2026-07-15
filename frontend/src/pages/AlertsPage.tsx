@@ -19,6 +19,7 @@ export default function AlertsPage() {
   const [searchParams] = useSearchParams()
   const severityFilter = searchParams.get('severity')
   const criticalRef = useRef<HTMLDivElement>(null)
+  const warningRef = useRef<HTMLDivElement>(null)
   const [filter, setFilter] = useState<FilterKey>('all')
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
@@ -53,10 +54,13 @@ export default function AlertsPage() {
   const unreadCount = activeAlerts.filter((a) => !a.readAt).length
   const readCount = activeAlerts.filter((a) => !!a.readAt).length
 
-  // Auto-scroll to CRITICAL section when ?severity=CRITICAL
+  // Auto-scroll to severity section when ?severity=CRITICAL or ?severity=WARNING
   useEffect(() => {
-    if (severityFilter === 'CRITICAL' && criticalRef.current && !isLoading) {
+    if (isLoading) return
+    if (severityFilter === 'CRITICAL' && criticalRef.current) {
       criticalRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    } else if (severityFilter === 'WARNING' && warningRef.current) {
+      warningRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' })
     }
   }, [severityFilter, isLoading])
 
@@ -303,7 +307,9 @@ export default function AlertsPage() {
           <div ref={criticalRef}>
             <AlertSection severity="CRITICAL" alerts={critical} />
           </div>
-          <AlertSection severity="WARNING" alerts={warning} />
+          <div ref={warningRef}>
+            <AlertSection severity="WARNING" alerts={warning} />
+          </div>
           <AlertSection severity="INFO" alerts={info} />
         </div>
       )}

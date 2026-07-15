@@ -3,7 +3,7 @@ import { api } from '../lib/api'
 
 interface DashboardStats {
   activeShipments: number
-  atRiskShipments: number
+  warningAlerts: number
   criticalAlerts: number
   newEmails: number
 }
