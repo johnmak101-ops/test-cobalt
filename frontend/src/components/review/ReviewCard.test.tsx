@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { MemoryRouter } from 'react-router-dom'
 import { ReviewCard } from './ReviewCard'
 import type { CriticConflict, CriticReview, CriticReviewCompact } from '../../lib/critic-review'
 import type { ReviewShipment } from '../../hooks/use-review-queue'
@@ -91,6 +92,7 @@ describe('ReviewCard', () => {
 
     expect(screen.queryByText('Low · Two strong IDs in one email')).toBeNull()
     expect(screen.queryByRole('table')).toBeNull()
+    expect(screen.queryByTestId('why-review')).toBeNull()
     expect(screen.queryByText('ETA')).toBeNull()
     expect(screen.queryByText('HBL')).toBeNull()
     // proposedChanges must not surface when collapsed either
@@ -126,21 +128,118 @@ describe('ReviewCard', () => {
     expect(screen.queryByText('2026-08-01')).toBeNull()
   })
 
-  it('expanded with empty conflicts: short empty state, no invented rows', async () => {
+  it('expanded with empty conflicts: shows WHY it is queued (risk flags), no invented rows', async () => {
     render(
       <ReviewCard
         shipment={baseShipment()}
-        criticReview={baseReview({ conflicts: [] })}
+        criticReview={baseReview({
+          conflicts: [],
+          riskFlags: [
+            {
+              code: 'WEAK_IDENTITY',
+              severity: 'medium',
+              message: 'No strong booking/SO/B/L identity and no PO — hard to place this email on a shipment.',
+            },
+          ],
+        })}
         compact={compact}
         defaultExpanded={true}
       />,
     )
 
-    expect(
-      screen.getByText(/No field conflicts — review reasons may still apply/i),
-    ).toBeInTheDocument()
+    const why = screen.getByTestId('why-review')
+    expect(within(why).getByText(/No strong booking\/SO\/B\/L identity/)).toBeInTheDocument()
+    expect(screen.queryByText(/No field conflicts/i)).toBeNull()
     expect(screen.queryByRole('table')).toBeNull()
     expect(screen.queryByText('2026-08-01')).toBeNull()
+  })
+
+  it('why-review renders alongside the conflict table when both exist', async () => {
+    render(
+      <ReviewCard
+        shipment={baseShipment()}
+        criticReview={baseReview()}
+        compact={compact}
+        defaultExpanded={true}
+      />,
+    )
+    expect(screen.getByTestId('why-review')).toBeInTheDocument()
+    expect(within(screen.getByTestId('why-review')).getByText('Two strong IDs in one email')).toBeInTheDocument()
+    expect(screen.getByRole('table')).toBeInTheDocument()
+  })
+
+  it('why-review falls back to humanized reviewReasons when the critic payload is absent', () => {
+    render(
+      <ReviewCard
+        shipment={baseShipment({ reviewReasons: ['conflicting_identifiers'] })}
+        criticReview={null}
+        compact={null}
+        defaultExpanded={true}
+      />,
+    )
+    const why = screen.getByTestId('why-review')
+    expect(why.textContent!.length).toBeGreaterThan(0)
+  })
+
+  // The queue's riskFlags and ShipTrack's committer reviewReasons are two DIFFERENT sources, not a
+  // primary + backup: master-data misses exist only on the ShipTrack side. Real leg 31DFB19C.
+  it('why-review shows a ShipTrack reason no risk flag explains (master-data miss), alongside the flags', () => {
+    render(
+      <ReviewCard
+        shipment={baseShipment({
+          reviewReasons: [
+            '3 unresolved field conflict(s)',
+            'forwarder_name "A.P. Moller - Maersk" did not exact-match a master (LLM matcher owns fuzzy; left unlinked)',
+          ],
+        })}
+        criticReview={baseReview({
+          conflicts: [],
+          riskFlags: [
+            {
+              code: 'INTRA_EMAIL_FIELD_CONFLICT',
+              severity: 'high',
+              message: '3 unresolved field conflict(s) across the email thread — values disagree.',
+            },
+          ],
+        })}
+        compact={compact}
+        defaultExpanded={true}
+      />,
+    )
+    const why = screen.getByTestId('why-review')
+    // the flag itself
+    expect(within(why).getByText(/3 unresolved field conflict\(s\) across the email thread/)).toBeInTheDocument()
+    // the ShipTrack-only reason must NOT be swallowed
+    expect(within(why).getByText(/Forwarder "A.P. Moller - Maersk" did not match master data/)).toBeInTheDocument()
+    // ...and its duplicate-of-the-flag sibling must not be repeated
+    expect(within(why).queryByText(/field\(s\) received different values from different emails/)).toBeNull()
+  })
+
+  it('why-review does not repeat a reason a risk flag already explains', () => {
+    render(
+      <ReviewCard
+        shipment={baseShipment({
+          reviewReasons: [
+            "Email references an attachment that wasn't received — information may be incomplete",
+          ],
+        })}
+        criticReview={baseReview({
+          conflicts: [],
+          riskFlags: [
+            {
+              code: 'MISSING_ATTACHMENT',
+              severity: 'high',
+              message: 'Email references an attachment that was not received — cargo details may be incomplete.',
+            },
+          ],
+        })}
+        compact={compact}
+        defaultExpanded={true}
+      />,
+    )
+    const items = within(screen.getByTestId('why-review')).getAllByRole('listitem')
+    expect(items).toHaveLength(1)
+    expect(items[0]!.textContent).toMatch(/cargo details may be incomplete/)
   })
 
   it('requires a note before Save & Approve when the resolution differs from the stored value', async () => {
@@ -177,6 +276,53 @@ describe('ReviewCard', () => {
     expect(payload.note).toMatch(/Operator override/)
     expect(payload.fields).toMatchObject({ eta: '2026-07-25' })
     expect(payload.expectedUpdatedAt).toBe('2026-07-10T12:00:00.000Z')
+  })
+
+  it('source emails: chips open the reading-pane pop-up window', async () => {
+    const user = userEvent.setup()
+    const open = vi.fn()
+    vi.stubGlobal('open', open)
+
+    render(
+      <ReviewCard
+        shipment={baseShipment()}
+        criticReview={baseReview()}
+        compact={compact}
+        emails={[{ id: 'em-1', subject: 'Final B/L for KOHL', sender: 'ops@fwd.com', receivedAt: null, emailType: 'Final B/L' }]}
+        defaultExpanded={true}
+      />,
+    )
+
+    await user.click(screen.getByRole('button', { name: /open source email/i }))
+    expect(open).toHaveBeenCalledTimes(1)
+    const [url, target, features] = open.mock.calls[0]
+    expect(url).toBe('/email/em-1?type=Final%20B%2FL')
+    expect(target).toBe('email_em-1')
+    expect(features).toContain('popup')
+    vi.unstubAllGlobals()
+  })
+
+  it('source emails: no chips rendered when the leg has none', () => {
+    render(
+      <ReviewCard shipment={baseShipment()} criticReview={baseReview()} compact={compact} defaultExpanded={true} />,
+    )
+    expect(screen.queryByTestId('source-emails')).toBeNull()
+  })
+
+  it('renders an Open full shipment link when fullShipmentPath is set', () => {
+    render(
+      <MemoryRouter>
+        <ReviewCard
+          shipment={baseShipment()}
+          criticReview={baseReview()}
+          compact={compact}
+          fullShipmentPath="/shipments/leg-1"
+          defaultExpanded={true}
+        />
+      </MemoryRouter>,
+    )
+    const link = screen.getByRole('link', { name: /open full shipment/i })
+    expect(link).toHaveAttribute('href', '/shipments/leg-1')
   })
 
   it('readOnly: shows resolved values, hides inputs and primary Save button', () => {

@@ -210,9 +210,9 @@ UOM
                         <Badge variant="status" value={shipment.status} />
                         {shipment.reviewStatus === 'provisional' && (
                           <Link
-                            to={`/review-queue/${shipment.id}`}
+                            to={`/shipments/${shipment.id}`}
                             onClick={(e) => e.stopPropagation()}
-                            title="Awaiting review — open the review page"
+                            title="Awaiting review — open the shipment"
                             className="inline-flex shrink-0"
                           >
                             <AlertTriangle size={13} className="text-status-warning" />

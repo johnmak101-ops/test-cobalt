@@ -15,7 +15,9 @@ export interface MasterRef {
 
 type Dateish = Date | string | null | undefined
 
-/** design §2.2 short AI-comment types for queue chips — not free-form riskFlag.message. */
+/** design §2.2 short AI-comment types for queue chips — not free-form riskFlag.message.
+ *  Covers the FULL queue risk catalog (cobalt-queue src/critic-agent/review/types.ts RISK);
+ *  drift-guarded by shipment.mapper.spec.ts the same way band-routing guards HARD_STOP codes. */
 const RISK_SHORT_LABELS: Record<string, string> = {
   INTRA_EMAIL_MULTI_STRONG_ID: 'Two strong IDs in one email',
   BACKEND_CONFLICT: 'Stored value disagrees',
@@ -23,6 +25,17 @@ const RISK_SHORT_LABELS: Record<string, string> = {
   PORTAL_ECHO: 'Portal notification only',
   AMBIGUOUS_MATCH: 'Multiple matching legs',
   FIELD_LOCK_CLASH: 'Would overwrite locked field',
+  SCAN_OCR_RISK: 'Scanned document — read risk',
+  MISSING_ATTACHMENT: 'Referenced attachment missing',
+  INTRA_EMAIL_FIELD_CONFLICT: 'Emails disagree on a field',
+  INTRA_EMAIL_CARGO_CONFLICT: 'Cargo figures disagree',
+  THREAD_SUPERSEDE: 'Later email replaced earlier values',
+  PO_ONLY_WEAK_MATCH: 'Matched on PO only',
+  WEAK_IDENTITY: 'No booking/SO/B/L identity',
+  PARTY_UNRESOLVED: 'Party not in master data',
+  MULTI_LEG_SUSPECT: 'May span multiple legs',
+  EXTRACTION_INCOMPLETE: 'Extraction incomplete',
+  CARGO_SANITY: 'Cargo figures look off',
 }
 
 export function shortLabelForRisk(code: string): string {

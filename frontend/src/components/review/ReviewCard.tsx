@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
-import { CheckCircle, ChevronDown, ChevronRight, Loader2, NotebookPen, Save, XCircle } from 'lucide-react'
+import { Link } from 'react-router-dom'
+import { CheckCircle, ChevronDown, ChevronRight, ExternalLink, Loader2, Mail, NotebookPen, Save, XCircle } from 'lucide-react'
 import { Badge } from '../ui/Badge'
 import { ConflictRow, splitCandidates } from './ConflictRow'
 import {
@@ -11,6 +12,35 @@ import {
 import type { ReviewShipment } from '../../hooks/use-review-queue'
 import type { ShipmentDetail } from '../../hooks/use-shipments'
 import { cn } from '../../lib/utils'
+import { categorizeReason, humanizeReasons, type ReasonCategory } from '../../lib/review-reasons'
+
+/**
+ * Which reason category a queue risk-flag code already explains, so ShipTrack's own committer reason
+ * saying the same thing is not repeated below it. A code absent here explains NOTHING and therefore
+ * suppresses no reason — the safe default: a redundant bullet is cheap, a hidden reason is not.
+ * Mirrors the queue's RISK catalog (cobalt-queue src/critic-agent/review/types.ts).
+ * NOTE: no flag maps to 'master_miss' except PARTY_UNRESOLVED — master-data misses are raised by
+ * ShipTrack's committer, which is exactly why the union (not a fallback) is required here.
+ */
+const RISK_CODE_CATEGORY: Record<string, ReasonCategory> = {
+  INTRA_EMAIL_FIELD_CONFLICT: 'conflict',
+  INTRA_EMAIL_CARGO_CONFLICT: 'conflict',
+  BACKEND_CONFLICT: 'conflict',
+  FIELD_LOCK_CLASH: 'conflict',
+  INTRA_EMAIL_MULTI_STRONG_ID: 'multi_id',
+  AMBIGUOUS_MATCH: 'multi_id',
+  PO_REASSIGN: 'multi_id',
+  PO_ONLY_WEAK_MATCH: 'multi_id',
+  MULTI_LEG_SUSPECT: 'multi_id',
+  THREAD_SUPERSEDE: 'multi_id',
+  WEAK_IDENTITY: 'no_identity',
+  PORTAL_ECHO: 'portal',
+  PARTY_UNRESOLVED: 'master_miss',
+  MISSING_ATTACHMENT: 'extraction',
+  EXTRACTION_INCOMPLETE: 'extraction',
+  SCAN_OCR_RISK: 'extraction',
+  CARGO_SANITY: 'extraction',
+}
 
 export interface ReviewCardSavePayload {
   fields: Record<string, unknown>
@@ -18,11 +48,25 @@ export interface ReviewCardSavePayload {
   expectedUpdatedAt?: string
 }
 
+/** One source email of the leg — enough to open the reading-pane pop-up. */
+export type ReviewEmail = {
+  id: string
+  subject: string
+  sender: string
+  receivedAt?: string | null
+  emailType?: string | null
+}
+
 export interface ReviewCardProps {
   shipment: ReviewShipment | ShipmentDetail
   criticReview: CriticReview | null
   /** Queue-safe projection for AI comment when full payload is absent. */
   compact?: CriticReviewCompact | null
+  /** Source emails behind this leg — rendered as chips that open the email pop-up window.
+   *  Resolving a conflict means reading what the email actually said, so keep it one click away. */
+  emails?: ReviewEmail[]
+  /** Route to the full shipment editor — rendered as an "Open full shipment" link when set. */
+  fullShipmentPath?: string
   defaultExpanded?: boolean
   /** Resolved history — hide inputs and primary actions. */
   readOnly?: boolean
@@ -82,10 +126,22 @@ function existingValue(c: CriticConflict): string {
  * Collapsible critic review card — band + identity when collapsed; AI comment,
  * conflict-only table, notes, and Save&Approve when expanded.
  */
+/** Open the source email in the chrome-less reading-pane pop-up (same window target + geometry as
+ *  the shipment history timeline, so a reviewer can read the original side-by-side). */
+function openEmailWindow(e: ReviewEmail): void {
+  window.open(
+    `/email/${e.id}?type=${encodeURIComponent(e.emailType ?? '')}`,
+    `email_${e.id}`,
+    'popup,width=880,height=940,resizable=yes,scrollbars=yes',
+  )
+}
+
 export function ReviewCard({
   shipment,
   criticReview,
   compact = null,
+  emails = [],
+  fullShipmentPath,
   defaultExpanded = false,
   readOnly = false,
   onSaveAndApprove,
@@ -100,6 +156,30 @@ export function ReviewCard({
     () => criticReview?.conflicts ?? [],
     [criticReview],
   )
+  // WHY this leg is queued — the UNION of two INDEPENDENT sources, not a primary + fallback:
+  // the queue critic's riskFlags (what the agent saw in the email) and ShipTrack's own committer
+  // reviewReasons (master-data resolution misses the queue never sees). Showing only the flags hid
+  // the master-data reasons on every flagged leg. Reasons whose category a flag already explains are
+  // dropped so the same problem is not stated twice.
+  const whyReview = useMemo(() => {
+    const flags = (criticReview?.riskFlags ?? []).filter((f) => f?.message)
+    const explained = new Set<ReasonCategory>()
+    for (const f of flags) {
+      const c = RISK_CODE_CATEGORY[f.code]
+      if (c) explained.add(c)
+    }
+    const out = flags.map((f, i) => ({
+      key: `${f.code}-${i}`,
+      severity: f.severity as 'low' | 'medium' | 'high',
+      text: f.message,
+    }))
+    const reasons = (shipment as { reviewReasons?: string[] | null }).reviewReasons ?? []
+    for (const { raw, text } of humanizeReasons(reasons)) {
+      if (explained.has(categorizeReason(raw))) continue
+      out.push({ key: `reason-${raw}`, severity: 'medium', text })
+    }
+    return out
+  }, [criticReview, shipment])
   const [resolutions, setResolutions] = useState<Record<string, string>>(() =>
     initialResolutions(conflicts),
   )
@@ -255,17 +335,72 @@ export function ReviewCard({
       {/* Expanded: AI comment + conflicts-only + notes + Save&Approve (§2.2) */}
       {expanded && (
         <div className="space-y-3 border-t border-border px-3 pb-3 pt-3">
-          {lineCompact && (
-            <p className="text-sm font-medium text-text-primary" data-testid="ai-comment-line">
-              {aiCommentLine(lineCompact)}
-            </p>
+          {(lineCompact || fullShipmentPath) && (
+            <div className="flex items-start justify-between gap-2">
+              {lineCompact ? (
+                <p className="text-sm font-medium text-text-primary" data-testid="ai-comment-line">
+                  {aiCommentLine(lineCompact)}
+                </p>
+              ) : (
+                <span />
+              )}
+              {fullShipmentPath && (
+                <Link
+                  to={fullShipmentPath}
+                  className="inline-flex shrink-0 items-center gap-1 text-[11px] font-medium text-cobalt-primary-light hover:underline"
+                >
+                  Open full shipment
+                  <ExternalLink size={10} />
+                </Link>
+              )}
+            </div>
           )}
 
-          {conflicts.length === 0 ? (
-            <p className="rounded-lg bg-surface-900 px-3 py-2 text-xs text-text-muted">
-              No field conflicts — review reasons may still apply
-            </p>
-          ) : (
+          {/* Source emails — resolving a conflict means reading what the email actually said. */}
+          {emails.length > 0 && (
+            <div className="flex flex-wrap items-center gap-1.5" data-testid="source-emails">
+              <span className="text-[11px] font-medium text-text-muted">Source emails:</span>
+              {emails.map((e) => (
+                <button
+                  key={e.id}
+                  type="button"
+                  onClick={() => openEmailWindow(e)}
+                  title={`${e.subject || '(no subject)'} — ${e.sender}`}
+                  aria-label={`Open source email: ${e.subject || '(no subject)'}`}
+                  className="inline-flex max-w-[18rem] items-center gap-1 rounded-full border border-border bg-surface-900 px-2.5 py-1 text-[11px] text-text-secondary transition-colors hover:border-cobalt-primary hover:text-cobalt-primary-light"
+                >
+                  <Mail size={10} className="shrink-0 text-text-muted" />
+                  <span className="truncate">{e.emailType || e.subject || '(no subject)'}</span>
+                  <ExternalLink size={9} className="shrink-0 opacity-60" />
+                </button>
+              ))}
+            </div>
+          )}
+
+          {whyReview.length > 0 && (
+            <div className="rounded-lg bg-surface-900 px-3 py-2" data-testid="why-review">
+              <p className="text-[11px] font-medium text-text-muted">Why review?</p>
+              <ul className="mt-1 space-y-1">
+                {whyReview.map((r) => (
+                  <li key={r.key} className="flex items-start gap-1.5 text-xs text-text-secondary">
+                    <span
+                      className={cn(
+                        'mt-1 inline-block h-1.5 w-1.5 shrink-0 rounded-full',
+                        r.severity === 'high'
+                          ? 'bg-status-critical'
+                          : r.severity === 'medium'
+                            ? 'bg-status-warning'
+                            : 'bg-surface-600',
+                      )}
+                    />
+                    {r.text}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {conflicts.length > 0 && (
             <div className="overflow-x-auto rounded-lg border border-border">
               <table className="w-full min-w-[36rem]">
                 <thead>

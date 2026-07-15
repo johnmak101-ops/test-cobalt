@@ -1,5 +1,5 @@
 import { Fragment, useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { CheckCircle, Ship, Package, Loader2, XCircle, RotateCcw, ChevronDown, ChevronRight } from 'lucide-react'
 import {
   useReviewQueue,
@@ -66,6 +66,8 @@ function ExpandedReviewPanel({
         shipment={data}
         criticReview={data.criticReview ?? null}
         compact={row.criticReviewCompact}
+        emails={data.emails ?? []}
+        fullShipmentPath={`/shipments/${row.id}`}
         defaultExpanded
         readOnly={readOnly}
         onApprove={onApprove}
@@ -85,6 +87,7 @@ export default function ReviewQueuePage() {
   const dismissMutation = useDismissShipments()
   const restoreMutation = useRestoreShipment()
   const navigate = useNavigate()
+  const location = useLocation()
 
   const [page, setPage] = useState(1)
   const [perPage, setPerPage] = useState(25)
@@ -92,7 +95,9 @@ export default function ReviewQueuePage() {
   const [category, setCategory] = useState<ReasonCategory | 'all'>('all')
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [bulkNote, setBulkNote] = useState('')
-  const [expandedId, setExpandedId] = useState<string | null>(null)
+  const [expandedId, setExpandedId] = useState<string | null>(
+    (location.state as { expandId?: string } | null)?.expandId ?? null,
+  )
   const [staleBanner, setStaleBanner] = useState<string | null>(null)
 
   const shipments = useMemo(() => data?.shipments ?? [], [data?.shipments])
@@ -412,7 +417,7 @@ export default function ReviewQueuePage() {
 
                           <td
                             className="cursor-pointer px-4 py-3 text-sm text-text-secondary"
-                            onClick={() => navigate(`/review-queue/${s.id}`)}
+                            onClick={() => setExpandedId(expanded ? null : s.id)}
                           >
                             {s.customer ?? '—'}
                             {s.forwarder && (
@@ -425,7 +430,7 @@ export default function ReviewQueuePage() {
 
                           <td
                             className="cursor-pointer px-4 py-3"
-                            onClick={() => navigate(`/review-queue/${s.id}`)}
+                            onClick={() => setExpandedId(expanded ? null : s.id)}
                           >
                             <span className="inline-flex items-center gap-1.5 font-mono text-sm font-medium text-cobalt-primary-light">
                               <Ship size={13} className="shrink-0 text-text-muted" />
@@ -441,14 +446,14 @@ export default function ReviewQueuePage() {
 
                           <td
                             className="cursor-pointer px-4 py-3 text-sm text-text-secondary"
-                            onClick={() => navigate(`/review-queue/${s.id}`)}
+                            onClick={() => setExpandedId(expanded ? null : s.id)}
                           >
                             {s.route ?? '—'}
                           </td>
 
                           <td
                             className="cursor-pointer px-4 py-3"
-                            onClick={() => navigate(`/review-queue/${s.id}`)}
+                            onClick={() => setExpandedId(expanded ? null : s.id)}
                           >
                             <Badge variant="status" value={s.status} />
                           </td>
@@ -499,7 +504,7 @@ export default function ReviewQueuePage() {
                                 </button>
                               ) : (
                                 <button
-                                  onClick={() => navigate(`/review-queue/${s.id}`)}
+                                  onClick={() => navigate(`/shipments/${s.id}`)}
                                   className="inline-flex items-center gap-1.5 rounded-lg bg-surface-700 px-2.5 py-1.5 text-xs font-medium text-text-secondary transition-colors hover:bg-surface-600 hover:text-text-primary"
                                 >
                                   Open
