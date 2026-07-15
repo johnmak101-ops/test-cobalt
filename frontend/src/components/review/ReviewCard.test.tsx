@@ -179,6 +179,37 @@ describe('ReviewCard', () => {
     expect(payload.expectedUpdatedAt).toBe('2026-07-10T12:00:00.000Z')
   })
 
+  it('source emails: chips open the reading-pane pop-up window', async () => {
+    const user = userEvent.setup()
+    const open = vi.fn()
+    vi.stubGlobal('open', open)
+
+    render(
+      <ReviewCard
+        shipment={baseShipment()}
+        criticReview={baseReview()}
+        compact={compact}
+        emails={[{ id: 'em-1', subject: 'Final B/L for KOHL', sender: 'ops@fwd.com', receivedAt: null, emailType: 'Final B/L' }]}
+        defaultExpanded={true}
+      />,
+    )
+
+    await user.click(screen.getByRole('button', { name: /open source email/i }))
+    expect(open).toHaveBeenCalledTimes(1)
+    const [url, target, features] = open.mock.calls[0]
+    expect(url).toBe('/email/em-1?type=Final%20B%2FL')
+    expect(target).toBe('email_em-1')
+    expect(features).toContain('popup')
+    vi.unstubAllGlobals()
+  })
+
+  it('source emails: no chips rendered when the leg has none', () => {
+    render(
+      <ReviewCard shipment={baseShipment()} criticReview={baseReview()} compact={compact} defaultExpanded={true} />,
+    )
+    expect(screen.queryByTestId('source-emails')).toBeNull()
+  })
+
   it('readOnly: shows resolved values, hides inputs and primary Save button', () => {
     render(
       <ReviewCard

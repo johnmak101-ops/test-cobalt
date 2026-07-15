@@ -342,6 +342,7 @@ export default function ReviewShipmentPage() {
         <ReviewCard
           shipment={shipment}
           criticReview={shipment.criticReview ?? null}
+          emails={shipment.emails ?? []}
           defaultExpanded
           readOnly
         />

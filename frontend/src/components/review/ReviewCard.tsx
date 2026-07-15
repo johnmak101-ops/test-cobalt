@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { CheckCircle, ChevronDown, ChevronRight, Loader2, NotebookPen, Save, XCircle } from 'lucide-react'
+import { CheckCircle, ChevronDown, ChevronRight, ExternalLink, Loader2, Mail, NotebookPen, Save, XCircle } from 'lucide-react'
 import { Badge } from '../ui/Badge'
 import { ConflictRow, splitCandidates } from './ConflictRow'
 import {
@@ -18,11 +18,23 @@ export interface ReviewCardSavePayload {
   expectedUpdatedAt?: string
 }
 
+/** One source email of the leg — enough to open the reading-pane pop-up. */
+export type ReviewEmail = {
+  id: string
+  subject: string
+  sender: string
+  receivedAt?: string | null
+  emailType?: string | null
+}
+
 export interface ReviewCardProps {
   shipment: ReviewShipment | ShipmentDetail
   criticReview: CriticReview | null
   /** Queue-safe projection for AI comment when full payload is absent. */
   compact?: CriticReviewCompact | null
+  /** Source emails behind this leg — rendered as chips that open the email pop-up window.
+   *  Resolving a conflict means reading what the email actually said, so keep it one click away. */
+  emails?: ReviewEmail[]
   defaultExpanded?: boolean
   /** Resolved history — hide inputs and primary actions. */
   readOnly?: boolean
@@ -82,10 +94,21 @@ function existingValue(c: CriticConflict): string {
  * Collapsible critic review card — band + identity when collapsed; AI comment,
  * conflict-only table, notes, and Save&Approve when expanded.
  */
+/** Open the source email in the chrome-less reading-pane pop-up (same window target + geometry as
+ *  the shipment history timeline, so a reviewer can read the original side-by-side). */
+function openEmailWindow(e: ReviewEmail): void {
+  window.open(
+    `/email/${e.id}?type=${encodeURIComponent(e.emailType ?? '')}`,
+    `email_${e.id}`,
+    'popup,width=880,height=940,resizable=yes,scrollbars=yes',
+  )
+}
+
 export function ReviewCard({
   shipment,
   criticReview,
   compact = null,
+  emails = [],
   defaultExpanded = false,
   readOnly = false,
   onSaveAndApprove,
@@ -259,6 +282,27 @@ export function ReviewCard({
             <p className="text-sm font-medium text-text-primary" data-testid="ai-comment-line">
               {aiCommentLine(lineCompact)}
             </p>
+          )}
+
+          {/* Source emails — resolving a conflict means reading what the email actually said. */}
+          {emails.length > 0 && (
+            <div className="flex flex-wrap items-center gap-1.5" data-testid="source-emails">
+              <span className="text-[11px] font-medium text-text-muted">Source emails:</span>
+              {emails.map((e) => (
+                <button
+                  key={e.id}
+                  type="button"
+                  onClick={() => openEmailWindow(e)}
+                  title={`${e.subject || '(no subject)'} — ${e.sender}`}
+                  aria-label={`Open source email: ${e.subject || '(no subject)'}`}
+                  className="inline-flex max-w-[18rem] items-center gap-1 rounded-full border border-border bg-surface-900 px-2.5 py-1 text-[11px] text-text-secondary transition-colors hover:border-cobalt-primary hover:text-cobalt-primary-light"
+                >
+                  <Mail size={10} className="shrink-0 text-text-muted" />
+                  <span className="truncate">{e.emailType || e.subject || '(no subject)'}</span>
+                  <ExternalLink size={9} className="shrink-0 opacity-60" />
+                </button>
+              ))}
+            </div>
           )}
 
           {conflicts.length === 0 ? (

@@ -53,3 +53,7 @@ frontend/_vite.*.log
 
 # agent scratch: subagent-driven-development task reports (process artifacts, not product docs)
 .superpowers/
+
+# local git worktrees used for branch isolation
+.worktrees/
+
