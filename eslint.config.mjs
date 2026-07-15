@@ -12,6 +12,9 @@ export default tseslint.config(
       '**/dist/**',
       '**/node_modules/**',
       '**/coverage/**',
+      // git worktrees hold a full second copy of the repo — linting them scans every file twice and
+      // fails the run on a sibling BRANCH's code (.gitignore covers git, but flat config does not read it)
+      '**/.worktrees/**',
       'backend/drizzle/**',
       'backend/test/smoke.mjs',
       'eslint.config.mjs',

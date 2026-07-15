@@ -20,6 +20,8 @@ import { FieldLockRepository } from '../db/repositories/field-lock.repository'
 import { AuditRepository } from '../db/repositories/audit.repository'
 import { EvidenceRepository } from '../db/repositories/evidence.repository'
 import { resolvePoEnrichment, unattributedBrandStyle } from './po-enrichment'
+import { needsHumanReview } from './committer-helpers'
+import type { CriticReview } from '../decisions/critic-review.types'
 import { mapFieldsToLegColumns } from './committer-leg-mapping'
 import { findExistingLeg, findAdoptableZeroIdLeg } from './committer-match'
 import { MasterResolver } from './committer-master-resolver'
@@ -132,7 +134,12 @@ export class CommitterService {
     // Platform names stay on the field for display but never link (LLM master-matcher on queue owns
     // party resolution; track only exact/code + curated exact facts for ports).
     const platformForwarder = isPlatformNotForwarder(str(f.forwarder_name))
+    // `reviewHints` = the shipment itself is doubtful → always review.
+    // `masterMissHints` = the shipment is fine but a party/port is not in master data → curation, not a
+    // review; gated on the critic band by needsHumanReview (see its doc). BOTH are kept on the leg's
+    // review_reasons either way, so the record survives even when the leg commits confirmed.
     const reviewHints: string[] = []
+    const masterMissHints: string[] = []
     if (platformForwarder) {
       reviewHints.push(
         `forwarder_name "${str(f.forwarder_name)}" looks like a notification platform, not a freight forwarder — left unlinked for review`,
@@ -142,18 +149,19 @@ export class CommitterService {
     const { customerId, vendorId, forwarderLink, polLink, podLink } = await this.mastersResolver.resolveAll(
       platformForwarder ? { ...f, forwarder_name: null } : f,
     )
-    // Exact-only link; unresolved free-text → review (queue LLM should have resolved codes upstream)
+    // Exact-only link; unresolved free-text is a MASTER-DATA gap (queue LLM should have resolved codes
+    // upstream), not a shipment defect — needsHumanReview gates it on the band.
     if (!platformForwarder && str(f.forwarder_name) && !forwarderLink.id) {
-      reviewHints.push(
+      masterMissHints.push(
         `forwarder_name "${str(f.forwarder_name)}" did not exact-match a master (LLM matcher owns fuzzy; left unlinked)`,
       )
     }
     const polRaw = str(f.poi ?? (f as Record<string, unknown>).pol)
     const podRaw = str(f.pod)
     if (polRaw && !polLink)
-      reviewHints.push(`pol "${polRaw}" did not exact/curated-match a port master — left unlinked`)
+      masterMissHints.push(`pol "${polRaw}" did not exact/curated-match a port master — left unlinked`)
     if (podRaw && !podLink)
-      reviewHints.push(`pod "${podRaw}" did not exact/curated-match a port master — left unlinked`)
+      masterMissHints.push(`pod "${podRaw}" did not exact/curated-match a port master — left unlinked`)
 
     const forwarderId = forwarderLink.id
     const polId = polLink?.id ?? null
@@ -189,10 +197,19 @@ export class CommitterService {
     if (kindRule === 'platform_only')
       reviewHints.push('platform/portal email without carrier identity — verify booking_no is not a portal LPO')
 
-    const needsReview = guard.misclassified || reviewHints.length > 0
+    // The critic's band decides whether a pure master-data gap is worth a human (see needsHumanReview).
+    // A `high` band with no blocking hint keeps the agent's own verdict (gate + band both said confirm) —
+    // it must not be silently overridden into the queue by a forwarder that is merely missing upstream.
+    const criticBand = (g.criticReview as CriticReview | null | undefined)?.confidence?.band ?? null
+    const needsReview =
+      // the vendor/forwarder guard is an unconditional force, exactly as before — never band-gated
+      guard.misclassified ||
+      needsHumanReview({ band: criticBand, blocking: reviewHints, masterMiss: masterMissHints })
     const effReviewStatus = needsReview ? 'provisional' : g.reviewStatus
+    // Reasons are recorded on the leg either way — a confirmed leg keeps the master-data gap as a record
+    // (the detail page's review banner is gated on reviewStatus==='provisional', so it stays quiet).
     const effReasons = ((): string[] | null => {
-      const all = [...(reviewReasonsFor(g) ?? []), ...guard.reasons, ...reviewHints]
+      const all = [...(reviewReasonsFor(g) ?? []), ...guard.reasons, ...reviewHints, ...masterMissHints]
       return all.length ? all : null
     })()
 
