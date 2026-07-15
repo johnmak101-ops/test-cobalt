@@ -3,17 +3,30 @@
  * KEEP THE CONFLICT SEMANTICS IN SYNC WITH cobalt-queue/src/critic/merge.ts (the executable spec);
  * this is the same policy applied on the manual reconcile-from-evidence path. Pure functions.
  *
+ * Cross-repo sync contract (queue: src/critic/merge.ts):
+ *   - Tables (FIELD_CLASS + DOC_RANK) guarded by backend/test/fixtures/merge-policy.fixture.json (Part B).
+ *   - Behaviors guarded by backend/test/fixtures/merge-behavior.cases.json (Part C).
+ *   - Known divergences (this rebuild path):
+ *       · DOCUMENT: known-code-beats-unknown is not ported (no master-membership access here).
+ *       · DOCUMENT: segment-time (sentAt) recency is not ported (rebuild rows lack per-segment times).
+ *     Sequence-token drop and LOCODE pol/pod tie-break ARE ported.
+ *
+ * Policy by field class:
  *   identity (so_no/hbl/mbl/booking_no/container_no) — most authoritative doc wins; a different-RANK
  *            restatement (Draft → Final B/L) is a lifecycle SUPERSEDE (no conflict), an EQUAL-rank
  *            clash is a real CONFLICT. sameId folds office-prefix variants (SZA26050003 ≡ A26050003).
+ *            Bare ≤3-digit sequence tokens ('001') are dropped (invoice row numbers, not real ids).
  *   entity   CODES (customer/vendor) match exactly, any clash = conflict. NAMES (forwarder/consignee)
  *            match by containment ignoring resolver annotations; the most authoritative doc's name
  *            wins (Final B/L consignee beats a lower-rank mis-extraction), only an EQUAL-rank clash.
  *   schedule (cargo_ready/warehouse/etd/atd/eta/ata/in_dc) — LATEST email wins (schedules re-quoted).
- *   quantity (qty) + text (address/poi/pol/pod/vessel/voyage/scac/…) — most authoritative doc wins, ties→newest.
+ *   quantity (qty) + text (address/pol/pod/vessel/voyage/scac/…) — most authoritative doc wins, ties→newest.
+ *            pol/pod: on equal rank, a clean UN/LOCODE beats a free-text country blob.
  *   list     (item_style_no/hts_code) — UNION of every stated comma-list across the thread (deduped).
  *   po       (customer_po) — union across the thread.
  */
+import { isSequenceToken } from './match-keys'
+
 export type FieldClass = 'identity' | 'entity' | 'schedule' | 'quantity' | 'text' | 'po' | 'list'
 
 export const FIELD_CLASS: Record<string, FieldClass> = {
@@ -23,7 +36,9 @@ export const FIELD_CLASS: Record<string, FieldClass> = {
   cargo_ready_date: 'schedule', warehouse_start_date: 'schedule', warehouse_end_date: 'schedule',
   etd: 'schedule', atd: 'schedule', eta: 'schedule', ata: 'schedule', in_dc_date: 'schedule',
   qty: 'quantity',
-  poi: 'text', pol: 'text', pod: 'text', consignee_address: 'text',
+  // ports of loading / discharge — B/L-authoritative (newest-authoritative doc wins). MUST be listed or
+  // mergeShipment drops them on the reconcile-from-evidence path.
+  pol: 'text', pod: 'text', consignee_address: 'text',
   // "extract all info" fields — MUST be listed or mergeShipment silently DROPS them on the reconcile-from-
   // evidence path (they never reach the rebuilt shipment). Mirrors cobalt-queue critic/merge FIELD_CLASS coverage.
   vessel_name: 'text', voyage_no: 'text', flight_no: 'text', mawb: 'text', scac_code: 'text', brand: 'text',
@@ -51,6 +66,9 @@ export interface MergeResult {
 
 const alnum = (s: unknown) => String(s ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '')
 const sameVal = (a: unknown, b: unknown) => alnum(a) === alnum(b)
+/** a resolved UN/LOCODE ('GBLHR', 'CNSHK') — 2 country letters + 3 alnum. A pol/pod that is a clean LOCODE
+ *  is authoritative; a free-text country blob ('United Kingdom; Belgium') is not, so the LOCODE wins ties. */
+const isLocode = (v: unknown): boolean => /^[A-Z]{2}[A-Z0-9]{3}$/.test(alnum(v))
 /** same identifier modulo a short (≤3) all-letter office/carrier prefix — SZA26050003 ≡ A26050003 */
 const sameId = (a: unknown, b: unknown): boolean => {
   const x = alnum(a), y = alnum(b)
@@ -84,9 +102,14 @@ export function mergeShipment(emails: CriticEmail[]): MergeResult {
 
   for (const [field, cls] of Object.entries(FIELD_CLASS)) {
     if (cls === 'po') continue
-    const stated = sorted
+    let stated = sorted
       .filter((e) => present(e.fields[field]))
       .map((e) => ({ value: e.fields[field], emailType: e.emailType, rank: rank(e.emailType) }))
+
+    // a bare ≤3-digit sequence token ('001','002') in an identity slot is a row/line number lifted from a
+    // tabular CVP invoice, never a real booking/SO/HBL — drop it so it neither commits nor conflicts.
+    if (cls === 'identity') stated = stated.filter((s) => !isSequenceToken(s.value))
+
     if (!stated.length) continue
 
     let kept = stated[0]
@@ -107,7 +130,17 @@ export function mergeShipment(emails: CriticEmail[]): MergeResult {
         }
       kept = { ...kept, value: parts.length ? parts.join(',') : kept.value }
     } else if (cls === 'quantity' || cls === 'text') {
-      for (const c of stated) if (c.rank >= kept.rank) kept = c // best rank, ties → newest
+      // pol/pod: a free-text country blob ('United Kingdom; Belgium') must never beat a clean UN/LOCODE
+      // ('GBLHR') on an equal-rank tie — prefer a LOCODE-shaped value when ranks are equal. Higher rank still wins.
+      if (field === 'pol' || field === 'pod') {
+        for (const c of stated) {
+          if (c.rank > kept.rank) kept = c
+          else if (c.rank === kept.rank && isLocode(c.value) && !isLocode(kept.value)) kept = c
+          else if (c.rank === kept.rank && isLocode(c.value) === isLocode(kept.value)) kept = c // ties → newest
+        }
+      } else {
+        for (const c of stated) if (c.rank >= kept.rank) kept = c // best rank, ties → newest
+      }
     } else {
       // identity / entity — a different-RANK identity matures cleanly (SUPERSEDE, not a problem);
       // a genuine CONFLICT is an EQUAL-rank clash, or ANY entity/party clash (parties don't mature).

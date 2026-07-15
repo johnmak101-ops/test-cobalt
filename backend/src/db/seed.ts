@@ -414,10 +414,10 @@ async function main() {
         reviewedAt: new Date('2026-02-10T10:30:00Z'),
         reviewNotes: 'Fixed booking number (OCR dropped a digit) and set the correct CFS cut-off date.',
         originalExtractedData: JSON.stringify({
-          booking_no: 'BKG-RISK-l', so_no: 'SO-RISK-1', warehouse_end_date: '2026-02-02', poi: 'Yantian', pod: 'Los Angeles',
+          booking_no: 'BKG-RISK-l', so_no: 'SO-RISK-1', warehouse_end_date: '2026-02-02', pol: 'Yantian', pod: 'Los Angeles',
         }),
         extractedData: JSON.stringify({
-          booking_no: 'BKG-RISK-1', so_no: 'SO-RISK-1', warehouse_end_date: '2026-02-20', poi: 'Yantian', pod: 'Los Angeles',
+          booking_no: 'BKG-RISK-1', so_no: 'SO-RISK-1', warehouse_end_date: '2026-02-20', pol: 'Yantian', pod: 'Los Angeles',
         }),
       },
       // — rejected (not a shipment email) —
