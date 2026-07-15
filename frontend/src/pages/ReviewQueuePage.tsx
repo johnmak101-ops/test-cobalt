@@ -1,5 +1,5 @@
 import { Fragment, useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { CheckCircle, Ship, Package, Loader2, XCircle, RotateCcw, ChevronDown, ChevronRight } from 'lucide-react'
 import {
   useReviewQueue,
@@ -87,6 +87,7 @@ export default function ReviewQueuePage() {
   const dismissMutation = useDismissShipments()
   const restoreMutation = useRestoreShipment()
   const navigate = useNavigate()
+  const location = useLocation()
 
   const [page, setPage] = useState(1)
   const [perPage, setPerPage] = useState(25)
@@ -94,7 +95,9 @@ export default function ReviewQueuePage() {
   const [category, setCategory] = useState<ReasonCategory | 'all'>('all')
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [bulkNote, setBulkNote] = useState('')
-  const [expandedId, setExpandedId] = useState<string | null>(null)
+  const [expandedId, setExpandedId] = useState<string | null>(
+    (location.state as { expandId?: string } | null)?.expandId ?? null,
+  )
   const [staleBanner, setStaleBanner] = useState<string | null>(null)
 
   const shipments = useMemo(() => data?.shipments ?? [], [data?.shipments])
