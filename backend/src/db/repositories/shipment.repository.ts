@@ -345,6 +345,24 @@ export class ShipmentRepository {
       .execute()
   }
 
+  /** Per-leg PO links via shipment_pos (same shape as linkedPosForBooking). #151: detail must not
+   *  show every booking PO on every sibling leg. */
+  linkedPosForShipment(shipmentId: string) {
+    return this.db
+      .selectFrom('shipmentPos')
+      .innerJoin('purchaseOrders', 'shipmentPos.poId', 'purchaseOrders.id')
+      .leftJoin('vendors', 'purchaseOrders.vendorId', 'vendors.id')
+      .where('shipmentPos.shipmentId', '=', shipmentId)
+      .select([
+        'purchaseOrders.id as id', 'purchaseOrders.poNumber as poNumber',
+        'purchaseOrders.totalQuantity as totalQuantity', 'purchaseOrders.quantityUnit as quantityUnit',
+        'purchaseOrders.itemStyleNo as itemStyleNo', 'purchaseOrders.brand as brand',
+        'vendors.name as vendorName',
+        'shipmentPos.quantity as legQty', 'shipmentPos.quantityUnit as legQtyUnit',
+      ])
+      .execute()
+  }
+
   // --- shipment_pos ---
 
   /** Idempotently link a shipment to a PO (the `uq_shipment_pos` unique absorbs replays). */

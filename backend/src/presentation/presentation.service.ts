@@ -220,6 +220,12 @@ export class PresentationService {
       this.masterMaps(),
     ])
     const bookingsById = new Map<string, BookingRow>(bookingRows.map((b: BookingRow) => [b.id, b]))
+    // #151: leg counts per booking (one pass over the list — no N+1)
+    const legCountByBooking = new Map<string, number>()
+    for (const leg of legs) {
+      if ((leg as { kind?: string | null }).kind === 'DOCUMENT') continue
+      legCountByBooking.set(leg.bookingId, (legCountByBooking.get(leg.bookingId) ?? 0) + 1)
+    }
     const poCache = new Map<string, LinkedPoRow[]>()
     const out: ReturnType<typeof toUiShipment>[] = []
     for (const leg of legs) {
@@ -229,12 +235,23 @@ export class PresentationService {
       if (filter?.forwarderId && leg.forwarderId !== filter.forwarderId) continue
       const booking = bookingsById.get(leg.bookingId) ?? null
       if (filter?.customerId && booking?.customerId !== filter.customerId) continue
-      let linkedPos = poCache.get(leg.bookingId)
-      if (!linkedPos) {
-        linkedPos = (await this.shipmentRepo.linkedPosForBooking(leg.bookingId)) as LinkedPoRow[]
-        poCache.set(leg.bookingId, linkedPos)
+      // Prefer per-leg POs; fall back to booking union when leg has none (legacy).
+      let linkedPos = (await this.shipmentRepo.linkedPosForShipment(leg.id)) as LinkedPoRow[]
+      if (!linkedPos.length) {
+        let bookingPos = poCache.get(leg.bookingId)
+        if (!bookingPos) {
+          bookingPos = (await this.shipmentRepo.linkedPosForBooking(leg.bookingId)) as LinkedPoRow[]
+          poCache.set(leg.bookingId, bookingPos)
+        }
+        linkedPos = bookingPos
       }
-      const ui = toUiShipment(this.assembleInput(leg, booking, maps, linkedPos))
+      const ui = toUiShipment(
+        this.assembleInput(leg, booking, maps, linkedPos),
+        {
+          legNo: (leg as { legNo?: number | null }).legNo ?? 1,
+          legCount: legCountByBooking.get(leg.bookingId) ?? 1,
+        },
+      )
       if (filter?.status && ui.status !== filter.status) continue
       out.push(ui)
     }
@@ -244,20 +261,34 @@ export class PresentationService {
   async shipment(id: string) {
     const leg = await this.shipmentRepo.findById(id)
     if (!leg) throw new NotFoundException('shipment not found')
-    const [booking, maps, milestones, alertRows, linkedPos, relatedEmails, identifiers] = await Promise.all([
-      this.bookingRepo.findById(leg.bookingId),
-      this.masterMaps(),
-      this.shipmentRepo.milestonesFor(id),
-      this.alertRepo.list(),
-      this.shipmentRepo.linkedPosForBooking(leg.bookingId) as Promise<LinkedPoRow[]>,
-      this.emailRepo.emailsForShipment(id),
-      this.shipmentRepo.identifiersFor(id),
-    ])
+    const [booking, maps, milestones, alertRows, legLinkedPos, relatedEmails, identifiers, siblings] =
+      await Promise.all([
+        this.bookingRepo.findById(leg.bookingId),
+        this.masterMaps(),
+        this.shipmentRepo.milestonesFor(id),
+        this.alertRepo.list(),
+        this.shipmentRepo.linkedPosForShipment(id) as Promise<LinkedPoRow[]>,
+        this.emailRepo.emailsForShipment(id),
+        this.shipmentRepo.identifiersFor(id),
+        this.shipmentRepo.legsForBooking(leg.bookingId),
+      ])
+    // #151: per-leg shipment_pos first; booking_pos only when the leg has no PO links (legacy).
+    const linkedPos =
+      legLinkedPos.length > 0
+        ? legLinkedPos
+        : ((await this.shipmentRepo.linkedPosForBooking(leg.bookingId)) as LinkedPoRow[])
     // per-leg shipped qty/unit lives in shipment_pos — attach it so the PO table shows Shipped/UOM
     const legPos = await this.shipmentRepo.posFor(id)
     const legPosMap = new Map(legPos.map((x) => [x.poId, x]))
-    const linkedPosWithLeg = linkedPos.map((p) => ({ ...p, legQty: legPosMap.get(p.id)?.quantity ?? null, legUnit: legPosMap.get(p.id)?.quantityUnit ?? null }))
-    const base = toUiShipment(this.assembleInput(leg, booking, maps, linkedPosWithLeg))
+    const linkedPosWithLeg = linkedPos.map((p) => ({
+      ...p,
+      legQty: legPosMap.get(p.id)?.quantity ?? (p as { legQty?: number | null }).legQty ?? null,
+      legUnit: legPosMap.get(p.id)?.quantityUnit ?? (p as { legQtyUnit?: string | null }).legQtyUnit ?? null,
+    }))
+    const base = toUiShipment(this.assembleInput(leg, booking, maps, linkedPosWithLeg), {
+      legNo: (leg as { legNo?: number | null }).legNo ?? 1,
+      legCount: siblings.length,
+    })
     const legAlerts = alertRows.filter((a) => a.shipmentId === id).map((a) => toUiAlert({ alert: a, shipment: null }))
     const emails = relatedEmails.map((e) => ({
       id: e.id,

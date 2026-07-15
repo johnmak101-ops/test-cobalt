@@ -36,6 +36,9 @@ export interface Shipment {
   reviewStatus?: string | null
   reviewReasons?: string[]
   dismissedAt?: string | null
+  /** #151: leg ordinal under booking when legCount > 1 */
+  legNo?: number
+  legCount?: number
   bookingNo: string | null
   soNumber: string | null
   itemStyleNo: string | null

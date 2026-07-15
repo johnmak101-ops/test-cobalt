@@ -230,6 +230,11 @@ export function ShipmentTable({ shipments }: ShipmentTableProps) {
                     </td>
                     <td className="truncate px-3 py-3 font-mono text-sm font-medium text-cobalt-primary-light">
                       {s.bookingNo ?? '—'}
+                      {(s.legCount ?? 1) > 1 && (
+                        <span className="ml-1 text-[11px] font-normal text-text-muted">
+                          · Leg {s.legNo ?? 1}/{s.legCount}
+                        </span>
+                      )}
                     </td>
                     <td className="px-3 py-3">
                       <CustomerPoChip

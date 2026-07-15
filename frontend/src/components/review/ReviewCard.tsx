@@ -32,6 +32,7 @@ const RISK_CODE_CATEGORY: Record<string, ReasonCategory> = {
   PO_REASSIGN: 'multi_id',
   PO_ONLY_WEAK_MATCH: 'multi_id',
   MULTI_LEG_SUSPECT: 'multi_id',
+  MULTI_DESTINATION_SUSPECT: 'multi_id',
   THREAD_SUPERSEDE: 'multi_id',
   WEAK_IDENTITY: 'no_identity',
   PORTAL_ECHO: 'portal',
