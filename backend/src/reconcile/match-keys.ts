@@ -2,6 +2,11 @@
 
 export const normKey = (v: unknown): string => String(v ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '')
 
+/** A bare ≤3-significant-digit numeric token ('001', '12', '156', '00000156') is a line/row/sequence
+ *  number lifted from a tabular invoice, never a real booking/SO/HBL. Keep in sync with
+ *  cobalt-queue match-keys.ts. Used by mergeShipment to drop over-merge bait from identity slots. */
+export const isSequenceToken = (v: unknown): boolean => /^0*\d{1,3}$/.test(String(v ?? '').trim())
+
 /** A re-issued booking carries a revision suffix ('BX845666 V3', 'BX845666-REV2', 'BX845666 AMENDED') — the
  *  SAME booking. Strip a SEPARATOR-delimited trailing revision marker so a revision amends rather than spawns
  *  a duplicate. Must stay identical to the matcher's copy (cobalt-queue match-keys.ts) so commit-time match

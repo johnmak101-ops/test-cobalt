@@ -1,0 +1,154 @@
+[
+  {
+    "name": "sequence-token-drop",
+    "emails": [
+      {
+        "receivedAt": "2026-01-01T10:00:00Z",
+        "emailType": "Final B/L",
+        "fields": { "booking_no": "001" }
+      },
+      {
+        "receivedAt": "2026-01-02T10:00:00Z",
+        "emailType": "Final B/L",
+        "fields": { "booking_no": "SOKLPO0024626A" }
+      }
+    ],
+    "expect": {
+      "fields": { "booking_no": "SOKLPO0024626A" },
+      "notConflicts": true
+    }
+  },
+  {
+    "name": "lifecycle-supersede-not-conflict",
+    "emails": [
+      {
+        "receivedAt": "2026-02-01T10:00:00Z",
+        "emailType": "Draft B/L",
+        "fields": { "hbl_awb_fcr_no": "DRAFT-HBL-A" }
+      },
+      {
+        "receivedAt": "2026-02-08T10:00:00Z",
+        "emailType": "Final B/L",
+        "fields": { "hbl_awb_fcr_no": "FINAL-HBL-B" }
+      }
+    ],
+    "expect": {
+      "fields": { "hbl_awb_fcr_no": "FINAL-HBL-B" },
+      "notConflicts": true
+    }
+  },
+  {
+    "name": "equal-rank-entity-code-clash-conflict",
+    "emails": [
+      {
+        "receivedAt": "2026-02-01T10:00:00Z",
+        "emailType": "Final B/L",
+        "fields": { "vendor_code": "VEND-AAA" }
+      },
+      {
+        "receivedAt": "2026-02-08T10:00:00Z",
+        "emailType": "Final B/L",
+        "fields": { "vendor_code": "VEND-BBB" }
+      }
+    ],
+    "expect": {
+      "conflictsContain": ["vendor_code"]
+    }
+  },
+  {
+    "name": "schedule-latest-wins",
+    "emails": [
+      {
+        "receivedAt": "2026-02-01T10:00:00Z",
+        "emailType": "Booking Request",
+        "fields": { "eta": "2026-03-01" }
+      },
+      {
+        "receivedAt": "2026-02-10T10:00:00Z",
+        "emailType": "SO",
+        "fields": { "eta": "2026-03-15" }
+      }
+    ],
+    "expect": {
+      "fields": { "eta": "2026-03-15" },
+      "notConflicts": true
+    }
+  },
+  {
+    "name": "list-union-item-style",
+    "emails": [
+      {
+        "receivedAt": "2026-01-01T10:00:00Z",
+        "emailType": "SO",
+        "fields": { "item_style_no": "STYLE-A, STYLE-B" }
+      },
+      {
+        "receivedAt": "2026-01-02T10:00:00Z",
+        "emailType": "Final B/L",
+        "fields": { "item_style_no": "style-b, STYLE-C" }
+      }
+    ],
+    "expect": {
+      "fields": { "item_style_no": "STYLE-A,STYLE-B,STYLE-C" }
+    }
+  },
+  {
+    "name": "locode-tie-break-pod",
+    "emails": [
+      {
+        "receivedAt": "2026-01-01T10:00:00Z",
+        "emailType": "Final B/L",
+        "fields": { "pod": "GBLHR" }
+      },
+      {
+        "receivedAt": "2026-01-02T10:00:00Z",
+        "emailType": "Final B/L",
+        "fields": { "pod": "United Kingdom; Belgium" }
+      }
+    ],
+    "expect": {
+      "fields": { "pod": "GBLHR" }
+    }
+  },
+  {
+    "name": "known-code-beats-unknown",
+    "skipTrack": true,
+    "skipReason": "ShipTrack merge is pure with no master-membership access; known-code-beats-unknown is queue-only",
+    "emails": [
+      {
+        "receivedAt": "2026-01-01T10:00:00Z",
+        "emailType": "Customs",
+        "fields": { "customer_code": "GUCI" }
+      },
+      {
+        "receivedAt": "2026-01-02T10:00:00Z",
+        "emailType": "Customs",
+        "fields": { "customer_code": "DOCC" }
+      }
+    ],
+    "expect": {
+      "fields": { "customer_code": "DOCC" },
+      "notConflicts": true
+    }
+  },
+  {
+    "name": "po-union",
+    "emails": [
+      {
+        "receivedAt": "2026-02-01T10:00:00Z",
+        "emailType": "Booking Request",
+        "fields": {},
+        "pos": ["28631", "28643"]
+      },
+      {
+        "receivedAt": "2026-02-03T10:00:00Z",
+        "emailType": "SO",
+        "fields": {},
+        "pos": ["28642"]
+      }
+    ],
+    "expect": {
+      "posContain": ["28631", "28642", "28643"]
+    }
+  }
+]
