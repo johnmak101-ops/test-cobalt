@@ -29,6 +29,7 @@ import * as m0011_shipment_list_fields_widen from './kysely-migrations/0011_ship
 import * as m0012_shipment_critic_review from './kysely-migrations/0012_shipment_critic_review'
 import * as m0013_routing_shadow from './kysely-migrations/0013_routing_shadow'
 import * as m0014_critic_calibration from './kysely-migrations/0014_critic_calibration'
+import * as m0015_forwarder_alias_kind from './kysely-migrations/0015_forwarder_alias_kind'
 
 const MIGRATIONS = {
   '0000_init': m0000_init,
@@ -46,7 +47,12 @@ const MIGRATIONS = {
   '0012_shipment_critic_review': m0012_shipment_critic_review,
   '0013_routing_shadow': m0013_routing_shadow,
   '0014_critic_calibration': m0014_critic_calibration,
+  '0015_forwarder_alias_kind': m0015_forwarder_alias_kind,
 }
+
+/** Exported for the registry drift-guard spec — a migration file that is never registered here is
+ *  SILENTLY skipped at deploy (no error, no log), so the guard fails a test instead. */
+export const REGISTERED_MIGRATIONS = Object.keys(MIGRATIONS)
 
 const URL =
   process.env.SQL_SERVER_URL ??
