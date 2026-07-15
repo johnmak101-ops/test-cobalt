@@ -14,7 +14,6 @@ import AlertRulesPage from './pages/AlertRulesPage'
 import SettingsPage from './pages/SettingsPage'
 import { PageAccessRoute } from './components/PageAccessRoute'
 import ReviewQueuePage from './pages/ReviewQueuePage'
-import ReviewShipmentPage from './pages/ReviewShipmentPage'
 import PurchaseOrdersPage from './pages/PurchaseOrdersPage'
 import PurchaseOrderDetailPage from './pages/PurchaseOrderDetailPage'
 import UnlinkedDocumentsPage from './pages/UnlinkedDocumentsPage'
@@ -126,7 +125,6 @@ function AppRoutes() {
         <Route path="/documents" element={<UnlinkedDocumentsPage />} />
         <Route path="/inbox" element={<InboxPage />} />
         <Route path="/review-queue" element={<ReviewQueuePage />} />
-        <Route path="/review-queue/:id" element={<ReviewShipmentPage />} />
         <Route path="/alerts" element={<AlertsPage />} />
         {/* Alert Rules access (view + save) is governed by the Access Control matrix ('alert_rules');
             the backend @PageRead/@PageWrite guard is authoritative, this gates the UI + editability. */}

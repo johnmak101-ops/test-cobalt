@@ -414,7 +414,7 @@ export default function ReviewQueuePage() {
 
                           <td
                             className="cursor-pointer px-4 py-3 text-sm text-text-secondary"
-                            onClick={() => navigate(`/review-queue/${s.id}`)}
+                            onClick={() => setExpandedId(expanded ? null : s.id)}
                           >
                             {s.customer ?? '—'}
                             {s.forwarder && (
@@ -427,7 +427,7 @@ export default function ReviewQueuePage() {
 
                           <td
                             className="cursor-pointer px-4 py-3"
-                            onClick={() => navigate(`/review-queue/${s.id}`)}
+                            onClick={() => setExpandedId(expanded ? null : s.id)}
                           >
                             <span className="inline-flex items-center gap-1.5 font-mono text-sm font-medium text-cobalt-primary-light">
                               <Ship size={13} className="shrink-0 text-text-muted" />
@@ -443,14 +443,14 @@ export default function ReviewQueuePage() {
 
                           <td
                             className="cursor-pointer px-4 py-3 text-sm text-text-secondary"
-                            onClick={() => navigate(`/review-queue/${s.id}`)}
+                            onClick={() => setExpandedId(expanded ? null : s.id)}
                           >
                             {s.route ?? '—'}
                           </td>
 
                           <td
                             className="cursor-pointer px-4 py-3"
-                            onClick={() => navigate(`/review-queue/${s.id}`)}
+                            onClick={() => setExpandedId(expanded ? null : s.id)}
                           >
                             <Badge variant="status" value={s.status} />
                           </td>
@@ -501,7 +501,7 @@ export default function ReviewQueuePage() {
                                 </button>
                               ) : (
                                 <button
-                                  onClick={() => navigate(`/review-queue/${s.id}`)}
+                                  onClick={() => navigate(`/shipments/${s.id}`)}
                                   className="inline-flex items-center gap-1.5 rounded-lg bg-surface-700 px-2.5 py-1.5 text-xs font-medium text-text-secondary transition-colors hover:bg-surface-600 hover:text-text-primary"
                                 >
                                   Open

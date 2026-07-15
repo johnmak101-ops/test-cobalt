@@ -66,7 +66,7 @@ export function NewShipmentModal({ onClose }: { onClose: () => void }) {
       if (k === 'pos') body.pos = v.split(/[,;]+/).map((p) => p.trim()).filter(Boolean)
       else (body as Record<string, unknown>)[k] = v
     }
-    create.mutate(body, { onSuccess: (res) => { onClose(); navigate(`/review-queue/${res.id}`) } })
+    create.mutate(body, { onSuccess: (res) => { onClose(); navigate(`/shipments/${res.id}`) } })
   }
 
   const renderField = (fld: Field) => (

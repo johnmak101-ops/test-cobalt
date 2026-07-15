@@ -203,7 +203,8 @@ export default function ShipmentDetailPage() {
             )}
           </div>
           <Link
-            to={`/review-queue/${shipment.id}`}
+            to="/review-queue"
+            state={{ expandId: shipment.id }}
             className="shrink-0 rounded-lg bg-status-warning/20 px-3 py-1.5 text-xs font-medium text-status-warning hover:bg-status-warning/30"
           >
             Review & approve →
