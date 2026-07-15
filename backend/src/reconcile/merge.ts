@@ -3,22 +3,25 @@
  * KEEP THE CONFLICT SEMANTICS IN SYNC WITH cobalt-queue/src/critic/merge.ts (the executable spec);
  * this is the same policy applied on the manual reconcile-from-evidence path. Pure functions.
  *
- * Cross-repo sync contract (queue: src/critic/merge.ts):
+ * Cross-repo sync contract (queue: src/critic/merge.ts) — #117 aligned equal-rank identity:
  *   - Tables (FIELD_CLASS + DOC_RANK) guarded by backend/test/fixtures/merge-policy.fixture.json (Part B).
  *   - Behaviors guarded by backend/test/fixtures/merge-behavior.cases.json (Part C).
  *   - Known divergences (this rebuild path):
  *       · DOCUMENT: known-code-beats-unknown is not ported (no master-membership access here).
  *       · DOCUMENT: segment-time (sentAt) recency is not ported (rebuild rows lack per-segment times).
- *     Sequence-token drop and LOCODE pol/pod tie-break ARE ported.
+ *       · DOCUMENT: full identifiers[] / supersedes[] co-current identity history is queue-only;
+ *         equal-rank co-current identities surface here as notes[] (not conflicts[]), and the kept
+ *         field value is one of them (arrival-order / higher-rank pick). Sequence-token drop + LOCODE
+ *         pol/pod tie-break ARE ported. notes[] mirrors queue merge-adjustment notes where applicable.
  *
  * Policy by field class:
  *   identity (so_no/hbl/mbl/booking_no/container_no) — most authoritative doc wins; a different-RANK
- *            restatement (Draft → Final B/L) is a lifecycle SUPERSEDE (no conflict), an EQUAL-rank
- *            clash is a real CONFLICT. sameId folds office-prefix variants (SZA26050003 ≡ A26050003).
- *            Bare ≤3-digit sequence tokens ('001') are dropped (invoice row numbers, not real ids).
+ *            restatement (Draft → Final B/L) is a lifecycle SUPERSEDE (no conflict). An EQUAL-rank
+ *            DISTINCT value is a CO-CURRENT member (consolidation / multi-HBL), NOT a conflict — note
+ *            only (#117 / queue merge.ts). sameId folds office-prefix variants. Bare ≤3-digit sequence
+ *            tokens ('001') are dropped.
  *   entity   CODES (customer/vendor) match exactly, any clash = conflict. NAMES (forwarder/consignee)
- *            match by containment ignoring resolver annotations; the most authoritative doc's name
- *            wins (Final B/L consignee beats a lower-rank mis-extraction), only an EQUAL-rank clash.
+ *            match by containment; higher-rank wins cleanly; only an EQUAL-rank name clash conflicts.
  *   schedule (cargo_ready/warehouse/etd/atd/eta/ata/in_dc) — LATEST email wins (schedules re-quoted).
  *   quantity (qty) + text (address/pol/pod/vessel/voyage/scac/…) — most authoritative doc wins, ties→newest.
  *            pol/pod: on equal rank, a clean UN/LOCODE beats a free-text country blob.
@@ -61,7 +64,13 @@ export interface CriticEmail {
 export interface MergeResult {
   fields: Record<string, unknown>
   pos: string[]
+  /** Genuine field-value disagreements (entity codes / equal-rank party names). */
   conflicts: string[]
+  /**
+   * Merge notes — co-current equal-rank identities, lifecycle supersedes (when surfaced), adjustments.
+   * Must NOT inflate "unresolved conflict" scoring (#112 / #117). Optional for callers that ignore it.
+   */
+  notes: string[]
 }
 
 const alnum = (s: unknown) => String(s ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '')
@@ -97,6 +106,7 @@ export function mergeShipment(emails: CriticEmail[]): MergeResult {
   const sorted = [...emails].sort((a, b) => a.receivedAt.localeCompare(b.receivedAt))
   const out: Record<string, unknown> = {}
   const conflicts: string[] = []
+  const notes: string[] = []
   const pos = new Set<string>()
   for (const e of sorted) for (const p of e.pos ?? []) if (p) pos.add(p)
 
@@ -142,8 +152,11 @@ export function mergeShipment(emails: CriticEmail[]): MergeResult {
         for (const c of stated) if (c.rank >= kept.rank) kept = c // best rank, ties → newest
       }
     } else {
-      // identity / entity — a different-RANK identity matures cleanly (SUPERSEDE, not a problem);
-      // a genuine CONFLICT is an EQUAL-rank clash, or ANY entity/party clash (parties don't mature).
+      // identity / entity — keep in sync with cobalt-queue/src/critic/merge.ts (#117):
+      //   · identity equal-rank DISTINCT → co-current (note), NOT conflict
+      //   · identity different-rank → lifecycle supersede (note), NOT conflict
+      //   · entity codes → any distinct = conflict
+      //   · entity names → equal-rank clash only = conflict
       const same = cls === 'identity' ? sameId : field === 'forwarder_name' || field === 'consignee_name' ? sameName : sameVal
       for (const c of stated.slice(1)) {
         if (same(c.value, kept.value)) {
@@ -152,10 +165,9 @@ export function mergeShipment(emails: CriticEmail[]): MergeResult {
         }
         const dr = rank(kept.emailType)
         const higher = c.rank > dr
-        // entity CODES must not differ (any clash = conflict); identity + entity NAMES are rank-based
-        // (higher-rank wins cleanly; only an equal-rank clash is a conflict)
         const isCode = cls === 'entity' && field !== 'forwarder_name' && field !== 'consignee_name'
-        const isConflict = isCode || c.rank === dr
+        // #117: do NOT treat equal-rank identity as conflict (was: isCode || c.rank === dr)
+        const isConflict = isCode || (cls === 'entity' && c.rank === dr)
         let oldVal: unknown, oldType: string, newVal: unknown, newType: string
         if (higher) {
           oldVal = kept.value; oldType = kept.emailType; newVal = c.value; newType = c.emailType
@@ -163,11 +175,20 @@ export function mergeShipment(emails: CriticEmail[]): MergeResult {
         } else {
           oldVal = c.value; oldType = c.emailType; newVal = kept.value; newType = kept.emailType
         }
-        if (isConflict) conflicts.push(`${field}: kept '${newVal}' (${newType}) vs '${oldVal}' (${oldType})`)
-        // else: lifecycle supersede / stale restatement — the authoritative value wins, no conflict
+        if (isConflict) {
+          conflicts.push(`${field}: kept '${newVal}' (${newType}) vs '${oldVal}' (${oldType})`)
+        } else if (cls === 'identity' && c.rank === dr) {
+          // co-current equal-rank identities (queue keeps all in identifiers[]; we note + keep one field value)
+          notes.push(
+            `${field}: co-current '${oldVal}' (${oldType}) alongside '${newVal}' (${newType}) — multi-id, not a field conflict`,
+          )
+        } else {
+          // lifecycle supersede / lower-rank restatement
+          notes.push(`${field}: '${oldVal}' (${oldType}) → '${newVal}' (${newType})`)
+        }
       }
     }
     out[field] = kept.value
   }
-  return { fields: out, pos: [...pos].sort(), conflicts }
+  return { fields: out, pos: [...pos].sort(), conflicts, notes: [...new Set(notes)] }
 }

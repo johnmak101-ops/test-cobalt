@@ -56,6 +56,25 @@
     }
   },
   {
+    "name": "equal-rank-identity-co-current-not-conflict",
+    "emails": [
+      {
+        "receivedAt": "2026-02-01T10:00:00Z",
+        "emailType": "Final B/L",
+        "fields": { "hbl_awb_fcr_no": "HBL-AAA" }
+      },
+      {
+        "receivedAt": "2026-02-08T10:00:00Z",
+        "emailType": "Final B/L",
+        "fields": { "hbl_awb_fcr_no": "HBL-BBB" }
+      }
+    ],
+    "expect": {
+      "fields": { "hbl_awb_fcr_no": "HBL-AAA" },
+      "notConflicts": true
+    }
+  },
+  {
     "name": "schedule-latest-wins",
     "emails": [
       {

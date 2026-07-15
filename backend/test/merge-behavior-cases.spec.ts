@@ -34,11 +34,12 @@ const CASES_PATH = join(__dirname, 'fixtures', 'merge-behavior.cases.json')
 const cases = JSON.parse(readFileSync(CASES_PATH, 'utf8')) as BehaviorCase[]
 
 describe('merge-behavior cases (Part C)', () => {
-  it('fixture has the expected 8 cases', () => {
+  it('fixture has the expected 9 cases', () => {
     expect(cases.map((c) => c.name)).toEqual([
       'sequence-token-drop',
       'lifecycle-supersede-not-conflict',
       'equal-rank-entity-code-clash-conflict',
+      'equal-rank-identity-co-current-not-conflict',
       'schedule-latest-wins',
       'list-union-item-style',
       'locode-tie-break-pod',
