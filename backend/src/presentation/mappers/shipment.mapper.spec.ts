@@ -277,3 +277,37 @@ describe('toUiShipment — flat active-leg projection', () => {
     expect(toUiShipment(fullInput()).criticReview).toBeNull()
   })
 })
+
+/** Mirror of cobalt-queue src/critic-agent/review/types.ts RISK — same cross-repo copy pattern as the
+ *  HARD_STOP drift guard in decisions/band-routing.spec.ts. Update BOTH repos when the catalog changes. */
+const QUEUE_RISK_CODES = [
+  'SCAN_OCR_RISK',
+  'MISSING_ATTACHMENT',
+  'INTRA_EMAIL_FIELD_CONFLICT',
+  'INTRA_EMAIL_MULTI_STRONG_ID',
+  'INTRA_EMAIL_CARGO_CONFLICT',
+  'THREAD_SUPERSEDE',
+  'BACKEND_CONFLICT',
+  'AMBIGUOUS_MATCH',
+  'PO_REASSIGN',
+  'PO_ONLY_WEAK_MATCH',
+  'PORTAL_ECHO',
+  'WEAK_IDENTITY',
+  'PARTY_UNRESOLVED',
+  'MULTI_LEG_SUSPECT',
+  'EXTRACTION_INCOMPLETE',
+  'FIELD_LOCK_CLASH',
+  'CARGO_SANITY',
+]
+
+describe('shortLabelForRisk — full catalog coverage', () => {
+  it('every queue risk code has a specific label (never the generic fallback)', () => {
+    for (const code of QUEUE_RISK_CODES) {
+      expect(shortLabelForRisk(code), code).not.toBe('Needs review')
+    }
+  })
+
+  it('an unknown code still degrades to the generic label', () => {
+    expect(shortLabelForRisk('SOME_FUTURE_CODE')).toBe('Needs review')
+  })
+})
