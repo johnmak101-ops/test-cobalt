@@ -23,6 +23,23 @@ describe('MilestoneTimeline', () => {
     expect(screen.queryByText('Arrived')).not.toBeInTheDocument()
   })
 
+  // The STATE_TO_INDEX floor exists for legs whose stage has no date. state.ts BUG-7 bumps a leg to
+  // SAILED with NO atd (Invoice/Billing + carrier doc + past ETD — "demonstrably sailed"). Such a leg
+  // must still show Departure as reached; mapping SAILED below Departure made it advertise an
+  // ESTIMATED departure for a ship that already left.
+  it('a SAILED leg with no ATD shows Departure as reached, not an estimate', () => {
+    render(
+      <MilestoneTimeline
+        milestones={[{ id: '1', milestoneType: 'BOOKING_SENT', occurredAt: '2026-01-01T00:00:00Z', notes: null }]}
+        currentStatus="SAILED"
+        etd="2026-01-05T00:00:00Z"
+        atd={null}
+      />,
+    )
+    // Departure is implied-complete → em dash, never "Est."
+    expect(screen.queryByText(/Est\./)).not.toBeInTheDocument()
+  })
+
   it('tolerates stored AT_WAREHOUSE milestones without crashing or showing them', () => {
     render(
       <MilestoneTimeline

@@ -99,15 +99,18 @@ export function MilestoneTimeline({
   // are all "Other" but carry an so_no sits in CONFIRMED with zero milestones. Never show less than the
   // state's stage, so the timeline agrees with the status badge.
   // Keyed on the UI-translated status (stateToUiStatus: RELEASED→DEPARTED, DELIVERED→ARRIVED).
-  // Indices track lean milestoneOrder (no AT_WAREHOUSE / ARRIVED display stages — #126).
-  // AT_WAREHOUSE status maps to SO_RECEIVED (1) so warehouse legs don't under-show progress.
+  // Indices track the lean milestoneOrder (AT_WAREHOUSE / ARRIVED are no longer display stages — #126),
+  // and must never LOWER a state's floor: AT_WAREHOUSE folds back to SO Received, and SAILED/ARRIVED fold
+  // FORWARD to the stage that means the same thing. SAILED = the vessel left (state.ts bumps it from atd,
+  // or BUG-7 from Invoice/Billing + carrier doc + past ETD with NO atd) → Departure; a lower floor made
+  // those atd-less legs advertise an ESTIMATED departure for a ship already at sea.
   const STATE_TO_INDEX: Record<string, number> = {
     BOOKED: 0,
     CONFIRMED: 1,
-    AT_WAREHOUSE: 1,
-    SAILED: 3, // Final BOL
-    DEPARTED: 4,
-    ARRIVED: 5, // maps to Delivered stage for display progress
+    AT_WAREHOUSE: 1, // stage removed from display — floor at SO Received, never below
+    SAILED: 4, // Departure — the vessel has left
+    DEPARTED: 4, // Departure (UI status for leg state RELEASED)
+    ARRIVED: 5, // Delivered — stage removed from display, fold forward (UI status for leg state DELIVERED)
   }
   currentIndex = Math.max(currentIndex, STATE_TO_INDEX[currentStatus] ?? -1)
 
