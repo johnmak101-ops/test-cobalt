@@ -1,5 +1,5 @@
 import { Body, Controller, Get, Put } from '@nestjs/common'
-import { IsInt, Max, Min } from 'class-validator'
+import { IsIn, IsInt, Max, Min } from 'class-validator'
 import { SettingsService } from './settings.service'
 import { Roles, CurrentUser } from '../auth/decorators'
 import type { AuthUser } from '../auth/auth.service'
@@ -8,7 +8,11 @@ class ThresholdDto {
   @IsInt() @Min(0) @Max(100) value!: number
 }
 
-/** Admin config — the review-gate confidence threshold. Editors+ read it; admins change it. */
+class RoutingModeDto {
+  @IsIn(['gate', 'band']) mode!: 'gate' | 'band'
+}
+
+/** Admin config — review-gate confidence threshold + critic routing mode. Editors+ read; admins change. */
 @Controller('settings')
 export class SettingsController {
   constructor(private readonly settings: SettingsService) {}
@@ -24,5 +28,18 @@ export class SettingsController {
   async setThreshold(@Body() dto: ThresholdDto, @CurrentUser() actor: AuthUser) {
     await this.settings.setConfidenceThreshold(dto.value, actor.id)
     return { threshold: dto.value }
+  }
+
+  @Roles('EDITOR', 'ADMIN')
+  @Get('routing-mode')
+  async getRoutingMode() {
+    return { mode: await this.settings.criticRoutingMode() }
+  }
+
+  @Roles('ADMIN')
+  @Put('routing-mode')
+  async setRoutingMode(@Body() dto: RoutingModeDto, @CurrentUser() actor: AuthUser) {
+    await this.settings.setCriticRoutingMode(dto.mode, actor.id)
+    return { mode: dto.mode }
   }
 }
