@@ -118,3 +118,32 @@ export function findAdoptableZeroIdLeg<
   })
   return adoptable.length === 1 ? adoptable[0] : undefined
 }
+
+/**
+ * After minting a NEW leg because strongKeysConflict blocked a match, retire provisional siblings
+ * that conflict on a strong-id type but still share another strong key (or the same conversation).
+ * Those are re-parse corrections of the same shipment, not second shipments. Does NOT loosen
+ * findExistingLeg / strongKeysConflict itself.
+ */
+export function findSupersededByIdentityCorrection<L extends {
+  id: string
+  matchKeys: unknown
+  reviewStatus?: string | null
+  dismissedAt?: Date | string | null
+  linkedShipmentId?: string | null
+}>(legs: L[], newGroupKeys: Set<string>, conversationId: string | null, newLegId: string): L[] {
+  const conv = conversationId ? normKey(conversationId) : null
+  return legs.filter((l) => {
+    if (l.id === newLegId) return false
+    if (l.linkedShipmentId != null) return false
+    if (l.dismissedAt != null) return false
+    // Missing status (index/partial rows) → treat as provisional; present status must be provisional.
+    if (l.reviewStatus != null && l.reviewStatus !== 'provisional') return false
+    const mk = (l.matchKeys ?? {}) as Record<string, unknown>
+    const legStrong = strongKeys(mk)
+    if (!strongKeysConflict(newGroupKeys, legStrong)) return false
+    if (keysOverlap(newGroupKeys, legStrong)) return true
+    if (conv && normKey(mk.conversation_id) === conv) return true
+    return false
+  })
+}

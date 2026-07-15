@@ -23,7 +23,7 @@ import { resolvePoEnrichment, unattributedBrandStyle } from './po-enrichment'
 import { needsHumanReview } from './committer-helpers'
 import type { CriticReview } from '../decisions/critic-review.types'
 import { mapFieldsToLegColumns } from './committer-leg-mapping'
-import { findExistingLeg, findAdoptableZeroIdLeg } from './committer-match'
+import { findExistingLeg, findAdoptableZeroIdLeg, findSupersededByIdentityCorrection } from './committer-match'
 import { MasterResolver } from './committer-master-resolver'
 import { planPoReconcile } from './committer-po-reconciler'
 import { MilestoneSynchronizer } from './committer-milestones'
@@ -31,7 +31,7 @@ import { isAuditedBookingFill } from './fill-booking-audit'
 import { collectSourceEvents } from './source-events'
 
 // Re-export for any external import sites that still pull findExistingLeg from the service module.
-export { findExistingLeg } from './committer-match'
+export { findExistingLeg, findSupersededByIdentityCorrection } from './committer-match'
 
 /** One reconciled shipment picture, ready to commit. */
 export interface ReconGroup {
@@ -250,9 +250,11 @@ export class CommitterService {
     // Thread-gains-its-first-identity: a keyed group that matched nothing may still be the SAME nascent
     // shipment as the thread's zero-identity provisional leg (created before any booking/SO/HBL arrived).
     // Adopt it — the normal amend path fills the identity + match_keys — instead of spawning a duplicate.
+    // Also reused below when retiring identity-correction zombies (conversation siblings may miss the index).
     let adoptedZeroId = false
+    let threadLegs: Awaited<ReturnType<ShipmentRepository['legsByConversationId']>> | null = null
     if (!existing && gk.size > 0 && g.conversationId) {
-      const threadLegs = await this.shipments.legsByConversationId(g.conversationId)
+      threadLegs = await this.shipments.legsByConversationId(g.conversationId)
       const threadPos = await this.bookings.poNumbersByBooking(threadLegs.map((l) => l.bookingId))
       const adopted = findAdoptableZeroIdLeg(threadLegs, threadPos, g.conversationId)
       if (adopted) {
@@ -313,6 +315,39 @@ export class CommitterService {
       action = 'create_booking'
       await this.writeAudit('booking', bookingId, 'create', null, jobNo, g)
       await this.writeAudit('shipment', shipmentId, 'create', null, state, g)
+
+      // #146: re-parse corrected a strong id → strongKeysConflict blocked amend and we minted a new leg.
+      // Retire provisional siblings that conflict on one strong type but still share another key (or the
+      // same conversation) so the review queue is not left with zombie cards for the old identity.
+      let retireCandidates: Array<{
+        id: string
+        matchKeys: unknown
+        reviewStatus?: string | null
+        dismissedAt?: Date | string | null
+        linkedShipmentId?: string | null
+      }> = legs
+      if (g.conversationId) {
+        const convLegs = threadLegs ?? await this.shipments.legsByConversationId(g.conversationId)
+        const byId = new Map(retireCandidates.map((l) => [l.id, l]))
+        for (const tl of convLegs) byId.set(tl.id, tl)
+        retireCandidates = [...byId.values()]
+      }
+      const superseded = findSupersededByIdentityCorrection(retireCandidates, gk, g.conversationId, shipmentId)
+      const now = new Date()
+      for (const z of superseded) {
+        await this.shipments.updateLeg(z.id, { dismissedAt: now })
+        await this.audit.write({
+          entityType: 'shipment',
+          entityId: z.id,
+          field: null,
+          oldValue: null,
+          newValue: shipmentId,
+          changeType: 'update',
+          sourceType: 'system',
+          actorUserId: null,
+          note: 'identity corrected by re-parse — superseded by a newer leg',
+        })
+      }
     }
 
     // Per-PO master enrichment (brand / item_style_no / total_quantity + unit): pulled from the parsed_record

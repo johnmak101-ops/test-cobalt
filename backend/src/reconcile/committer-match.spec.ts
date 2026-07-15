@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { findExistingLeg, findAdoptableZeroIdLeg } from './committer-match'
+import { findExistingLeg, findAdoptableZeroIdLeg, findSupersededByIdentityCorrection } from './committer-match'
 import { strongKeys, normKey } from './match-keys'
 
 type Leg = { id: string; bookingId: string; matchKeys: Record<string, unknown> }
@@ -132,5 +132,66 @@ describe('findAdoptableZeroIdLeg (thread gains its first identity → adopt, nev
       aleg('L2', 'B2', { conversation_id: 'CONV-1' }),
     ]
     expect(findAdoptableZeroIdLeg(legs, new Map(), 'CONV-1')).toBeUndefined()
+  })
+})
+
+type SuperLeg = {
+  id: string
+  matchKeys: Record<string, unknown>
+  reviewStatus?: string | null
+  dismissedAt?: Date | string | null
+  linkedShipmentId?: string | null
+}
+const sleg = (
+  id: string,
+  matchKeys: Record<string, unknown>,
+  over: Partial<SuperLeg> = {},
+): SuperLeg => ({ id, matchKeys, reviewStatus: 'provisional', dismissedAt: null, linkedShipmentId: null, ...over })
+
+describe('findSupersededByIdentityCorrection (#146 re-parse zombies)', () => {
+  it('shares booking + conflicting so → superseded', () => {
+    const zombie = sleg('OLD', { booking_no: 'BX1', so_no: 'SO-OLD', conversation_id: 'CONV-1' })
+    const newKeys = gkOf({ booking_no: 'BX1', so_no: 'SO-NEW' })
+    const r = findSupersededByIdentityCorrection([zombie], newKeys, 'CONV-1', 'NEW')
+    expect(r.map((x) => x.id)).toEqual(['OLD'])
+  })
+
+  it('different conversation + no shared key → not superseded', () => {
+    const other = sleg('OTHER', { booking_no: 'BX-OTHER', so_no: 'SO-OTHER', conversation_id: 'CONV-OTHER' })
+    const newKeys = gkOf({ booking_no: 'BX1', so_no: 'SO-NEW' })
+    expect(findSupersededByIdentityCorrection([other], newKeys, 'CONV-1', 'NEW')).toEqual([])
+  })
+
+  it('already dismissed → not superseded', () => {
+    const dismissed = sleg('D', { booking_no: 'BX1', so_no: 'SO-OLD' }, { dismissedAt: new Date() })
+    const newKeys = gkOf({ booking_no: 'BX1', so_no: 'SO-NEW' })
+    expect(findSupersededByIdentityCorrection([dismissed], newKeys, null, 'NEW')).toEqual([])
+  })
+
+  it('confirmed leg → not superseded', () => {
+    const confirmed = sleg('C', { booking_no: 'BX1', so_no: 'SO-OLD' }, { reviewStatus: 'confirmed' })
+    const newKeys = gkOf({ booking_no: 'BX1', so_no: 'SO-NEW' })
+    expect(findSupersededByIdentityCorrection([confirmed], newKeys, null, 'NEW')).toEqual([])
+  })
+
+  it('new leg itself → not superseded', () => {
+    const self = sleg('NEW', { booking_no: 'BX1', so_no: 'SO-NEW' })
+    const newKeys = gkOf({ booking_no: 'BX1', so_no: 'SO-NEW' })
+    // no strongKeysConflict with itself either, but id guard is the primary exclusion
+    expect(findSupersededByIdentityCorrection([self], newKeys, null, 'NEW')).toEqual([])
+  })
+
+  it('same conversation alone + conflicting strong id (no shared key) → superseded', () => {
+    const zombie = sleg('OLD', { booking_no: 'BX-OLD', conversation_id: 'CONV-1' })
+    const newKeys = gkOf({ booking_no: 'BX-NEW' })
+    const r = findSupersededByIdentityCorrection([zombie], newKeys, 'CONV-1', 'NEW')
+    expect(r.map((x) => x.id)).toEqual(['OLD'])
+  })
+
+  it('missing reviewStatus is treated as provisional', () => {
+    const zombie = sleg('OLD', { booking_no: 'BX1', so_no: 'SO-OLD' }, { reviewStatus: undefined })
+    delete (zombie as { reviewStatus?: string }).reviewStatus
+    const newKeys = gkOf({ booking_no: 'BX1', so_no: 'SO-NEW' })
+    expect(findSupersededByIdentityCorrection([zombie], newKeys, null, 'NEW').map((x) => x.id)).toEqual(['OLD'])
   })
 })
