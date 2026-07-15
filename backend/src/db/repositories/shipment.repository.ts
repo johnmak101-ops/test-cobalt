@@ -98,9 +98,13 @@ export class ShipmentRepository {
    */
   async candidateLegs(strongPairs: { type: string; value: string }[], posNorm: string[]) {
     if (!strongPairs.length && !posNorm.length) return []
+    // Linked husks (folded into another leg) must not poison matching: lookup + committer
+    // both use this set. Do NOT filter dismissedAt — portal-echo dismissed legs still match
+    // so re-ingest does not mint duplicates (#146).
     return this.db
       .selectFrom('shipments')
       .selectAll()
+      .where('linkedShipmentId', 'is', null)
       .where((eb) => {
         const ors: Expression<SqlBool>[] = []
         if (strongPairs.length) {
