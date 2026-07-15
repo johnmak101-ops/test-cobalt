@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../lib/api'
 import type { CriticReviewCompact } from '../lib/critic-review'
 import { mapCriticFieldsToColumns } from '../lib/review-fields'
+import type { IdentifyResult } from '../components/review/ReviewCard'
 
 /** A provisional shipment awaiting human confirmation. Shape fixed by the backend contract for
  *  GET /api/shipments/review-queue. `reviewReasons` explains WHY the matcher held it back. */
@@ -159,5 +160,52 @@ export function useRestoreShipment() {
   return useMutation({
     mutationFn: ({ shipmentId }: { shipmentId: string }) => api.post(`/review/${shipmentId}/restore`, {}),
     onSuccess: invalidate,
+  })
+}
+
+/**
+ * Type a strong ID on a zero-identity provisional leg.
+ * Returns candidate / set / ambiguous — never silently merges.
+ */
+export function useIdentifyShipment() {
+  const invalidate = useInvalidateReview()
+
+  return useMutation({
+    mutationFn: ({
+      shipmentId,
+      field,
+      value,
+    }: {
+      shipmentId: string
+      field: string
+      value: string
+    }) => api.post<IdentifyResult>(`/review/${shipmentId}/identify`, { field, value }),
+    onSuccess: invalidate,
+  })
+}
+
+/**
+ * Fold a zero-identity provisional into an existing shipment that carries the typed key.
+ * Invalidates queue + counts + both shipment detail caches.
+ */
+export function useLinkShipment() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: ({
+      shipmentId,
+      targetShipmentId,
+    }: {
+      shipmentId: string
+      targetShipmentId: string
+    }) => api.post(`/review/${shipmentId}/link`, { targetShipmentId }),
+    onSuccess: (_data, vars) => {
+      queryClient.invalidateQueries({ queryKey: ['review-queue'] })
+      queryClient.invalidateQueries({ queryKey: ['review-counts'] })
+      queryClient.invalidateQueries({ queryKey: ['shipments'] })
+      queryClient.invalidateQueries({ queryKey: ['shipment', vars.shipmentId] })
+      queryClient.invalidateQueries({ queryKey: ['shipment', vars.targetShipmentId] })
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] })
+    },
   })
 }

@@ -8,6 +8,8 @@ import {
   useCorrectShipment,
   useDismissShipments,
   useRestoreShipment,
+  useIdentifyShipment,
+  useLinkShipment,
   isStaleConflict,
   type ReviewShipment,
   type ReviewQueueView,
@@ -43,6 +45,8 @@ function ExpandedReviewPanel({
   }) => Promise<void>
 }) {
   const { data, isLoading, isError } = useShipment(row.id)
+  const identifyMutation = useIdentifyShipment()
+  const linkMutation = useLinkShipment()
 
   if (isLoading) {
     return (
@@ -73,6 +77,8 @@ function ExpandedReviewPanel({
         onApprove={onApprove}
         onDismiss={onDismiss}
         onSaveAndApprove={onSaveAndApprove}
+        onIdentify={!readOnly ? async (field, value) => identifyMutation.mutateAsync({ shipmentId: row.id, field, value }) : undefined}
+        onLink={!readOnly ? async (targetShipmentId) => { await linkMutation.mutateAsync({ shipmentId: row.id, targetShipmentId }) } : undefined}
       />
     </div>
   )

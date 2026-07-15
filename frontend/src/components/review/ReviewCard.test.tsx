@@ -345,3 +345,52 @@ describe('ReviewCard', () => {
     expect(screen.getAllByText('2026-07-23').length).toBeGreaterThanOrEqual(1)
   })
 })
+
+const weakIdentityReview = () =>
+  baseReview({
+    conflicts: [],
+    riskFlags: [{ code: 'WEAK_IDENTITY', severity: 'medium', message: 'No strong booking/SO/B/L identity and no PO — hard to place this email on a shipment.' }],
+  })
+
+describe('identify section (WEAK_IDENTITY legs)', () => {
+  it('renders only for WEAK_IDENTITY legs with an onIdentify handler', () => {
+    const { rerender } = render(
+      <ReviewCard shipment={baseShipment()} criticReview={weakIdentityReview()} compact={compact} defaultExpanded onIdentify={vi.fn()} />,
+    )
+    expect(screen.getByTestId('identify-shipment')).toBeInTheDocument()
+    rerender(
+      <ReviewCard shipment={baseShipment()} criticReview={baseReview()} compact={compact} defaultExpanded onIdentify={vi.fn()} />,
+    )
+    expect(screen.queryByTestId('identify-shipment')).toBeNull()
+  })
+
+  it('typed key that exists elsewhere → shows the candidate + one-click link', async () => {
+    const user = userEvent.setup()
+    const onIdentify = vi.fn().mockResolvedValue({
+      outcome: 'candidate',
+      candidate: { shipmentId: 'TARGET-1', jobNo: 'JOB-2026-0017', matchedValue: 'BX845666' },
+    })
+    const onLink = vi.fn().mockResolvedValue(undefined)
+    render(
+      <ReviewCard shipment={baseShipment()} criticReview={weakIdentityReview()} compact={compact} defaultExpanded onIdentify={onIdentify} onLink={onLink} />,
+    )
+    await user.type(screen.getByLabelText(/identity value/i), 'BX845666')
+    await user.click(screen.getByRole('button', { name: /apply identity/i }))
+    expect(onIdentify).toHaveBeenCalledWith('booking_no', 'BX845666')
+    expect(await screen.findByText(/JOB-2026-0017/)).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /link into this shipment/i }))
+    expect(onLink).toHaveBeenCalledWith('TARGET-1')
+  })
+
+  it('ambiguous result shows the count and offers no link', async () => {
+    const user = userEvent.setup()
+    const onIdentify = vi.fn().mockResolvedValue({ outcome: 'ambiguous', count: 3 })
+    render(
+      <ReviewCard shipment={baseShipment()} criticReview={weakIdentityReview()} compact={compact} defaultExpanded onIdentify={onIdentify} />,
+    )
+    await user.type(screen.getByLabelText(/identity value/i), '001')
+    await user.click(screen.getByRole('button', { name: /apply identity/i }))
+    expect(await screen.findByText(/3 shipments carry this key/i)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /link into/i })).toBeNull()
+  })
+})

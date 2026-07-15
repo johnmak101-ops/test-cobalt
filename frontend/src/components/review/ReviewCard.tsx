@@ -57,6 +57,12 @@ export type ReviewEmail = {
   emailType?: string | null
 }
 
+/** Result of typing a strong ID on a zero-identity leg (POST /review/:id/identify). */
+export type IdentifyResult =
+  | { outcome: 'set'; field: string; value: string }
+  | { outcome: 'candidate'; candidate: { shipmentId: string; jobNo: string; matchedValue: string } }
+  | { outcome: 'ambiguous'; count: number }
+
 export interface ReviewCardProps {
   shipment: ReviewShipment | ShipmentDetail
   criticReview: CriticReview | null
@@ -73,6 +79,10 @@ export interface ReviewCardProps {
   onSaveAndApprove?: (payload: ReviewCardSavePayload) => Promise<void>
   onApprove?: () => Promise<void>
   onDismiss?: () => Promise<void>
+  /** Zero-identity flow: type booking/SO/B/L and detect if it already exists elsewhere. */
+  onIdentify?: (field: string, value: string) => Promise<IdentifyResult>
+  /** Zero-identity flow: fold this provisional into an existing shipment that carries the typed key. */
+  onLink?: (targetShipmentId: string) => Promise<void>
 }
 
 function nameOf(value: unknown): string | null {
@@ -147,10 +157,17 @@ export function ReviewCard({
   onSaveAndApprove,
   onApprove,
   onDismiss,
+  onIdentify,
+  onLink,
 }: ReviewCardProps) {
   const [expanded, setExpanded] = useState(defaultExpanded)
   const [note, setNote] = useState('')
   const [busy, setBusy] = useState(false)
+  const isWeakIdentity = (criticReview?.riskFlags ?? []).some((f) => f.code === 'WEAK_IDENTITY')
+  const [identField, setIdentField] = useState<'booking_no' | 'so_no' | 'hbl_awb_fcr_no'>('booking_no')
+  const [identValue, setIdentValue] = useState('')
+  const [identResult, setIdentResult] = useState<IdentifyResult | null>(null)
+  const [identBusy, setIdentBusy] = useState(false)
 
   const conflicts = useMemo(
     () => criticReview?.conflicts ?? [],
@@ -397,6 +414,70 @@ export function ReviewCard({
                   </li>
                 ))}
               </ul>
+            </div>
+          )}
+
+          {isWeakIdentity && !readOnly && onIdentify && (
+            <div className="rounded-lg border border-border bg-surface-900 px-3 py-2 space-y-2" data-testid="identify-shipment">
+              <p className="text-[11px] font-medium text-text-muted">
+                Identify this shipment — type its booking / SO / B/L; if it already exists you can link into it.
+              </p>
+              <div className="flex flex-wrap items-center gap-1.5">
+                <select
+                  aria-label="Identity type"
+                  value={identField}
+                  onChange={(e) => setIdentField(e.target.value as typeof identField)}
+                  className="rounded-md border border-border bg-surface-800 px-2 py-1 text-xs text-text-primary"
+                >
+                  <option value="booking_no">Booking No.</option>
+                  <option value="so_no">SO#</option>
+                  <option value="hbl_awb_fcr_no">HBL/AWB/FCR</option>
+                </select>
+                <input
+                  aria-label="Identity value"
+                  value={identValue}
+                  onChange={(e) => { setIdentValue(e.target.value); setIdentResult(null) }}
+                  className="w-44 rounded-md border border-border bg-surface-800 px-2 py-1 font-mono text-xs text-text-primary"
+                />
+                <button
+                  type="button"
+                  disabled={identBusy || identValue.trim().length < 3}
+                  onClick={async () => {
+                    setIdentBusy(true)
+                    try { setIdentResult(await onIdentify(identField, identValue.trim())) }
+                    finally { setIdentBusy(false) }
+                  }}
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-cobalt-primary/15 px-2.5 py-1.5 text-xs font-medium text-cobalt-primary-light hover:bg-cobalt-primary/25 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {identBusy ? <Loader2 size={13} className="animate-spin" /> : null}
+                  Apply identity
+                </button>
+              </div>
+              {identResult?.outcome === 'set' && (
+                <p className="text-xs text-status-success">Identity set — the leg now carries {identResult.value}. Review and approve as usual.</p>
+              )}
+              {identResult?.outcome === 'ambiguous' && (
+                <p className="text-xs text-status-warning">{identResult.count} shipments carry this key — open Shipments to inspect before linking.</p>
+              )}
+              {identResult?.outcome === 'candidate' && onLink && (
+                <div className="flex flex-wrap items-center gap-2 rounded-md bg-surface-800 px-2.5 py-2">
+                  <span className="text-xs text-text-secondary">
+                    Already exists: <span className="font-mono text-text-primary">{identResult.candidate.jobNo}</span> · {identResult.candidate.matchedValue}
+                  </span>
+                  <button
+                    type="button"
+                    disabled={identBusy}
+                    onClick={async () => {
+                      setIdentBusy(true)
+                      try { await onLink(identResult.candidate.shipmentId) }
+                      finally { setIdentBusy(false) }
+                    }}
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-status-success/15 px-2.5 py-1.5 text-xs font-medium text-status-success hover:bg-status-success/25 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    Link into this shipment
+                  </button>
+                </div>
+              )}
             </div>
           )}
 
