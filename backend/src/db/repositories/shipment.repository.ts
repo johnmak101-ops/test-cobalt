@@ -122,6 +122,17 @@ export class ShipmentRepository {
       })
       .execute()
   }
+
+  /** Live legs of one email thread — the adoption candidate set (A2's index can't cover this:
+   *  a zero-identity leg has no strong keys, so it only exists in match_keys JSON). */
+  async legsByConversationId(conversationId: string) {
+    return this.db
+      .selectFrom('shipments')
+      .selectAll()
+      .where(sql<boolean>`JSON_VALUE(match_keys, '$.conversation_id') = ${conversationId}`)
+      .execute()
+  }
+
   /** Legs for the tracker/dashboard: ACTIVE plus CANCELLED. Only SUPERSEDED legs are hidden. */
   activeLegs() {
     return this.db.selectFrom('shipments').where('legStatus', 'in', ['ACTIVE', 'CANCELLED']).selectAll().execute()
@@ -581,6 +592,39 @@ export class ShipmentRepository {
         .updateTable('shipments')
         .set({ linkedShipmentId: targetShipmentId, updatedAt: new Date() })
         .where('id', '=', documentId)
+        .execute()
+    })
+  }
+
+  /**
+   * Fold a zero-identity provisional SHIPMENT leg into an existing shipment: copy POs + source-emails
+   * onto the target (same idempotent upserts as linkDocument), then stamp linkedShipmentId + dismissedAt
+   * so the source leaves the Active queue. Deliberately does NOT clear the source's match_keys — a matcher
+   * re-ingest of the still-keyless thread must A2-match this retired husk (committer never touches
+   * dismissedAt) instead of minting a fresh queue item.
+   */
+  async linkProvisionalLeg(sourceShipmentId: string, targetShipmentId: string) {
+    await this.db.transaction().execute(async (tx) => {
+      const poRows = await tx
+        .selectFrom('shipmentPos')
+        .where('shipmentId', '=', sourceShipmentId)
+        .select(['poId', 'quantity', 'quantityUnit'])
+        .execute()
+      for (const r of poRows) {
+        await upsertShipmentPo(tx, targetShipmentId, r.poId, r.quantity, r.quantityUnit)
+      }
+      const emailRows = await tx
+        .selectFrom('shipmentEmails')
+        .where('shipmentId', '=', sourceShipmentId)
+        .select(['graphMessageId', 'emailType', 'receivedAt'])
+        .execute()
+      for (const r of emailRows) {
+        await upsertShipmentEmail(tx, targetShipmentId, r.graphMessageId, r.emailType, r.receivedAt)
+      }
+      await tx
+        .updateTable('shipments')
+        .set({ linkedShipmentId: targetShipmentId, dismissedAt: new Date(), updatedAt: new Date() })
+        .where('id', '=', sourceShipmentId)
         .execute()
     })
   }

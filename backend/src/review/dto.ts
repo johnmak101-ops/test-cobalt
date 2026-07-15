@@ -1,4 +1,4 @@
-import { ArrayNotEmpty, IsArray, IsObject, IsOptional, IsString } from 'class-validator'
+import { ArrayNotEmpty, IsArray, IsIn, IsObject, IsOptional, IsString, Length } from 'class-validator'
 
 /** A human's correction of a provisional shipment: edited fields (camelCase columns) + a reason. */
 export class CorrectDto {
@@ -19,4 +19,21 @@ export class ConfirmDto {
 export class DismissDto {
   @IsArray() @ArrayNotEmpty() @IsString({ each: true }) shipmentIds!: string[]
   @IsOptional() @IsString() note?: string
+}
+
+/** Zero-identity leg: operator types a strong ID; may offer a link candidate or set the field. */
+export class IdentifyDto {
+  @IsIn(['booking_no', 'so_no', 'hbl_awb_fcr_no', 'mbl', 'container_no'])
+  field!: 'booking_no' | 'so_no' | 'hbl_awb_fcr_no' | 'mbl' | 'container_no'
+
+  @IsString()
+  @Length(3, 64)
+  value!: string
+}
+
+/** Fold a zero-identity provisional leg into an existing shipment that already carries the typed key. */
+export class LinkDto {
+  @IsString()
+  @Length(1, 64)
+  targetShipmentId!: string
 }

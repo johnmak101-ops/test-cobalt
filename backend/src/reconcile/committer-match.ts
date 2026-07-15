@@ -46,8 +46,15 @@ export const strongKeysConflict = (a: Set<string>, b: Set<string>): boolean => {
  *   - they share a PO and at least ONE side has no strong id (a nascent PO-only leg gaining its first id).
  * A2 fallback: a zero-identity group (no strong key AND no PO) matches another zero-identity leg of the same
  * thread by the conversationId persisted in match_keys — so a re-ingest UPDATES the provisional row.
+ *
+ * A leg a human FOLDED INTO another (review link() → linked_shipment_id) is never a match target: its
+ * content now lives on the successor. It keeps its match_keys (for A2) and its booking keeps the POs
+ * (linkProvisionalLeg copies shipment_pos only), so without this guard a follow-up email sharing a PO
+ * commits onto the retired husk — invisibly, since it is also dismissed — and the real shipment silently
+ * stops updating. Note this is NOT a dismissed-leg guard: a dismissed-but-unlinked leg (portal echo, "not
+ * a shipment") MUST still match, or every re-ingest mints a duplicate and the queue refills.
  */
-export function findExistingLeg<L extends { bookingId: string; matchKeys: unknown }>(
+export function findExistingLeg<L extends { bookingId: string; matchKeys: unknown; linkedShipmentId?: string | null }>(
   legs: L[],
   posByBooking: Map<string, string[]>,
   gk: Set<string>,
@@ -56,6 +63,7 @@ export function findExistingLeg<L extends { bookingId: string; matchKeys: unknow
 ): L | undefined {
   let existing: L | undefined
   for (const l of legs) {
+    if (l.linkedShipmentId != null) continue // folded into another shipment — match its successor, not it
     const legStrong = strongKeys(l.matchKeys as Record<string, unknown>)
     // BUG 4: a group whose strong key states a DIFFERENT value for a type the leg already carries is a
     // DIFFERENT shipment — never a match here, on ANY path (strong-overlap, PO, or conversationId).
@@ -77,6 +85,7 @@ export function findExistingLeg<L extends { bookingId: string; matchKeys: unknow
   if (!existing && gk.size === 0 && groupPos.size === 0 && conversationId) {
     const conv = normKey(conversationId)
     existing = legs.find((l) => {
+      if (l.linkedShipmentId != null) return false // folded away — never re-adopt the husk
       const mk = (l.matchKeys ?? {}) as Record<string, unknown>
       const legStrong = strongKeys(mk)
       if (legStrong.size !== 0) return false
@@ -85,4 +94,27 @@ export function findExistingLeg<L extends { bookingId: string; matchKeys: unknow
     })
   }
   return existing
+}
+
+/**
+ * Thread-gains-its-first-identity adoption: when a KEYED group found no existing leg, a strictly
+ * zero-identity leg (no strong key AND no PO) of the SAME conversation is the same nascent shipment
+ * finally receiving its booking/SO/HBL — adopt it instead of spawning a duplicate. Mirrors the
+ * shared-PO nascent fill-in philosophy; the strictly-zero guard preserves the A2 invariant that a
+ * conversationId can never bridge two IDENTIFIED legs. Dismissed/linked husks are never adopted
+ * (a human retired them), and any ambiguity (≥2 zero-identity legs in one thread) adopts nothing.
+ */
+export function findAdoptableZeroIdLeg<
+  L extends { bookingId: string; matchKeys: unknown; dismissedAt?: Date | string | null; linkedShipmentId?: string | null },
+>(legs: L[], posByBooking: Map<string, string[]>, conversationId: string): L | undefined {
+  const conv = normKey(conversationId)
+  if (!conv) return undefined
+  const adoptable = legs.filter((l) => {
+    if (l.dismissedAt != null || l.linkedShipmentId != null) return false
+    const mk = (l.matchKeys ?? {}) as Record<string, unknown>
+    if (strongKeys(mk).size !== 0) return false
+    if ((posByBooking.get(l.bookingId) ?? []).length > 0) return false
+    return normKey(mk.conversation_id) === conv
+  })
+  return adoptable.length === 1 ? adoptable[0] : undefined
 }

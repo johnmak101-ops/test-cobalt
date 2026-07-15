@@ -21,7 +21,7 @@ import { AuditRepository } from '../db/repositories/audit.repository'
 import { EvidenceRepository } from '../db/repositories/evidence.repository'
 import { resolvePoEnrichment, unattributedBrandStyle } from './po-enrichment'
 import { mapFieldsToLegColumns } from './committer-leg-mapping'
-import { findExistingLeg } from './committer-match'
+import { findExistingLeg, findAdoptableZeroIdLeg } from './committer-match'
 import { MasterResolver } from './committer-master-resolver'
 import { planPoReconcile } from './committer-po-reconciler'
 import { MilestoneSynchronizer } from './committer-milestones'
@@ -229,7 +229,20 @@ export class CommitterService {
     // ONE bulk load of the candidate bookings' PO numbers (bookingId -> [poNumber]) — the PO data findExistingLeg
     // sees is byte-identical to the old per-leg poNumbersFor; the matching itself is the pure, unit-tested fn.
     const posByBooking = await this.bookings.poNumbersByBooking(legs.map((l) => l.bookingId))
-    const existing = findExistingLeg(legs, posByBooking, gk, groupPos, g.conversationId)
+    let existing = findExistingLeg(legs, posByBooking, gk, groupPos, g.conversationId)
+    // Thread-gains-its-first-identity: a keyed group that matched nothing may still be the SAME nascent
+    // shipment as the thread's zero-identity provisional leg (created before any booking/SO/HBL arrived).
+    // Adopt it — the normal amend path fills the identity + match_keys — instead of spawning a duplicate.
+    let adoptedZeroId = false
+    if (!existing && gk.size > 0 && g.conversationId) {
+      const threadLegs = await this.shipments.legsByConversationId(g.conversationId)
+      const threadPos = await this.bookings.poNumbersByBooking(threadLegs.map((l) => l.bookingId))
+      const adopted = findAdoptableZeroIdLeg(threadLegs, threadPos, g.conversationId)
+      if (adopted) {
+        existing = adopted
+        adoptedZeroId = true
+      }
+    }
 
     let bookingId: string
     let shipmentId: string
@@ -244,6 +257,14 @@ export class CommitterService {
       const bk = await this.bookings.findById(bookingId)
       jobNo = bk?.jobNo ?? '(unknown)'
       await this.applyFields(shipmentId, existing as Record<string, unknown>, legValues, skippedLockedFields, g)
+      if (adoptedZeroId) {
+        await this.audit.write({
+          entityType: 'shipment', entityId: shipmentId, field: 'match_keys',
+          oldValue: null, newValue: [...gk].join(', '), changeType: 'update',
+          sourceType: 'system', actorUserId: null,
+          note: 'zero-identity leg adopted — thread gained its first strong identity',
+        })
+      }
       await this.fillBooking(bookingId, shipmentId, { customerId, vendorId: effVendorId, forwarderId: effForwarderId, brand: str(f.brand), crd: date(f.cargo_ready_date) }, g)
       // review gate + cancellation are lifecycle metadata, not lockable fields — always reflect the latest.
       // leg_status only ever moves to CANCELLED here; never resurrect a leg the reconcile path superseded.
