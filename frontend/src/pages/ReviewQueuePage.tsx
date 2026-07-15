@@ -67,6 +67,7 @@ function ExpandedReviewPanel({
         criticReview={data.criticReview ?? null}
         compact={row.criticReviewCompact}
         emails={data.emails ?? []}
+        fullShipmentPath={`/shipments/${row.id}`}
         defaultExpanded
         readOnly={readOnly}
         onApprove={onApprove}

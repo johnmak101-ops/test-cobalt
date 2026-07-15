@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { CheckCircle, ChevronDown, ChevronRight, ExternalLink, Loader2, Mail, NotebookPen, Save, XCircle } from 'lucide-react'
 import { Badge } from '../ui/Badge'
 import { ConflictRow, splitCandidates } from './ConflictRow'
@@ -36,6 +37,8 @@ export interface ReviewCardProps {
   /** Source emails behind this leg — rendered as chips that open the email pop-up window.
    *  Resolving a conflict means reading what the email actually said, so keep it one click away. */
   emails?: ReviewEmail[]
+  /** Route to the full shipment editor — rendered as an "Open full shipment" link when set. */
+  fullShipmentPath?: string
   defaultExpanded?: boolean
   /** Resolved history — hide inputs and primary actions. */
   readOnly?: boolean
@@ -110,6 +113,7 @@ export function ReviewCard({
   criticReview,
   compact = null,
   emails = [],
+  fullShipmentPath,
   defaultExpanded = false,
   readOnly = false,
   onSaveAndApprove,
@@ -293,10 +297,25 @@ export function ReviewCard({
       {/* Expanded: AI comment + conflicts-only + notes + Save&Approve (§2.2) */}
       {expanded && (
         <div className="space-y-3 border-t border-border px-3 pb-3 pt-3">
-          {lineCompact && (
-            <p className="text-sm font-medium text-text-primary" data-testid="ai-comment-line">
-              {aiCommentLine(lineCompact)}
-            </p>
+          {(lineCompact || fullShipmentPath) && (
+            <div className="flex items-start justify-between gap-2">
+              {lineCompact ? (
+                <p className="text-sm font-medium text-text-primary" data-testid="ai-comment-line">
+                  {aiCommentLine(lineCompact)}
+                </p>
+              ) : (
+                <span />
+              )}
+              {fullShipmentPath && (
+                <Link
+                  to={fullShipmentPath}
+                  className="inline-flex shrink-0 items-center gap-1 text-[11px] font-medium text-cobalt-primary-light hover:underline"
+                >
+                  Open full shipment
+                  <ExternalLink size={10} />
+                </Link>
+              )}
+            </div>
           )}
 
           {/* Source emails — resolving a conflict means reading what the email actually said. */}

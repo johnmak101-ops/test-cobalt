@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { MemoryRouter } from 'react-router-dom'
 import { ReviewCard } from './ReviewCard'
 import type { CriticConflict, CriticReview, CriticReviewCompact } from '../../lib/critic-review'
 import type { ReviewShipment } from '../../hooks/use-review-queue'
@@ -245,6 +246,22 @@ describe('ReviewCard', () => {
       <ReviewCard shipment={baseShipment()} criticReview={baseReview()} compact={compact} defaultExpanded={true} />,
     )
     expect(screen.queryByTestId('source-emails')).toBeNull()
+  })
+
+  it('renders an Open full shipment link when fullShipmentPath is set', () => {
+    render(
+      <MemoryRouter>
+        <ReviewCard
+          shipment={baseShipment()}
+          criticReview={baseReview()}
+          compact={compact}
+          fullShipmentPath="/shipments/leg-1"
+          defaultExpanded={true}
+        />
+      </MemoryRouter>,
+    )
+    const link = screen.getByRole('link', { name: /open full shipment/i })
+    expect(link).toHaveAttribute('href', '/shipments/leg-1')
   })
 
   it('readOnly: shows resolved values, hides inputs and primary Save button', () => {
