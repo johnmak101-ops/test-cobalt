@@ -13,6 +13,7 @@ import { UsersRepository } from './repositories/users.repository'
 import { SettingsRepository } from './repositories/settings.repository'
 import { IngestRepository } from './repositories/ingest.repository'
 import { RoutingShadowRepository } from './repositories/routing-shadow.repository'
+import { CriticCalibrationRepository } from './repositories/critic-calibration.repository'
 
 const repositories = [
   MastersRepository,
@@ -29,6 +30,7 @@ const repositories = [
   SettingsRepository,
   IngestRepository,
   RoutingShadowRepository,
+  CriticCalibrationRepository,
 ]
 
 /** Global so any service can inject a repository without re-importing. */
