@@ -370,6 +370,25 @@ export class ShipmentRepository {
     return this.db.selectFrom('shipmentPos').where('shipmentId', '=', shipmentId).selectAll().execute()
   }
 
+  /** PO numbers linked via shipment_pos for many legs in ONE query (shipmentId → poNumbers).
+   *  Companion to bookingRepo.poNumbersByBooking — summaries union both sources (#121). */
+  async poNumbersByShipment(shipmentIds: string[]): Promise<Map<string, string[]>> {
+    const map = new Map<string, string[]>()
+    if (!shipmentIds.length) return map
+    const rows = await this.db
+      .selectFrom('shipmentPos')
+      .innerJoin('purchaseOrders', 'shipmentPos.poId', 'purchaseOrders.id')
+      .where('shipmentPos.shipmentId', 'in', shipmentIds)
+      .select(['shipmentPos.shipmentId as shipmentId', 'purchaseOrders.poNumber as poNumber'])
+      .execute()
+    for (const r of rows) {
+      const arr = map.get(r.shipmentId)
+      if (arr) arr.push(r.poNumber)
+      else map.set(r.shipmentId, [r.poNumber])
+    }
+    return map
+  }
+
   // --- shipment_milestones ---
 
   milestonesFor(shipmentId: string) {
