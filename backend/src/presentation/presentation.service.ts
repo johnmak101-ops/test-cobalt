@@ -48,8 +48,26 @@ interface MasterMaps {
   ports: Map<string, PortRow>
 }
 
+/** Dedupe PO numbers by case-insensitive trim; first-seen order wins (stable). */
+export function mergePoNumbers(...sources: string[][]): string[] {
+  const out: string[] = []
+  const seen = new Set<string>()
+  for (const src of sources) {
+    for (const raw of src) {
+      const t = (raw ?? '').trim()
+      if (!t) continue
+      const key = t.toLowerCase()
+      if (seen.has(key)) continue
+      seen.add(key)
+      out.push(t)
+    }
+  }
+  return out
+}
+
 /** Pure per-shipment summary (id + PO JSON + route + customer + consignee) from preloaded rows + master maps — the
- *  batch-friendly core of the old per-alert shipmentSummary(). No I/O. */
+ *  batch-friendly core of the old per-alert shipmentSummary(). No I/O.
+ *  `poNumbers` should already be booking_pos ∪ shipment_pos (caller merges). */
 export function buildShipmentSummary(
   leg: {
     id: string
@@ -76,7 +94,6 @@ export function buildShipmentSummary(
   }
 }
 
-const AT_RISK = new Set(['AT_RISK', 'DELAYED'])
 // Master data is read-mostly reference data; a master edit becomes visible within this window. Cache tuned
 // to sit at/above the 30s UI poll so repeated renders share one built maps object instead of rebuilding 24k
 // ports each time. Override with MASTER_MAPS_TTL_MS.
@@ -175,19 +192,21 @@ export class PresentationService {
     }
   }
 
-  /** Summaries for many shipmentIds in 3 bulk queries (legs + their bookings + PO numbers) instead of 3 per
-   *  id — the old shipmentSummary() ran per alert. Returns id -> summary; a missing id → caller uses null. */
+  /** Summaries for many shipmentIds in bulk queries (legs + bookings + booking_pos ∪ shipment_pos) instead of
+   *  N+1 per alert. Returns id -> summary; a missing id → caller uses null. */
   private async shipmentSummariesByIds(shipmentIds: string[], maps: MasterMaps) {
     const ids = [...new Set(shipmentIds)]
     const legs = await this.shipmentRepo.findByIds(ids)
     const bookingIds = [...legs.values()].map((l) => l.bookingId)
-    const [bookingsById, posByBooking] = await Promise.all([
+    const [bookingsById, posByBooking, posByShipment] = await Promise.all([
       this.bookingRepo.findByIds(bookingIds),
       this.bookingRepo.poNumbersByBooking(bookingIds),
+      this.shipmentRepo.poNumbersByShipment(ids),
     ])
     const out = new Map<string, ReturnType<typeof buildShipmentSummary>>()
     for (const [id, leg] of legs) {
-      out.set(id, buildShipmentSummary(leg, bookingsById.get(leg.bookingId) ?? null, posByBooking.get(leg.bookingId) ?? [], maps))
+      const poNumbers = mergePoNumbers(posByBooking.get(leg.bookingId) ?? [], posByShipment.get(id) ?? [])
+      out.set(id, buildShipmentSummary(leg, bookingsById.get(leg.bookingId) ?? null, poNumbers, maps))
     }
     return out
   }
@@ -413,11 +432,12 @@ export class PresentationService {
       this.emailRepo.unreadCount(),
     ])
     // active-shipments stats exclude cancelled legs (they still appear in the tracker list, shown as
-    // Cancelled, but must not inflate the active/at-risk counts).
+    // Cancelled, but must not inflate the active count).
     const nonDelivered = legs.filter((l) => l.state !== 'DELIVERED' && (l as { legStatus?: string | null }).legStatus !== 'CANCELLED')
+    // KPI pair = ACTIVE alerts by severity (not shipment riskLevel). atRiskShipments deleted.
     const stats = {
       activeShipments: nonDelivered.length,
-      atRiskShipments: nonDelivered.filter((l) => l.riskLevel != null && AT_RISK.has(l.riskLevel)).length,
+      warningAlerts: activeAlerts.filter((a) => a.severity === 'WARNING').length,
       criticalAlerts: activeAlerts.filter((a) => a.severity === 'CRITICAL').length,
       newEmails: unreadEmails,
     }

@@ -48,6 +48,7 @@ const build = () => {
     findByIds: async (ids: string[]) => new Map(legs.filter((l) => ids.includes(l.id)).map((l) => [l.id, l])),
     milestonesFor: async () => [],
     posFor: async () => [],
+    poNumbersByShipment: async () => new Map<string, string[]>(),
     linkedPosForBooking: async (id: string) =>
       id === 'b1'
         ? [{ id: 'po1', poNumber: 'PO-1', totalQuantity: 5000, quantityUnit: 'pieces', vendorName: 'Rose Knit' }]
@@ -167,10 +168,53 @@ describe('PresentationService.dashboard', () => {
   it('computes the KPI stats from legs + alerts', async () => {
     const d = await build().dashboard()
     expect(d.stats.activeShipments).toBe(1) // non-DELIVERED active legs
-    expect(d.stats.atRiskShipments).toBe(1) // leg1 AT_RISK
+    expect(d.stats.warningAlerts).toBe(0)
     expect(d.stats.criticalAlerts).toBe(1)
+    expect(d.stats).not.toHaveProperty('atRiskShipments')
     expect(d.stats.newEmails).toBe(3) // inbox unread count (same as /emails/unread-count)
     expect(Array.isArray(d.recentAlerts)).toBe(true)
     expect(Array.isArray(d.recentActivity)).toBe(true)
+  })
+
+  it('counts ACTIVE warning/critical alerts by severity (excludes RESOLVED)', async () => {
+    const mixed = [
+      { id: 'w1', ruleId: 'A1', shipmentId: 'leg1', severity: 'WARNING', status: 'ACTIVE', message: 'w1', firedAt: D('2026-02-10T00:00:00.000Z'), readAt: null, dismissedAt: null, snoozedUntil: null },
+      { id: 'w2', ruleId: 'A1', shipmentId: 'leg1', severity: 'WARNING', status: 'ACTIVE', message: 'w2', firedAt: D('2026-02-10T01:00:00.000Z'), readAt: null, dismissedAt: null, snoozedUntil: null },
+      { id: 'c1', ruleId: 'A1', shipmentId: 'leg1', severity: 'CRITICAL', status: 'ACTIVE', message: 'c1', firedAt: D('2026-02-10T02:00:00.000Z'), readAt: null, dismissedAt: null, snoozedUntil: null },
+      { id: 'w3', ruleId: 'A1', shipmentId: 'leg1', severity: 'WARNING', status: 'RESOLVED', message: 'w3', firedAt: D('2026-02-09T00:00:00.000Z'), readAt: null, dismissedAt: null, snoozedUntil: null },
+    ]
+    const shipmentRepo = {
+      activeLegs: async () => legs,
+      findByIds: async (ids: string[]) => new Map(legs.filter((l) => ids.includes(l.id)).map((l) => [l.id, l])),
+      poNumbersByShipment: async () => new Map<string, string[]>(),
+      linkedPosForBooking: async () => [],
+    }
+    const bookingRepo = {
+      listOrdered: async () => bookings,
+      findByIds: async (ids: string[]) => new Map(bookings.filter((b) => ids.includes(b.id)).map((b) => [b.id, b])),
+      poNumbersByBooking: async () => new Map<string, string[]>(),
+      poNumbersFor: async () => [],
+    }
+    const mastersRepo = {
+      listCustomers: async () => customers,
+      listVendors: async () => vendors,
+      listForwarders: async () => forwarders,
+      listPorts: async () => ports,
+      listConsignees: async () => [],
+    }
+    const alertRepo = {
+      list: async (status?: string) => (status ? mixed.filter((a) => a.status === status) : mixed),
+      allRules: async () => rules,
+    }
+    const svc = new PresentationService(
+      shipmentRepo as any, bookingRepo as any, mastersRepo as any, alertRepo as any,
+      { listForEntity: async () => [] } as any,
+      { unreadCount: async () => 0, ingestionStatus: async () => ({ count: 0, lastAt: null }), ingestState: async () => null, emailsForShipment: async () => [] } as any,
+      { forMessages: async () => [], allWithMessage: async () => [] } as any,
+    )
+    const d = await svc.dashboard()
+    expect(d.stats.warningAlerts).toBe(2)
+    expect(d.stats.criticalAlerts).toBe(1)
+    expect(d.stats).not.toHaveProperty('atRiskShipments')
   })
 })

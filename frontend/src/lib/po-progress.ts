@@ -89,9 +89,9 @@ export function furthestStatusLabel(links: PoShipmentLink[]): string {
 }
 
 /**
- * Human-readable progress text — never a percentage (reviewers don't know what "15%" means).
- * With quantities: "0/2 shipped". Without: the furthest shipment's lifecycle word ("at warehouse").
- * Used on the DETAIL page; the list shows furthestStatusLabel only.
+ * Human-readable progress text for the DETAIL page — quantity-based ("0/2 shipped") or the
+ * furthest shipment's lifecycle word. The list page shows bar + X% + stage label separately;
+ * this helper still never returns a percentage.
  */
 export function progressLabel(
   totalQuantity: number | null | undefined,
