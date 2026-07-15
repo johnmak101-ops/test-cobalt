@@ -4,6 +4,10 @@ import { SettingsRepository } from '../db/repositories/settings.repository'
 export const THRESHOLD_KEY = 'confidence_threshold'
 export const DEFAULT_THRESHOLD = 85
 
+export type CriticRoutingMode = 'gate' | 'band'
+export const ROUTING_MODE_KEY = 'critic_routing_mode'
+export const DEFAULT_ROUTING_MODE: CriticRoutingMode = 'gate'
+
 /** Tracking-side tunables. The confidence threshold is read here and applied to route decisions;
  *  the agent only sends raw scores, so changing the line never needs an agent redeploy. */
 @Injectable()
@@ -20,5 +24,16 @@ export class SettingsService {
 
   setConfidenceThreshold(value: number, updatedBy: string | null = null) {
     return this.repo.set(THRESHOLD_KEY, value, updatedBy)
+  }
+
+  /** How critic review influences provisional vs confirmed: gate (score threshold) or band. */
+  async criticRoutingMode(): Promise<CriticRoutingMode> {
+    const v = await this.repo.get<string>(ROUTING_MODE_KEY)
+    if (v === 'band' || v === 'gate') return v
+    return DEFAULT_ROUTING_MODE
+  }
+
+  setCriticRoutingMode(value: CriticRoutingMode, updatedBy: string | null = null) {
+    return this.repo.set(ROUTING_MODE_KEY, value, updatedBy)
   }
 }

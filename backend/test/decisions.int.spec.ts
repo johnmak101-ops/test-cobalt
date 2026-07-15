@@ -15,7 +15,7 @@ beforeAll(async () => {
   const r = repos(db)
   const committer = new CommitterService(r.masters, r.booking, r.shipment, r.fieldLock, r.audit, r.evidence, r.purchaseOrder)
   settings = new SettingsService(r.settings)
-  decisions = new DecisionsService(committer, settings, r.ingest)
+  decisions = new DecisionsService(committer, settings, r.ingest, r.routingShadow)
 })
 afterAll(closeTestDb)
 beforeEach(() => resetDb(db))
@@ -34,6 +34,25 @@ const decision = (over: Partial<CreateDecisionDto> = {}): CreateDecisionDto => (
   conversationId: 'thread-1',
   ...over,
 })
+
+/** High-band clean critic — band routing would auto-confirm when recommendedRouting is auto. */
+const criticHigh = {
+  confidence: { score: 92, band: 'high' as const, label: 'High' },
+  summary: 'Clean',
+  observations: [],
+  priorState: { headline: 'New', fields: [] },
+  proposedChanges: [],
+  riskFlags: [] as { code: string; severity: string; message: string }[],
+  recommendedHumanAction: 'approve_ok',
+  reasons: [] as string[],
+}
+
+/** Low-band critic with a hard-stop risk flag — band routing must stay provisional. */
+const criticHardStop = {
+  ...criticHigh,
+  confidence: { score: 20, band: 'low' as const, label: 'Low' },
+  riskFlags: [{ code: 'INTRA_EMAIL_MULTI_STRONG_ID', severity: 'high', message: 'multi' }],
+}
 
 describe('DecisionsService (integration)', () => {
   it('commits a high-confidence decision as confirmed (commit-first)', async () => {
@@ -232,5 +251,149 @@ describe('DecisionsService email disposition (integration)', () => {
     )
     expect(res.action).toBe('skip')
     expect(await db.selectFrom('shipments').selectAll().execute()).toHaveLength(0)
+  })
+})
+
+describe('Phase 2 routing shadow + mode', () => {
+  it('default gate mode: autoApply false stays provisional even if recommendedRouting auto (shadow differs)', async () => {
+    const res = await decisions.ingest(
+      decision({
+        confidence: 92,
+        autoApply: false,
+        disposition: 'review',
+        recommendedRouting: 'auto',
+        criticReview: criticHigh,
+      }),
+    )
+    expect(res.reviewStatus).toBe('provisional') // gate unchanged
+    const shadows = await db.selectFrom('routingShadow').selectAll().execute()
+    expect(shadows).toHaveLength(1)
+    expect(shadows[0].gateRouting).toBe('provisional')
+    expect(shadows[0].bandRouting).toBe('confirmed')
+    expect(shadows[0].differs).toBe(true)
+  })
+
+  it('band mode: high clean recommendedRouting auto → confirmed', async () => {
+    await settings.setCriticRoutingMode('band')
+    const res = await decisions.ingest(
+      decision({
+        confidence: 50,
+        autoApply: false,
+        disposition: 'review',
+        recommendedRouting: 'auto',
+        criticReview: criticHigh,
+      }),
+    )
+    expect(res.reviewStatus).toBe('confirmed')
+    const [leg] = await db.selectFrom('shipments').selectAll().execute()
+    const reasons = leg.reviewReasons as string[]
+    expect(reasons.some((r) => /band auto-confirm/i.test(r))).toBe(true)
+  })
+
+  it('band mode: hard-stop risk flag still provisional even if recommendedRouting auto', async () => {
+    await settings.setCriticRoutingMode('band')
+    const res = await decisions.ingest(
+      decision({
+        confidence: 99,
+        autoApply: true,
+        disposition: 'auto',
+        recommendedRouting: 'auto',
+        // High band + recommendedRouting auto would confirm; hard-stop risk flag forces provisional.
+        // criticHardStop uses INTRA_EMAIL_MULTI_STRONG_ID; BACKEND_CONFLICT is the same family.
+        criticReview: {
+          ...criticHardStop,
+          confidence: { score: 92, band: 'high', label: 'High' },
+          riskFlags: [{ code: 'BACKEND_CONFLICT', severity: 'high', message: 'conflict' }],
+        },
+      }),
+    )
+    expect(res.reviewStatus).toBe('provisional')
+  })
+
+  it('legacy no criticReview: no shadow row; gate routing unchanged', async () => {
+    const res = await decisions.ingest(decision({ confidence: 92, autoApply: true }))
+    expect(res.reviewStatus).toBe('confirmed')
+    expect(await db.selectFrom('routingShadow').selectAll().execute()).toHaveLength(0)
+  })
+
+  it('shadow proof: default gate outcomes identical with vs without recommendedRouting present', async () => {
+    const a = await decisions.ingest(
+      decision({
+        matchKey: { so_no: 'SO-A' },
+        fields: { so_no: 'SO-A' },
+        confidence: 92,
+        autoApply: false,
+        criticReview: criticHigh,
+        recommendedRouting: 'auto',
+      }),
+    )
+    const b = await decisions.ingest(
+      decision({
+        matchKey: { so_no: 'SO-B' },
+        fields: { so_no: 'SO-B' },
+        confidence: 92,
+        autoApply: false,
+        criticReview: criticHigh,
+      }),
+    )
+    expect(a.reviewStatus).toBe('provisional')
+    expect(b.reviewStatus).toBe('provisional')
+  })
+
+  it('cancel still forces provisional under band mode', async () => {
+    await settings.setCriticRoutingMode('band')
+    const res = await decisions.ingest(
+      decision({
+        confidence: 99,
+        autoApply: true,
+        cancelled: true,
+        recommendedRouting: 'auto',
+        criticReview: criticHigh,
+      }),
+    )
+    expect(res.reviewStatus).toBe('provisional')
+    const [leg] = await db.selectFrom('shipments').selectAll().execute()
+    const reasons = Array.isArray(leg.reviewReasons) ? (leg.reviewReasons as string[]) : []
+    expect(reasons).toContain('Booking cancelled')
+    expect(reasons.some((r) => /band auto-confirm/i.test(r))).toBe(false)
+  })
+
+  it('skip: band is pinned to skip — no phantom diff for a legacy payload without recommendedRouting', async () => {
+    // Phase-1-era payload: criticReview present (HIGH band) but recommendedRouting ABSENT. Deriving
+    // band routing from the critic would log skip→confirmed as a "diff"; band never overrides skip.
+    const res = await decisions.ingest(
+      decision({
+        matchKey: {},
+        pos: [],
+        fields: { note: 'fyi' },
+        confidence: 92,
+        autoApply: false,
+        disposition: undefined,
+        lookupContext: { statusUpdate: false },
+        criticReview: criticHigh,
+      }),
+    )
+    expect(res.reviewStatus).toBe('skip')
+    const shadows = await db.selectFrom('routingShadow').selectAll().execute()
+    expect(shadows).toHaveLength(1)
+    expect(shadows[0].gateRouting).toBe('skip')
+    expect(shadows[0].bandRouting).toBe('skip')
+    expect(shadows[0].differs).toBe(false)
+  })
+
+  it('retention: pruneOlderThan drops rows outside the window (diagnostic log is disposable)', async () => {
+    await decisions.ingest(
+      decision({
+        confidence: 92,
+        autoApply: false,
+        disposition: 'review',
+        recommendedRouting: 'auto',
+        criticReview: criticHigh,
+      }),
+    )
+    expect(await db.selectFrom('routingShadow').selectAll().execute()).toHaveLength(1)
+    // negative window → cutoff in the future → every row counts as older and is pruned
+    await repos(db).routingShadow.pruneOlderThan(-1)
+    expect(await db.selectFrom('routingShadow').selectAll().execute()).toHaveLength(0)
   })
 })
