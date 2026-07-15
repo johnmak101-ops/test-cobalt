@@ -53,6 +53,9 @@ const build = () => {
       id === 'b1'
         ? [{ id: 'po1', poNumber: 'PO-1', totalQuantity: 5000, quantityUnit: 'pieces', vendorName: 'Rose Knit' }]
         : [],
+    // #151: per-leg empty → falls back to booking union
+    linkedPosForShipment: async () => [],
+    legsForBooking: async (id: string) => legs.filter((l) => l.bookingId === id),
     identifiersFor: async () => [],
   }
   const bookingRepo = {

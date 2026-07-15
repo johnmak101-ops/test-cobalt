@@ -99,8 +99,14 @@ export default function ShipmentDetailPage() {
       .at(-1) ?? null
   // Title from MEANINGFUL identifiers — booking no / SO no (then a PO), never the opaque UUID.
   // Display copy: "Booking ID" (not BK chip) — review/editor fields keep "Booking No." (#126).
+  // #151: multi-leg bookings show "B123 · Leg 1/2" in the Booking ID value.
+  const bookingTitleValue =
+    shipment.bookingNo &&
+    ((shipment.legCount ?? 1) > 1
+      ? `${shipment.bookingNo} · Leg ${shipment.legNo ?? 1}/${shipment.legCount}`
+      : shipment.bookingNo)
   const titleIds = [
-    shipment.bookingNo && { label: 'Booking ID', value: shipment.bookingNo },
+    bookingTitleValue && { label: 'Booking ID', value: bookingTitleValue },
     shipment.soNumber && { label: 'SO', value: shipment.soNumber },
   ].filter(Boolean) as { label: string; value: string }[]
   if (titleIds.length === 0 && linkedPOs[0]) titleIds.push({ label: 'PO', value: linkedPOs[0].poNumber })

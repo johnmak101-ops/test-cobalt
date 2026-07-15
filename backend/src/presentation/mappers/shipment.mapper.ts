@@ -34,6 +34,7 @@ const RISK_SHORT_LABELS: Record<string, string> = {
   WEAK_IDENTITY: 'No booking/SO/B/L identity',
   PARTY_UNRESOLVED: 'Party not in master data',
   MULTI_LEG_SUSPECT: 'May span multiple legs',
+  MULTI_DESTINATION_SUSPECT: 'One booking, several destinations',
   EXTRACTION_INCOMPLETE: 'Extraction incomplete',
   CARGO_SANITY: 'Cargo figures look off',
 }
@@ -131,6 +132,9 @@ export interface UiShipment {
   reviewStatus: string | null
   reviewReasons: string[]
   dismissedAt: string | null
+  /** #151: leg ordinal under booking; legCount > 1 → show "Booking · Leg n/N" */
+  legNo: number
+  legCount: number
   bookingNo: string | null
   soNumber: string | null
   itemStyleNo: string | null
@@ -166,7 +170,10 @@ export interface UiShipment {
   linkedPOs: unknown[]
 }
 
-export function toUiShipment(input: ShipmentMapperInput): UiShipment {
+export function toUiShipment(
+  input: ShipmentMapperInput,
+  legMeta: { legNo?: number; legCount?: number } = {},
+): UiShipment {
   const { leg, booking } = input
   return {
     id: leg.id,
@@ -186,6 +193,8 @@ export function toUiShipment(input: ShipmentMapperInput): UiShipment {
     reviewStatus: leg.reviewStatus ?? null,
     reviewReasons: leg.reviewReasons ?? [],
     dismissedAt: isoOrNull(leg.dismissedAt ?? null),
+    legNo: legMeta.legNo ?? 1,
+    legCount: legMeta.legCount ?? 1,
     bookingNo: leg.bookingNo ?? null,
     soNumber: leg.soNo ?? null,
     itemStyleNo: leg.itemStyleNo ?? null,

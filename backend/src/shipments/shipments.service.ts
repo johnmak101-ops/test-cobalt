@@ -201,14 +201,22 @@ export class ShipmentsService {
   async getOne(id: string) {
     const leg = await this.shipments.legDetailById(id)
     if (!leg) throw new NotFoundException(`shipment ${id} not found`)
-    const [milestones, pos, identifiers] = await Promise.all([
+    const [milestones, legPos, identifiers, siblings] = await Promise.all([
       this.shipments.milestonesFor(id),
-      this.shipments.linkedPosForBooking(leg.bookingId),
+      this.shipments.linkedPosForShipment(id),
       this.shipments.identifiersFor(id),
+      this.shipments.legsForBooking(leg.bookingId),
     ])
+    // #151: prefer per-leg shipment_pos; fall back to booking_pos only when the leg has no PO links (legacy).
+    const pos =
+      legPos.length > 0 ? legPos : await this.shipments.linkedPosForBooking(leg.bookingId)
+    const legNo = (leg as { legNo?: number | null }).legNo ?? 1
+    const legCount = siblings.length
     return {
       id: leg.id,
       bookingId: leg.bookingId,
+      legNo,
+      legCount,
       jobNo: leg.jobNo,
       bookingNo: leg.bookingNo ?? leg.containerNo ?? leg.hblAwbFcrNo ?? leg.soNo ?? leg.jobNo,
       soNo: leg.soNo,

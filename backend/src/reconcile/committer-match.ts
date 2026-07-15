@@ -119,16 +119,33 @@ export function findAdoptableZeroIdLeg<
   return adoptable.length === 1 ? adoptable[0] : undefined
 }
 
+/** Booking-layer identity types — one booking legitimately spans N legs, so a conflict CONFINED to the
+ *  leg layer (hbl) while the booking layer agrees is a SIBLING, not a re-keyed zombie (#151). */
+const BOOKING_LAYER = new Set(['booking_no', 'so_no'])
+
+function bookingLayerOnly(keys: Set<string>): Set<string> {
+  return new Set([...keys].filter((k) => BOOKING_LAYER.has(k.slice(0, k.indexOf(':')))))
+}
+
+/** Leg-layer identity: the hbl/awb/fcr — one per real ship (#151). */
+function legLayerOnly(keys: Set<string>): Set<string> {
+  return new Set([...keys].filter((k) => k.startsWith('hbl_awb_fcr_no:')))
+}
+
 /**
- * After committing a keyed group, retire provisional siblings whose identity CONFLICTS on one
- * strong-id type while OVERLAPPING on another — a re-parse corrected one of the shipment's ids
- * (the BEFF01 case: old leg so_no=Shipment-REF, new group so_no=order-no, both share booking_no).
+ * After committing a keyed group, retire provisional siblings whose BOOKING-LAYER identity CONFLICTS
+ * on one type while OVERLAPPING on another — a re-parse corrected one of the shipment's booking-layer
+ * ids (the BEFF01 case: old leg so_no=Shipment-REF, new group so_no=order-no, both share booking_no).
  * Conflict + overlap is the signature of the SAME shipment re-keyed; the overlap requirement is
  * load-bearing. Conflict + merely sharing the CONVERSATION must NEVER retire: a consolidated thread
  * legitimately holds several REAL shipments with conflicting ids (BSTI: UK + NL legs, one thread,
  * different SOs; KOHL/YAQI: five HBL legs, one thread) — a conversation branch here dismissed all of
- * them on re-ingest (probe-verified). A zombie whose ONLY strong id was corrected (no overlap left)
- * is not auto-retired; that rare case goes through the operator's duplicate fold instead.
+ * them on re-ingest (probe-verified).
+ *
+ * #151: a conflict CONFINED to the leg layer (different HBLs under one shared booking) is a sibling
+ * consolidation — Phase 2 files it as legNo N, never retires it. Retire ONLY when the booking-layer
+ * keys themselves conflict AND overlap.
+ *
  * Does NOT loosen findExistingLeg / strongKeysConflict itself.
  */
 export function findSupersededByIdentityCorrection<L extends {
@@ -145,6 +162,44 @@ export function findSupersededByIdentityCorrection<L extends {
     // Missing status (index/partial rows) → treat as provisional; present status must be provisional.
     if (l.reviewStatus != null && l.reviewStatus !== 'provisional') return false
     const legStrong = strongKeys((l.matchKeys ?? {}) as Record<string, unknown>)
-    return strongKeysConflict(newGroupKeys, legStrong) && keysOverlap(newGroupKeys, legStrong)
+    // A leg carrying its OWN distinct leg-layer id is a REAL SHIP — a sibling, never a zombie, whatever
+    // the booking layer says. Two ships under one booking may each carry their own SO (BSTI: NL 29954607
+    // / UK 29954612), which a booking-layer-only rule read as a re-key and retired — while
+    // findSiblingBooking simultaneously claimed the same leg as a sibling to attach, so one apply()
+    // would file legNo 2 AND dismiss the other ship. The BEFF01 ghost has NO hbl: nothing marks it as a
+    // separate ship, which is exactly what makes it a re-key of this one.
+    const legHbl = legLayerOnly(legStrong)
+    if (legHbl.size && !keysOverlap(legHbl, legLayerOnly(newGroupKeys))) return false
+    // Retire ONLY on a booking-layer re-key (BEFF01: so_no conflicts, booking_no shared).
+    const gkBooking = bookingLayerOnly(newGroupKeys)
+    const legBooking = bookingLayerOnly(legStrong)
+    return strongKeysConflict(gkBooking, legBooking) && keysOverlap(gkBooking, legBooking)
   })
+}
+
+/**
+ * #151 Phase 2: the group shares a BOOKING-LAYER value (booking_no / so_no) with existing leg(s) but
+ * carries its OWN leg-layer id (hbl) — that is a sibling ship of the same booking, not a new booking
+ * and not (per Task 2.0) a zombie. Returns the bookingId to attach a new legNo under, or undefined.
+ * Conservative: the group must have exactly its own DISTINCT hbl; all matching candidates must agree on
+ * ONE bookingId; linked husks excluded. findExistingLeg / strongKeysConflict are untouched — this runs
+ * only after findExistingLeg found no match.
+ */
+export function findSiblingBooking<
+  L extends { bookingId: string; matchKeys: unknown; linkedShipmentId?: string | null },
+>(legs: L[], gk: Set<string>): string | undefined {
+  const gkBooking = new Set([...gk].filter((k) => k.startsWith('booking_no:') || k.startsWith('so_no:')))
+  const gkHbl = new Set([...gk].filter((k) => k.startsWith('hbl_awb_fcr_no:')))
+  if (!gkBooking.size || gkHbl.size !== 1) return undefined
+  const bookingIds = new Set<string>()
+  for (const l of legs) {
+    if (l.linkedShipmentId != null) continue
+    const legStrong = strongKeys(l.matchKeys as Record<string, unknown>)
+    const legBooking = new Set([...legStrong].filter((k) => k.startsWith('booking_no:') || k.startsWith('so_no:')))
+    const legHbl = new Set([...legStrong].filter((k) => k.startsWith('hbl_awb_fcr_no:')))
+    if (!keysOverlap(gkBooking, legBooking)) continue // must SHARE a booking-layer value
+    if (legHbl.size && keysOverlap(gkHbl, legHbl)) continue // same hbl = findExistingLeg's territory
+    bookingIds.add(l.bookingId)
+  }
+  return bookingIds.size === 1 ? [...bookingIds][0] : undefined
 }
