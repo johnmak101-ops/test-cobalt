@@ -98,8 +98,9 @@ export default function ShipmentDetailPage() {
       .sort()
       .at(-1) ?? null
   // Title from MEANINGFUL identifiers — booking no / SO no (then a PO), never the opaque UUID.
+  // Display copy: "Booking ID" (not BK chip) — review/editor fields keep "Booking No." (#126).
   const titleIds = [
-    shipment.bookingNo && { label: 'BK', value: shipment.bookingNo },
+    shipment.bookingNo && { label: 'Booking ID', value: shipment.bookingNo },
     shipment.soNumber && { label: 'SO', value: shipment.soNumber },
   ].filter(Boolean) as { label: string; value: string }[]
   if (titleIds.length === 0 && linkedPOs[0]) titleIds.push({ label: 'PO', value: linkedPOs[0].poNumber })
@@ -299,9 +300,10 @@ export default function ShipmentDetailPage() {
             <table className="w-full min-w-[20rem]">
               <thead>
                 <tr className="border-b border-border bg-surface-900/50">
-                  <th className="px-3 py-2 text-left text-[11px] font-medium text-text-muted">PO#</th>
-                  <th className="px-3 py-2 text-left text-[11px] font-medium text-text-muted">Item / Style</th>
+                  <th className="px-3 py-2 text-left text-[11px] font-medium text-text-muted">Customer PO#</th>
                   <th className="px-3 py-2 text-left text-[11px] font-medium text-text-muted">Vendor</th>
+                  <th className="px-3 py-2 text-right text-[11px] font-medium text-text-muted">Total Quantity</th>
+                  <th className="px-3 py-2 text-left text-[11px] font-medium text-text-muted">UOM</th>
                 </tr>
               </thead>
               <tbody>
@@ -312,10 +314,11 @@ export default function ShipmentDetailPage() {
                     className="cursor-pointer border-b border-border last:border-0 transition-colors hover:bg-surface-700"
                   >
                     <td className="px-3 py-2 font-mono text-sm text-cobalt-primary-light">{po.poNumber}</td>
-                    <td className="max-w-[20rem] truncate px-3 py-2 text-sm text-text-secondary" title={po.itemStyleNo ?? undefined}>
-                      {po.itemStyleNo ?? '—'}
-                    </td>
                     <td className="px-3 py-2 text-sm text-text-secondary">{po.vendor?.name ?? '—'}</td>
+                    <td className="px-3 py-2 text-right font-mono text-sm text-text-secondary">
+                      {po.totalQuantity != null ? po.totalQuantity : '—'}
+                    </td>
+                    <td className="px-3 py-2 text-sm text-text-secondary">{po.quantityUnit ?? '—'}</td>
                   </tr>
                 ))}
               </tbody>

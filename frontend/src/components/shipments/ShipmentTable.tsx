@@ -194,7 +194,7 @@ export function ShipmentTable({ shipments }: ShipmentTableProps) {
           <thead>
             <tr className="border-b border-border bg-surface-900/50">
               <th className="px-2 py-3"></th>
-              <th className="px-3 py-3 text-left text-xs font-medium text-text-muted">Booking No</th>
+              <th className="px-3 py-3 text-left text-xs font-medium text-text-muted">Booking ID</th>
               <th className="px-3 py-3 text-left text-xs font-medium text-text-muted">Customer PO#</th>
               <th className="px-3 py-3 text-left text-xs font-medium text-text-muted">Customer</th>
               <th className="px-3 py-3 text-left text-xs font-medium text-text-muted">Forwarder</th>
