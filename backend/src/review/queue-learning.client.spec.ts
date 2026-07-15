@@ -44,7 +44,9 @@ describe('QueueLearningClient.postCorrection — auth + loud failure (#116)', ()
       return { ok: true, status: 200, text: async () => '' }
     })
     vi.stubGlobal('fetch', f)
-    await new QueueLearningClient(f as never).postCorrection(payload)
+    const client = new QueueLearningClient()
+    client.fetchImpl = f as never
+    await client.postCorrection(payload)
     const correction = f.mock.calls.find((c) => String(c[0]).includes('/review/correction')) as
       | [string, { method: string; headers: Record<string, string>; body: string }]
       | undefined
@@ -72,7 +74,9 @@ describe('QueueLearningClient.postCorrection — auth + loud failure (#116)', ()
       }
       throw new Error(`unexpected url ${u}`)
     })
-    await new QueueLearningClient(f as never).postCorrection(payload)
+    const client = new QueueLearningClient()
+    client.fetchImpl = f as never
+    await client.postCorrection(payload)
     expect(f).toHaveBeenCalled()
     expect(f.mock.calls.some((c) => String(c[0]).endsWith('/login'))).toBe(true)
     expect(f.mock.calls.some((c) => String(c[0]).includes('/review/correction'))).toBe(true)
@@ -93,7 +97,9 @@ describe('QueueLearningClient.postCorrection — auth + loud failure (#116)', ()
       }
       throw new Error(u)
     })
-    await new QueueLearningClient(f as never).postCorrection(payload)
+    const client = new QueueLearningClient()
+    client.fetchImpl = f as never
+    await client.postCorrection(payload)
     expect(correctionHits).toBe(2)
     expect(f.mock.calls.filter((c) => String(c[0]).endsWith('/login')).length).toBeGreaterThanOrEqual(2)
   })
@@ -105,8 +111,10 @@ describe('QueueLearningClient.postCorrection — auth + loud failure (#116)', ()
       if (String(url).endsWith('/auth')) return { ok: true, status: 200, json: async () => ({ required: true }) }
       throw new Error(`should not call ${url}`)
     })
+    const client = new QueueLearningClient()
+    client.fetchImpl = f as never
     // must not throw (review save)
-    await expect(new QueueLearningClient(f as never).postCorrection(payload)).resolves.toBeUndefined()
+    await expect(client.postCorrection(payload)).resolves.toBeUndefined()
     expect(f.mock.calls.every((c) => !String(c[0]).includes('/review/correction'))).toBe(true)
   })
 
@@ -115,24 +123,24 @@ describe('QueueLearningClient.postCorrection — auth + loud failure (#116)', ()
     const f = vi.fn(async () => {
       throw new Error('ECONNREFUSED')
     })
-    await expect(new QueueLearningClient(f as never).postCorrection(payload)).resolves.toBeUndefined()
+    const client = new QueueLearningClient()
+    client.fetchImpl = f as never
+    await expect(client.postCorrection(payload)).resolves.toBeUndefined()
   })
 
   it('HTTP 401 after re-login is loud but non-throwing (regression: no silent drop)', async () => {
     process.env.QUEUE_API_BASE = 'http://queue:3100/api'
     process.env.QUEUE_API_PASSWORD = 'viewer-secret'
-    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
     const f = vi.fn(async (url: string) => {
       const u = String(url)
       if (u.endsWith('/auth')) return { ok: true, status: 200, json: async () => ({ required: true }) }
       if (u.endsWith('/login')) return { ok: true, status: 200, json: async () => ({ token: 'jwt' }) }
       return { ok: false, status: 401, text: async () => 'still unauthorized' }
     })
-    const client = new QueueLearningClient(f as never)
-    // Nest Logger.error goes through console under the hood in tests — also pin via Logger if needed
+    const client = new QueueLearningClient()
+    client.fetchImpl = f as never
     await expect(client.postCorrection(payload)).resolves.toBeUndefined()
     // two correction attempts (initial + after re-login)
     expect(f.mock.calls.filter((c) => String(c[0]).includes('/review/correction')).length).toBe(2)
-    errorSpy.mockRestore()
   })
 })

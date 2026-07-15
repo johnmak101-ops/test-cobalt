@@ -33,8 +33,11 @@ export class QueueLearningClient {
   private token: string | null = null
   /** null = not probed yet; true/false = last /auth probe */
   private authRequired: boolean | null = null
-
-  constructor(private readonly fetchImpl: FetchLike = fetch) {}
+  /**
+   * HTTP transport — defaults to global fetch. Tests assign a stub; do NOT inject via Nest constructor
+   * (Nest would try to resolve `FetchLike` as a DI token and AppModule boot fails).
+   */
+  fetchImpl: FetchLike = fetch
 
   private base(): string | null {
     const b = (process.env.QUEUE_API_BASE ?? '').trim().replace(/\/+$/, '')
