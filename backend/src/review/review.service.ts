@@ -10,6 +10,7 @@ import { QueueLearningClient } from './queue-learning.client'
 import { syncIdentityMatchKeys } from '../shipments/identity-keys'
 import { keysOverlap, normBookingKey, normKey, strongKeys } from '../reconcile/match-keys'
 import type { CorrectDto, IdentifyDto, LinkDto } from './dto'
+import { logAmbiguityPickFromLink } from './ambiguity-pick-log'
 
 /** IdentifyDto snake_case strong-key field → camelCase shipment column. */
 const KEY_TO_LEG_COLUMN: Record<IdentifyDto['field'], string> = {
@@ -322,6 +323,17 @@ export class ReviewService {
       shipmentId, leg: source, outcome: 'corrected', correctedFieldCount: 0, actorId,
       reasons: ['linked-into-existing'],
     })
+    // #129 Phase F: human multi-candidate pick vs suggestion (no email body)
+    try {
+      logAmbiguityPickFromLink({
+        sourceShipmentId: shipmentId,
+        humanChoiceShipmentId: dto.targetShipmentId,
+        actorId,
+        criticReview: (source.criticReview ?? null) as CriticReview | null,
+      })
+    } catch {
+      /* never fail link */
+    }
     return { ok: true as const, targetShipmentId: dto.targetShipmentId }
   }
 

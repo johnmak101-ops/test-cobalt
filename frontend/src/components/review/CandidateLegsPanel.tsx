@@ -93,12 +93,23 @@ export function CandidateLegsPanel({
         </p>
       )}
 
-      {suggestedId && matchAmbiguity.suggestion?.rationale && (
+      {suggestedId && matchAmbiguity.suggestion && !matchAmbiguity.suggestion.cannotDecide && (
         <p className="text-[11px] text-text-muted" data-testid="candidate-suggestion">
-          Suggested: <span className="font-mono text-text-secondary">{suggestedId.slice(0, 8)}…</span>
-          {' — '}
-          {matchAmbiguity.suggestion.rationale}
-          {' (confirm by selecting — not auto-applied)'}
+          Suggested:{' '}
+          <span className="font-mono text-text-secondary">
+            {candidates.find((c) => c.shipmentId === suggestedId)?.jobNo ??
+              `${suggestedId.slice(0, 8)}…`}
+          </span>
+          {matchAmbiguity.suggestion.source === 'llm_rank' && (
+            <span className="text-text-muted"> (model)</span>
+          )}
+          {matchAmbiguity.suggestion.source === 'deterministic_rank' && (
+            <span className="text-text-muted"> (key overlap)</span>
+          )}
+          {matchAmbiguity.suggestion.rationale
+            ? ` — ${matchAmbiguity.suggestion.rationale}`
+            : ''}
+          {' · confirm by selecting (not auto-applied)'}
         </p>
       )}
 
