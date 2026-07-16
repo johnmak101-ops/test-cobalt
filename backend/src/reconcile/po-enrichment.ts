@@ -120,6 +120,7 @@ export function resolvePoEnrichment(rows: PoEvidenceInput[]): Map<string, PoEnri
       const sty = str(f.item_style_no)
       if (sty) styles.push(sty)
       if (enr.brand == null) enr.brand = b
+      // item_style: first non-null in newest-first order is provisional; may be upgraded by OCR family pick below
       if (enr.itemStyleNo == null) enr.itemStyleNo = sty
       if (enr.totalQuantity == null) {
         const q = num(f.qty)
@@ -131,6 +132,14 @@ export function resolvePoEnrichment(rows: PoEvidenceInput[]): Map<string, PoEnri
             broadcastFallback = { q, unit: validUnit(f.qty_unit) }
           }
         }
+      }
+    }
+    // #124: among OCR near-homoglyph styles, keep the letter-suffix form even if an older PDF reading
+    // lost to a newer screenshot under pure newest-first (PS1 beats 951 within the same family).
+    if (styles.length >= 2) {
+      const fam0 = styleFamilyKey(styles[0]!)
+      if (fam0.length >= 8 && styles.every((s) => styleFamilyKey(s) === fam0)) {
+        enr.itemStyleNo = styles.reduce((a, b) => (styleLetterScore(b) > styleLetterScore(a) ? b : a))
       }
     }
     // No genuine per-PO qty found, only a broadcast total: keep it (fill purchase_orders.total_quantity)
@@ -149,10 +158,34 @@ export function resolvePoEnrichment(rows: PoEvidenceInput[]): Map<string, PoEnri
 }
 
 /**
+ * OCR near-homoglyph family key for style codes (#124) — clusters W S6FS007PS1 / W56FS007951 etc.
+ * Used only to collapse conflict noise, not to invent values.
+ */
+export function styleFamilyKey(raw: string): string {
+  return String(raw ?? '')
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, '')
+    .replace(/5/g, 'S')
+    .replace(/6/g, 'G')
+    .replace(/9/g, 'P')
+    .replace(/8/g, 'E')
+}
+
+/** Prefer letter suffixes (PS1) over digit-corrupted OCR (951). */
+export function styleLetterScore(raw: string): number {
+  const s = String(raw ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '')
+  const tail = s.slice(-3)
+  const letters = (tail.match(/[A-Z]/g) ?? []).length
+  const digits = (tail.match(/\d/g) ?? []).length
+  return letters * 10 - digits + (/\s/.test(String(raw)) ? 1 : 0)
+}
+
+/**
  * The distinct competing values a human must reconcile, or null when there is no real conflict. Dedupes,
  * then drops any value whose comma-token set is a SUBSET of another's, so a narrowing ('33058,43078' →
- * '33058') is not treated as a conflict while two disjoint labels ('FENIX' vs 'Barbour') are. Order follows
- * first appearance (the resolve loop feeds it newest-first). >1 survivor ⇒ conflict.
+ * '33058') is not treated as a conflict while two disjoint labels ('FENIX' vs 'Barbour') are.
+ * #124: also collapses OCR near-homoglyph style families (PS1 vs 951) to a single preferred form.
+ * Order follows first appearance (the resolve loop feeds it newest-first). >1 survivor ⇒ conflict.
  */
 export function conflictingValues(values: string[]): string[] | null {
   const distinct = [...new Set(values)]
@@ -161,7 +194,17 @@ export function conflictingValues(values: string[]): string[] | null {
   const sets = distinct.map((v) => ({ v, t: tokens(v) }))
   const subsetOfOther = (s: { v: string; t: Set<string> }): boolean =>
     sets.some((o) => o !== s && o.t.size > s.t.size && [...s.t].every((x) => o.t.has(x)))
-  const survivors = sets.filter((s) => !subsetOfOther(s)).map((s) => s.v)
+  let survivors = sets.filter((s) => !subsetOfOther(s)).map((s) => s.v)
+
+  // #124 OCR family collapse: if every survivor is the same styleFamilyKey, keep only the best letter-form
+  if (survivors.length >= 2) {
+    const fam = styleFamilyKey(survivors[0]!)
+    if (fam.length >= 8 && survivors.every((v) => styleFamilyKey(v) === fam)) {
+      survivors = [
+        survivors.reduce((a, b) => (styleLetterScore(b) > styleLetterScore(a) ? b : a)),
+      ]
+    }
+  }
   return survivors.length >= 2 ? survivors : null
 }
 
