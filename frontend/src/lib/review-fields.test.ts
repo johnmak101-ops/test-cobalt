@@ -1,10 +1,16 @@
 import { describe, it, expect } from 'vitest'
 import {
   EDITABLE_FIELDS,
+  REVIEW_GROUP_ORDER,
   buildCorrections,
   conflictColumns,
+  fieldLabel,
+  fieldUnit,
+  groupConflictFields,
+  reviewFieldLabel,
   mapCriticFieldToColumn,
   mapCriticFieldsToColumns,
+  reviewGroupOf,
   toInputValue,
   parseStyleEntries,
   serializeStyleEntries,
@@ -148,5 +154,118 @@ describe('style entries table — parse/serialize round trip', () => {
   it('handles null/empty', () => {
     expect(parseStyleEntries(null)).toEqual([])
     expect(serializeStyleEntries([])).toBe('')
+  })
+})
+
+describe('reviewGroupOf — demo field grouping', () => {
+  it('maps a critic snake_case field to its demo group', () => {
+    expect(reviewGroupOf('qty')).toBe('Cargo & Logistics')
+    expect(reviewGroupOf('booking_no')).toBe('Order Info')
+    expect(reviewGroupOf('etd')).toBe('Key Dates')
+  })
+
+  it('files fields exactly where the Order Details page already files them', () => {
+    // Shipping = the parties/means. Not the demo's "Shipping Parties" — this app already says Shipping.
+    expect(reviewGroupOf('consignee_name')).toBe('Shipping')
+    expect(reviewGroupOf('vessel_name')).toBe('Shipping')
+    expect(reviewGroupOf('voyage_no')).toBe('Shipping')
+    // The strong identifiers live under Cargo & Logistics on the detail page — match it, do not
+    // invent a "Shipping IDs" group that exists nowhere else in the product.
+    expect(reviewGroupOf('hbl_awb_fcr_no')).toBe('Cargo & Logistics')
+    expect(reviewGroupOf('mbl')).toBe('Cargo & Logistics')
+    expect(reviewGroupOf('container_no')).toBe('Cargo & Logistics')
+  })
+
+  it('falls back to Other for an unmapped field rather than dropping it', () => {
+    // the allowlist trap: mapCriticFieldsToColumns DROPS unknown keys. Grouping must not —
+    // a conflict we cannot place must still be visible, or the count lies about the rows.
+    expect(mapCriticFieldToColumn('customer_po')).toBeNull()
+    expect(reviewGroupOf('customer_po')).toBe('Other')
+    expect(reviewGroupOf('totally_unknown_field')).toBe('Other')
+  })
+})
+
+describe('groupConflictFields — only conflict rows, grouped, empty groups omitted', () => {
+  const conflict = (field: string, label: string) => ({
+    field,
+    label,
+    candidates: [{ value: 'a', source: 'system' }],
+    rationale: '',
+  })
+
+  it('groups conflicts in REVIEW_GROUP_ORDER and omits groups with no conflicts', () => {
+    const groups = groupConflictFields([conflict('qty', 'Qty'), conflict('hts_code', 'HTS Code')])
+    expect(groups).toHaveLength(1)
+    expect(groups[0]!.group).toBe('Cargo & Logistics')
+    expect(groups[0]!.conflicts.map((c) => c.field)).toEqual(['qty', 'hts_code'])
+  })
+
+  it('orders groups by REVIEW_GROUP_ORDER regardless of conflict order', () => {
+    const groups = groupConflictFields([conflict('etd', 'ETD'), conflict('booking_no', 'Booking No.')])
+    expect(groups.map((g) => g.group)).toEqual(['Order Info', 'Key Dates'])
+    expect(REVIEW_GROUP_ORDER.indexOf('Order Info')).toBeLessThan(REVIEW_GROUP_ORDER.indexOf('Key Dates'))
+  })
+
+  it('keeps an unmapped conflict visible in Other, last', () => {
+    const groups = groupConflictFields([conflict('customer_po', 'Customer PO'), conflict('qty', 'Qty')])
+    expect(groups.map((g) => g.group)).toEqual(['Cargo & Logistics', 'Other'])
+    expect(groups.at(-1)!.conflicts[0]!.field).toBe('customer_po')
+  })
+
+  it('returns no groups for an empty conflict set (zero-conflict card)', () => {
+    expect(groupConflictFields([])).toEqual([])
+  })
+})
+
+describe('reviewFieldLabel — OUR vocabulary wins over the queue payload', () => {
+  it('uses the EDITABLE_FIELDS label, not the label the critic shipped', () => {
+    // the queue sends label:'Qty' / 'Gross weight'; ShipTrack owns its own copy.
+    expect(reviewFieldLabel('qty', 'Qty')).toBe('Total Quantity')
+    // Bare label + unit in the VALUE ("1046.64 KGS") is the Order Details convention — follow it.
+    expect(reviewFieldLabel('gross_weight', 'Gross weight')).toBe('Gross Weight')
+    expect(reviewFieldLabel('measurement', 'Measurement')).toBe('Measurement')
+  })
+
+  it('falls back to the payload label for a field we do not own', () => {
+    expect(reviewFieldLabel('customer_po', 'Customer PO')).toBe('Customer PO')
+    expect(reviewFieldLabel('totally_unknown', 'Whatever')).toBe('Whatever')
+  })
+})
+
+describe('fieldLabel — the one vocabulary, used by every surface that names a field', () => {
+  it('resolves each column the Order Details read view renders', () => {
+    // Pins the read view to EDITABLE_FIELDS: rename a label there and this stays green, but a
+    // renamed/removed COLUMN fails here instead of silently rendering the raw column name.
+    const rendered = [
+      'bookingNo', 'soNo',
+      'qty', 'qtyUnit', 'grossWeight', 'measurement', 'htsCode', 'containerNo', 'hblAwbFcrNo', 'mbl', 'scacCode',
+      'consigneeName', 'consigneeAddress', 'vesselName', 'voyageNo',
+      'cargoReadyDate', 'warehouseStartDate', 'warehouseEndDate', 'cfsCutoff',
+      'etd', 'atd', 'eta', 'ata', 'inDcDate',
+    ]
+    for (const c of rendered) {
+      expect(EDITABLE_FIELDS.some((f) => f.column === c), `no EDITABLE_FIELDS entry for '${c}'`).toBe(true)
+      expect(fieldLabel(c)).not.toBe(c)
+    }
+    expect(fieldLabel('qty')).toBe('Total Quantity')
+    expect(fieldLabel('grossWeight')).toBe('Gross Weight')
+  })
+
+  it('falls back to the column name rather than rendering a blank label', () => {
+    expect(fieldLabel('notAColumn')).toBe('notAColumn')
+  })
+})
+
+describe('fieldUnit — the Order Details convention: unit lives in the VALUE', () => {
+  it('gives the fixed physical units', () => {
+    expect(fieldUnit('grossWeight')).toBe('KGS')
+    expect(fieldUnit('measurement')).toBe('CBM')
+  })
+
+  it('gives NO unit for qty — it is the leg UOM, not a constant', () => {
+    // qty is cartons OR pieces depending on the shipment; a constant here would invent a fact.
+    expect(fieldUnit('qty')).toBeNull()
+    expect(fieldUnit('bookingNo')).toBeNull()
+    expect(fieldUnit('notAColumn')).toBeNull()
   })
 })

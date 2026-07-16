@@ -1,8 +1,14 @@
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { CheckCircle, ChevronDown, ChevronRight, ExternalLink, Loader2, Mail, NotebookPen, Save, XCircle } from 'lucide-react'
+import { CheckCircle, ChevronDown, ChevronRight, ExternalLink, Loader2, Mail, NotebookPen, Pencil, Save, XCircle } from 'lucide-react'
 import { Badge } from '../ui/Badge'
-import { ConflictRow, splitCandidates } from './ConflictRow'
+import {
+  ConflictRow,
+  changesStoredValue,
+  existingValueOf,
+  proposedValueOf,
+} from './ConflictRow'
+import { fieldUnit, groupConflictFields, mapCriticFieldToColumn } from '../../lib/review-fields'
 import {
   aiCommentLine,
   type CriticConflict,
@@ -43,9 +49,41 @@ const RISK_CODE_CATEGORY: Record<string, ReasonCategory> = {
   CARGO_SANITY: 'extraction',
 }
 
+/**
+ * ONE geometry for every button in the card's action bar; variants change COLOUR only, never size,
+ * padding or radius. The bar drifted precisely because each button hand-rolled its own class list.
+ * Weight reads as intent: solid = the committing action, tinted = everything else.
+ */
+// The base sets `border` (WIDTH only) — so EVERY variant below MUST name a border colour. Tailwind
+// v4 defaults border-color to currentColor, so an omission renders a hard full-strength outline
+// rather than nothing (the bug Badge.emailTypeStyles had). Tints follow the Badge convention:
+// a /30 border over a /15 fill; the solid primary borders in its own colour so all three match height.
+const ACTION_BTN =
+  'inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50'
+const ACTION_VARIANT = {
+  primary:
+    'border-cobalt-primary bg-cobalt-primary text-white hover:border-cobalt-primary-light hover:bg-cobalt-primary-light',
+  secondary: 'border-cobalt-primary/30 bg-cobalt-primary/15 text-cobalt-primary-light hover:bg-cobalt-primary/25',
+  danger: 'border-status-critical/30 bg-status-critical/15 text-status-critical hover:bg-status-critical/25',
+  success: 'border-status-success/30 bg-status-success/15 text-status-success hover:bg-status-success/25',
+} as const
+
+/** What the operator decided about ONE contested field — the unit the learner trains on (ADR-0002). */
+export interface ReviewCorrection {
+  field: string
+  /** What ShipTrack already stored ('' when the field was empty). */
+  existing: string
+  /** What the agent proposed ('' when it offered nothing). */
+  aiProposed: string
+  /** What the operator committed. Equal to aiProposed = confirmation; different = correction. */
+  humanFinal: string
+}
+
 export interface ReviewCardSavePayload {
   fields: Record<string, unknown>
   note: string
+  /** Per-field decision trail. Additive: consumers that ignore it keep working. */
+  corrections?: ReviewCorrection[]
   expectedUpdatedAt?: string
 }
 
@@ -75,6 +113,12 @@ export interface ReviewCardProps {
   /** Route to the full shipment editor — rendered as an "Open full shipment" link when set. */
   fullShipmentPath?: string
   defaultExpanded?: boolean
+  /**
+   * Rendered inside a queue table row that ALREADY states band/customer/booking/route/status and
+   * owns the expand chevron. Drops this card's own identity header (it read as the same leg listed
+   * twice) and its frame, so the detail reads as one continuous panel with the row above it.
+   */
+  embedded?: boolean
   /** Resolved history — hide inputs and primary actions. */
   readOnly?: boolean
   onSaveAndApprove?: (payload: ReviewCardSavePayload) => Promise<void>
@@ -124,13 +168,15 @@ function compactFromReview(cr: CriticReview): CriticReviewCompact {
 
 function initialResolutions(conflicts: CriticConflict[]): Record<string, string> {
   const out: Record<string, string> = {}
-  // No pre-filled recommendation — a queued conflict has no safe auto-pick; the operator chooses.
-  for (const c of conflicts) out[c.field] = ''
+  // Seeded with the agent's proposal: the table reads as a diff, and approving accepts it. A queued
+  // conflict still has no safe AUTO-pick, so the primary button NAMES the number of stored values it
+  // would overwrite ("Approve 3 changes") — pre-filled must not read as pre-approved.
+  for (const c of conflicts) out[c.field] = proposedValueOf(c)
   return out
 }
 
 function existingValue(c: CriticConflict): string {
-  return splitCandidates(c).existing?.value ?? ''
+  return existingValueOf(c)
 }
 
 /**
@@ -154,6 +200,7 @@ export function ReviewCard({
   emails = [],
   fullShipmentPath,
   defaultExpanded = false,
+  embedded = false,
   readOnly = false,
   onSaveAndApprove,
   onApprove,
@@ -205,6 +252,8 @@ export function ReviewCard({
   const [resolutions, setResolutions] = useState<Record<string, string>>(() =>
     initialResolutions(conflicts),
   )
+  /** Card-level edit mode. The table reads as a clean diff until the operator asks to change it. */
+  const [editing, setEditing] = useState(false)
 
   // Re-seed when the conflict set identity changes (new payload / leg).
   const conflictKey = useMemo(
@@ -215,6 +264,31 @@ export function ReviewCard({
   if (seededKey !== conflictKey) {
     setSeededKey(conflictKey)
     setResolutions(initialResolutions(conflicts))
+    setEditing(false)
+  }
+
+  const setResolution = (field: string, v: string) => {
+    setResolutions((prev) => ({ ...prev, [field]: v }))
+  }
+
+  /**
+   * Units for a contested row. A bare number is unreadable ('14' — of what?), so the value carries
+   * its unit exactly as Order Details does.
+   *
+   * Weight/volume are invariant (KGS/CBM) → both sides share one. `qty` is the dangerous case: its
+   * unit is the leg's own UOM, and when the email ALSO contests qty_unit the two sides are counting
+   * different things (the 260-cartons vs 13516-pieces family). Stamping the STORED unit onto the
+   * agent's number would then assert something no one said — so the proposal shows no unit and the
+   * contested UOM row speaks for itself.
+   */
+  const unitsFor = (c: CriticConflict): { existing: string | null; proposed: string | null } => {
+    const column = mapCriticFieldToColumn(c.field)
+    const fixed = column ? fieldUnit(column) : null
+    if (fixed) return { existing: fixed, proposed: fixed }
+    if (column !== 'qty') return { existing: null, proposed: null }
+    const uom = (shipment as Partial<ShipmentDetail>).quantityUnit ?? null
+    const uomContested = conflicts.some((x) => mapCriticFieldToColumn(x.field) === 'qtyUnit')
+    return { existing: uom, proposed: uomContested ? null : uom }
   }
 
   const id = identityOf(shipment)
@@ -232,11 +306,47 @@ export function ReviewCard({
     return fields
   }, [conflicts, resolutions])
 
-  // A note is mandatory whenever a value is actually changed (differs from the STORED value) — not
-  // merely when it differs from a suggestion. Matches the detail page's correctBlocked rule, and
-  // prevents a silent human-wins field lock with no reason.
-  const dirty = Object.keys(fieldsToApply).length > 0
-  const noteRequired = dirty && !note.trim()
+  /**
+   * The learning signal (ADR-0002). `aiProposed` is what the agent suggested, `humanFinal` is what
+   * the operator committed — equal values are a confirmation, differing ones a correction. Dropping
+   * aiProposed would leave the learner knowing only that a human typed something, not what it got
+   * wrong, so it is carried even though the cell renders once.
+   */
+  const corrections = useMemo(
+    () =>
+      conflicts
+        .filter((c) => c.field in fieldsToApply)
+        .map((c) => ({
+          field: c.field,
+          existing: existingValue(c),
+          aiProposed: proposedValueOf(c),
+          humanFinal: String(fieldsToApply[c.field] ?? ''),
+        })),
+    [conflicts, fieldsToApply],
+  )
+
+  // A note is mandatory when the operator OVERRIDES the agent — a value that is neither what is
+  // stored nor what was proposed is a human judgement, and the note is the only record of why (and
+  // the training signal). Accepting the agent's proposal needs no note: the confirm click is the
+  // record. Requiring one there would demand a note on every single approval.
+  const overrides = useMemo(
+    () =>
+      conflicts.filter((c) => {
+        const v = (resolutions[c.field] ?? '').trim()
+        return v !== '' && v !== existingValue(c) && v !== proposedValueOf(c)
+      }),
+    [conflicts, resolutions],
+  )
+  const noteRequired = overrides.length > 0 && !note.trim()
+  /**
+   * How many stored values Approve would overwrite. This is the count the primary button NAMES —
+   * one informed click beats a row-by-row confirm ritual, but a bare "Approve" would hide what is
+   * being accepted, which is the whole reason these legs are queued.
+   */
+  const changeCount = useMemo(
+    () => conflicts.filter((c) => changesStoredValue(c, resolutions[c.field] ?? '')).length,
+    [conflicts, resolutions],
+  )
   const canSave = !readOnly && !noteRequired && !busy && (onSaveAndApprove || onApprove)
 
   const run = async (fn: () => Promise<void>) => {
@@ -256,6 +366,7 @@ export function ReviewCard({
         onSaveAndApprove({
           fields: fieldsToApply,
           note: note.trim(),
+          corrections,
           expectedUpdatedAt: id.updatedAt,
         }),
       )
@@ -270,6 +381,7 @@ export function ReviewCard({
         onSaveAndApprove({
           fields: fieldsToApply,
           note: note.trim(),
+          corrections,
           expectedUpdatedAt: id.updatedAt,
         }),
       )
@@ -287,8 +399,9 @@ export function ReviewCard({
   }
 
   return (
-    <div className="rounded-xl border border-border bg-surface-800">
-      {/* Collapsed identity row (§2.1) */}
+    <div className={embedded ? undefined : 'rounded-xl border border-border bg-surface-800'}>
+      {/* Collapsed identity row (§2.1) — suppressed when embedded: the queue row states it already. */}
+      {!embedded && (
       <div className="flex flex-wrap items-center gap-2 px-3 py-2.5 sm:gap-3">
         <button
           type="button"
@@ -333,7 +446,7 @@ export function ReviewCard({
                 type="button"
                 onClick={handleApproveCollapsed}
                 disabled={busy}
-                className="inline-flex items-center gap-1.5 rounded-lg bg-status-success/15 px-2.5 py-1.5 text-xs font-medium text-status-success transition-colors hover:bg-status-success/25 disabled:cursor-not-allowed disabled:opacity-50"
+                className={cn(ACTION_BTN, ACTION_VARIANT.success)}
               >
                 {busy ? <Loader2 size={13} className="animate-spin" /> : <CheckCircle size={13} />}
                 Approve
@@ -344,7 +457,7 @@ export function ReviewCard({
                 type="button"
                 onClick={handleDismiss}
                 disabled={busy}
-                className="inline-flex items-center gap-1.5 rounded-lg bg-status-critical/15 px-2.5 py-1.5 text-xs font-medium text-status-critical transition-colors hover:bg-status-critical/25 disabled:cursor-not-allowed disabled:opacity-50"
+                className={cn(ACTION_BTN, ACTION_VARIANT.danger)}
               >
                 {busy ? <Loader2 size={13} className="animate-spin" /> : <XCircle size={13} />}
                 Dismiss
@@ -353,9 +466,10 @@ export function ReviewCard({
           </div>
         )}
       </div>
+      )}
 
       {/* Expanded: AI comment + conflicts-only + notes + Save&Approve (§2.2) */}
-      {expanded && (
+      {(expanded || embedded) && (
         <div className="space-y-3 border-t border-border px-3 pb-3 pt-3">
           {(lineCompact || fullShipmentPath) && (
             <div className="flex items-start justify-between gap-2">
@@ -392,7 +506,9 @@ export function ReviewCard({
                   className="inline-flex max-w-[18rem] items-center gap-1 rounded-full border border-border bg-surface-900 px-2.5 py-1 text-[11px] text-text-secondary transition-colors hover:border-cobalt-primary hover:text-cobalt-primary-light"
                 >
                   <Mail size={10} className="shrink-0 text-text-muted" />
-                  <span className="truncate">{e.emailType || e.subject || '(no subject)'}</span>
+                  {/* The SUBJECT, never emailType: 'Other' on every chip identifies nothing, and the
+                      reviewer is picking WHICH email to open. The type was winning by being first. */}
+                  <span className="truncate">{e.subject || '(no subject)'}</span>
                   <ExternalLink size={9} className="shrink-0 opacity-60" />
                 </button>
               ))}
@@ -460,7 +576,7 @@ export function ReviewCard({
                     try { setIdentResult(await onIdentify(identField, identValue.trim())) }
                     finally { setIdentBusy(false) }
                   }}
-                  className="inline-flex items-center gap-1.5 rounded-lg bg-cobalt-primary/15 px-2.5 py-1.5 text-xs font-medium text-cobalt-primary-light hover:bg-cobalt-primary/25 disabled:cursor-not-allowed disabled:opacity-50"
+                  className={cn(ACTION_BTN, ACTION_VARIANT.secondary)}
                 >
                   {identBusy ? <Loader2 size={13} className="animate-spin" /> : null}
                   Apply identity
@@ -485,7 +601,7 @@ export function ReviewCard({
                       try { await onLink(identResult.candidate.shipmentId) }
                       finally { setIdentBusy(false) }
                     }}
-                    className="inline-flex items-center gap-1.5 rounded-lg bg-status-success/15 px-2.5 py-1.5 text-xs font-medium text-status-success hover:bg-status-success/25 disabled:cursor-not-allowed disabled:opacity-50"
+                    className={cn(ACTION_BTN, ACTION_VARIANT.success)}
                   >
                     Link into this shipment
                   </button>
@@ -496,26 +612,48 @@ export function ReviewCard({
 
           {conflicts.length > 0 && (
             <div className="overflow-x-auto rounded-lg border border-border">
-              <table className="w-full min-w-[36rem]">
+              {/* table-fixed: auto layout re-measures when the Proposed cell swaps text for an
+                  input, so the columns visibly jumped every time Edit was toggled. Fixed widths
+                  make the two modes the same table. */}
+              <table className="w-full min-w-[36rem] table-fixed">
                 <thead>
                   <tr className="border-b border-border bg-surface-900/50 text-left text-[11px] font-medium text-text-muted">
-                    <th className="px-3 py-2">Field</th>
-                    <th className="px-3 py-2">Existing</th>
-                    <th className="px-3 py-2">Proposed</th>
-                    <th className="px-3 py-2">Resolution</th>
+                    <th className="w-[22%] px-3 py-2">Field</th>
+                    <th className="w-[33%] px-3 py-2">Existing</th>
+                    <th className="w-[45%] px-3 py-2">AI Proposed</th>
                   </tr>
                 </thead>
-                <tbody>
-                  {conflicts.map((c) => (
-                    <ConflictRow
-                      key={c.field}
-                      conflict={c}
-                      value={resolutions[c.field] ?? ''}
-                      onChange={(v) => setResolutions((prev) => ({ ...prev, [c.field]: v }))}
-                      readOnly={readOnly}
-                    />
-                  ))}
-                </tbody>
+                {/* Only contested rows render — a field both sides agree on is not a decision. Group
+                    headers appear only where that group HAS a conflict, so the table stays short. */}
+                {groupConflictFields(conflicts).map(({ group, conflicts: rows }) => (
+                  <tbody key={group}>
+                    <tr className="border-b border-border bg-surface-900/30">
+                      <td
+                        colSpan={3}
+                        className="px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-text-muted"
+                      >
+                        {group}
+                        <span className="ml-2 font-normal normal-case tracking-normal">
+                          ({rows.length} {rows.length === 1 ? 'change' : 'changes'})
+                        </span>
+                      </td>
+                    </tr>
+                    {rows.map((c) => {
+                      const units = unitsFor(c)
+                      return (
+                        <ConflictRow
+                          key={c.field}
+                          conflict={c}
+                          value={resolutions[c.field] ?? ''}
+                          onChange={(v) => setResolution(c.field, v)}
+                          editing={editing && !readOnly}
+                          existingUnit={units.existing}
+                          proposedUnit={units.proposed}
+                        />
+                      )
+                    })}
+                  </tbody>
+                ))}
               </table>
             </div>
           )}
@@ -529,8 +667,8 @@ export function ReviewCard({
                 >
                   <NotebookPen size={12} className="text-text-muted" />
                   Note
-                  {dirty && (
-                    <span className="font-normal text-status-warning">· required when you change a value</span>
+                  {overrides.length > 0 && (
+                    <span className="font-normal text-status-warning">· required when you override the agent</span>
                   )}
                 </label>
                 <textarea
@@ -539,7 +677,7 @@ export function ReviewCard({
                   value={note}
                   onChange={(e) => setNote(e.target.value)}
                   rows={2}
-                  placeholder="Why this resolution? (required when you change a value)"
+                  placeholder="Why your value beats the agent's? (also trains the next extraction)"
                   className={cn(
                     'w-full rounded-lg border bg-surface-900 p-2.5 text-sm text-text-primary placeholder:text-text-muted',
                     noteRequired ? 'border-status-warning/60' : 'border-border',
@@ -553,12 +691,23 @@ export function ReviewCard({
               </div>
 
               <div className="flex flex-wrap items-center justify-end gap-2">
+                {conflicts.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setEditing((v) => !v)}
+                    disabled={busy}
+                    className={cn(ACTION_BTN, ACTION_VARIANT.secondary)}
+                  >
+                    <Pencil size={13} />
+                    {editing ? 'Done editing' : 'Edit'}
+                  </button>
+                )}
                 {onDismiss && (
                   <button
                     type="button"
                     onClick={handleDismiss}
                     disabled={busy}
-                    className="inline-flex items-center gap-1.5 rounded-lg bg-status-critical/15 px-3 py-1.5 text-xs font-medium text-status-critical transition-colors hover:bg-status-critical/25 disabled:cursor-not-allowed disabled:opacity-50"
+                    className={cn(ACTION_BTN, ACTION_VARIANT.danger)}
                   >
                     {busy ? <Loader2 size={13} className="animate-spin" /> : <XCircle size={13} />}
                     Dismiss
@@ -569,10 +718,12 @@ export function ReviewCard({
                     type="button"
                     onClick={handleSaveAndApprove}
                     disabled={!canSave}
-                    className="inline-flex items-center gap-1.5 rounded-lg bg-cobalt-primary px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-cobalt-primary-light disabled:cursor-not-allowed disabled:opacity-50"
+                    className={cn(ACTION_BTN, ACTION_VARIANT.primary)}
                   >
                     {busy ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />}
-                    Save changes & Approve
+                    {changeCount > 0
+                      ? `Approve ${changeCount} change${changeCount === 1 ? '' : 's'}`
+                      : 'Approve'}
                   </button>
                 )}
               </div>

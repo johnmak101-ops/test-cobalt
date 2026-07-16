@@ -1,6 +1,6 @@
 import { Fragment, useMemo, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { CheckCircle, Ship, Package, Loader2, XCircle, RotateCcw, ChevronDown, ChevronRight } from 'lucide-react'
+import { CheckCircle, Ship, Package, Loader2, XCircle, RotateCcw } from 'lucide-react'
 import {
   useReviewQueue,
   useReviewCounts,
@@ -73,6 +73,7 @@ function ExpandedReviewPanel({
         emails={data.emails ?? []}
         fullShipmentPath={`/shipments/${row.id}`}
         defaultExpanded
+        embedded
         readOnly={readOnly}
         onApprove={onApprove}
         onDismiss={onDismiss}
@@ -153,31 +154,6 @@ export default function ReviewQueuePage() {
     await refetch()
   }
 
-  const handleApprove = (s: ReviewShipment) => {
-    setBusyId(s.id)
-    setStaleBanner(null)
-    confirmMutation.mutate(
-      { shipmentId: s.id, expectedUpdatedAt: s.updatedAt },
-      {
-        onError: (err) => {
-          void handleStale(err).catch(() => {
-            setStaleBanner('Approve failed.')
-          })
-        },
-        onSettled: () => setBusyId(null),
-      },
-    )
-  }
-  const handleDismissOne = (id: string) => {
-    setBusyId(id)
-    dismissMutation.mutate(
-      { shipmentIds: [id] },
-      {
-        onSuccess: () => setSelected((prev) => { const next = new Set(prev); next.delete(id); return next }),
-        onSettled: () => setBusyId(null),
-      },
-    )
-  }
   const handleRestore = (id: string) => {
     setBusyId(id)
     restoreMutation.mutate({ shipmentId: id }, { onSettled: () => setBusyId(null) })
@@ -227,8 +203,9 @@ export default function ReviewQueuePage() {
   const anyMutating = confirmMutation.isPending || correctMutation.isPending || dismissMutation.isPending || restoreMutation.isPending
   const isActiveView = view === 'active'
   const isRejectedView = view === 'rejected'
-  // [checkbox?] + expand + band + customer + booking + route + status + action
-  const colSpan = isActiveView ? 8 : 7
+  // Both views happen to be 6 wide: active = checkbox + band + customer + booking + route + status;
+  // rejected/approved = band + customer + booking + route + status + action (Restore / Open).
+  const colSpan = 6
 
   const viewCopy: Record<ReviewQueueView, string> = {
     active:
@@ -371,13 +348,17 @@ export default function ReviewQueuePage() {
                         />
                       </th>
                     )}
-                    <th className="w-10 px-2 py-3" aria-label="Expand" />
                     <th className="px-4 py-3 text-left text-xs font-medium text-text-muted">Band</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-text-muted">Customer</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-text-muted">Booking</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-text-muted">Route</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-text-muted">Status</th>
-                    <th className="px-4 py-3 text-right text-xs font-medium text-text-muted">Action</th>
+                    {/* Active rows carry no Action column: the row expands on click and the panel
+                        below owns Approve/Dismiss. Rejected/Approved keep one — Restore and Open
+                        have no equivalent inside the read-only panel. */}
+                    {!isActiveView && (
+                      <th className="px-4 py-3 text-right text-xs font-medium text-text-muted">Action</th>
+                    )}
                   </tr>
                 </thead>
                 <tbody>
@@ -387,8 +368,21 @@ export default function ReviewQueuePage() {
                     const band = s.criticReviewCompact?.band
                     return (
                       <Fragment key={s.id}>
+                        {/* The whole row is the expand control — a dedicated chevron column was a
+                            second way to do what clicking already did. Keyboard parity via
+                            role/tabIndex/Enter, which the removed <button> used to provide. */}
                         <tr
-                          className="border-b border-border last:border-0 transition-colors hover:bg-surface-700/50"
+                          role="button"
+                          tabIndex={0}
+                          aria-expanded={expanded}
+                          onClick={() => setExpandedId(expanded ? null : s.id)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault()
+                              setExpandedId(expanded ? null : s.id)
+                            }
+                          }}
+                          className="cursor-pointer border-b border-border last:border-0 transition-colors hover:bg-surface-700/50"
                         >
                           {isActiveView && (
                             <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
@@ -401,18 +395,6 @@ export default function ReviewQueuePage() {
                             </td>
                           )}
 
-                          <td className="px-2 py-3">
-                            <button
-                              type="button"
-                              onClick={() => setExpandedId(expanded ? null : s.id)}
-                              aria-expanded={expanded}
-                              aria-label={expanded ? 'Collapse row' : 'Expand row'}
-                              className="inline-flex rounded-md p-1 text-text-muted hover:bg-surface-700 hover:text-text-primary"
-                            >
-                              {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-                            </button>
-                          </td>
-
                           <td className="px-4 py-3">
                             {band ? (
                               <Badge variant="confidence" value={band} />
@@ -421,10 +403,7 @@ export default function ReviewQueuePage() {
                             )}
                           </td>
 
-                          <td
-                            className="cursor-pointer px-4 py-3 text-sm text-text-secondary"
-                            onClick={() => setExpandedId(expanded ? null : s.id)}
-                          >
+                          <td className="px-4 py-3 text-sm text-text-secondary">
                             {s.customer ?? '—'}
                             {s.forwarder && (
                               <span className="mt-0.5 block text-[11px] text-text-muted">{s.forwarder}</span>
@@ -434,10 +413,7 @@ export default function ReviewQueuePage() {
                             </span>
                           </td>
 
-                          <td
-                            className="cursor-pointer px-4 py-3"
-                            onClick={() => setExpandedId(expanded ? null : s.id)}
-                          >
+                          <td className="px-4 py-3">
                             <span className="inline-flex items-center gap-1.5 font-mono text-sm font-medium text-cobalt-primary-light">
                               <Ship size={13} className="shrink-0 text-text-muted" />
                               {s.bookingNo ?? s.soNo ?? '—'}
@@ -450,51 +426,18 @@ export default function ReviewQueuePage() {
                             )}
                           </td>
 
-                          <td
-                            className="cursor-pointer px-4 py-3 text-sm text-text-secondary"
-                            onClick={() => setExpandedId(expanded ? null : s.id)}
-                          >
+                          <td className="px-4 py-3 text-sm text-text-secondary">
                             {s.route ?? '—'}
                           </td>
 
-                          <td
-                            className="cursor-pointer px-4 py-3"
-                            onClick={() => setExpandedId(expanded ? null : s.id)}
-                          >
+                          <td className="px-4 py-3">
                             <Badge variant="status" value={s.status} />
                           </td>
 
+                          {!isActiveView && (
                           <td className="px-4 py-3 text-right">
                             <div className="inline-flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
-                              {isActiveView ? (
-                                <>
-                                  <button
-                                    onClick={() => handleApprove(s)}
-                                    disabled={anyMutating}
-                                    className="inline-flex items-center gap-1.5 rounded-lg bg-status-success/15 px-2.5 py-1.5 text-xs font-medium text-status-success transition-colors hover:bg-status-success/25 disabled:cursor-not-allowed disabled:opacity-50"
-                                  >
-                                    {rowBusy && confirmMutation.isPending ? (
-                                      <Loader2 size={13} className="animate-spin" />
-                                    ) : (
-                                      <CheckCircle size={13} />
-                                    )}
-                                    Approve
-                                  </button>
-                                  <button
-                                    onClick={() => handleDismissOne(s.id)}
-                                    disabled={anyMutating}
-                                    title="Not a trackable shipment — remove from the queue (reversible)"
-                                    className="inline-flex items-center gap-1.5 rounded-lg bg-status-critical/15 px-2.5 py-1.5 text-xs font-medium text-status-critical transition-colors hover:bg-status-critical/25 disabled:cursor-not-allowed disabled:opacity-50"
-                                  >
-                                    {rowBusy && dismissMutation.isPending ? (
-                                      <Loader2 size={13} className="animate-spin" />
-                                    ) : (
-                                      <XCircle size={13} />
-                                    )}
-                                    Dismiss
-                                  </button>
-                                </>
-                              ) : isRejectedView ? (
+                              {isRejectedView ? (
                                 <button
                                   onClick={() => handleRestore(s.id)}
                                   disabled={anyMutating}
@@ -518,6 +461,7 @@ export default function ReviewQueuePage() {
                               )}
                             </div>
                           </td>
+                          )}
                         </tr>
                         {expanded && (
                           <tr className="border-b border-border bg-surface-900/20">
@@ -544,6 +488,13 @@ export default function ReviewQueuePage() {
                                   isActiveView
                                     ? async () => {
                                         await dismissMutation.mutateAsync({ shipmentIds: [s.id] })
+                                        // Drop it from the bulk selection too — this is now the only
+                                        // dismiss path, and a dismissed row must not linger in it.
+                                        setSelected((prev) => {
+                                          const next = new Set(prev)
+                                          next.delete(s.id)
+                                          return next
+                                        })
                                         setExpandedId(null)
                                       }
                                     : undefined

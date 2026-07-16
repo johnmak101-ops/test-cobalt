@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
 import { X, PlusCircle, Loader2 } from 'lucide-react'
 import { useCreateShipment, type CreateShipmentInput } from '../../hooks/use-shipments'
+import { fieldLabel } from '../../lib/review-fields'
 
 /**
  * Manually create a shipment the pipeline never saw (e.g. the original booking email / attachment was
@@ -10,14 +11,16 @@ import { useCreateShipment, type CreateShipmentInput } from '../../hooks/use-shi
  * booking/SO/… (no duplicate) and every field entered here is locked (human-wins). Lands in the Review
  * queue — on success we jump straight to it to finish the details.
  */
-type Field = { key: keyof CreateShipmentInput; label: string; placeholder?: string; wide?: boolean }
+/** `label` defaults to the ONE vocabulary (fieldLabel). Spell one out ONLY for a key that is not an
+ *  editable leg column — PO#(s), customer/forwarder and the ports have no EDITABLE_FIELDS entry. */
+type Field = { key: keyof CreateShipmentInput; label?: string; placeholder?: string; wide?: boolean }
 
 const IDENTITY: Field[] = [
-  { key: 'bookingNo', label: 'Booking No.' },
-  { key: 'soNo', label: 'SO#' },
-  { key: 'hblAwbFcrNo', label: 'HBL / AWB / FCR No.' },
-  { key: 'mbl', label: 'MBL' },
-  { key: 'containerNo', label: 'Container No.' },
+  { key: 'bookingNo' },
+  { key: 'soNo' },
+  { key: 'hblAwbFcrNo' },
+  { key: 'mbl' },
+  { key: 'containerNo' },
   { key: 'pos', label: 'PO#(s)', placeholder: 'comma-separated', wide: true },
 ]
 const ROUTE: Field[] = [
@@ -27,16 +30,16 @@ const ROUTE: Field[] = [
   { key: 'pod', label: 'POD', placeholder: 'e.g. FRA' },
 ]
 const CARGO: Field[] = [
-  { key: 'qty', label: 'Qty' },
-  { key: 'qtyUnit', label: 'UOM', placeholder: 'e.g. cartons' },
-  { key: 'grossWeight', label: 'Gross Weight (KGS)' },
-  { key: 'measurement', label: 'Measurement (CBM)' },
-  { key: 'itemStyleNo', label: 'Item / Style No.', wide: true },
-  { key: 'consigneeName', label: 'Consignee Name', wide: true },
+  { key: 'qty' },
+  { key: 'qtyUnit', placeholder: 'e.g. cartons' },
+  { key: 'grossWeight' },
+  { key: 'measurement' },
+  { key: 'itemStyleNo', wide: true },
+  { key: 'consigneeName', wide: true },
 ]
 const DATES: Field[] = [
-  { key: 'cargoReadyDate', label: 'Cargo Ready Date' },
-  { key: 'etd', label: 'ETD' },
+  { key: 'cargoReadyDate' },
+  { key: 'etd' },
 ]
 
 const STRONG: (keyof CreateShipmentInput)[] = ['bookingNo', 'soNo', 'hblAwbFcrNo', 'mbl', 'containerNo']
@@ -71,7 +74,7 @@ export function NewShipmentModal({ onClose }: { onClose: () => void }) {
 
   const renderField = (fld: Field) => (
     <label key={fld.key} className={fld.wide ? 'flex flex-col gap-1 sm:col-span-2' : 'flex flex-col gap-1'}>
-      <span className="text-xs text-text-muted">{fld.label}</span>
+      <span className="text-xs text-text-muted">{fld.label ?? fieldLabel(fld.key)}</span>
       <input
         value={form[fld.key] ?? ''}
         onChange={(e) => set(fld.key, e.target.value)}

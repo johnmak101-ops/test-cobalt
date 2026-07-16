@@ -18,13 +18,16 @@ const statusStyles: Record<string, string> = {
   CANCELLED: 'bg-status-critical/15 text-status-critical border-status-critical/30',
 }
 
+// Every variant carries an explicit border colour. The base class sets `border` (width only), and
+// Tailwind v4 defaults border-color to currentColor — so a variant that omits one renders a hard
+// full-strength outline instead of the /30 tint every other badge uses.
 const emailTypeStyles: Record<string, string> = {
-  BOOKING_REQUEST: 'bg-state-booked/15 text-state-booked',
-  SHIPPING_ORDER: 'bg-state-confirmed/15 text-state-confirmed',
-  DRAFT_BL: 'bg-state-warehouse/15 text-state-warehouse',
-  FINAL_BL: 'bg-state-sailed/15 text-state-sailed',
-  DEPARTURE_NOTICE: 'bg-state-released/15 text-state-released',
-  OTHER: 'bg-surface-700 text-text-muted',
+  BOOKING_REQUEST: 'bg-state-booked/15 text-state-booked border-state-booked/30',
+  SHIPPING_ORDER: 'bg-state-confirmed/15 text-state-confirmed border-state-confirmed/30',
+  DRAFT_BL: 'bg-state-warehouse/15 text-state-warehouse border-state-warehouse/30',
+  FINAL_BL: 'bg-state-sailed/15 text-state-sailed border-state-sailed/30',
+  DEPARTURE_NOTICE: 'bg-state-released/15 text-state-released border-state-released/30',
+  OTHER: 'bg-surface-700 text-text-muted border-border',
 }
 
 /** Confidence band → severity tokens (low=critical, medium=warning, high=success). */
