@@ -84,9 +84,11 @@ const build = () => {
     emailsForShipment: async () => [],
   }
   const evidenceRepo = { forMessages: async () => [], allWithMessage: async () => [] }
+  const shipmentsLookup = { lookupByMatchKey: async () => ({ query: {}, candidates: [] }) }
   return new PresentationService(
     shipmentRepo as any, bookingRepo as any, mastersRepo as any, alertRepo as any, auditRepo as any, emailRepo as any,
     evidenceRepo as any,
+    shipmentsLookup as any,
   )
 }
 
@@ -214,6 +216,7 @@ describe('PresentationService.dashboard', () => {
       { listForEntity: async () => [] } as any,
       { unreadCount: async () => 0, ingestionStatus: async () => ({ count: 0, lastAt: null }), ingestState: async () => null, emailsForShipment: async () => [] } as any,
       { forMessages: async () => [], allWithMessage: async () => [] } as any,
+      { lookupByMatchKey: async () => ({ query: {}, candidates: [] }) } as any,
     )
     const d = await svc.dashboard()
     expect(d.stats.warningAlerts).toBe(2)
