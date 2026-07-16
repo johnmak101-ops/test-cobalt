@@ -70,9 +70,34 @@ describe('POST /masters/candidates retrieval (integration)', () => {
       Array.from({ length: 5 }, (_, i) => ({ code: `C${i}`, name: `GLOBAL GARMENTS ${i}`, country: null, contactEmail: null })),
     ).execute()
     await db.insertInto('vendors').values({ code: 'VGG', name: 'GLOBAL GARMENTS FACTORY', type: 'factory', location: null }).execute()
-    const { candidates } = await svc().candidates({ type: 'customer', name: 'GLOBAL GARMENTS', limit: 3 })
+    const { candidates, mastersEmpty, catalogCount } = await svc().candidates({ type: 'customer', name: 'GLOBAL GARMENTS', limit: 3 })
     expect(candidates).toHaveLength(3)
     expect(candidates.every((c) => c.type === 'customer')).toBe(true)
+    expect(mastersEmpty).toBe(false)
+    expect(catalogCount).toBe(5)
+  })
+
+  it('empty master table → mastersEmpty true and zero candidates (#163)', async () => {
+    // resetDb leaves forwarders empty — no inserts
+    const { candidates, mastersEmpty, catalogCount } = await svc().candidates({
+      type: 'forwarder',
+      name: 'VENA SAIL (BD) SUPPLY CHAIN CO. LTD.',
+    })
+    expect(candidates).toEqual([])
+    expect(mastersEmpty).toBe(true)
+    expect(catalogCount).toBe(0)
+  })
+
+  it('non-empty catalog but no name hit → mastersEmpty false (#163)', async () => {
+    await db.insertInto('forwarders').values({ code: '801', name: 'Vena Sail Qingdao Co Ltd' }).execute()
+    const { candidates, mastersEmpty, catalogCount } = await svc().candidates({
+      type: 'forwarder',
+      name: 'ZZZZNOTAMATCHANYTHING999',
+    })
+    expect(mastersEmpty).toBe(false)
+    expect(catalogCount).toBe(1)
+    // may be empty candidates if no signal — that is "name not in catalog", not mastersEmpty
+    expect(Array.isArray(candidates)).toBe(true)
   })
 
   it('consumer GET /masters/resolution hides prior_correction; the manage view still shows it', async () => {
