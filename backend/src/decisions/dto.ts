@@ -89,6 +89,13 @@ export class CreateDecisionDto {
    *  Loose object at the HTTP boundary; shape documented in critic-review.types.ts. Omitted by legacy callers. */
   @IsOptional() @IsObject() criticReview?: object
 
+  /**
+   * #129 multi-candidate match: closed-set legs the email matched (queue matcher).
+   * Merged into criticReview.matchAmbiguity on ingest for ReviewCard candidate picker.
+   * Never invent IDs — only pass through agent payload.
+   */
+  @IsOptional() @IsObject() matchAmbiguity?: object
+
   /** Queue band-routing recommendation (Phase 2 shadow). Independent of disposition/autoApply gate.
    *  ShipTrack dual-computes band vs gate; under default critic_routing_mode=gate this is shadow-only. */
   @IsOptional() @IsIn(['auto', 'review', 'skip']) recommendedRouting?: 'auto' | 'review' | 'skip'
