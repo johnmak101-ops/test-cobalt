@@ -100,9 +100,19 @@ export class CandidatesService {
 
   constructor(private readonly repo: MastersRepository) {}
 
-  async candidates(req: CandidatesRequest): Promise<{ candidates: Candidate[] }> {
+  /**
+   * Ranked candidates + catalog meta for cobalt-queue Master Matcher (#163 / queue #128).
+   * `mastersEmpty` = zero rows of this type in the mirror (not “name not found”).
+   */
+  async candidates(req: CandidatesRequest): Promise<{
+    candidates: Candidate[]
+    mastersEmpty: boolean
+    catalogCount: number
+  }> {
     const limit = Math.max(1, Math.min(50, req.limit ?? DEFAULT_LIMIT))
     const rows = await this.rowsFor(req.type)
+    const catalogCount = rows.length
+    const mastersEmpty = catalogCount === 0
     const priors = await this.priorCorrections(req)
     const cooccur = await this.cooccurrence(req)
 
@@ -205,7 +215,7 @@ export class CandidatesService {
       out.push(c)
       if (out.length >= limit) break
     }
-    return { candidates: out }
+    return { candidates: out, mastersEmpty, catalogCount }
   }
 
   /** Phase 2 co-occurrence boosts derived from the request context (history/facts make a candidate more
