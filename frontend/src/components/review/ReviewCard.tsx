@@ -17,7 +17,7 @@ import {
 } from '../../lib/critic-review'
 import type { ReviewShipment } from '../../hooks/use-review-queue'
 import type { ShipmentDetail } from '../../hooks/use-shipments'
-import { cn } from '../../lib/utils'
+import { cn, formatDateTime } from '../../lib/utils'
 import { categorizeReason, humanizeReasons, type ReasonCategory } from '../../lib/review-reasons'
 
 /**
@@ -223,6 +223,15 @@ export function ReviewCard({
   const conflicts = useMemo(
     () => criticReview?.conflicts ?? [],
     [criticReview],
+  )
+  /** Newest first: "which statement is the latest?" is the question a reviewer actually has, and a
+   *  date they must compare by hand only half-answers it. Undated mail sorts last, not first. */
+  const sortedEmails = useMemo(
+    () =>
+      [...emails].sort(
+        (a, b) => (b.receivedAt ? Date.parse(b.receivedAt) : 0) - (a.receivedAt ? Date.parse(a.receivedAt) : 0),
+      ),
+    [emails],
   )
   // WHY this leg is queued — the UNION of two INDEPENDENT sources, not a primary + fallback:
   // the queue critic's riskFlags (what the agent saw in the email) and ShipTrack's own committer
@@ -492,24 +501,29 @@ export function ReviewCard({
             </div>
           )}
 
-          {/* Source emails — resolving a conflict means reading what the email actually said. */}
+          {/* Source emails — resolving a conflict means reading what the email actually said, so the
+              row has to answer "which email is this, and is it the latest?". Same shape as Related
+              Emails on the shipment page, minus the type tag: it read 'Other' on every chip, and the
+              timestamp is what actually tells the reviewer which statement supersedes which. */}
           {emails.length > 0 && (
-            <div className="flex flex-wrap items-center gap-1.5" data-testid="source-emails">
-              <span className="text-[11px] font-medium text-text-muted">Source emails:</span>
-              {emails.map((e) => (
+            <div className="space-y-2" data-testid="source-emails">
+              <p className="text-[11px] font-medium text-text-muted">Source emails</p>
+              {sortedEmails.map((e) => (
                 <button
                   key={e.id}
                   type="button"
                   onClick={() => openEmailWindow(e)}
-                  title={`${e.subject || '(no subject)'} — ${e.sender}`}
                   aria-label={`Open source email: ${e.subject || '(no subject)'}`}
-                  className="inline-flex max-w-[18rem] items-center gap-1 rounded-full border border-border bg-surface-900 px-2.5 py-1 text-[11px] text-text-secondary transition-colors hover:border-cobalt-primary hover:text-cobalt-primary-light"
+                  className="flex w-full items-center gap-3 rounded-lg bg-surface-900 p-3 text-left transition-colors hover:bg-surface-700"
                 >
-                  <Mail size={10} className="shrink-0 text-text-muted" />
-                  {/* The SUBJECT, never emailType: 'Other' on every chip identifies nothing, and the
-                      reviewer is picking WHICH email to open. The type was winning by being first. */}
-                  <span className="truncate">{e.subject || '(no subject)'}</span>
-                  <ExternalLink size={9} className="shrink-0 opacity-60" />
+                  <Mail size={14} className="shrink-0 text-text-muted" />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm text-text-primary">{e.subject || '(no subject)'}</p>
+                    <p className="text-xs text-text-muted">
+                      {e.sender} · <span className="font-mono">{formatDateTime(e.receivedAt)}</span>
+                    </p>
+                  </div>
+                  <ExternalLink size={12} className="shrink-0 text-text-muted opacity-60" />
                 </button>
               ))}
             </div>

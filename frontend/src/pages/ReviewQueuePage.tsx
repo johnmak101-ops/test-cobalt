@@ -348,7 +348,11 @@ export default function ReviewQueuePage() {
                         />
                       </th>
                     )}
-                    <th className="px-4 py-3 text-left text-xs font-medium text-text-muted">Band</th>
+                    {/* "Band" is our word for the low/medium/high split, not the reader's. The value
+                        IS criticReview.confidence.band, and Badge already calls the variant
+                        'confidence' — only this header still leaked the jargon. The wire/domain name
+                        stays `band` (the queue emits it); this is a label, not a rename. */}
+                    <th className="px-4 py-3 text-left text-xs font-medium text-text-muted">AI Confidence</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-text-muted">Customer</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-text-muted">Booking</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-text-muted">Route</th>
