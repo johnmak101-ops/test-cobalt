@@ -61,6 +61,15 @@ const NAME_THRESHOLD = 0.3
 const DEFAULT_LIMIT = 12
 const CACHE_TTL_MS = 60_000
 
+/**
+ * Built-in free-text spellings for seeded LOCODEs (shiptrack#163 CHATTOGRAM).
+ * Merged into candidate aliases so retrieval ranks the LOCODE without requiring ops facts.
+ * Ops can still add port_alias facts for one-off spellings.
+ */
+const BUILTIN_PORT_ALIASES: Record<string, string[]> = {
+  BDCGP: ['CHATTOGRAM', 'CHITTAGONG', 'CTG', 'CHITTAGONG PORT'],
+}
+
 const domainOf = (email: string | null | undefined): string | null => {
   const m = /@([A-Za-z0-9.-]+\.[A-Za-z]{2,})\s*$/.exec(String(email ?? '').trim())
   return m ? m[1]!.toLowerCase() : null
@@ -305,11 +314,23 @@ export class CandidatesService {
           aliasesByUloc.set(u, slot)
         }
       }
-      rows = ports.map((p) => ({
-        code: p.unlocode, name: p.name, type: 'port' as const, country: p.country, mode: p.mode,
-        domains: [],
-        aliases: [...(aliasesByUloc.get(p.unlocode.toUpperCase()) ?? []), ...(p.iata ? [p.iata] : [])],
-      }))
+      rows = ports.map((p) => {
+        const uloc = p.unlocode.toUpperCase()
+        const builtin = BUILTIN_PORT_ALIASES[uloc] ?? []
+        return {
+          code: p.unlocode,
+          name: p.name,
+          type: 'port' as const,
+          country: p.country,
+          mode: p.mode,
+          domains: [],
+          aliases: [
+            ...(aliasesByUloc.get(uloc) ?? []),
+            ...builtin,
+            ...(p.iata ? [p.iata] : []),
+          ],
+        }
+      })
     } else {
       rows = (await this.repo.listConsignees()).map((c) => ({
         // consignees have no code — the LLM matches by name; country derived from address tokens is
