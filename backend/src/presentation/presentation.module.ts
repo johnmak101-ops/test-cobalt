@@ -1,9 +1,10 @@
-import { Global, Module } from '@nestjs/common'
+import { Global, Module, forwardRef } from '@nestjs/common'
 import { PresentationService } from './presentation.service'
 import { EmailPresentationService } from './email-presentation.service'
 import { DocumentPresentationService } from './document-presentation.service'
 import { PurchaseOrderPresentationService } from './purchase-order-presentation.service'
 import { MasterDataPresentationService } from './master-data-presentation.service'
+import { ShipmentsModule } from '../shipments/shipments.module'
 import {
   UiDashboardController,
   UiMastersController,
@@ -21,6 +22,7 @@ import {
  */
 @Global()
 @Module({
+  imports: [forwardRef(() => ShipmentsModule)],
   controllers: [
     UiDashboardController,
     UiMastersController,

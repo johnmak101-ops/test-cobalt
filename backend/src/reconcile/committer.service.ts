@@ -218,7 +218,8 @@ export class CommitterService {
     // Reasons are recorded on the leg either way — a confirmed leg keeps the master-data gap as a record
     // (the detail page's review banner is gated on reviewStatus==='provisional', so it stays quiet).
     const effReasons = ((): string[] | null => {
-      const all = [...(reviewReasonsFor(g) ?? []), ...guard.reasons, ...reviewHints, ...masterMissHints]
+      // #129: never stack duplicate multi-leg / gate strings across rematches
+      const all = [...new Set([...(reviewReasonsFor(g) ?? []), ...guard.reasons, ...reviewHints, ...masterMissHints])]
       return all.length ? all : null
     })()
 

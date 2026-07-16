@@ -3,7 +3,7 @@
  * pure mappers to produce the flat shapes the new UI expects. Read-only. Adds no new model concepts —
  * one UI "shipment" = one ACTIVE leg + its booking, projected flat.
  */
-import { Injectable, NotFoundException } from '@nestjs/common'
+import { Injectable, Logger, NotFoundException } from '@nestjs/common'
 import { ShipmentRepository } from '../db/repositories/shipment.repository'
 import { BookingRepository } from '../db/repositories/booking.repository'
 import { MastersRepository } from '../db/repositories/masters.repository'
@@ -11,6 +11,15 @@ import { AlertRepository } from '../db/repositories/alert.repository'
 import { AuditRepository } from '../db/repositories/audit.repository'
 import { EmailRepository } from '../db/repositories/email.repository'
 import { EvidenceRepository } from '../db/repositories/evidence.repository'
+import { ShipmentsService } from '../shipments/shipments.service'
+import {
+  buildMatchAmbiguityFromCandidates,
+  dedupeReviewReasons,
+  lookupQueryFromLeg,
+  needsMatchAmbiguityHydration,
+  stripStaleAmbiguousSignals,
+  withMatchAmbiguity,
+} from '../shipments/match-ambiguity-hydrate'
 import { emailFieldTimeline, dedupeAgainstAudit } from './adapters/email-timeline'
 import {
   compactCriticReview,
@@ -101,6 +110,8 @@ const MASTER_MAPS_TTL_MS = Number(process.env.MASTER_MAPS_TTL_MS ?? 30_000)
 
 @Injectable()
 export class PresentationService {
+  private readonly logger = new Logger(PresentationService.name)
+
   constructor(
     private readonly shipmentRepo: ShipmentRepository,
     private readonly bookingRepo: BookingRepository,
@@ -109,6 +120,7 @@ export class PresentationService {
     private readonly auditRepo: AuditRepository,
     private readonly emailRepo: EmailRepository,
     private readonly evidenceRepo: EvidenceRepository,
+    private readonly shipmentsLookup: ShipmentsService,
   ) {}
 
   // ---- shared assembly ----
@@ -304,7 +316,72 @@ export class PresentationService {
     // the "open source" link isn't broken (unresolved → null → shown as plain text).
     const emailIdByGraph = new Map(relatedEmails.map((e) => [e.graphMessageId, e.id]))
     const fieldConflicts = computeFieldConflicts(identifiers, (graphId) => emailIdByGraph.get(graphId ?? '') ?? null)
-    return { ...base, milestones, emails, alerts: legAlerts, fieldConflicts }
+
+    // #129 next stage: hydrate closed-set matchAmbiguity when critic says multi-hit but cards are missing
+    let criticReview = (base.criticReview ?? null) as CriticReview | null
+    let reviewReasons = dedupeReviewReasons(
+      Array.isArray(base.reviewReasons)
+        ? (base.reviewReasons as string[])
+        : base.reviewReasons
+          ? [String(base.reviewReasons)]
+          : [],
+    )
+    if (needsMatchAmbiguityHydration(criticReview, reviewReasons)) {
+      try {
+        const posNums = linkedPosWithLeg.map((p) => p.poNumber).filter(Boolean)
+        const q = lookupQueryFromLeg({
+          bookingNo: leg.bookingNo,
+          soNo: leg.soNo,
+          hblAwbFcrNo: leg.hblAwbFcrNo,
+          mbl: leg.mbl,
+          containerNo: leg.containerNo,
+          matchKeys: (leg.matchKeys ?? null) as Record<string, unknown> | null,
+          pos: posNums,
+        })
+        const { candidates } = await this.shipmentsLookup.lookupByMatchKey(q)
+        const ma = buildMatchAmbiguityFromCandidates(q, candidates ?? [])
+        if (ma) {
+          criticReview = withMatchAmbiguity(criticReview, ma)
+          // Persist so list/queue and next open get cards without re-lookup (best-effort)
+          void this.shipmentRepo
+            .updateLeg(id, { criticReview, reviewReasons: reviewReasons.length ? reviewReasons : null })
+            .catch((err: unknown) =>
+              this.logger.warn(
+                `matchAmbiguity hydrate persist failed: ${err instanceof Error ? err.message : String(err)}`,
+              ),
+            )
+        } else {
+          // Live lookup no longer multi-hits — strip stale multi signals from the response
+          const stripped = stripStaleAmbiguousSignals(criticReview, reviewReasons)
+          criticReview = stripped.criticReview
+          reviewReasons = stripped.reviewReasons
+          void this.shipmentRepo
+            .updateLeg(id, {
+              criticReview,
+              reviewReasons: reviewReasons.length ? reviewReasons : null,
+            })
+            .catch((err: unknown) =>
+              this.logger.warn(
+                `stale ambiguous strip persist failed: ${err instanceof Error ? err.message : String(err)}`,
+              ),
+            )
+        }
+      } catch (err) {
+        this.logger.warn(
+          `matchAmbiguity hydrate failed: ${err instanceof Error ? err.message : String(err)}`,
+        )
+      }
+    }
+
+    return {
+      ...base,
+      criticReview,
+      reviewReasons,
+      milestones,
+      emails,
+      alerts: legAlerts,
+      fieldConflicts,
+    }
   }
 
   /**
