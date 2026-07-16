@@ -251,6 +251,38 @@ describe('conflictingValues', () => {
   it('flags equal-size disjoint comma sets (both survive, as a set)', () => {
     expect([...(conflictingValues(['A,B', 'A,C']) ?? [])].sort()).toEqual(['A,B', 'A,C'])
   })
+  it('#124 collapses OCR near-homoglyph style families (PS1 vs 951) to no conflict', () => {
+    expect(
+      conflictingValues([
+        'W56FS007951, W56FS007851',
+        'W56FS007PS1, W56FS007ES1',
+        'WSGFS007PS1, WSGFS007ES1',
+      ]),
+    ).toBeNull()
+  })
+})
+
+describe('resolvePoEnrichment — #124 style OCR family keep letter form', () => {
+  it('keeps PS1/ES1 even when a newer screenshot states 951/851', () => {
+    const map = resolvePoEnrichment([
+      row({
+        id: 'pdf',
+        poNo: '16068194',
+        receivedAt: at('2026-05-19T06:44:00Z'),
+        fields: { item_style_no: 'W S6FS007PS1, W S6FS007ES1' },
+      }),
+      row({
+        id: 'shot',
+        poNo: '16068194',
+        receivedAt: at('2026-05-19T07:00:00Z'),
+        fields: { item_style_no: 'W56FS007951, W56FS007851' },
+      }),
+    ])
+    const enr = map.get(normKey('16068194'))!
+    expect(enr.itemStyleNo).toMatch(/PS1/)
+    expect(enr.itemStyleNo).not.toMatch(/951/)
+    expect(enr.styleConflict).toBeNull()
+  })
 })
 
 describe('unattributedBrandStyle (de-correction b2 — no-PO drop)', () => {
