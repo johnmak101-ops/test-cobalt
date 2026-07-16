@@ -85,6 +85,12 @@ export class CreateDecisionDto {
   /** Why the gate withheld auto-apply (empty when autoApply) — surfaced in the review queue ahead of raw conflicts. */
   @IsOptional() @IsArray() @IsString({ each: true }) reviewReasons?: string[]
 
+  /**
+   * #152 ops-only party notes (Mesh-add / API-down / port LOCODE). Not gate review reasons.
+   * Merged into stored reviewReasons + criticReview so they are visible on the leg.
+   */
+  @IsOptional() @IsArray() @IsString({ each: true }) opsNotes?: string[]
+
   /** Critic advisory JSON (confidence band, conflicts, risk flags) — persisted on the leg for the review UI.
    *  Loose object at the HTTP boundary; shape documented in critic-review.types.ts. Omitted by legacy callers. */
   @IsOptional() @IsObject() criticReview?: object

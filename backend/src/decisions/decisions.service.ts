@@ -131,8 +131,11 @@ export class DecisionsService {
     let reviewReasons: string[] | null = [
       ...(dto.reviewReasons ?? []),
       ...(disp.disposition === 'review' ? disp.reasons : []),
+      // #152: party ops notes (Mesh/API/port) — store on every leg including auto/confirmed
+      ...(dto.opsNotes ?? []),
     ]
     if (!reviewReasons.length) reviewReasons = null
+    else reviewReasons = [...new Set(reviewReasons)]
 
     // Cancel flag: always force Awaiting Review with "Booking cancelled" as the TOP reason.
     // Cancelled payloads that already arrive provisional would otherwise set leg_status=CANCELLED
