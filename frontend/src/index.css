@@ -17,6 +17,12 @@
   --color-status-info: #3B82F6;
   --color-status-success: #22C55E;
 
+  /* An agent-proposed value that differs from what is stored (review queue). Unlike the status
+     colours above this one is THEME-DEPENDENT: amber carries the "look at me" weight on the dark
+     default, but on the light surface it reads as a warning rather than a suggestion, so light
+     flips it to the brand blue. Overridden in [data-theme="light"] below — keep the two in sync. */
+  --color-ai-proposed: #F59E0B; /* = status-warning */
+
   /* Shipment State Colors */
   --color-state-booked: #E6A23C;
   --color-state-confirmed: #67C23A;
@@ -63,6 +69,9 @@
   --color-text-primary: #0A0A0A;
   --color-text-secondary: #3F3F46;
   --color-text-muted: #71717A;
+
+  /* see @theme: amber reads as a warning on a light surface — blue reads as a suggestion */
+  --color-ai-proposed: #2563EB; /* = cobalt-primary-light */
 }
 
 /* ============================================

@@ -9,6 +9,7 @@ import { ShipmentHistoryTimeline } from '../components/shipments/ShipmentHistory
 import { AlertCard } from '../components/alerts/AlertCard'
 import { formatDate, formatDateTime, formatDateMaybeTime, cn } from '../lib/utils'
 import { humanizeReasons } from '../lib/review-reasons'
+import { EDITABLE_FIELDS, fieldLabel, type EditableField } from '../lib/review-fields'
 import { toast } from '../components/ui/Toast'
 import { ArrowLeft, Mail, Clock, ClipboardList, Package, Ship, Calendar, AlertTriangle, AlertCircle, Info, Pencil, Check, X, NotebookPen } from 'lucide-react'
 
@@ -17,41 +18,23 @@ import { ArrowLeft, Mail, Clock, ClipboardList, Package, Ship, Calendar, AlertTr
 // Customer / forwarder / route / origin are intentionally excluded — they resolve against master data.
 type EditType = 'text' | 'number' | 'date'
 interface EditField { db: string; label: string; type: EditType; get: (s: ShipmentDetail) => unknown }
-const EDIT_SECTIONS: { title: string; fields: EditField[] }[] = [
-  // PO# / Item·Style live on the Customer Purchase Orders card (per-PO), not here.
-  { title: 'Order Info', fields: [
-    { db: 'bookingNo', label: 'Booking No.', type: 'text', get: (s) => s.bookingNo },
-    { db: 'soNo', label: 'SO#', type: 'text', get: (s) => s.soNumber },
-  ] },
-  { title: 'Cargo & Logistics', fields: [
-    { db: 'qty', label: 'Qty', type: 'number', get: (s) => s.quantityShipped },
-    { db: 'qtyUnit', label: 'UOM', type: 'text', get: (s) => s.quantityUnit },
-    { db: 'grossWeight', label: 'Gross Weight (KGS)', type: 'number', get: (s) => s.grossWeight },
-    { db: 'measurement', label: 'Measurement (CBM)', type: 'number', get: (s) => s.measurement },
-    { db: 'htsCode', label: 'HTS Code', type: 'text', get: (s) => s.htsCode },
-    { db: 'containerNo', label: 'Container No.', type: 'text', get: (s) => s.containerNo },
-    { db: 'hblAwbFcrNo', label: 'HBL / AWB / FCR No.', type: 'text', get: (s) => s.hblNumber },
-    { db: 'mbl', label: 'MBL', type: 'text', get: (s) => s.mblNumber },
-    { db: 'scacCode', label: 'SCAC Code', type: 'text', get: (s) => s.scacCode },
-  ] },
-  { title: 'Shipping', fields: [
-    { db: 'consigneeName', label: 'Consignee Name', type: 'text', get: (s) => s.consigneeName },
-    { db: 'consigneeAddress', label: 'Consignee Address', type: 'text', get: (s) => s.consigneeAddress },
-    { db: 'vesselName', label: 'Vessel', type: 'text', get: (s) => s.vesselName },
-    { db: 'voyageNo', label: 'Voyage', type: 'text', get: (s) => s.voyageNumber },
-  ] },
-  { title: 'Key Dates', fields: [
-    { db: 'cargoReadyDate', label: 'Cargo Ready Date', type: 'date', get: (s) => s.crd },
-    { db: 'warehouseStartDate', label: 'WH Start Date', type: 'date', get: (s) => s.warehouseStartDate },
-    { db: 'warehouseEndDate', label: 'WH End Date', type: 'date', get: (s) => s.warehouseEndDate },
-    { db: 'cfsCutoff', label: 'CFS Cut-off', type: 'date', get: (s) => s.cfsCutoff },
-    { db: 'etd', label: 'ETD', type: 'date', get: (s) => s.etd },
-    { db: 'atd', label: 'ATD', type: 'date', get: (s) => s.actualDeparture },
-    { db: 'eta', label: 'ETA', type: 'date', get: (s) => s.eta },
-    { db: 'ata', label: 'ATA', type: 'date', get: (s) => s.actualArrival },
-    { db: 'inDcDate', label: 'In DC Date', type: 'date', get: (s) => s.inDcDate },
-  ] },
-]
+/**
+ * Derived from EDITABLE_FIELDS, never hand-listed: this modal used to keep its own copy of every
+ * label and it drifted from both the read view below it and the review queue's conflict table.
+ * PO# / Item·Style are excluded — they live on the Customer Purchase Orders card (per-PO), not here.
+ */
+const EDIT_SECTIONS: { title: string; fields: EditField[] }[] = (() => {
+  const order: EditableField['section'][] = ['Order Info', 'Cargo & Logistics', 'Shipping', 'Key Dates']
+  return order.map((title) => ({
+    title,
+    fields: EDITABLE_FIELDS.filter((f) => f.section === title && f.column !== 'itemStyleNo').map((f) => ({
+      db: f.column,
+      label: f.label,
+      type: f.type,
+      get: (s: ShipmentDetail) => (s as unknown as Record<string, unknown>)[f.uiKey],
+    })),
+  }))
+})()
 /** A stored value → the string an <input> expects (date → YYYY-MM-DD). */
 function toInputValue(v: unknown, type: EditType): string {
   if (v == null || v === '') return ''
@@ -417,7 +400,7 @@ export default function ShipmentDetailPage() {
             <DetailRow label="Customer Code" value={shipment.customer?.code ?? null} />
             <DetailRow label="Vendor Code" value={shipment.vendor?.code ?? null} />
             <DetailRow
-              label="Booking No."
+              label={fieldLabel('bookingNo')}
               value={shipment.bookingNo}
               hint={
                 shipment.bookingNo
@@ -428,7 +411,7 @@ export default function ShipmentDetailPage() {
               }
             />
             <DetailRow
-              label="SO#"
+              label={fieldLabel('soNo')}
               value={shipment.soNumber}
               hint={
                 shipment.soNumber
@@ -447,47 +430,47 @@ export default function ShipmentDetailPage() {
 
           {/* Section 2: Cargo & Logistics */}
           <DetailSection title="Cargo & Logistics" icon={<Package size={14} className="text-text-muted" />}>
-            <DetailRow label="Qty" value={shipment.quantityShipped != null ? String(shipment.quantityShipped) : null} />
-            <DetailRow label="UOM" value={shipment.quantityUnit ?? null} />
-            <DetailRow label="Gross Weight" value={shipment.grossWeight != null ? `${shipment.grossWeight} KGS` : null} />
-            <DetailRow label="Measurement" value={shipment.measurement != null ? `${shipment.measurement} CBM` : null} />
-            <DetailRow label="HTS Code" value={shipment.htsCode?.replace(/,/g, ', ') ?? null} />
+            <DetailRow label={fieldLabel('qty')} value={shipment.quantityShipped != null ? String(shipment.quantityShipped) : null} />
+            <DetailRow label={fieldLabel('qtyUnit')} value={shipment.quantityUnit ?? null} />
+            <DetailRow label={fieldLabel('grossWeight')} value={shipment.grossWeight != null ? `${shipment.grossWeight} KGS` : null} />
+            <DetailRow label={fieldLabel('measurement')} value={shipment.measurement != null ? `${shipment.measurement} CBM` : null} />
+            <DetailRow label={fieldLabel('htsCode')} value={shipment.htsCode?.replace(/,/g, ', ') ?? null} />
             <DetailRow
-              label="Container No."
+              label={fieldLabel('containerNo')}
               value={shipment.containerNo}
               hint={shipment.containerNo ? undefined : 'assigned at loading (Draft/Final B/L stage)'}
             />
-            <DetailRow label="HBL / AWB / FCR No." value={shipment.hblNumber} />
+            <DetailRow label={fieldLabel('hblAwbFcrNo')} value={shipment.hblNumber} />
             <DetailRow
-              label="MBL"
+              label={fieldLabel('mbl')}
               value={shipment.mblNumber}
               hint={!shipment.mblNumber && shipment.hblNumber ? 'house B/L — carrier master B/L not shared' : undefined}
             />
-            <DetailRow label="SCAC Code" value={shipment.scacCode} />
+            <DetailRow label={fieldLabel('scacCode')} value={shipment.scacCode} />
           </DetailSection>
 
           {/* Section 3: Shipping */}
           <DetailSection title="Shipping" icon={<Ship size={14} className="text-text-muted" />}>
             <DetailRow label="Forwarder" value={shipment.forwarder?.name ?? null} />
-            <DetailRow label="Consignee Name" value={shipment.consigneeName} />
-            <DetailRow label="Consignee Address" value={shipment.consigneeAddress} />
-            <DetailRow label="Vessel" value={shipment.vesselName} />
-            <DetailRow label="Voyage" value={shipment.voyageNumber} />
+            <DetailRow label={fieldLabel('consigneeName')} value={shipment.consigneeName} />
+            <DetailRow label={fieldLabel('consigneeAddress')} value={shipment.consigneeAddress} />
+            <DetailRow label={fieldLabel('vesselName')} value={shipment.vesselName} />
+            <DetailRow label={fieldLabel('voyageNo')} value={shipment.voyageNumber} />
             <DetailRow label="Route" value={shipment.route} />
             <DetailRow label="Origin Country" value={shipment.originCountry ?? '—'} />
           </DetailSection>
 
           {/* Section 4: Key Dates */}
           <DetailSection title="Key Dates" icon={<Calendar size={14} className="text-text-muted" />}>
-            <DetailRow label="Cargo Ready Date" value={formatDateMaybeTime(shipment.crd)} />
-            <DetailRow label="WH Start Date" value={formatDateMaybeTime(shipment.warehouseStartDate)} />
-            <DetailRow label="WH End Date" value={formatDateMaybeTime(shipment.warehouseEndDate)} />
-            <DetailRow label="CFS Cut-off" value={formatDateMaybeTime(shipment.cfsCutoff)} />
-            <DetailRow label="ETD" value={formatDateMaybeTime(shipment.etd)} />
-            <DetailRow label="ATD" value={formatDateMaybeTime(shipment.actualDeparture)} />
-            <DetailRow label="ETA" value={formatDateMaybeTime(shipment.eta)} />
-            <DetailRow label="ATA" value={formatDateMaybeTime(shipment.actualArrival)} />
-            <DetailRow label="In DC Date" value={formatDateMaybeTime(shipment.inDcDate)} />
+            <DetailRow label={fieldLabel('cargoReadyDate')} value={formatDateMaybeTime(shipment.crd)} />
+            <DetailRow label={fieldLabel('warehouseStartDate')} value={formatDateMaybeTime(shipment.warehouseStartDate)} />
+            <DetailRow label={fieldLabel('warehouseEndDate')} value={formatDateMaybeTime(shipment.warehouseEndDate)} />
+            <DetailRow label={fieldLabel('cfsCutoff')} value={formatDateMaybeTime(shipment.cfsCutoff)} />
+            <DetailRow label={fieldLabel('etd')} value={formatDateMaybeTime(shipment.etd)} />
+            <DetailRow label={fieldLabel('atd')} value={formatDateMaybeTime(shipment.actualDeparture)} />
+            <DetailRow label={fieldLabel('eta')} value={formatDateMaybeTime(shipment.eta)} />
+            <DetailRow label={fieldLabel('ata')} value={formatDateMaybeTime(shipment.actualArrival)} />
+            <DetailRow label={fieldLabel('inDcDate')} value={formatDateMaybeTime(shipment.inDcDate)} />
           </DetailSection>
         </div>
         )}

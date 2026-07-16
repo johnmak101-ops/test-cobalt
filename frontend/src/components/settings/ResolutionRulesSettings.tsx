@@ -178,7 +178,9 @@ export function ResolutionRulesSettings() {
                       {RETIRED_KINDS.has(f.kind) && (
                         <span
                           title="Retired after LLM Master Matcher — kept for audit; not offered in Add rule"
-                          className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[11px] font-medium text-amber-700 dark:text-amber-400"
+                          // status-warning, not raw amber + dark: — this app themes via
+                          // [data-theme="light"] on CSS variables, so the dark: variant never fired.
+                          className="rounded-full border border-status-warning/30 bg-status-warning/15 px-2 py-0.5 text-[11px] font-medium text-status-warning"
                         >
                           Retired
                         </span>

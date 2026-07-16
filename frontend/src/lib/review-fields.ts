@@ -6,31 +6,50 @@
  */
 export type FieldType = 'text' | 'number' | 'date'
 
+/**
+ * THE shipment field vocabulary — labels and section placement for every editable leg column.
+ *
+ * Single source on purpose: the Order Details page, its edit modal, and the review-queue conflict
+ * table all render the same fields, and when each kept its own copy they drifted (one said
+ * "Gross Weight (KGS)", another "Gross Weight", a third "Gross weight" from the queue's payload).
+ *
+ * Two conventions, both taken from the Order Details page because that is what users read most:
+ *   - Sections are `Order Info | Cargo & Logistics | Shipping | Key Dates` — the strong identifiers
+ *     (HBL/MBL/container/SCAC) belong to Cargo & Logistics; Shipping is the parties and the means.
+ *   - A label NEVER carries its unit: the VALUE does ("1046.64 KGS"). So `Gross Weight`, not
+ *     `Gross Weight (KGS)`.
+ */
 export interface EditableField {
-  section: 'Order Info' | 'Cargo' | 'Shipping IDs' | 'Key Dates'
+  section: 'Order Info' | 'Cargo & Logistics' | 'Shipping' | 'Key Dates'
   label: string
   uiKey: string
   column: string
   type: FieldType
+  /**
+   * Fixed unit rendered beside the VALUE. Only for quantities whose unit is invariant — weight is
+   * always KGS, volume always CBM. `qty` deliberately has NONE: its unit is the leg's own UOM
+   * (cartons vs pieces), so a constant here would state something untrue.
+   */
+  unit?: string
 }
 
 export const EDITABLE_FIELDS: EditableField[] = [
   { section: 'Order Info', label: 'Booking No.', uiKey: 'bookingNo', column: 'bookingNo', type: 'text' },
   { section: 'Order Info', label: 'SO#', uiKey: 'soNumber', column: 'soNo', type: 'text' },
   { section: 'Order Info', label: 'Item / Style No.', uiKey: 'itemStyleNo', column: 'itemStyleNo', type: 'text' },
-  { section: 'Cargo', label: 'Qty', uiKey: 'quantityShipped', column: 'qty', type: 'number' },
-  { section: 'Cargo', label: 'UOM', uiKey: 'quantityUnit', column: 'qtyUnit', type: 'text' },
-  { section: 'Cargo', label: 'Gross Weight (KGS)', uiKey: 'grossWeight', column: 'grossWeight', type: 'number' },
-  { section: 'Cargo', label: 'Measurement (CBM)', uiKey: 'measurement', column: 'measurement', type: 'number' },
-  { section: 'Cargo', label: 'HTS Code', uiKey: 'htsCode', column: 'htsCode', type: 'text' },
-  { section: 'Shipping IDs', label: 'HBL / AWB / FCR No.', uiKey: 'hblNumber', column: 'hblAwbFcrNo', type: 'text' },
-  { section: 'Shipping IDs', label: 'MBL', uiKey: 'mblNumber', column: 'mbl', type: 'text' },
-  { section: 'Shipping IDs', label: 'Container No.', uiKey: 'containerNo', column: 'containerNo', type: 'text' },
-  { section: 'Shipping IDs', label: 'SCAC Code', uiKey: 'scacCode', column: 'scacCode', type: 'text' },
-  { section: 'Shipping IDs', label: 'Vessel', uiKey: 'vesselName', column: 'vesselName', type: 'text' },
-  { section: 'Shipping IDs', label: 'Voyage', uiKey: 'voyageNumber', column: 'voyageNo', type: 'text' },
-  { section: 'Shipping IDs', label: 'Consignee Name', uiKey: 'consigneeName', column: 'consigneeName', type: 'text' },
-  { section: 'Shipping IDs', label: 'Consignee Address', uiKey: 'consigneeAddress', column: 'consigneeAddress', type: 'text' },
+  { section: 'Cargo & Logistics', label: 'Total Quantity', uiKey: 'quantityShipped', column: 'qty', type: 'number' },
+  { section: 'Cargo & Logistics', label: 'UOM', uiKey: 'quantityUnit', column: 'qtyUnit', type: 'text' },
+  { section: 'Cargo & Logistics', label: 'Gross Weight', uiKey: 'grossWeight', column: 'grossWeight', type: 'number', unit: 'KGS' },
+  { section: 'Cargo & Logistics', label: 'Measurement', uiKey: 'measurement', column: 'measurement', type: 'number', unit: 'CBM' },
+  { section: 'Cargo & Logistics', label: 'HTS Code', uiKey: 'htsCode', column: 'htsCode', type: 'text' },
+  { section: 'Cargo & Logistics', label: 'Container No.', uiKey: 'containerNo', column: 'containerNo', type: 'text' },
+  { section: 'Cargo & Logistics', label: 'HBL / AWB / FCR No.', uiKey: 'hblNumber', column: 'hblAwbFcrNo', type: 'text' },
+  { section: 'Cargo & Logistics', label: 'MBL', uiKey: 'mblNumber', column: 'mbl', type: 'text' },
+  { section: 'Cargo & Logistics', label: 'SCAC Code', uiKey: 'scacCode', column: 'scacCode', type: 'text' },
+  { section: 'Shipping', label: 'Consignee Name', uiKey: 'consigneeName', column: 'consigneeName', type: 'text' },
+  { section: 'Shipping', label: 'Consignee Address', uiKey: 'consigneeAddress', column: 'consigneeAddress', type: 'text' },
+  { section: 'Shipping', label: 'Vessel', uiKey: 'vesselName', column: 'vesselName', type: 'text' },
+  { section: 'Shipping', label: 'Voyage', uiKey: 'voyageNumber', column: 'voyageNo', type: 'text' },
   { section: 'Key Dates', label: 'Cargo Ready Date', uiKey: 'crd', column: 'cargoReadyDate', type: 'date' },
   { section: 'Key Dates', label: 'CFS Cut-off', uiKey: 'cfsCutoff', column: 'cfsCutoff', type: 'date' },
   { section: 'Key Dates', label: 'ETD', uiKey: 'etd', column: 'etd', type: 'date' },
@@ -129,6 +148,88 @@ export function mapCriticFieldsToColumns(fields: Record<string, unknown>): Recor
     if (col) out[col] = v
   }
   return out
+}
+
+/**
+ * Group headers for the review card's conflict table: the EDITABLE_FIELDS sections, plus `Other` for
+ * anything we cannot place. Deliberately NOT the demo's headers ("Shipping Parties", "Dates") — the
+ * conflict table sits two clicks from Order Details, and two names for one section is the drift.
+ */
+export type ReviewGroup = EditableField['section'] | 'Other'
+
+/** Render order of the group headers. `Other` is last — it is the catch-all, not a real section. */
+export const REVIEW_GROUP_ORDER: ReviewGroup[] = [
+  'Order Info',
+  'Cargo & Logistics',
+  'Shipping',
+  'Key Dates',
+  'Other',
+]
+
+/**
+ * Critic `conflict.field` → the group header it renders under.
+ *
+ * NOT an allowlist: a field that maps to no editable leg column falls back to `Other` instead of
+ * vanishing. `mapCriticFieldsToColumns` deliberately DROPS unknown keys (it feeds CorrectDto, which
+ * must not invent columns) — but dropping a row here would make the conflict COUNT disagree with the
+ * rows rendered beneath it, which is exactly the count-vs-rows class of bug. Visible-but-unplaced
+ * beats silently-gone.
+ */
+export function reviewGroupOf(field: string): ReviewGroup {
+  const column = mapCriticFieldToColumn(field)
+  const meta = column ? EDITABLE_FIELDS.find((f) => f.column === column) : null
+  return meta?.section ?? 'Other'
+}
+
+/**
+ * Label for a leg COLUMN, from the one vocabulary. Every surface that names a field goes through
+ * here (Order Details read view + its edit modal + the review conflict table) so a wording change
+ * lands in one place instead of three.
+ *
+ * Falls back to the column name for an unknown key: visible and greppable, rather than a blank
+ * label or a throw in production. The accompanying test pins the columns the read view renders, so
+ * a rename fails there first.
+ */
+export function fieldLabel(column: string): string {
+  return EDITABLE_FIELDS.find((f) => f.column === column)?.label ?? column
+}
+
+/** The fixed unit for a column, or null when it has none (see EditableField.unit). */
+export function fieldUnit(column: string): string | null {
+  return EDITABLE_FIELDS.find((f) => f.column === column)?.unit ?? null
+}
+
+/**
+ * Display label for a contested field. OUR vocabulary (EDITABLE_FIELDS) wins over the label the
+ * queue's critic shipped, so the two apps cannot drift apart in wording and the queue cannot change
+ * ShipTrack's UI copy by editing a prompt. Falls back to the payload's label for fields we do not
+ * own — a field with no local metadata is still worth showing under whatever name it arrived with.
+ */
+export function reviewFieldLabel(field: string, fallback: string): string {
+  const column = mapCriticFieldToColumn(field)
+  return column ? fieldLabel(column) : fallback
+}
+
+/**
+ * Bucket contested fields into the demo's group headers, in REVIEW_GROUP_ORDER. Groups with no
+ * conflicts are omitted (the card renders ONLY contested rows — an empty header is noise), and an
+ * empty conflict set yields no groups at all so the caller can render its zero-conflict state.
+ * Conflict order within a group is preserved.
+ */
+export function groupConflictFields<T extends { field: string }>(
+  conflicts: T[],
+): { group: ReviewGroup; conflicts: T[] }[] {
+  const byGroup = new Map<ReviewGroup, T[]>()
+  for (const c of conflicts) {
+    const g = reviewGroupOf(c.field)
+    const bucket = byGroup.get(g)
+    if (bucket) bucket.push(c)
+    else byGroup.set(g, [c])
+  }
+  return REVIEW_GROUP_ORDER.filter((g) => byGroup.has(g)).map((group) => ({
+    group,
+    conflicts: byGroup.get(group)!,
+  }))
 }
 
 /**

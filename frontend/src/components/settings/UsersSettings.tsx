@@ -70,7 +70,7 @@ export function UsersSettings() {
                       {u.active ? 'Active' : 'Inactive'}
                     </span>
                     {u.mustReset && (
-                      <span className="ml-1 rounded-full bg-status-warning/15 px-2 py-0.5 text-[11px] font-medium text-status-warning">
+                      <span className="ml-1 rounded-full border border-status-warning/30 bg-status-warning/15 px-2 py-0.5 text-[11px] font-medium text-status-warning">
                         Must reset
                       </span>
                     )}

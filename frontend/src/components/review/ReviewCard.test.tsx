@@ -116,11 +116,12 @@ describe('ReviewCard', () => {
 
     const table = screen.getByRole('table')
     expect(within(table).getByText('ETA')).toBeInTheDocument()
-    expect(within(table).getByText('HBL')).toBeInTheDocument()
-    // Column headers
+    // OUR label, not the payload's bare 'HBL' — reviewFieldLabel prefers EDITABLE_FIELDS.
+    expect(within(table).getByText('HBL / AWB / FCR No.')).toBeInTheDocument()
+    // Column headers — the proposal is the agent's, and is the editable cell; Resolution is gone.
     expect(within(table).getByText('Existing')).toBeInTheDocument()
-    expect(within(table).getByText('Proposed')).toBeInTheDocument()
-    expect(within(table).getByText('Resolution')).toBeInTheDocument()
+    expect(within(table).getByText('AI Proposed')).toBeInTheDocument()
+    expect(within(table).queryByText('Resolution')).toBeNull()
     expect(within(table).queryByText('Recommended')).toBeNull()
 
     // proposedChanges field must not become a row
@@ -286,12 +287,14 @@ describe('ReviewCard', () => {
       />,
     )
 
-    const resolution = screen.getByLabelText(/resolution for eta/i) as HTMLInputElement
-    // No pre-filled recommendation — the operator chooses.
-    expect(resolution.value).toBe('')
+    await user.click(screen.getByRole('button', { name: /^edit$/i }))
+    const resolution = screen.getByLabelText(/proposed value for eta/i) as HTMLInputElement
+    // Pre-filled with the agent's proposal — the operator accepts or edits it.
+    expect(resolution.value).toBe('2026-07-23')
 
-    const saveBtn = screen.getByRole('button', { name: /save.*approve/i })
+    const saveBtn = screen.getByRole('button', { name: /approve 1 change/i })
     // Enter a value that differs from the stored (Existing) value → a note becomes mandatory.
+    await user.clear(resolution)
     await user.type(resolution, '2026-07-25')
 
     expect(saveBtn).toBeDisabled()
@@ -439,5 +442,208 @@ describe('identify section (WEAK_IDENTITY / AMBIGUOUS_MATCH legs)', () => {
     await user.click(screen.getByRole('button', { name: /apply identity/i }))
     expect(await screen.findByText(/3 shipments carry this key/i)).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /link into/i })).toBeNull()
+  })
+})
+
+describe('conflict table — read-only by default, Edit to change values', () => {
+  it('reads clean by default: existing → proposed, no inputs, no per-row controls', () => {
+    render(
+      <MemoryRouter>
+        <ReviewCard shipment={baseShipment()} criticReview={baseReview()} compact={compact} defaultExpanded />
+      </MemoryRouter>,
+    )
+    const table = screen.getByRole('table')
+    expect(within(table).getByText('2026-07-20')).toBeInTheDocument()
+    expect(within(table).getByText('2026-07-23')).toBeInTheDocument()
+    // the noisy bits are gone until you ask for them
+    expect(within(table).queryByRole('textbox')).toBeNull()
+    expect(screen.queryByLabelText(/confirm eta/i)).toBeNull()
+  })
+
+  it('Edit reveals inputs pre-filled with the agent proposal; multi-candidate keeps every option', async () => {
+    const user = userEvent.setup()
+    render(
+      <MemoryRouter>
+        <ReviewCard
+          shipment={baseShipment()}
+          criticReview={baseReview()}
+          compact={compact}
+          defaultExpanded
+          onSaveAndApprove={vi.fn().mockResolvedValue(undefined)}
+        />
+      </MemoryRouter>,
+    )
+    await user.click(screen.getByRole('button', { name: /^edit$/i }))
+    expect((screen.getByLabelText(/proposed value for eta/i) as HTMLInputElement).value).toBe('2026-07-23')
+    // hbl has NO system candidate and two proposals → first pre-fills, both stay reachable
+    expect((screen.getByLabelText(/proposed value for hbl/i) as HTMLInputElement).value).toBe('SE26061400005')
+    const options = Array.from(document.querySelectorAll('datalist option')).map((o) => o.getAttribute('value'))
+    expect(options).toContain('SE26061400006')
+  })
+
+  it('the approve button names how many stored values it will overwrite', async () => {
+    const user = userEvent.setup()
+    const onSave = vi.fn().mockResolvedValue(undefined)
+    render(
+      <MemoryRouter>
+        <ReviewCard
+          shipment={baseShipment()}
+          criticReview={baseReview({ conflicts: [conflictEta] })}
+          compact={compact}
+          defaultExpanded
+          onSaveAndApprove={onSave}
+        />
+      </MemoryRouter>,
+    )
+    // One click, but a click that states what it accepts — not a bare "Approve".
+    const approve = screen.getByRole('button', { name: /approve 1 change/i })
+    expect(approve).not.toBeDisabled()
+    await user.click(approve)
+    expect(onSave.mock.calls[0][0].fields).toMatchObject({ eta: '2026-07-23' })
+  })
+
+  it('editing a value still demands a note, and carries the agent original for training', async () => {
+    const user = userEvent.setup()
+    const onSave = vi.fn().mockResolvedValue(undefined)
+    render(
+      <MemoryRouter>
+        <ReviewCard
+          shipment={baseShipment()}
+          criticReview={baseReview({ conflicts: [conflictEta] })}
+          compact={compact}
+          defaultExpanded
+          onSaveAndApprove={onSave}
+        />
+      </MemoryRouter>,
+    )
+    await user.click(screen.getByRole('button', { name: /^edit$/i }))
+    const eta = screen.getByLabelText(/proposed value for eta/i)
+    await user.clear(eta)
+    await user.type(eta, '2026-07-25')
+
+    const approve = screen.getByRole('button', { name: /approve 1 change/i })
+    expect(approve).toBeDisabled()
+    await user.type(screen.getByRole('textbox', { name: /note/i }), 'Carrier confirmed the 25th')
+    expect(approve).not.toBeDisabled()
+
+    await user.click(approve)
+    expect(onSave.mock.calls[0][0].corrections).toEqual([
+      { field: 'eta', existing: '2026-07-20', aiProposed: '2026-07-23', humanFinal: '2026-07-25' },
+    ])
+  })
+
+  it('groups under the same headers as Order Details, and shows only contested rows', () => {
+    render(
+      <MemoryRouter>
+        <ReviewCard shipment={baseShipment()} criticReview={baseReview()} compact={compact} defaultExpanded />
+      </MemoryRouter>,
+    )
+    const table = screen.getByRole('table')
+    // hbl_awb_fcr_no → Cargo & Logistics (where Order Details files it), eta → Key Dates.
+    expect(within(table).getByText('Cargo & Logistics')).toBeInTheDocument()
+    expect(within(table).getByText('Key Dates')).toBeInTheDocument()
+    // groups with no conflict never render a header
+    expect(within(table).queryByText('Order Info')).toBeNull()
+    expect(within(table).queryByText('Shipping')).toBeNull()
+    // and a matching field is not a row at all
+    expect(within(table).queryByText('Vessel')).toBeNull()
+  })
+})
+
+describe('embedded in the queue table — the row above already states identity', () => {
+  it('renders no identity header, no second chevron, and no duplicate row actions', () => {
+    render(
+      <MemoryRouter>
+        <ReviewCard
+          shipment={baseShipment()}
+          criticReview={baseReview()}
+          compact={compact}
+          defaultExpanded
+          embedded
+          onApprove={vi.fn()}
+          onDismiss={vi.fn()}
+          onSaveAndApprove={vi.fn()}
+        />
+      </MemoryRouter>,
+    )
+    // The queue row already shows band + customer + booking + route + status. Repeating them here
+    // (and adding a second expand chevron next to the row's own) is what made the page read double.
+    expect(screen.queryByRole('button', { name: /collapse details|expand details/i })).toBeNull()
+    expect(screen.queryByText(/CNYTN→GBFXT/)).toBeNull()
+    expect(screen.queryByText(/BY058417/)).toBeNull()
+    // ...but the detail the row cannot show is still here
+    expect(screen.getByRole('table')).toBeInTheDocument()
+    expect(screen.getByTestId('why-review')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /approve 2 changes/i })).toBeInTheDocument()
+  })
+
+  it('still shows identity when NOT embedded (standalone use)', () => {
+    render(
+      <MemoryRouter>
+        <ReviewCard shipment={baseShipment()} criticReview={baseReview()} compact={compact} defaultExpanded />
+      </MemoryRouter>,
+    )
+    expect(screen.getByText(/CNYTN→GBFXT/)).toBeInTheDocument()
+  })
+})
+
+describe('units — a bare number is unreadable, but a fabricated unit is worse', () => {
+  const conflictQty: CriticConflict = {
+    field: 'qty',
+    label: 'Qty',
+    candidates: [{ value: '260', source: 'System' }, { value: '13516', source: 'Booking Request' }],
+    rationale: 'Email states a different quantity.',
+  }
+  const conflictGw: CriticConflict = {
+    field: 'gross_weight',
+    label: 'Gross weight',
+    candidates: [{ value: '23', source: 'System' }, { value: '87', source: 'SO' }],
+    rationale: '',
+  }
+  const conflictUom: CriticConflict = {
+    field: 'qty_unit',
+    label: 'UOM',
+    candidates: [{ value: 'cartons', source: 'System' }, { value: 'pieces', source: 'Booking Request' }],
+    rationale: 'Shipped in cartons, ordered in pieces.',
+  }
+  const withUom = (over = {}) => ({ ...baseShipment(over), quantityUnit: 'cartons' })
+
+  it('renders the fixed unit on both sides of an invariant field', () => {
+    render(
+      <MemoryRouter>
+        <ReviewCard shipment={withUom()} criticReview={baseReview({ conflicts: [conflictGw] })} compact={compact} defaultExpanded />
+      </MemoryRouter>,
+    )
+    const row = screen.getByText('Gross Weight').closest('tr')!
+    expect(within(row).getAllByText('KGS')).toHaveLength(2)
+  })
+
+  it("carries the leg's UOM onto qty when the email does not dispute the unit", () => {
+    render(
+      <MemoryRouter>
+        <ReviewCard shipment={withUom()} criticReview={baseReview({ conflicts: [conflictQty] })} compact={compact} defaultExpanded />
+      </MemoryRouter>,
+    )
+    const row = screen.getByText('Total Quantity').closest('tr')!
+    expect(within(row).getAllByText('cartons')).toHaveLength(2)
+  })
+
+  it('will NOT stamp the stored UOM on the agent value when the UOM is itself contested', () => {
+    // 260 cartons vs 13516 pieces: labelling 13516 "cartons" asserts something nobody said, and it
+    // is exactly the mistake that makes one PO look like it ordered the whole booking.
+    render(
+      <MemoryRouter>
+        <ReviewCard
+          shipment={withUom()}
+          criticReview={baseReview({ conflicts: [conflictQty, conflictUom] })}
+          compact={compact}
+          defaultExpanded
+        />
+      </MemoryRouter>,
+    )
+    const row = screen.getByText('Total Quantity').closest('tr')!
+    // stored side keeps its unit — we know that one
+    expect(within(row).getAllByText('cartons')).toHaveLength(1)
+    expect(within(row).getByText('13516')).toBeInTheDocument()
   })
 })
