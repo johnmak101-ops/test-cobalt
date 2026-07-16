@@ -3,6 +3,7 @@ import { sql, type Kysely } from 'kysely'
 import type { DB } from '../kysely/db'
 import { KYSELY } from '../kysely.provider'
 import { evidencePoNorm } from '../../reconcile/evidence-po-norm'
+import { resolveAttachmentRawBytes } from './attachment-bytes-carry'
 
 export interface EvidenceInput {
   graphMessageId: string
@@ -34,7 +35,8 @@ export interface EvidenceInput {
  *
  * Idempotent on re-POST (mirrors the Drizzle onConflictDoUpdate semantics):
  *   - email_message upserts on graph_message_id (check-then-update-or-insert — MSSQL has no ON CONFLICT).
- *   - email_attachment has no natural unique key → replace-in-place via delete-then-insert.
+ *   - email_attachment has no natural unique key → replace-in-place via delete-then-insert,
+ *     but rawBytes are carried forward when re-POST has none (#177 / queue #151 purge re-match).
  *   - parsed_record upserts on (graph_message_id, record_idx).
  *
  * Each evidence entry's writes run in ONE transaction (atomic: a crash can't leave half-written children).
@@ -92,21 +94,48 @@ export class IngestRepository {
           msgId = inserted.id
         }
 
-        // attachments: replace-in-place (no natural unique key)
+        // attachments: replace-in-place (no natural unique key), but KEEP stored rawBytes when the
+        // re-POST omits them (queue RETENTION purge + full re-match — queue #151 / shiptrack #177).
+        const priorAtts = existing
+          ? await tx
+              .selectFrom('emailAttachment')
+              .where('messageId', '=', msgId)
+              .select(['graphAttachmentId', 'filename', 'sizeBytes', 'rawBytes'])
+              .execute()
+          : []
+        const priorBytes = priorAtts.map((p) => ({
+          graphAttachmentId: p.graphAttachmentId ?? null,
+          filename: p.filename,
+          sizeBytes: p.sizeBytes ?? null,
+          rawBytes: (p.rawBytes as Buffer | null) ?? null,
+        }))
+
         await tx.deleteFrom('emailAttachment').where('messageId', '=', msgId).execute()
         if (attE.attachments?.length) {
           await tx.insertInto('emailAttachment').values(
-            attE.attachments.map((a) => ({
-              messageId: msgId, graphAttachmentId: a.graphAttachmentId, filename: a.filename,
-              declaredMime: a.declaredMime ?? null, sizeBytes: a.sizeBytes ?? 0, sourceKind: a.sourceKind ?? null,
-              // the queue-retained original (office/eml/pdf), when forwarded — lets "download attachment"
-              // serve the real file from this mirror with no Graph round-trip. Usually NULL now: the queue
-              // sends references only and ShipTrack re-fetches originals from Graph (emails.service).
-              // CRITICAL (MSSQL varbinary trap): a bare JS null binds as nvarchar and SQL Server refuses the
-              // implicit nvarchar→varbinary(max) conversion (CI int specs caught it — any attachment WITHOUT
-              // forwarded bytes 500'd the whole decisions POST). Bind an explicit typed NULL instead.
-              rawBytes: a.rawBytesB64 ? Buffer.from(a.rawBytesB64, 'base64') : sql<Buffer | null>`CAST(NULL AS varbinary(max))`,
-            })),
+            attE.attachments.map((a) => {
+              const carried = resolveAttachmentRawBytes(
+                {
+                  graphAttachmentId: a.graphAttachmentId,
+                  filename: a.filename,
+                  sizeBytes: a.sizeBytes ?? null,
+                  rawBytesB64: a.rawBytesB64 ?? null,
+                },
+                priorBytes,
+              )
+              return {
+                messageId: msgId,
+                graphAttachmentId: a.graphAttachmentId,
+                filename: a.filename,
+                declaredMime: a.declaredMime ?? null,
+                sizeBytes: a.sizeBytes ?? 0,
+                sourceKind: a.sourceKind ?? null,
+                // CRITICAL (MSSQL varbinary trap): bare JS null binds as nvarchar — use typed NULL.
+                rawBytes: carried
+                  ? carried
+                  : sql<Buffer | null>`CAST(NULL AS varbinary(max))`,
+              }
+            }),
           ).execute()
         }
 
