@@ -38,11 +38,13 @@ Orientation for AI coding agents working in this repo.
 
 ## Master data
 
-- `customers` / `vendors` / `forwarders` are a **read-only mirror** of the Cobalt Mesh ERP, refreshed by a
-  **daily job**: `node dist/db/sync-masters.js` (dev: `npx tsx src/db/sync-masters.ts`) under a cron
-  (`0 3 * * *`). It upserts by code and **never deletes**. Config: `MESH_*` in `.env` (see `.env.example`;
-  the secret is confidential — never commit it). Mesh→local mapping: `customers`→customers,
-  `factories`+`gmtsuppliers`→vendors (factory/agent; a code in both dedupes, factory wins), `forwarders`→forwarders.
+- `customers` / `vendors` / `forwarders` are a **read-only mirror** of the Cobalt Mesh ERP, upserted by code
+  and **never deleted**. Config: `MESH_*` in `.env` (see `.env.example`; secret is confidential).
+  - **Nest (preferred):** `MastersSyncSchedulerService` — default every 24h (`MESH_SYNC_INTERVAL_MS`, `0` = off);
+    boot pulls only if last success is older than ~23h (`mesh_sync_last_ok_at` in app_settings); `MESH_SYNC_ON_BOOT=0|1` overrides.
+    Manual: `POST /api/masters/sync` (ADMIN). Fail soft — API stays up if Mesh errors.
+  - **CLI still valid:** `node dist/db/sync-masters.js` (dev: `npx tsx src/db/sync-masters.ts`) under host cron if desired.
+  - Mesh→local: `customers`→customers, `factories`+`gmtsuppliers`→vendors (factory wins on code clash), `forwarders`→forwarders.
 - **`ports`** are seeded (no ERP home). **consignees / brands / carriers are NOT synced** — no local master
   (brand/SCAC are free-text) or no Mesh endpoint (consignees); left for later (a `carriers` master could
   later back the free-text SCAC).
