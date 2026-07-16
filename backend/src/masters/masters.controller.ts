@@ -1,6 +1,7 @@
 import { Body, Controller, Get, Param, Patch, Post } from '@nestjs/common'
 import { MastersService } from './masters.service'
 import { CandidatesService } from './candidates.service'
+import { MastersSyncSchedulerService } from './masters-sync-scheduler.service'
 import { Roles, CurrentUser } from '../auth/decorators'
 import { AgentPageRead, PageRead, PageWrite } from '../access/page-access.decorators'
 import type { AuthUser } from '../auth/auth.service'
@@ -20,7 +21,11 @@ import {
 
 @Controller('masters')
 export class MastersController {
-  constructor(private readonly masters: MastersService, private readonly candidatesService: CandidatesService) {}
+  constructor(
+    private readonly masters: MastersService,
+    private readonly candidatesService: CandidatesService,
+    private readonly meshSync: MastersSyncSchedulerService,
+  ) {}
 
   // Reads — any authenticated user.
   @Get('customers') customers() { return this.masters.customers() }
@@ -38,6 +43,13 @@ export class MastersController {
   // Access-control v2: hard page-read gate for VIEWER/none + EDITOR+ service-account carve-out.
   @AgentPageRead('resolution_rules')
   @Post('candidates') candidates(@Body() dto: MasterCandidatesDto) { return this.candidatesService.candidates(dto) }
+
+  /** Manual Mesh masters pull (customers/vendors/forwarders). ADMIN only — shiptrack#161. */
+  @Roles('ADMIN')
+  @Post('sync')
+  syncNow() {
+    return this.meshSync.tick('http')
+  }
 
   // Master resolution (curated facts) + the curator loop.
   // Access-control v2: same hard-read + agent carve-out (was fully ungated for any authenticated user).
