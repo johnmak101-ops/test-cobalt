@@ -100,6 +100,24 @@ describe('POST /masters/candidates retrieval (integration)', () => {
     expect(Array.isArray(candidates)).toBe(true)
   })
 
+  it('CHATTOGRAM free-text ranks BDCGP via built-in port alias (#163)', async () => {
+    await db.insertInto('ports').values({
+      unlocode: 'BDCGP',
+      name: 'Chittagong',
+      country: 'BD',
+      mode: 'sea',
+    }).execute()
+    const { candidates, mastersEmpty } = await svc().candidates({
+      type: 'port',
+      name: 'CHATTOGRAM',
+    })
+    expect(mastersEmpty).toBe(false)
+    expect(candidates.some((c) => c.code === 'BDCGP')).toBe(true)
+    const top = candidates.find((c) => c.code === 'BDCGP')!
+    expect(top.score).toBeGreaterThanOrEqual(0.6)
+    expect(top.aliases.map((a) => a.toUpperCase())).toContain('CHATTOGRAM')
+  })
+
   it('consumer GET /masters/resolution hides prior_correction; the manage view still shows it', async () => {
     await masters.insertOpsFact({ kind: 'prior_correction', lhs: 'raw name', rhs: 'CODE1', reason: null, createdBy: null })
     await masters.insertOpsFact({ kind: 'customer_group', lhs: 'SEH', rhs: 'PRIMARK', reason: null, createdBy: null })
