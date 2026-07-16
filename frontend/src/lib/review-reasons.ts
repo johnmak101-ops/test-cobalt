@@ -92,7 +92,8 @@ const TRANSLATIONS: Translation[] = [
   },
   {
     match: /matched multiple backend legs/i,
-    text: () => 'This email could belong to more than one shipment — confirm it is attached to the right one',
+    text: () =>
+      'This email matched more than one existing leg — pick the right shipment below (multiple legs / 拼柜 is often normal)',
   },
   {
     match: /a PO on this email currently belongs to a different shipment/i,

@@ -37,4 +37,16 @@ describe('CreateDecisionDto — criticReview', () => {
     const e = errs({ ...base, criticReview: 'not-an-object' })
     expect(e.some((x) => x.property === 'criticReview')).toBe(true)
   })
+
+  it('accepts optional matchAmbiguity object (#129)', () => {
+    const e = errs({
+      ...base,
+      matchAmbiguity: {
+        kind: 'multi_candidate',
+        candidates: [{ shipmentId: 's1', jobNo: 'J1' }],
+        candidateCount: 1,
+      },
+    })
+    expect(e).toHaveLength(0)
+  })
 })

@@ -50,7 +50,31 @@ export class DecisionsService {
     // Email disposition (matcher gates review): derive / escalate from lookupContext + payload.
     // `skip` must NOT commit — empty match-key would mint phantom JOB-XXXX legs on every ingest.
     const disp = resolveEmailDisposition(dto)
-    const critic = (dto.criticReview ?? null) as CriticReview | null
+    // #129: merge top-level matchAmbiguity into criticReview for persistence / ReviewCard
+    const baseCritic = (dto.criticReview ?? null) as CriticReview | null
+    const critic: CriticReview | null = dto.matchAmbiguity
+      ? ({
+          ...(baseCritic ?? {
+            confidence: { score: dto.confidence, band: 'low', label: 'low' },
+            summary: '',
+            observations: [],
+            priorState: { headline: '', fields: [] },
+            proposedChanges: [],
+            riskFlags: [],
+            recommendedHumanAction: 'review',
+            reasons: [],
+          }),
+          matchAmbiguity: dto.matchAmbiguity as CriticReview['matchAmbiguity'],
+        } as CriticReview)
+      : baseCritic
+        ? ({
+            ...baseCritic,
+            // Prefer nested matchAmbiguity already on criticReview from queue embed
+            matchAmbiguity:
+              baseCritic.matchAmbiguity ??
+              (dto.matchAmbiguity as CriticReview['matchAmbiguity'] | undefined),
+          } as CriticReview)
+        : null
 
     if (disp.disposition === 'skip') {
       // Shadow even on skip when critic present (shipmentId null — nothing committed).
@@ -183,7 +207,8 @@ export class DecisionsService {
       confidence: dto.confidence,
       reviewStatus,
       reviewReasons,
-      criticReview: dto.criticReview ?? null,
+      // Prefer merged critic (includes matchAmbiguity) over raw dto
+      criticReview: critic ?? dto.criticReview ?? null,
     }
 
     const result = await this.committer.apply(group)
