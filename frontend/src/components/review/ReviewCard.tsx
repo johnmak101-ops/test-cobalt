@@ -44,6 +44,7 @@ const RISK_CODE_CATEGORY: Record<string, ReasonCategory> = {
   WEAK_IDENTITY: 'no_identity',
   PORTAL_ECHO: 'portal',
   PARTY_UNRESOLVED: 'master_miss',
+  PARTY_OPS: 'master_miss',
   MISSING_ATTACHMENT: 'extraction',
   EXTRACTION_INCOMPLETE: 'extraction',
   SCAN_OCR_RISK: 'extraction',
