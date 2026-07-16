@@ -560,9 +560,9 @@ export default function ShipmentDetailPage() {
                         {email.sender} · <span className="font-mono">{formatDateTime(email.receivedAt)}</span>
                       </p>
                     </div>
-                    {email.emailType && (
-                      <Badge variant="emailType" value={email.emailType} />
-                    )}
+                    {/* No type tag: the timestamp is what tells you which mail supersedes which, and
+                        the classification is overloaded — 'Other' means the agent judged it chatter,
+                        OR the model returned nothing, OR a deterministic path never classified it. */}
                   </div>
                 ))}
               </div>

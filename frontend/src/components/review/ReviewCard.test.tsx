@@ -647,3 +647,49 @@ describe('units — a bare number is unreadable, but a fabricated unit is worse'
     expect(within(row).getByText('13516')).toBeInTheDocument()
   })
 })
+
+describe('source emails — identify WHICH email, and which is newer', () => {
+  const emails = [
+    {
+      id: 'e-old',
+      subject: 'RE: ACNS/ NEW PACKING LIST FOR SE,UK ,US ,JP, KOREA,and CN ORDER',
+      sender: 'LingTan@cobaltknitwear.com',
+      receivedAt: '2026-05-19T07:00:00.000Z',
+      emailType: 'Other',
+    },
+    {
+      id: 'e-new',
+      subject: "Re: KOHL'S (POE) Final Submit DOCS, Invoice PL (YAQI) LOS ANGELES",
+      sender: 'YumiHuang@NeoTangent.com',
+      receivedAt: '2026-05-19T14:44:00.000Z',
+      emailType: 'Final B/L',
+    },
+  ]
+
+  it('shows the full subject plus sender and timestamp, and no type tag', () => {
+    render(
+      <MemoryRouter>
+        <ReviewCard shipment={baseShipment()} criticReview={baseReview()} compact={compact} emails={emails} defaultExpanded />
+      </MemoryRouter>,
+    )
+    const box = screen.getByTestId('source-emails')
+    const row = within(box).getByText(/KOHL'S \(POE\) Final Submit DOCS/).closest('button')!
+    expect(within(row).getByText(/YumiHuang@NeoTangent.com/)).toBeInTheDocument()
+    // date only — the rendered time is local, and asserting it would pin the test to a timezone
+    expect(row.textContent).toMatch(/19 May 2026/)
+    // the classification identifies nothing (and 'Other' is overloaded) — the timestamp does the job
+    expect(within(box).queryByText('Final B/L')).toBeNull()
+    expect(within(box).queryByText('UNCLASSIFIED')).toBeNull()
+  })
+
+  it('lists the newest email first', () => {
+    render(
+      <MemoryRouter>
+        <ReviewCard shipment={baseShipment()} criticReview={baseReview()} compact={compact} emails={emails} defaultExpanded />
+      </MemoryRouter>,
+    )
+    const rows = within(screen.getByTestId('source-emails')).getAllByRole('button')
+    expect(rows[0]!.textContent).toMatch(/KOHL'S/)
+    expect(rows[1]!.textContent).toMatch(/ACNS/)
+  })
+})
