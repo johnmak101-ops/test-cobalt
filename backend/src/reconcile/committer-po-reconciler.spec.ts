@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest'
-import { planPoReconcile } from './committer-po-reconciler'
+import {
+  planPoReconcile,
+  isRecomputedDataIssueReason,
+  mergeReviewReasonsWithDataIssues,
+} from './committer-po-reconciler'
 import { strongKeys } from './match-keys'
 import type { PoEnrichment } from './po-enrichment'
 
@@ -71,5 +75,55 @@ describe('planPoReconcile (PoQtyReconciler pure plan)', () => {
       gk: new Set(),
     })
     expect(plan.links[0]).toMatchObject({ perPoQty: 12, perPoUnit: 'cartons' })
+  })
+})
+
+describe('mergeReviewReasonsWithDataIssues (recompute, do not accumulate)', () => {
+  const staleStyle =
+    'PO 16068194: item_style_no conflict W56FS007951, W56FS007851 vs W56FS007PS1, W56FS007ES1 (kept W56FS007951, W56FS007851) — verify'
+  const staleBrand = 'PO 16068194: brand conflict FENIX vs Barbour (kept FENIX) — verify'
+  const masterMiss =
+    'forwarder_name "VENA SAIL (BD) SUPPLY CHAIN CO. LTD." did not exact-match a master (LLM matcher owns fuzzy; left unlinked)'
+  const gateConflict = 'backend conflict on qty, item_style_no'
+
+  it('classifies enrichment / qty / cargo reasons as recomputed', () => {
+    expect(isRecomputedDataIssueReason(staleStyle)).toBe(true)
+    expect(isRecomputedDataIssueReason(staleBrand)).toBe(true)
+    expect(
+      isRecomputedDataIssueReason(
+        'shipment-level brand "Barbour" not attributed to any PO — verify per-PO brand',
+      ),
+    ).toBe(true)
+    expect(isRecomputedDataIssueReason('PO X: unit differs: shipped in cartons, ordered in pieces')).toBe(
+      true,
+    )
+    expect(isRecomputedDataIssueReason('PO X: shipped 100 exceeds ordered 50')).toBe(true)
+    expect(
+      isRecomputedDataIssueReason(
+        'booked shipment missing cargo detail (qty/weight/volume) — source attachment likely not ingested',
+      ),
+    ).toBe(true)
+    expect(isRecomputedDataIssueReason(masterMiss)).toBe(false)
+    expect(isRecomputedDataIssueReason(gateConflict)).toBe(false)
+  })
+
+  it('strips stale style conflict when current dataIssues is empty (#124 rematch)', () => {
+    const merged = mergeReviewReasonsWithDataIssues([masterMiss, staleStyle, gateConflict], [])
+    expect(merged).toEqual([masterMiss, gateConflict])
+    expect(merged.some((r) => /item_style_no conflict/i.test(r))).toBe(false)
+  })
+
+  it('replaces old style conflict with a fresh one (does not keep both)', () => {
+    const fresh =
+      'PO 16068194: item_style_no conflict AAA vs BBB (kept AAA) — verify'
+    const merged = mergeReviewReasonsWithDataIssues([staleStyle, masterMiss], [fresh])
+    expect(merged).toEqual([masterMiss, fresh])
+    expect(merged.filter((r) => /item_style_no conflict/i.test(r))).toHaveLength(1)
+    expect(merged.some((r) => /951/.test(r))).toBe(false)
+  })
+
+  it('preserves order of non-recomputed priors and appends new data issues', () => {
+    const merged = mergeReviewReasonsWithDataIssues([gateConflict, masterMiss], [staleBrand])
+    expect(merged).toEqual([gateConflict, masterMiss, staleBrand])
   })
 })

@@ -30,7 +30,7 @@ import {
   findSiblingBooking,
 } from './committer-match'
 import { aliasMapsFromFacts, MasterResolver } from './committer-master-resolver'
-import { planPoReconcile } from './committer-po-reconciler'
+import { planPoReconcile, mergeReviewReasonsWithDataIssues } from './committer-po-reconciler'
 import { MilestoneSynchronizer } from './committer-milestones'
 import { isAuditedBookingFill } from './fill-booking-audit'
 import { collectSourceEvents } from './source-events'
@@ -427,8 +427,10 @@ export class CommitterService {
       await this.bookings.linkPo(bookingId, poId)
       await this.shipments.linkPo(shipmentId, poId, link.perPoQty, link.perPoUnit)
     }
-    // Data-completeness escalations route the shipment to human review. Additive: only ever escalate to
-    // provisional + append (deduped) reasons — data is kept, never dropped; the reviewer resolves it.
+    // Data-completeness escalations route the shipment to human review.
+    // Recomputed each commit (not accumulated): brand/style conflicts, PO qty issues, cargo-missing.
+    // Gate/master-miss reasons from earlier in apply are preserved; stale enrichment flags are stripped
+    // so a resolved OCR style family (#124) does not leave "kept 951" on the leg forever.
     //  (i)  per-PO shipped qty contradicts the ERP order (poQtyIssues, above).
     //  (ii) EMPTY CARGO — a real booked leg NAMES a cargo unit but carries no qty/gross weight/volume. That
     //       almost always means the booking form / original email (which held the numbers) was never
@@ -448,10 +450,18 @@ export class CommitterService {
       ...poFlagReasons,
       ...(cargoMissing ? ['booked shipment missing cargo detail (qty/weight/volume) — source attachment likely not ingested'] : []),
     ]
-    if (dataIssues.length) {
-      const priorReasons = (c?.reviewReasons as string[] | null) ?? []
-      const mergedReasons = [...new Set([...priorReasons, ...dataIssues])]
-      await this.shipments.updateLeg(shipmentId, { reviewStatus: 'provisional', reviewReasons: mergedReasons })
+    const priorReasons = parseReasonList(c?.reviewReasons)
+    const mergedReasons = mergeReviewReasonsWithDataIssues(priorReasons, dataIssues)
+    const reasonsChanged =
+      mergedReasons.length !== priorReasons.length ||
+      mergedReasons.some((r, i) => r !== priorReasons[i])
+    if (dataIssues.length || reasonsChanged) {
+      // Escalate to provisional when current data issues exist; when only stripping stale flags,
+      // keep existing reviewStatus (still provisional if gate/master reasons remain).
+      await this.shipments.updateLeg(shipmentId, {
+        ...(dataIssues.length ? { reviewStatus: 'provisional' as const } : {}),
+        reviewReasons: mergedReasons.length ? mergedReasons : null,
+      })
       if (poQtyIssues.length) await this.writeAudit('shipment', shipmentId, 'update', null, poQtyIssues.join('; '), g, 'po_qty_conflict')
       if (poFlagReasons.length) await this.writeAudit('shipment', shipmentId, 'update', null, poFlagReasons.join('; '), g, 'po_enrichment_flag')
       if (cargoMissing) await this.writeAudit('shipment', shipmentId, 'update', null, 'missing cargo qty/weight/volume', g, 'cargo_missing')
@@ -621,6 +631,21 @@ export class CommitterService {
 /** What to surface in the review queue: the agent gate's reasons when present, else the raw conflicts. */
 const reviewReasonsFor = (g: ReconGroup): string[] | null =>
   g.reviewReasons?.length ? g.reviewReasons : g.conflicts.length ? g.conflicts : null
+
+/** review_reasons is nvarchar JSON — findById may return a string or an already-parsed array. */
+const parseReasonList = (raw: unknown): string[] => {
+  if (raw == null) return []
+  if (Array.isArray(raw)) return raw.map(String)
+  if (typeof raw === 'string') {
+    try {
+      const p = JSON.parse(raw)
+      return Array.isArray(p) ? p.map(String) : []
+    } catch {
+      return raw.trim() ? [raw] : []
+    }
+  }
+  return []
+}
 
 const toStr = (v: unknown): string | null => (v == null ? null : v instanceof Date ? v.toISOString() : String(v))
 const same = (a: unknown, b: unknown) => toStr(a) === toStr(b)

@@ -79,3 +79,37 @@ export function planPoReconcile(args: {
 
   return { links, poQtyIssues, poFlagReasons }
 }
+
+/**
+ * Reasons owned by the post-link data-issues pass (planPoReconcile + cargo-missing).
+ * These must be RECOMPUTED each commit — never accumulated from prior review_reasons.
+ * Without this, a resolved OCR style family (#124) leaves "item_style_no conflict … kept 951"
+ * on the leg forever when the leg is not re-amended, or when merge is prior ∪ current.
+ */
+export function isRecomputedDataIssueReason(reason: string): boolean {
+  const r = String(reason)
+  // brand / item_style enrichment conflicts (planPoReconcile poFlagReasons)
+  if (/^PO\s+\S+:\s*brand conflict\b/i.test(r)) return true
+  if (/^PO\s+\S+:\s*item_style_no conflict\b/i.test(r)) return true
+  // unattributed shipment-level brand/style
+  if (/^shipment-level (brand|item_style_no)\b/i.test(r)) return true
+  // per-PO qty vs ERP order (planPoReconcile poQtyIssues)
+  if (/^PO\s+\S+:\s*unit differs:/i.test(r)) return true
+  if (/^PO\s+\S+:\s*shipped .+ exceeds ordered\b/i.test(r)) return true
+  // empty cargo escalation (committer)
+  if (/booked shipment missing cargo detail/i.test(r)) return true
+  return false
+}
+
+/**
+ * Merge gate/master reasons with the current data-issues pass.
+ * Drops any prior recomputed data-issue strings, then appends the fresh set (deduped).
+ * Gate / master-miss / critic reasons that are not recomputed here are preserved.
+ */
+export function mergeReviewReasonsWithDataIssues(
+  priorReasons: string[] | null | undefined,
+  dataIssues: string[],
+): string[] {
+  const kept = (priorReasons ?? []).filter((r) => !isRecomputedDataIssueReason(r))
+  return [...new Set([...kept, ...dataIssues])]
+}
