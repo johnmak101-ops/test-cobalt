@@ -38,4 +38,8 @@ describe('MastersController — Resolution Rules access retrofit', () => {
   it('POST /masters/sync is ADMIN-only (#161)', () => {
     expect(roles('syncNow')).toEqual(['ADMIN'])
   })
+
+  it('POST /masters/ports/sync is ADMIN-only (#159)', () => {
+    expect(roles('syncPortsNow')).toEqual(['ADMIN'])
+  })
 })

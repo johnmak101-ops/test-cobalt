@@ -2,6 +2,7 @@ import { Body, Controller, Get, Param, Patch, Post } from '@nestjs/common'
 import { MastersService } from './masters.service'
 import { CandidatesService } from './candidates.service'
 import { MastersSyncSchedulerService } from './masters-sync-scheduler.service'
+import { PortsSyncSchedulerService } from './ports-sync-scheduler.service'
 import { Roles, CurrentUser } from '../auth/decorators'
 import { AgentPageRead, PageRead, PageWrite } from '../access/page-access.decorators'
 import type { AuthUser } from '../auth/auth.service'
@@ -25,6 +26,7 @@ export class MastersController {
     private readonly masters: MastersService,
     private readonly candidatesService: CandidatesService,
     private readonly meshSync: MastersSyncSchedulerService,
+    private readonly portsSync: PortsSyncSchedulerService,
   ) {}
 
   // Reads — any authenticated user.
@@ -49,6 +51,13 @@ export class MastersController {
   @Post('sync')
   syncNow() {
     return this.meshSync.tick('http')
+  }
+
+  /** Manual UN/LOCODE + OurAirports ports pull. ADMIN only — shiptrack#159. */
+  @Roles('ADMIN')
+  @Post('ports/sync')
+  syncPortsNow() {
+    return this.portsSync.tick('http')
   }
 
   // Master resolution (curated facts) + the curator loop.
