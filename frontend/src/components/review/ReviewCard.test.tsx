@@ -149,7 +149,8 @@ describe('ReviewCard', () => {
     )
 
     const why = screen.getByTestId('why-review')
-    expect(within(why).getByText(/No strong booking\/SO\/B\/L identity/)).toBeInTheDocument()
+    expect(within(why).getByText(/No booking, SO, B\/L, or PO — cannot place this email/)).toBeInTheDocument()
+    expect(within(why).getByText(/Real shipment\?/)).toBeInTheDocument()
     expect(screen.queryByText(/No field conflicts/i)).toBeNull()
     expect(screen.queryByRole('table')).toBeNull()
     expect(screen.queryByText('2026-08-01')).toBeNull()
@@ -165,7 +166,12 @@ describe('ReviewCard', () => {
       />,
     )
     expect(screen.getByTestId('why-review')).toBeInTheDocument()
-    expect(within(screen.getByTestId('why-review')).getByText('Two strong IDs in one email')).toBeInTheDocument()
+    expect(screen.getByTestId('needs-group-which_shipment')).toBeInTheDocument()
+    expect(
+      within(screen.getByTestId('needs-group-which_shipment')).getByText(
+        /more than one booking\/SO\/B\/L number/,
+      ),
+    ).toBeInTheDocument()
     expect(screen.getByRole('table')).toBeInTheDocument()
   })
 
@@ -207,9 +213,9 @@ describe('ReviewCard', () => {
       />,
     )
     const why = screen.getByTestId('why-review')
-    expect(why.textContent).toMatch(/Emails disagree about/)
+    expect(why.textContent).toMatch(/Email and system differ on qty, gross_weight — choose which values to keep/)
     expect(why.textContent).not.toMatch(/below|highlighted fields/)
-    expect(why.textContent).toMatch(/open the full shipment/)
+    expect(why.textContent).toMatch(/Fields disagree/)
   })
 
   // The queue's riskFlags and ShipTrack's committer reviewReasons are two DIFFERENT sources, not a
@@ -238,12 +244,10 @@ describe('ReviewCard', () => {
       />,
     )
     const why = screen.getByTestId('why-review')
-    // the flag itself
-    expect(within(why).getByText(/3 unresolved field conflict\(s\) across the email thread/)).toBeInTheDocument()
-    // the ShipTrack-only reason must NOT be swallowed
-    expect(within(why).getByText(/Forwarder "A.P. Moller - Maersk" did not match master data/)).toBeInTheDocument()
-    // ...and its duplicate-of-the-flag sibling must not be repeated
-    expect(within(why).queryByText(/field\(s\) received different values from different emails/)).toBeNull()
+    // short conflict line + master miss (layman groups)
+    expect(within(why).getByText(/Field values disagree|field\(s\) disagree/i)).toBeInTheDocument()
+    expect(within(why).getByText(/Master miss/)).toBeInTheDocument()
+    expect(within(why).getByText(/A\.P\. Moller - Maersk.*not in master|not in master.*A\.P\. Moller/i)).toBeInTheDocument()
   })
 
   it('why-review does not repeat a reason a risk flag already explains', () => {
@@ -327,12 +331,12 @@ describe('ReviewCard', () => {
     expect(within(why).queryByText(/Email disagrees with what is already stored/)).toBeNull()
     expect(within(why).queryByText(/3 field conflicts — values disagree/)).toBeNull()
     expect(within(why).queryByText(/^3 field conflict\(s\)$/)).toBeNull()
-    expect(within(why).queryByText(/Emails disagree about: Qty, Gross Weight, Measurement/)).toBeNull()
-    // Non-field context kept (cap 2 — at least multi_id / no_identity)
-    expect(within(why).getByText(/Matched an existing shipment on PO alone/)).toBeInTheDocument()
-    expect(within(why).getByText(/real shipment|No booking/i)).toBeInTheDocument()
-    const items = within(why).getAllByRole('listitem')
-    expect(items.length).toBeLessThanOrEqual(2)
+    expect(screen.queryByTestId('needs-group-fields_disagree')).toBeNull()
+    // Non-field context shown (all groups, no cap of 2)
+    expect(within(why).getByText(/Linked by PO only — may be the wrong leg/)).toBeInTheDocument()
+    expect(screen.getByTestId('needs-group-real_shipment')).toBeInTheDocument()
+    expect(within(why).getByText(/Thin mail, not a lifecycle booking/)).toBeInTheDocument()
+    expect(within(why).getByText(/not in master/i)).toBeInTheDocument()
     // Table still owns the field comparison
     expect(screen.getByRole('table')).toBeInTheDocument()
   })

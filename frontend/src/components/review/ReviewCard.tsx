@@ -19,7 +19,7 @@ import { CandidateLegsPanel } from './CandidateLegsPanel'
 import type { ReviewShipment } from '../../hooks/use-review-queue'
 import type { ShipmentDetail } from '../../hooks/use-shipments'
 import { cn, formatDateTime } from '../../lib/utils'
-import { buildNeedsAttention } from './needs-attention'
+import { buildNeedsAttentionGroups } from './needs-attention'
 
 /**
  * ONE geometry for every button in the card's action bar; variants change COLOUR only, never size,
@@ -209,10 +209,10 @@ export function ReviewCard({
       ),
     [emails],
   )
-  // Needs attention — non-field decision context only (design 2026-07-17). Field diffs live in the table.
-  const needsAttention = useMemo(
+  // Needs attention — layman groups (design 2026-07-17). Field diffs live in the table when present.
+  const needsAttentionGroups = useMemo(
     () =>
-      buildNeedsAttention({
+      buildNeedsAttentionGroups({
         riskFlags: criticReview?.riskFlags,
         reviewReasons: (shipment as { reviewReasons?: string[] | null }).reviewReasons,
         conflictsCount: conflicts.length,
@@ -490,7 +490,7 @@ export function ReviewCard({
             </div>
           )}
 
-          {needsAttention.length > 0 && (
+          {needsAttentionGroups.length > 0 && (
             <div
               className={cn(
                 'rounded-lg bg-surface-900 px-3 py-2',
@@ -502,23 +502,30 @@ export function ReviewCard({
               {/* data-testid why-review kept for legacy tests */}
               <div data-testid="why-review">
                 <p className="text-[11px] font-medium text-text-muted">Needs attention</p>
-                <ul className="mt-1 space-y-1">
-                  {needsAttention.map((r) => (
-                    <li key={r.key} className="flex items-start gap-1.5 text-xs text-text-secondary">
-                      <span
-                        className={cn(
-                          'mt-1 inline-block h-1.5 w-1.5 shrink-0 rounded-full',
-                          r.severity === 'high'
-                            ? 'bg-status-critical'
-                            : r.severity === 'medium'
-                              ? 'bg-status-warning'
-                              : 'bg-surface-600',
-                        )}
-                      />
-                      {r.text}
-                    </li>
+                <div className="mt-1.5 space-y-2">
+                  {needsAttentionGroups.map((g) => (
+                    <div key={g.groupId} data-testid={`needs-group-${g.groupId}`}>
+                      <p className="text-[11px] font-medium text-text-secondary">{g.title}</p>
+                      <ul className="mt-0.5 space-y-1">
+                        {g.items.map((r) => (
+                          <li key={r.key} className="flex items-start gap-1.5 text-xs text-text-secondary">
+                            <span
+                              className={cn(
+                                'mt-1 inline-block h-1.5 w-1.5 shrink-0 rounded-full',
+                                r.severity === 'high'
+                                  ? 'bg-status-critical'
+                                  : r.severity === 'medium'
+                                    ? 'bg-status-warning'
+                                    : 'bg-surface-600',
+                              )}
+                            />
+                            {r.text}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
                   ))}
-                </ul>
+                </div>
               </div>
             </div>
           )}
