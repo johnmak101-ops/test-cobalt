@@ -61,11 +61,13 @@ export interface ReviewCardSavePayload {
 
 /** One source email of the leg — enough to open the reading-pane pop-up. */
 export type ReviewEmail = {
-  id: string
+  /** Null when shipment_emails is orphaned (email_message wiped). */
+  id: string | null
   subject: string
-  sender: string
+  sender: string | null
   receivedAt?: string | null
   emailType?: string | null
+  bodyMissing?: boolean
 }
 
 /** Result of typing a strong ID on a zero-identity leg (POST /review/:id/identify). */
@@ -158,6 +160,7 @@ function existingValue(c: CriticConflict): string {
 /** Open the source email in the chrome-less reading-pane pop-up (same window target + geometry as
  *  the shipment history timeline, so a reviewer can read the original side-by-side). */
 function openEmailWindow(e: ReviewEmail): void {
+  if (e.id == null || e.bodyMissing) return
   window.open(
     `/email/${e.id}?type=${encodeURIComponent(e.emailType ?? '')}`,
     `email_${e.id}`,
@@ -480,24 +483,46 @@ export function ReviewCard({
           {emails.length > 0 && (
             <div className="space-y-2" data-testid="source-emails">
               <p className="text-[11px] font-medium text-text-muted">Source emails</p>
-              {sortedEmails.map((e) => (
-                <button
-                  key={e.id}
-                  type="button"
-                  onClick={() => openEmailWindow(e)}
-                  aria-label={`Open source email: ${e.subject || '(no subject)'}`}
-                  className="flex w-full items-center gap-3 rounded-lg bg-surface-900 p-3 text-left transition-colors hover:bg-surface-700"
-                >
-                  <Mail size={14} className="shrink-0 text-text-muted" />
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm text-text-primary">{e.subject || '(no subject)'}</p>
-                    <p className="text-xs text-text-muted">
-                      {e.sender} · <span className="font-mono">{formatDateTime(e.receivedAt)}</span>
-                    </p>
-                  </div>
-                  <ExternalLink size={12} className="shrink-0 text-text-muted opacity-60" />
-                </button>
-              ))}
+              {sortedEmails.map((e, i) => {
+                const openable = e.id != null && !e.bodyMissing
+                return (
+                  <button
+                    key={e.id ?? `orphan-${i}`}
+                    type="button"
+                    onClick={() => openEmailWindow(e)}
+                    disabled={!openable}
+                    aria-label={
+                      openable
+                        ? `Open source email: ${e.subject || '(no subject)'}`
+                        : `Email body not stored: ${e.subject || '(no subject)'}`
+                    }
+                    title={openable ? undefined : 'Email body is not in the store (link only)'}
+                    className={
+                      openable
+                        ? 'flex w-full items-center gap-3 rounded-lg bg-surface-900 p-3 text-left transition-colors hover:bg-surface-700'
+                        : 'flex w-full cursor-default items-center gap-3 rounded-lg bg-surface-900/60 p-3 text-left opacity-80'
+                    }
+                  >
+                    <Mail size={14} className="shrink-0 text-text-muted" />
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm text-text-primary">{e.subject || '(no subject)'}</p>
+                      <p className="text-xs text-text-muted">
+                        {!openable
+                          ? 'Body not stored — re-ingest to open'
+                          : (
+                              <>
+                                {e.sender} ·{' '}
+                                <span className="font-mono">{formatDateTime(e.receivedAt)}</span>
+                              </>
+                            )}
+                      </p>
+                    </div>
+                    {openable && (
+                      <ExternalLink size={12} className="shrink-0 text-text-muted opacity-60" />
+                    )}
+                  </button>
+                )
+              })}
             </div>
           )}
 

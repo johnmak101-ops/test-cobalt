@@ -302,19 +302,25 @@ export class PresentationService {
       legCount: siblings.length,
     })
     const legAlerts = alertRows.filter((a) => a.shipmentId === id).map((a) => toUiAlert({ alert: a, shipment: null }))
+    // Orphan shipment_emails (email_message wiped): keep a stub so Related Emails is not blank.
     const emails = relatedEmails.map((e) => ({
       id: e.id,
-      subject: e.subject,
-      sender: e.sender,
+      subject: e.subject ?? '(email body not in store)',
+      sender: e.sender ?? null,
       receivedAt: isoOrNull(e.receivedAt),
       emailType: e.milestoneType ?? null,
+      bodyMissing: e.id == null,
     }))
     // Contested fields (≥2 co-current values for one identity type) — recovered from the identifier set so
     // the review page can highlight them + show "what each email said", even when the gate's reason is a
     // bare count ("N unresolved field conflict(s)") that names no field. Identifiers store the source email
     // as a Graph message-id; resolve it to the internal email id (queue_message.id) the popup opens by, so
     // the "open source" link isn't broken (unresolved → null → shown as plain text).
-    const emailIdByGraph = new Map(relatedEmails.map((e) => [e.graphMessageId, e.id]))
+    const emailIdByGraph = new Map(
+      relatedEmails
+        .filter((e): e is typeof e & { id: string; graphMessageId: string } => e.id != null && e.graphMessageId != null)
+        .map((e) => [e.graphMessageId, e.id]),
+    )
     const fieldConflicts = computeFieldConflicts(identifiers, (graphId) => emailIdByGraph.get(graphId ?? '') ?? null)
 
     // #129 next stage: hydrate closed-set matchAmbiguity when critic says multi-hit but cards are missing
@@ -396,9 +402,8 @@ export class PresentationService {
       this.emailRepo.emailsForShipment(id),
       this.shipmentRepo.findById(id),
     ])
-    const evidence = related.length
-      ? await this.evidenceRepo.forMessages(related.map((r) => r.id))
-      : []
+    const messageIds = related.map((r) => r.id).filter((id): id is string => id != null)
+    const evidence = messageIds.length ? await this.evidenceRepo.forMessages(messageIds) : []
     const emailEntries = dedupeAgainstAudit(
       emailFieldTimeline(
         evidence.map((e) => ({

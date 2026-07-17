@@ -156,6 +156,39 @@ describe('EmailRepository (SQL Server)', () => {
     expect(await repo.emailsForShipment(other)).toEqual([])
   })
 
+  it('emailsForShipment keeps orphan shipment_emails after email_message wipe (LEFT JOIN stub)', async () => {
+    const shipmentId = await seedShipment()
+    const m = await seedMessage({ subject: 'will-be-wiped', graphMessageId: 'gmid-orphan-wipe' })
+    const receivedAt = new Date('2026-06-15T12:00:00Z')
+    await db
+      .insertInto('shipmentEmails')
+      .values({
+        shipmentId,
+        graphMessageId: m.graphMessageId,
+        emailType: 'Booking Confirmation',
+        receivedAt,
+      })
+      .execute()
+    // Wipe body store; link row remains (no FK from shipment_emails → email_message).
+    await db.deleteFrom('emailMessage').where('id', '=', m.id).execute()
+
+    const one = await repo.emailsForShipment(shipmentId)
+    expect(one).toHaveLength(1)
+    expect(one[0]).toMatchObject({
+      id: null,
+      subject: null,
+      sender: null,
+      graphMessageId: 'gmid-orphan-wipe',
+      milestoneType: 'Booking Confirmation',
+    })
+    expect(one[0].receivedAt).toBeTruthy()
+
+    const batch = await repo.emailsForShipments([shipmentId])
+    expect(batch.get(shipmentId)).toHaveLength(1)
+    expect(batch.get(shipmentId)?.[0].id).toBeNull()
+    expect(batch.get(shipmentId)?.[0].graphMessageId).toBe('gmid-orphan-wipe')
+  })
+
   it('countPendingReview counts NEEDS_REVIEW rows only', async () => {
     const m = await seedMessage({ subject: 'pending-test' })
     await db.insertInto('reviewEmail').values({ messageId: m.id, reviewStatus: 'NEEDS_REVIEW' }).execute()

@@ -151,11 +151,14 @@ export class EmailRepository {
   /** The emails that built a shipment (Related Emails / Alerts & Emails).
    *  Join key may be either the RFC Message-ID (`email_message.graph_message_id`) OR the Graph item id
    *  (`email_message.graph_id`) — older commits stored AAMk… in shipment_emails after matcher started
-   *  sending real Graph ids on events.graphId. */
+   *  sending real Graph ids on events.graphId.
+   *
+   *  LEFT JOIN so shipment_emails rows still surface after email_message is wiped (orphan links).
+   *  Orphans return id/subject/sender null; graphMessageId falls back to shipment_emails.graph_message_id. */
   async emailsForShipment(shipmentId: string) {
     return this.db
       .selectFrom('shipmentEmails')
-      .innerJoin('emailMessage', (join) =>
+      .leftJoin('emailMessage', (join) =>
         join.on((eb) =>
           eb.or([
             eb('shipmentEmails.graphMessageId', '=', eb.ref('emailMessage.graphMessageId')),
@@ -164,22 +167,32 @@ export class EmailRepository {
         ),
       )
       .where('shipmentEmails.shipmentId', '=', shipmentId)
-      .orderBy('emailMessage.receivedAt', 'desc')
+      .orderBy(
+        sql`coalesce(${sql.ref('emailMessage.receivedAt')}, ${sql.ref('shipmentEmails.receivedAt')})`,
+        'desc',
+      )
       .select([
-        'emailMessage.id as id', 'emailMessage.graphMessageId as graphMessageId',
-        'emailMessage.subject as subject', 'emailMessage.sender as sender',
-        'emailMessage.receivedAt as receivedAt', 'shipmentEmails.emailType as milestoneType',
+        'emailMessage.id as id',
+        sql<string | null>`coalesce(${sql.ref('emailMessage.graphMessageId')}, ${sql.ref('shipmentEmails.graphMessageId')})`.as(
+          'graphMessageId',
+        ),
+        'emailMessage.subject as subject',
+        'emailMessage.sender as sender',
+        sql<Date | null>`coalesce(${sql.ref('emailMessage.receivedAt')}, ${sql.ref('shipmentEmails.receivedAt')})`.as(
+          'receivedAt',
+        ),
+        'shipmentEmails.emailType as milestoneType',
       ])
       .execute()
   }
 
   /** emailsForShipment for many shipments in ONE query (shipmentId -> emails, newest first) — replaces the
-   *  per-leg emailsForShipment in the alert evaluator's A7 loop. */
+   *  per-leg emailsForShipment in the alert evaluator's A7 loop. Orphans (missing email_message) included. */
   async emailsForShipments(shipmentIds: string[]) {
     const rows = shipmentIds.length
       ? await this.db
           .selectFrom('shipmentEmails')
-          .innerJoin('emailMessage', (join) =>
+          .leftJoin('emailMessage', (join) =>
             join.on((eb) =>
               eb.or([
                 eb('shipmentEmails.graphMessageId', '=', eb.ref('emailMessage.graphMessageId')),
@@ -188,11 +201,21 @@ export class EmailRepository {
             ),
           )
           .where('shipmentEmails.shipmentId', 'in', shipmentIds)
-          .orderBy('emailMessage.receivedAt', 'desc')
+          .orderBy(
+            sql`coalesce(${sql.ref('emailMessage.receivedAt')}, ${sql.ref('shipmentEmails.receivedAt')})`,
+            'desc',
+          )
           .select([
-            'shipmentEmails.shipmentId as shipmentId', 'emailMessage.id as id',
-            'emailMessage.graphMessageId as graphMessageId', 'emailMessage.subject as subject',
-            'emailMessage.sender as sender', 'emailMessage.receivedAt as receivedAt',
+            'shipmentEmails.shipmentId as shipmentId',
+            'emailMessage.id as id',
+            sql<string | null>`coalesce(${sql.ref('emailMessage.graphMessageId')}, ${sql.ref('shipmentEmails.graphMessageId')})`.as(
+              'graphMessageId',
+            ),
+            'emailMessage.subject as subject',
+            'emailMessage.sender as sender',
+            sql<Date | null>`coalesce(${sql.ref('emailMessage.receivedAt')}, ${sql.ref('shipmentEmails.receivedAt')})`.as(
+              'receivedAt',
+            ),
             'shipmentEmails.emailType as milestoneType',
           ])
           .execute()

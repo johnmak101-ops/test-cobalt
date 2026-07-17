@@ -91,11 +91,14 @@ export interface ShipmentDetail extends Shipment {
     notes: string | null
   }>
   emails: Array<{
-    id: string
+    /** Null when shipment_emails is orphaned (email_message wiped). */
+    id: string | null
     subject: string
-    sender: string
-    receivedAt: string
+    sender: string | null
+    receivedAt: string | null
     emailType: string | null
+    /** True when body/store row is missing — open disabled. */
+    bodyMissing?: boolean
   }>
   alerts: Array<{
     id: string

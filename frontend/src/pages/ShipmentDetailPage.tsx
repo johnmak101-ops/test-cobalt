@@ -534,38 +534,58 @@ export default function ShipmentDetailPage() {
             </div>
           )}
 
-          {/* Related Emails */}
-          {shipment.emails && shipment.emails.length > 0 && (
-            <Card>
-              <h4 className="mb-4 text-sm font-semibold text-text-primary">Related Emails</h4>
+          {/* Related Emails — always shown so orphan links (body wiped) are not invisible */}
+          <Card>
+            <h4 className="mb-4 text-sm font-semibold text-text-primary">Related Emails</h4>
+            {(shipment.emails ?? []).length === 0 ? (
+              <p className="text-sm text-text-muted">No related emails linked to this shipment.</p>
+            ) : (
               <div className="space-y-2">
-                {shipment.emails.map((email) => (
-                  <div
-                    key={email.id}
-                    onClick={() =>
-                      window.open(
-                        `/email/${email.id}?type=${encodeURIComponent(email.emailType ?? '')}`,
-                        `email_${email.id}`,
-                        'popup,width=880,height=940,resizable=yes,scrollbars=yes',
-                      )
-                    }
-                    className="flex cursor-pointer items-center gap-3 rounded-lg bg-surface-900 p-3 transition-colors hover:bg-surface-700"
-                  >
-                    <Mail size={14} className="shrink-0 text-text-muted" />
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm text-text-primary">{email.subject}</p>
-                      <p className="text-xs text-text-muted">
-                        {email.sender} · <span className="font-mono">{formatDateTime(email.receivedAt)}</span>
-                      </p>
+                {(shipment.emails ?? []).map((email, i) => {
+                  const openable = email.id != null && !email.bodyMissing
+                  return (
+                    <div
+                      key={email.id ?? `orphan-${i}`}
+                      onClick={
+                        openable
+                          ? () =>
+                              window.open(
+                                `/email/${email.id}?type=${encodeURIComponent(email.emailType ?? '')}`,
+                                `email_${email.id}`,
+                                'popup,width=880,height=940,resizable=yes,scrollbars=yes',
+                              )
+                          : undefined
+                      }
+                      className={
+                        openable
+                          ? 'flex cursor-pointer items-center gap-3 rounded-lg bg-surface-900 p-3 transition-colors hover:bg-surface-700'
+                          : 'flex cursor-default items-center gap-3 rounded-lg bg-surface-900/60 p-3 opacity-80'
+                      }
+                      title={openable ? undefined : 'Email body is not in the store (link only)'}
+                    >
+                      <Mail size={14} className="shrink-0 text-text-muted" />
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm text-text-primary">{email.subject}</p>
+                        <p className="text-xs text-text-muted">
+                          {email.bodyMissing || email.id == null
+                            ? 'Body not stored — re-ingest to open'
+                            : (
+                                <>
+                                  {email.sender} ·{' '}
+                                  <span className="font-mono">{formatDateTime(email.receivedAt)}</span>
+                                </>
+                              )}
+                        </p>
+                      </div>
+                      {/* No type tag: the timestamp is what tells you which mail supersedes which, and
+                          the classification is overloaded — 'Other' means the agent judged it chatter,
+                          OR the model returned nothing, OR a deterministic path never classified it. */}
                     </div>
-                    {/* No type tag: the timestamp is what tells you which mail supersedes which, and
-                        the classification is overloaded — 'Other' means the agent judged it chatter,
-                        OR the model returned nothing, OR a deterministic path never classified it. */}
-                  </div>
-                ))}
+                  )
+                })}
               </div>
-            </Card>
-          )}
+            )}
+          </Card>
         </>
       ) : (
         /* History tab */
