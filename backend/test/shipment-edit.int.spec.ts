@@ -64,6 +64,22 @@ describe('ShipmentsService.editFields — the human note feeds agent-soul iterat
     const audit = await db.selectFrom('changeLog').where('entityId', '=', leg.id).selectAll().execute()
     expect(audit.find((a) => a.field === 'soNo')?.note).toBe('edited on shipment detail')
   })
+
+  it('accepts mode / polRaw / podRaw / forwarderRaw free-text (#183 detail edit)', async () => {
+    const leg = await seedLeg()
+    const res = await service.editFields(
+      leg.id,
+      { mode: 'AIR', polRaw: 'HKG', podRaw: 'LAX', forwarderRaw: 'Fairate HK' },
+      actorId,
+      'ports were UN/LOCODE wrong — use airport codes for air',
+    )
+    expect(res.edited.sort()).toEqual(['forwarderRaw', 'mode', 'podRaw', 'polRaw'])
+    const row = await db.selectFrom('shipments').where('id', '=', leg.id).selectAll().executeTakeFirstOrThrow()
+    expect(row.mode).toBe('AIR')
+    expect(row.polRaw).toBe('HKG')
+    expect(row.podRaw).toBe('LAX')
+    expect(row.forwarderRaw).toBe('Fairate HK')
+  })
 })
 
 describe('ShipmentsService.applyExtractionCorrection — review-queue apply-back', () => {

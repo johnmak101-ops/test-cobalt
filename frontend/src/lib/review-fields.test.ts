@@ -25,6 +25,20 @@ describe('EDITABLE_FIELDS', () => {
     const atd = EDITABLE_FIELDS.find((f) => f.uiKey === 'actualDeparture')
     expect(atd).toMatchObject({ column: 'atd', type: 'date' })
   })
+
+  it('includes mode / POL / POD / forwarder free-text for detail edit (#183)', () => {
+    expect(EDITABLE_FIELDS.find((f) => f.column === 'mode')).toMatchObject({
+      section: 'Shipping',
+      label: 'Mode',
+      uiKey: 'mode',
+    })
+    expect(EDITABLE_FIELDS.find((f) => f.column === 'polRaw')?.label).toBe('POL')
+    expect(EDITABLE_FIELDS.find((f) => f.column === 'podRaw')?.label).toBe('POD')
+    expect(EDITABLE_FIELDS.find((f) => f.column === 'forwarderRaw')?.label).toBe('Forwarder')
+    // still map critic snake_case via extras / writable set
+    expect(mapCriticFieldToColumn('pol')).toBe('polRaw')
+    expect(mapCriticFieldToColumn('mode')).toBe('mode')
+  })
 })
 
 describe('buildCorrections — dirty-diff keyed by leg column', () => {
@@ -251,6 +265,7 @@ describe('fieldLabel — the one vocabulary, used by every surface that names a 
     const rendered = [
       'bookingNo', 'soNo',
       'qty', 'qtyUnit', 'grossWeight', 'measurement', 'htsCode', 'containerNo', 'hblAwbFcrNo', 'mbl', 'scacCode',
+      'mode', 'polRaw', 'podRaw', 'forwarderRaw',
       'consigneeName', 'consigneeAddress', 'vesselName', 'voyageNo',
       'cargoReadyDate', 'warehouseStartDate', 'warehouseEndDate', 'cfsCutoff',
       'etd', 'atd', 'eta', 'ata', 'inDcDate',

@@ -30,6 +30,10 @@ export interface Shipment {
   forwarderId: string | null
   mode: string | null
   route: string | null
+  /** Free-text ports / forwarder for detail edit (#183); route may still prefer master codes. */
+  polRaw?: string | null
+  podRaw?: string | null
+  forwarderRaw?: string | null
   originCountry: string | null
   status: string
   riskLevel: string

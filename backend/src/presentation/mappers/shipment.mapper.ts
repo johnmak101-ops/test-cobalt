@@ -125,6 +125,11 @@ export interface UiShipment {
   forwarderId: string | null
   mode: string | null
   route: string | null
+  /** Free-text POL / POD from extraction — editable on detail; route may prefer resolved port masters. */
+  polRaw: string | null
+  podRaw: string | null
+  /** Free-text forwarder when no master link; edit form writes this column. */
+  forwarderRaw: string | null
   originCountry: string | null
   status: string
   cancelled: boolean
@@ -186,6 +191,9 @@ export function toUiShipment(
       portLabel(leg.mode, input.polPort?.unlocode, input.polPort?.iata) ?? leg.polRaw,
       portLabel(leg.mode, input.podPort?.unlocode, input.podPort?.iata) ?? leg.podRaw,
     ),
+    polRaw: leg.polRaw ?? null,
+    podRaw: leg.podRaw ?? null,
+    forwarderRaw: leg.forwarderRaw ?? null,
     originCountry: leg.originCountry ?? deriveOriginCountry(input.polPort),
     status: stateToUiStatus(leg.state, leg.legStatus),
     cancelled: leg.legStatus === 'CANCELLED',

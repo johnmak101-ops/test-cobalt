@@ -61,13 +61,16 @@ const PARSER_TO_LEG: Record<string, string> = Object.fromEntries(
   CREATE_FIELD_MAP.filter((m) => m.leg).map((m) => [m.parser, m.leg as string]),
 )
 
-// Human-editable leg columns (DB names). Excludes computed/master-resolved fields (customer/forwarder/route/
-// ports) which need lookups, and identity plumbing. Same coercion the review flow uses.
+// Human-editable leg columns (DB names). Customer/vendor master FKs stay out (need pickers).
+// mode + polRaw/podRaw/forwarderRaw are free-text leg columns (same as review /correct extras) so
+// operators can fix extraction without a master picker (#183). Resolved polId/podId/forwarderId
+// are not written here — raw text still drives route display via deriveRoute fallbacks.
 const DATE_FIELDS = new Set(['cargoReadyDate', 'cfsCutoff', 'warehouseStartDate', 'warehouseEndDate', 'etd', 'atd', 'eta', 'ata', 'inDcDate'])
 const NUMERIC_FIELDS = new Set(['qty', 'grossWeight', 'measurement'])
 const EDITABLE_FIELDS = new Set([
   'bookingNo', 'soNo', 'hblAwbFcrNo', 'mbl', 'containerNo', 'scacCode',
   'qty', 'qtyUnit', 'grossWeight', 'measurement', 'itemStyleNo', 'htsCode',
+  'mode', 'polRaw', 'podRaw', 'forwarderRaw',
   'consigneeName', 'consigneeAddress', 'vesselName', 'voyageNo',
   ...DATE_FIELDS,
 ])
