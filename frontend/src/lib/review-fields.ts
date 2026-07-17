@@ -46,6 +46,13 @@ export const EDITABLE_FIELDS: EditableField[] = [
   { section: 'Cargo & Logistics', label: 'HBL / AWB / FCR No.', uiKey: 'hblNumber', column: 'hblAwbFcrNo', type: 'text' },
   { section: 'Cargo & Logistics', label: 'MBL', uiKey: 'mblNumber', column: 'mbl', type: 'text' },
   { section: 'Cargo & Logistics', label: 'SCAC Code', uiKey: 'scacCode', column: 'scacCode', type: 'text' },
+  // Mode + port/forwarder *raw* free text — also on PATCH detail edit / review correct. Master
+  // customer/vendor stay out (need pickers). #183: operators could see Route/Forwarder read-only
+  // but not fix mode/POL/POD after bad extraction.
+  { section: 'Shipping', label: 'Mode', uiKey: 'mode', column: 'mode', type: 'text' },
+  { section: 'Shipping', label: 'POL', uiKey: 'polRaw', column: 'polRaw', type: 'text' },
+  { section: 'Shipping', label: 'POD', uiKey: 'podRaw', column: 'podRaw', type: 'text' },
+  { section: 'Shipping', label: 'Forwarder', uiKey: 'forwarderRaw', column: 'forwarderRaw', type: 'text' },
   { section: 'Shipping', label: 'Consignee Name', uiKey: 'consigneeName', column: 'consigneeName', type: 'text' },
   { section: 'Shipping', label: 'Consignee Address', uiKey: 'consigneeAddress', column: 'consigneeAddress', type: 'text' },
   { section: 'Shipping', label: 'Vessel', uiKey: 'vesselName', column: 'vesselName', type: 'text' },

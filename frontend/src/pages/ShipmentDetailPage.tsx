@@ -15,7 +15,8 @@ import { ArrowLeft, Mail, Clock, ClipboardList, Package, Ship, Calendar, AlertTr
 
 // The human-editable leg fields, grouped like the read-only card. `db` = the backend column the PATCH writes
 // (+ locks + audits); `get` reads the current value off the loaded shipment (whose UI names differ from db).
-// Customer / forwarder / route / origin are intentionally excluded — they resolve against master data.
+// Customer / vendor codes are NOT free-text (master links). Mode / POL / POD / forwarderRaw ARE editable
+// free-text (#183). PO# / Item·Style stay on the Customer Purchase Orders card, not this form.
 type EditType = 'text' | 'number' | 'date'
 interface EditField { db: string; label: string; type: EditType; get: (s: ShipmentDetail) => unknown }
 /**
@@ -31,7 +32,13 @@ const EDIT_SECTIONS: { title: string; fields: EditField[] }[] = (() => {
       db: f.column,
       label: f.label,
       type: f.type,
-      get: (s: ShipmentDetail) => (s as unknown as Record<string, unknown>)[f.uiKey],
+      get: (s: ShipmentDetail) => {
+        // Prefer free-text raw; fall back to resolved master name so edit is not blank when only FK is set.
+        if (f.column === 'forwarderRaw') {
+          return s.forwarderRaw ?? s.forwarder?.name ?? null
+        }
+        return (s as unknown as Record<string, unknown>)[f.uiKey]
+      },
     })),
   }))
 })()
@@ -345,7 +352,31 @@ export default function ShipmentDetailPage() {
         </div>
         {editing ? (
           <>
-            <p className="mb-4 text-xs text-text-muted">Fill anything the AI missed. Your edits are kept and won’t be overwritten by future emails, and every change is logged in Change History.</p>
+            <p className="mb-3 text-xs text-text-muted">
+              Fill anything the AI missed. Your edits are kept and will not be overwritten by future emails;
+              every change is logged in Change History.
+            </p>
+            <div
+              className="mb-4 rounded-lg border border-border bg-surface-900/50 px-3 py-2.5 text-xs text-text-muted"
+              data-testid="edit-scope-note"
+            >
+              <p className="font-medium text-text-secondary">What this form covers</p>
+              <ul className="mt-1.5 list-disc space-y-0.5 pl-4">
+                <li>
+                  <span className="text-text-secondary">Here:</span> booking/SO, cargo,{' '}
+                  <span className="text-text-secondary">mode / POL / POD / forwarder</span> (free text),
+                  consignee, vessel/voyage, key dates.
+                </li>
+                <li>
+                  <span className="text-text-secondary">Not free-text here:</span> customer and vendor codes
+                  (master links — shown read-only above).
+                </li>
+                <li>
+                  <span className="text-text-secondary">POs and item/style:</span> edit on the{' '}
+                  <span className="text-text-secondary">Customer Purchase Orders</span> card above this section.
+                </li>
+              </ul>
+            </div>
             <div className="grid grid-cols-1 gap-x-8 gap-y-6 md:grid-cols-2">
               {EDIT_SECTIONS.map((sec) => (
                 <DetailSection key={sec.title} title={sec.title} icon={<ClipboardList size={14} className="text-text-muted" />}>
@@ -356,7 +387,14 @@ export default function ShipmentDetailPage() {
                         type={f.type}
                         value={draft[f.db] ?? ''}
                         onChange={(e) => setDraft((d) => ({ ...d, [f.db]: e.target.value }))}
-                        className="h-8 w-full rounded-md border border-border bg-surface-700 px-2 text-sm text-text-primary focus:border-cobalt-primary focus:outline-none"
+                        placeholder={
+                          f.db === 'mode'
+                            ? 'AIR, SEA_FCL, SEA_LCL…'
+                            : f.db === 'polRaw' || f.db === 'podRaw'
+                              ? 'UN/LOCODE or airport (e.g. CNSHA, HKG)'
+                              : undefined
+                        }
+                        className="h-8 w-full rounded-md border border-border bg-surface-700 px-2 text-sm text-text-primary placeholder:text-text-muted/70 focus:border-cobalt-primary focus:outline-none"
                       />
                     </div>
                   ))}
@@ -449,11 +487,17 @@ export default function ShipmentDetailPage() {
 
           {/* Section 3: Shipping */}
           <DetailSection title="Shipping" icon={<Ship size={14} className="text-text-muted" />}>
-            <DetailRow label="Forwarder" value={shipment.forwarder?.name ?? null} />
+            <DetailRow label={fieldLabel('mode')} value={shipment.mode} />
+            <DetailRow
+              label={fieldLabel('forwarderRaw')}
+              value={shipment.forwarder?.name ?? shipment.forwarderRaw ?? null}
+            />
             <DetailRow label={fieldLabel('consigneeName')} value={shipment.consigneeName} />
             <DetailRow label={fieldLabel('consigneeAddress')} value={shipment.consigneeAddress} />
             <DetailRow label={fieldLabel('vesselName')} value={shipment.vesselName} />
             <DetailRow label={fieldLabel('voyageNo')} value={shipment.voyageNumber} />
+            <DetailRow label={fieldLabel('polRaw')} value={shipment.polRaw ?? null} />
+            <DetailRow label={fieldLabel('podRaw')} value={shipment.podRaw ?? null} />
             <DetailRow label="Route" value={shipment.route} />
             <DetailRow label="Origin Country" value={shipment.originCountry ?? '—'} />
           </DetailSection>
