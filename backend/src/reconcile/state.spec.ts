@@ -85,12 +85,15 @@ describe('normMode', () => {
 
 describe('classifyKind — SHIPMENT vs DOCUMENT (Documents = Invoice/Billing only)', () => {
   const invoice = new Set(['Invoice/Billing'])
-  it('Invoice/Billing-only → DOCUMENT (with or without SO/booking/BL ids)', () => {
+  it('Invoice/Billing-only without booking_no → DOCUMENT (SO/HBL/container alone still park)', () => {
     expect(classifyKind(invoice, {})).toBe('DOCUMENT')
     expect(classifyKind(invoice, { so_no: 'CMS364079' })).toBe('DOCUMENT')
-    expect(classifyKind(invoice, { so_no: 'CMS364079', booking_no: 'BX845666' })).toBe('DOCUMENT')
     expect(classifyKind(invoice, { hbl_awb_fcr_no: 'Z13764183' })).toBe('DOCUMENT')
     expect(classifyKind(invoice, { container_no: 'WHSU0570946' })).toBe('DOCUMENT')
+  })
+  it('Invoice/Billing-only WITH booking_no → SHIPMENT (clear booking, do not park as DOCUMENT)', () => {
+    expect(classifyKind(invoice, { booking_no: 'BX845666' })).toBe('SHIPMENT')
+    expect(classifyKind(invoice, { so_no: 'CMS364079', booking_no: 'BX845666' })).toBe('SHIPMENT')
   })
   it('bare orphan (Other, no id) → SHIPMENT (ops chat/cancel/ack is not a Document)', () => {
     expect(classifyKind(new Set(['Other']), {})).toBe('SHIPMENT')
@@ -120,9 +123,15 @@ describe('classifyKind — SHIPMENT vs DOCUMENT (Documents = Invoice/Billing onl
 
 describe('classifyKindDetail — Invoice/Billing → DOCUMENT; others SHIPMENT + optional flag', () => {
   const invoice = new Set(['Invoice/Billing'])
-  it('Invoice/Billing-only → DOCUMENT + invoice_so_ref', () => {
+  it('Invoice/Billing-only without booking_no → DOCUMENT + invoice_so_ref', () => {
     expect(classifyKindDetail(invoice, { so_no: 'CMS364079' })).toEqual({ kind: 'DOCUMENT', rule: 'invoice_so_ref' })
-    expect(classifyKindDetail(invoice, { booking_no: 'BX845666' })).toEqual({ kind: 'DOCUMENT', rule: 'invoice_so_ref' })
+    expect(classifyKindDetail(invoice, {})).toEqual({ kind: 'DOCUMENT', rule: 'invoice_so_ref' })
+  })
+  it('Invoice/Billing-only with booking_no → SHIPMENT + invoice_with_booking', () => {
+    expect(classifyKindDetail(invoice, { booking_no: 'BX845666' })).toEqual({
+      kind: 'SHIPMENT',
+      rule: 'invoice_with_booking',
+    })
   })
   it('bare orphan → SHIPMENT + bare_orphan (flag only)', () => {
     expect(classifyKindDetail(new Set(['Other']), {})).toEqual({ kind: 'SHIPMENT', rule: 'bare_orphan' })

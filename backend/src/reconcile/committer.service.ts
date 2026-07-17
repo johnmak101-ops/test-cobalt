@@ -208,6 +208,10 @@ export class CommitterService {
       reviewHints.push('no booking/SO/HBL identity and no lifecycle email type — verify this is a real shipment')
     if (kindRule === 'platform_only')
       reviewHints.push('platform/portal email without carrier identity — verify booking_no is not a portal LPO')
+    if (kindRule === 'invoice_with_booking')
+      reviewHints.push(
+        'Typed as Invoice/Billing but booking number is present — confirm this is a shipment, not an unlinked invoice',
+      )
 
     // The critic's band decides whether a pure master-data gap is worth a human (see needsHumanReview).
     // A `high` band with no blocking hint keeps the agent's own verdict (gate + band both said confirm) —

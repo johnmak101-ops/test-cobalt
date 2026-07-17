@@ -564,7 +564,7 @@ describe('CommitterService — de-correction STEP 2/3: no silent guards / no sha
     expect(leg.reviewStatus).toBe('provisional')
   })
 
-  it('Invoice/Billing-only leg is DOCUMENT (Unlinked Documents)', async () => {
+  it('Invoice/Billing-only without booking_no is DOCUMENT (Unlinked Documents)', async () => {
     const res = await committer.apply(
       group({
         pos: [],
@@ -576,6 +576,22 @@ describe('CommitterService — de-correction STEP 2/3: no silent guards / no sha
     )
     const leg = await db.selectFrom('shipments').where('id', '=', res.shipmentId).selectAll().executeTakeFirstOrThrow()
     expect(leg.kind).toBe('DOCUMENT')
+  })
+
+  it('Invoice/Billing-only WITH booking_no is SHIPMENT + provisional (not parked as DOCUMENT)', async () => {
+    const res = await committer.apply(
+      group({
+        pos: [],
+        fields: { booking_no: 'BX-INV-BOOK-1' },
+        matchKeys: { booking_no: 'BX-INV-BOOK-1' },
+        emailTypes: ['Invoice/Billing'],
+        events: [{ emailType: 'Invoice/Billing', receivedAt: '2026-01-01T00:00:00Z' }],
+      }),
+    )
+    const leg = await db.selectFrom('shipments').where('id', '=', res.shipmentId).selectAll().executeTakeFirstOrThrow()
+    expect(leg.kind).toBe('SHIPMENT')
+    expect(leg.reviewStatus).toBe('provisional')
+    expect(reasonsOf(leg).some((r) => /Invoice\/Billing.*booking|booking number is present/i.test(r))).toBe(true)
   })
 })
 

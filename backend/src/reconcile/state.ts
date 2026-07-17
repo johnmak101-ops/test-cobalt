@@ -44,15 +44,18 @@ export function deriveState(
 /**
  * Split a committed leg into SHIPMENT vs DOCUMENT (Unlinked Documents inbox).
  *
- * DOCUMENT is reserved for **Invoice/Billing only** — vendor invoices / debit notes parked until a human
- * links them to the real move. Everything else is SHIPMENT (ops chat, bare PO, booking, B/L, …).
+ * DOCUMENT is reserved for **Invoice/Billing only without a clear booking number** — vendor invoices /
+ * debit notes parked until a human links them. Clear bookings mis-typed as Invoice stay SHIPMENT.
  *
  * Review-only rules (kind stays SHIPMENT; committer may flag provisional):
  *   (a) bare_orphan — no identity + no lifecycle email type (ack/cancel/status with only a PO, etc.)
+ *   (b) invoice_with_booking — Invoice/Billing-only but booking_no present (do not park as DOCUMENT)
  *   (c) platform_only — CVP/TradeLink portal mail without carrier identity (LPO-as-booking risk)
  *
  * A genuine SO *document* email type is lifecycle → SHIPMENT. Mixed types that include Invoice/Billing
  * plus a lifecycle type (Booking/SO/B/L) stay SHIPMENT.
+ *
+ * Invoice-only with SO/HBL/container but **no** booking_no still → DOCUMENT (finance invoice citing SO).
  */
 const IDENTITY_FIELDS = ['booking_no', 'so_no', 'hbl_awb_fcr_no', 'mbl', 'container_no'] as const
 /** Carrier-issued identities — booking_no EXCLUDED (the portal leaks an LPO into it, see (c)). */
@@ -60,10 +63,11 @@ const CARRIER_IDENTITY = ['hbl_awb_fcr_no', 'mbl', 'container_no'] as const
 const LIFECYCLE_TYPES = new Set(['Booking Request', 'SO', 'Draft B/L', 'Final B/L', 'Telex Release'])
 /**
  * Classification rule:
- *   invoice_so_ref → DOCUMENT (Invoice/Billing-only legs)
+ *   invoice_so_ref → DOCUMENT (Invoice/Billing-only, no booking_no)
+ *   invoice_with_booking → SHIPMENT + review flag (Invoice-only but has booking_no)
  *   bare_orphan / platform_only → SHIPMENT + optional review flag
  */
-export type ClassifyRule = 'bare_orphan' | 'invoice_so_ref' | 'platform_only'
+export type ClassifyRule = 'bare_orphan' | 'invoice_so_ref' | 'invoice_with_booking' | 'platform_only'
 
 export function classifyKindDetail(
   emailTypes: Set<string>,
@@ -71,8 +75,11 @@ export function classifyKindDetail(
   opts: { fromPlatform?: boolean } = {},
 ): { kind: 'SHIPMENT' | 'DOCUMENT'; rule: ClassifyRule | null } {
   const invoiceOnly = emailTypes.size > 0 && [...emailTypes].every((t) => t === 'Invoice/Billing')
-  // Unlinked Documents = Invoice/Billing only (ops decision 2026-07-12)
-  if (invoiceOnly) return { kind: 'DOCUMENT', rule: 'invoice_so_ref' }
+  // Unlinked Documents = Invoice/Billing only — unless a clear booking_no is present (ops 2026-07-17)
+  if (invoiceOnly) {
+    if (has(fields.booking_no)) return { kind: 'SHIPMENT', rule: 'invoice_with_booking' }
+    return { kind: 'DOCUMENT', rule: 'invoice_so_ref' }
+  }
 
   const hasIdentity = IDENTITY_FIELDS.some((k) => has(fields[k]))
   const hasLifecycle = [...emailTypes].some((t) => LIFECYCLE_TYPES.has(t))
