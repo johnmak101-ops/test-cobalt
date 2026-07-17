@@ -45,7 +45,12 @@ Orientation for AI coding agents working in this repo.
     Manual: `POST /api/masters/sync` (ADMIN). Fail soft — API stays up if Mesh errors.
   - **CLI still valid:** `node dist/db/sync-masters.js` (dev: `npx tsx src/db/sync-masters.ts`) under host cron if desired.
   - Mesh→local: `customers`→customers, `factories`+`gmtsuppliers`→vendors (factory wins on code clash), `forwarders`→forwarders.
-- **`ports`** are seeded (no ERP home). **consignees / brands / carriers are NOT synced** — no local master
+- **`ports`** have **no ERP/Mesh home**. Offline seed keeps ~40 curated rows for empty DB / demo.
+  Full master: free **UN/LOCODE** (sea function `1` + air `4`) + **OurAirports** IATA cross-check,
+  upsert-never-delete via `PortsSyncService` (shiptrack#159). Nest schedule monthly
+  (`PORTS_SYNC_INTERVAL_MS`, default ~30d; `0` = off). Manual: `pnpm --filter backend ports:sync` or
+  `POST /api/masters/ports/sync` (ADMIN). Last success: `app_settings.ports_sync_last_ok_at`.
+- **consignees / brands / carriers are NOT Mesh-synced** — no local master
   (brand/SCAC are free-text) or no Mesh endpoint (consignees); left for later (a `carriers` master could
   later back the free-text SCAC).
 - The seed is `ports + admin config` by default; `SEED_DEMO=1 pnpm --filter backend seed` adds the demo dataset.
