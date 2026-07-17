@@ -73,8 +73,14 @@ export class AlertEvaluatorService {
     // Bulk: emails for every candidate leg, then ONE evidence load for all their messages grouped by
     // messageId — was emailsForShipment + forMessages PER leg.
     const emailsByShipment = await this.emails.emailsForShipments(candidates.map((l) => l.id))
+    // Skip orphans (email_message wiped — id null); A7 needs evidence rows on real messages.
     const evidenceRows = await this.evidence.forMessages([
-      ...new Set([...emailsByShipment.values()].flat().map((e) => e.id)),
+      ...new Set(
+        [...emailsByShipment.values()]
+          .flat()
+          .map((e) => e.id)
+          .filter((id): id is string => id != null),
+      ),
     ])
     const evidenceByMessage = new Map<string, (typeof evidenceRows)[number][]>()
     for (const ev of evidenceRows) {
@@ -85,7 +91,9 @@ export class AlertEvaluatorService {
     const norm = (v: unknown) => String(v ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '')
     let fired = 0
     for (const leg of candidates) {
-      const related = emailsByShipment.get(leg.id) ?? []
+      const related = (emailsByShipment.get(leg.id) ?? []).filter(
+        (r): r is typeof r & { id: string } => r.id != null,
+      )
       if (related.length < 2) continue
       const evidence = related.flatMap((r) => evidenceByMessage.get(r.id) ?? [])
       // a multi-booking email's sibling records must not speak for this leg
