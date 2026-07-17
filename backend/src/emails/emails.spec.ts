@@ -352,6 +352,63 @@ describe('EmailsService — Graph attachment fallback (Task 7)', () => {
     expect(file?.body.toString()).toBe('abc')
   })
 
+  // #170: MIME path has null graphAttachmentId; must still match Graph by filename when message graph_id exists
+  it('falls back to Graph by filename when graphAttachmentId is null and rawBytes empty', async () => {
+    const service = attachmentsSvc(
+      {
+        attachmentById: async () => [
+          attachmentRow({
+            attachmentId: 'x',
+            filename: 'BL_YAQI-KNIT-26-111-15_01.pdf',
+            graphAttachmentId: null,
+            messageGraphId: 'AAMk-msg-1',
+            rawBytes: null,
+          }),
+        ],
+      },
+      {
+        configured: () => true,
+        fetchAttachments: async (id) => {
+          expect(id).toBe('AAMk-msg-1')
+          return [
+            {
+              graphAttachmentId: 'graph-other-id',
+              filename: 'BL_YAQI-KNIT-26-111-15_01.pdf',
+              mime: 'application/pdf',
+              sizeBytes: 4,
+              body: Buffer.from('yaqi'),
+            },
+          ]
+        },
+      },
+    )
+    const file = await service.getAttachmentOriginal('x')
+    expect(file?.body.toString()).toBe('yaqi')
+    expect(file?.filename).toBe('BL_YAQI-KNIT-26-111-15_01.pdf')
+  })
+
+  it('returns null when graphAttachmentId and rawBytes are null and messageGraphId is missing (no Graph path)', async () => {
+    const service = attachmentsSvc(
+      {
+        attachmentById: async () => [
+          attachmentRow({
+            attachmentId: 'x',
+            graphAttachmentId: null,
+            messageGraphId: null as unknown as string,
+            rawBytes: null,
+          }),
+        ],
+      },
+      {
+        configured: () => true,
+        fetchAttachments: async () => {
+          throw new Error('should not fetch without messageGraphId')
+        },
+      },
+    )
+    expect(await service.getAttachmentOriginal('x')).toBeNull()
+  })
+
   it('does not call Graph for getAttachmentOriginal when local rawBytes is already present', async () => {
     const service = attachmentsSvc(
       { attachmentById: async () => [attachmentRow({ rawBytes: Buffer.from('local original') })] },
