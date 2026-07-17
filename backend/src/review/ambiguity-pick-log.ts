@@ -1,5 +1,6 @@
 /**
- * #129 Phase F — log human multi-candidate picks for ranker accuracy (no full email body).
+ * #129 Phase F / #173 A′ — log human multi-candidate picks (no full email body).
+ * Appends under AMBIGUITY_PICK_DIR or data/ambiguity/picks-YYYY-MM-DD.jsonl.
  */
 import { appendFileSync, existsSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
@@ -15,6 +16,10 @@ export type AmbiguityPickEvent = {
   candidateIds?: string[]
   suggestionShipmentId?: string | null
   suggestionSource?: string | null
+  /** 0-based index of suggestion in candidate list (anchoring measure, #173 A′). */
+  suggestionDisplayPosition?: number | null
+  /** Join back to provisional / decision context. */
+  decisionRef?: string | null
   /** true when human picked the same id as suggestion */
   agreedWithSuggestion: boolean | null
 }
@@ -36,9 +41,22 @@ export function buildAmbiguityPickEvent(opts: {
   actorId: string
   criticReview?: CriticReview | null
 }): AmbiguityPickEvent | null {
-  const ma = opts.criticReview?.matchAmbiguity
+  const ma = opts.criticReview?.matchAmbiguity as {
+    candidates?: { shipmentId: string }[]
+    emailKey?: Record<string, string>
+    suggestion?: { shipmentId: string; source?: string; cannotDecide?: boolean }
+    llmSuggestion?: { shipmentId: string; source?: string; cannotDecide?: boolean }
+  } | undefined
   if (!ma?.candidates || ma.candidates.length < 2) return null
-  const sug = ma.suggestion && !ma.suggestion.cannotDecide ? ma.suggestion.shipmentId : null
+  const ids = ma.candidates.map((c) => c.shipmentId)
+  const sugObj =
+    ma.suggestion && !ma.suggestion.cannotDecide
+      ? ma.suggestion
+      : ma.llmSuggestion && !ma.llmSuggestion.cannotDecide
+        ? ma.llmSuggestion
+        : null
+  const sug = sugObj?.shipmentId ?? null
+  const pos = sug ? ids.indexOf(sug) : -1
   return {
     type: 'human_pick',
     ts: new Date().toISOString(),
@@ -46,14 +64,18 @@ export function buildAmbiguityPickEvent(opts: {
     humanChoiceShipmentId: opts.humanChoiceShipmentId,
     actorId: opts.actorId,
     emailKey: ma.emailKey,
-    candidateIds: ma.candidates.map((c) => c.shipmentId),
+    candidateIds: ids,
     suggestionShipmentId: sug,
-    suggestionSource: ma.suggestion?.source ?? null,
+    suggestionSource: sugObj?.source ?? null,
+    suggestionDisplayPosition: pos >= 0 ? pos : null,
+    decisionRef: opts.sourceShipmentId,
     agreedWithSuggestion: sug != null ? sug === opts.humanChoiceShipmentId : null,
   }
 }
 
 export function appendAmbiguityPick(event: AmbiguityPickEvent): void {
+  if (process.env.AMBIGUITY_PICK_JSONL === '0' || process.env.AMBIGUITY_PICK_JSONL === 'false') return
+  if (process.env.VITEST === 'true' || process.env.NODE_ENV === 'test') return
   try {
     const path = join(dataDir(), `picks-${utcDay()}.jsonl`)
     appendFileSync(path, `${JSON.stringify(event)}\n`, 'utf8')
@@ -77,9 +99,9 @@ export function logAmbiguityPickFromLink(opts: {
       : event.agreedWithSuggestion
         ? 'agree'
         : 'disagree'
-  // scrape-friendly one-liner
   console.info(
     `[ambiguity-pick] source=${event.sourceShipmentId} choice=${event.humanChoiceShipmentId} ` +
-      `sug=${event.suggestionShipmentId ?? 'none'} ${agree} n=${event.candidateIds?.length ?? 0}`,
+      `sug=${event.suggestionShipmentId ?? 'none'} src=${event.suggestionSource ?? '-'} ` +
+      `pos=${event.suggestionDisplayPosition ?? '-'} ${agree} n=${event.candidateIds?.length ?? 0}`,
   )
 }

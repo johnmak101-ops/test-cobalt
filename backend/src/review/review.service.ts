@@ -323,7 +323,7 @@ export class ReviewService {
       shipmentId, leg: source, outcome: 'corrected', correctedFieldCount: 0, actorId,
       reasons: ['linked-into-existing'],
     })
-    // #129 Phase F: human multi-candidate pick vs suggestion (no email body)
+    // #129 / #173 A′: human multi-candidate pick vs suggestion (display pos + decisionRef)
     try {
       logAmbiguityPickFromLink({
         sourceShipmentId: shipmentId,

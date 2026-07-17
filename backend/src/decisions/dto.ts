@@ -106,6 +106,12 @@ export class CreateDecisionDto {
    *  ShipTrack dual-computes band vs gate; under default critic_routing_mode=gate this is shadow-only. */
   @IsOptional() @IsIn(['auto', 'review', 'skip']) recommendedRouting?: 'auto' | 'review' | 'skip'
 
+  /**
+   * #173 C1.5 — dual-confirm pin: commit onto this shipmentId after verify (intersection+llm).
+   * Absent → committer first-match-wins (legacy). Verification fail → provisional, never silent re-match.
+   */
+  @IsOptional() @IsObject() dualAutoTarget?: { shipmentId: string; basis?: string }
+
   /** True when EVERY source email came from the CVP/TradeLinkOne notification platform — the leg is a
    *  vendor/PO notification, not a booked move (routed to Documents, classifyKind rule (c)). Omitted by
    *  legacy callers → the committer resolves it from the source emails' senders (defense in depth). */

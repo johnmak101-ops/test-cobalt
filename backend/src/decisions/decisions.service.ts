@@ -212,6 +212,7 @@ export class DecisionsService {
       reviewReasons,
       // Prefer merged critic (includes matchAmbiguity) over raw dto
       criticReview: critic ?? dto.criticReview ?? null,
+      dualAutoTarget: dto.dualAutoTarget ?? null,
     }
 
     const result = await this.committer.apply(group)
