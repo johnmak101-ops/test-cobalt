@@ -92,7 +92,8 @@ const TRANSLATIONS: Translation[] = [
   },
   {
     match: /matched multiple backend legs/i,
-    text: () => 'This email could belong to more than one shipment — confirm it is attached to the right one',
+    text: () =>
+      'This email matched more than one existing leg — pick the right shipment below (multiple legs / 拼柜 is often normal)',
   },
   {
     match: /a PO on this email currently belongs to a different shipment/i,
@@ -123,6 +124,25 @@ const TRANSLATIONS: Translation[] = [
   {
     match: /new shipment for an unknown \/ unresolved customer/i,
     text: () => 'Customer not recognised in master data — confirm who this shipment belongs to',
+  },
+  {
+    // #152 ops notes from queue master-matcher seam
+    match: /Cannot match .+ master candidates API was unreachable/i,
+    text: () =>
+      'Master data API was unreachable when matching a party — rematch after recovery (do not add a duplicate in Mesh yet)',
+  },
+  {
+    match: /Cannot match .+ as a port/i,
+    text: () => 'Port name did not match UN/LOCODE masters — add or alias the port, then rematch',
+  },
+  {
+    match: /Cannot match .+ Cobalt Fashion Data Mesh System/i,
+    text: () =>
+      'Party name not in master list — add it in Cobalt Fashion Data Mesh System, then rematch (ops; not a normal review fix)',
+  },
+  {
+    match: /Cannot match .+ masters catalog is empty/i,
+    text: () => 'Master catalog is empty for this party type — sync Mesh/masters, then rematch',
   },
   {
     // Model JSON cut mid-generation (output token ceiling / salvage) — NOT "email was too big".
@@ -340,6 +360,9 @@ const CATEGORY_RULES: Array<{ match: RegExp; category: ReasonCategory }> = [
   { match: /customer is new or not recognized/i, category: 'master_miss' },
   { match: /unknown \/ unresolved customer/i, category: 'master_miss' },
   { match: /customer not known/i, category: 'master_miss' },
+  { match: /Cannot match/i, category: 'master_miss' },
+  { match: /Cobalt Fashion Data Mesh/i, category: 'master_miss' },
+  { match: /UN\/LOCODE/i, category: 'master_miss' },
   { match: /vision_pending|output_truncated|input_truncated|content_filter/i, category: 'extraction' },
   { match: /attachment|missing cargo detail|screenshot|broadcast total/i, category: 'extraction' },
 ]

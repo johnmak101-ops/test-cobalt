@@ -1,87 +1,107 @@
 /**
- * #173 Phase A′ — human pick telemetry for multi-candidate match.
- * Appends JSONL under AMBIGUITY_PICK_DIR or data/ambiguity/picks-YYYY-MM-DD.jsonl.
- * Never throws into the review path.
+ * #129 Phase F / #173 A′ — log human multi-candidate picks (no full email body).
+ * Appends under AMBIGUITY_PICK_DIR or data/ambiguity/picks-YYYY-MM-DD.jsonl.
  */
-import { appendFileSync, mkdirSync, existsSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { appendFileSync, existsSync, mkdirSync } from 'node:fs'
+import { join } from 'node:path'
+import type { CriticReview } from '../decisions/critic-review.types'
 
 export type AmbiguityPickEvent = {
   type: 'human_pick'
   ts: string
-  humanChoice: string
-  suggestionShipmentId: string | null
-  suggestionSource: string | null
-  suggestionDisplayPosition: number | null
-  agreedWithSuggestion: boolean | null
-  candidateIds: string[]
-  emailKey: Record<string, string>
-  decisionRef: string | null
   sourceShipmentId: string
+  humanChoiceShipmentId: string
+  actorId: string
+  emailKey?: Record<string, string>
+  candidateIds?: string[]
+  suggestionShipmentId?: string | null
+  suggestionSource?: string | null
+  /** 0-based index of suggestion in candidate list (anchoring measure, #173 A′). */
+  suggestionDisplayPosition?: number | null
+  /** Join back to provisional / decision context. */
+  decisionRef?: string | null
+  /** true when human picked the same id as suggestion */
+  agreedWithSuggestion: boolean | null
+}
+
+function dataDir(): string {
+  const dir = process.env.AMBIGUITY_PICK_DIR?.trim()
+    || join(process.cwd(), 'data', 'ambiguity')
+  if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
+  return dir
 }
 
 function utcDay(): string {
   return new Date().toISOString().slice(0, 10)
 }
 
-function pickDir(): string {
-  const override = process.env.AMBIGUITY_PICK_DIR?.trim()
-  const dir = override
-    ? resolve(override)
-    : resolve(process.cwd(), 'data', 'ambiguity')
-  if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
-  return dir
+export function buildAmbiguityPickEvent(opts: {
+  sourceShipmentId: string
+  humanChoiceShipmentId: string
+  actorId: string
+  criticReview?: CriticReview | null
+}): AmbiguityPickEvent | null {
+  const ma = opts.criticReview?.matchAmbiguity as {
+    candidates?: { shipmentId: string }[]
+    emailKey?: Record<string, string>
+    suggestion?: { shipmentId: string; source?: string; cannotDecide?: boolean }
+    llmSuggestion?: { shipmentId: string; source?: string; cannotDecide?: boolean }
+  } | undefined
+  if (!ma?.candidates || ma.candidates.length < 2) return null
+  const ids = ma.candidates.map((c) => c.shipmentId)
+  const sugObj =
+    ma.suggestion && !ma.suggestion.cannotDecide
+      ? ma.suggestion
+      : ma.llmSuggestion && !ma.llmSuggestion.cannotDecide
+        ? ma.llmSuggestion
+        : null
+  const sug = sugObj?.shipmentId ?? null
+  const pos = sug ? ids.indexOf(sug) : -1
+  return {
+    type: 'human_pick',
+    ts: new Date().toISOString(),
+    sourceShipmentId: opts.sourceShipmentId,
+    humanChoiceShipmentId: opts.humanChoiceShipmentId,
+    actorId: opts.actorId,
+    emailKey: ma.emailKey,
+    candidateIds: ids,
+    suggestionShipmentId: sug,
+    suggestionSource: sugObj?.source ?? null,
+    suggestionDisplayPosition: pos >= 0 ? pos : null,
+    decisionRef: opts.sourceShipmentId,
+    agreedWithSuggestion: sug != null ? sug === opts.humanChoiceShipmentId : null,
+  }
 }
 
-export function recordAmbiguityPick(ev: Omit<AmbiguityPickEvent, 'type' | 'ts'>): void {
+export function appendAmbiguityPick(event: AmbiguityPickEvent): void {
   if (process.env.AMBIGUITY_PICK_JSONL === '0' || process.env.AMBIGUITY_PICK_JSONL === 'false') return
   if (process.env.VITEST === 'true' || process.env.NODE_ENV === 'test') return
   try {
-    const path = resolve(pickDir(), `picks-${utcDay()}.jsonl`)
-    const row: AmbiguityPickEvent = { type: 'human_pick', ts: new Date().toISOString(), ...ev }
-    appendFileSync(path, `${JSON.stringify(row)}\n`, 'utf8')
-    console.info(
-      `[ambiguity-pick] source=${ev.sourceShipmentId} choice=${ev.humanChoice} sug=${ev.suggestionShipmentId ?? '-'} ` +
-        `${ev.agreedWithSuggestion === true ? 'agree' : ev.agreedWithSuggestion === false ? 'disagree' : 'n/a'}`,
-    )
-  } catch (err) {
-    console.warn(`[ambiguity-pick] write failed: ${String(err).slice(0, 120)}`)
+    const path = join(dataDir(), `picks-${utcDay()}.jsonl`)
+    appendFileSync(path, `${JSON.stringify(event)}\n`, 'utf8')
+  } catch {
+    // best-effort — never fail the human link action
   }
 }
 
-/** Extract pick fields from a provisional leg's criticReview.matchAmbiguity. */
-export function pickContextFromLeg(leg: {
-  id: string
-  criticReview?: unknown
-  matchKeys?: unknown
-}): {
-  candidateIds: string[]
-  suggestionShipmentId: string | null
-  suggestionSource: string | null
-  suggestionDisplayPosition: number | null
-  emailKey: Record<string, string>
-  decisionRef: string | null
-} | null {
-  const cr = leg.criticReview as {
-    matchAmbiguity?: {
-      candidates?: { shipmentId: string }[]
-      suggestion?: { shipmentId: string; source?: string }
-      llmSuggestion?: { shipmentId: string; source?: string }
-      emailKey?: Record<string, string>
-      candidateCount?: number
-    }
-  } | null
-  const ma = cr?.matchAmbiguity
-  if (!ma?.candidates || ma.candidates.length < 2) return null
-  const ids = ma.candidates.map((c) => c.shipmentId)
-  const sug = ma.suggestion ?? ma.llmSuggestion ?? null
-  const pos = sug ? ids.indexOf(sug.shipmentId) : -1
-  return {
-    candidateIds: ids,
-    suggestionShipmentId: sug?.shipmentId ?? null,
-    suggestionSource: sug?.source ?? null,
-    suggestionDisplayPosition: pos >= 0 ? pos : null,
-    emailKey: ma.emailKey ?? {},
-    decisionRef: leg.id,
-  }
+export function logAmbiguityPickFromLink(opts: {
+  sourceShipmentId: string
+  humanChoiceShipmentId: string
+  actorId: string
+  criticReview?: CriticReview | null
+}): void {
+  const event = buildAmbiguityPickEvent(opts)
+  if (!event) return
+  appendAmbiguityPick(event)
+  const agree =
+    event.agreedWithSuggestion == null
+      ? 'n/a'
+      : event.agreedWithSuggestion
+        ? 'agree'
+        : 'disagree'
+  console.info(
+    `[ambiguity-pick] source=${event.sourceShipmentId} choice=${event.humanChoiceShipmentId} ` +
+      `sug=${event.suggestionShipmentId ?? 'none'} src=${event.suggestionSource ?? '-'} ` +
+      `pos=${event.suggestionDisplayPosition ?? '-'} ${agree} n=${event.candidateIds?.length ?? 0}`,
+  )
 }

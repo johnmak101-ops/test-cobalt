@@ -15,6 +15,7 @@ import {
   type CriticReview,
   type CriticReviewCompact,
 } from '../../lib/critic-review'
+import { CandidateLegsPanel } from './CandidateLegsPanel'
 import type { ReviewShipment } from '../../hooks/use-review-queue'
 import type { ShipmentDetail } from '../../hooks/use-shipments'
 import { cn, formatDateTime } from '../../lib/utils'
@@ -43,6 +44,7 @@ const RISK_CODE_CATEGORY: Record<string, ReasonCategory> = {
   WEAK_IDENTITY: 'no_identity',
   PORTAL_ECHO: 'portal',
   PARTY_UNRESOLVED: 'master_miss',
+  PARTY_OPS: 'master_miss',
   MISSING_ATTACHMENT: 'extraction',
   EXTRACTION_INCOMPLETE: 'extraction',
   SCAN_OCR_RISK: 'extraction',
@@ -213,7 +215,11 @@ export function ReviewCard({
   const [busy, setBusy] = useState(false)
   const isWeakIdentity = (criticReview?.riskFlags ?? []).some((f) => f.code === 'WEAK_IDENTITY')
   const isAmbiguousMatch = (criticReview?.riskFlags ?? []).some((f) => f.code === 'AMBIGUOUS_MATCH')
+  // #129: closed-set candidates from matcher (preferred over free-type Identify when present)
+  const matchAmbiguity = criticReview?.matchAmbiguity
+  const hasCandidateLegs = (matchAmbiguity?.candidates?.length ?? 0) >= 2
   // Identify/link: weak-identity fold OR ambiguous-match (which real shipment?) — #146
+  // Still show Identify when ambiguous but no candidate payload (legacy legs) or as fallback under panel
   const showIdentify = !readOnly && !!onIdentify && (isWeakIdentity || isAmbiguousMatch)
   const [identField, setIdentField] = useState<'booking_no' | 'so_no' | 'hbl_awb_fcr_no'>('booking_no')
   const [identValue, setIdentValue] = useState('')
@@ -558,12 +564,23 @@ export function ReviewCard({
             </p>
           )}
 
+          {hasCandidateLegs && matchAmbiguity && (
+            <CandidateLegsPanel
+              matchAmbiguity={matchAmbiguity}
+              currentShipmentId={(shipment as { id?: string }).id}
+              readOnly={readOnly}
+              onLink={onLink}
+            />
+          )}
+
           {showIdentify && (
             <div className="rounded-lg border border-border bg-surface-900 px-3 py-2 space-y-2" data-testid="identify-shipment">
               <p className="text-[11px] font-medium text-text-muted">
-                {isAmbiguousMatch && !isWeakIdentity
-                  ? 'Multiple matching shipments — identify the real one and fold this leg into it if it is a duplicate.'
-                  : 'Identify this shipment — type its booking / SO / B/L; if it already exists you can link into it.'}
+                {hasCandidateLegs
+                  ? 'Not in the list above? Search by booking / SO / B/L.'
+                  : isAmbiguousMatch && !isWeakIdentity
+                    ? 'Multiple matching shipments — identify the real one and fold this leg into it if it is a duplicate.'
+                    : 'Identify this shipment — type its booking / SO / B/L; if it already exists you can link into it.'}
               </p>
               <div className="flex flex-wrap items-center gap-1.5">
                 <select

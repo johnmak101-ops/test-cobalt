@@ -10,6 +10,7 @@ import { QueueLearningClient } from './queue-learning.client'
 import { syncIdentityMatchKeys } from '../shipments/identity-keys'
 import { keysOverlap, normBookingKey, normKey, strongKeys } from '../reconcile/match-keys'
 import type { CorrectDto, IdentifyDto, LinkDto } from './dto'
+import { logAmbiguityPickFromLink } from './ambiguity-pick-log'
 
 /** IdentifyDto snake_case strong-key field → camelCase shipment column. */
 const KEY_TO_LEG_COLUMN: Record<IdentifyDto['field'], string> = {
@@ -307,30 +308,6 @@ export class ReviewService {
     if (srcKeys.size > 0 && !keysOverlap(srcKeys, tgtKeys))
       throw new BadRequestException('leg carries a different identity than the target — not a duplicate; edit it on the shipment page instead')
 
-    // #173 A′: human pick telemetry when source carried multi-candidate matchAmbiguity
-    try {
-      const { recordAmbiguityPick, pickContextFromLeg } = await import('./ambiguity-pick-log.js')
-      const ctx = pickContextFromLeg(source)
-      if (ctx) {
-        recordAmbiguityPick({
-          humanChoice: dto.targetShipmentId,
-          suggestionShipmentId: ctx.suggestionShipmentId,
-          suggestionSource: ctx.suggestionSource,
-          suggestionDisplayPosition: ctx.suggestionDisplayPosition,
-          agreedWithSuggestion:
-            ctx.suggestionShipmentId != null
-              ? ctx.suggestionShipmentId === dto.targetShipmentId
-              : null,
-          candidateIds: ctx.candidateIds,
-          emailKey: ctx.emailKey,
-          decisionRef: ctx.decisionRef,
-          sourceShipmentId: shipmentId,
-        })
-      }
-    } catch {
-      /* never fail link on telemetry */
-    }
-
     await this.shipments.linkProvisionalLeg(shipmentId, dto.targetShipmentId)
     await this.audit.write({
       entityType: 'shipment', entityId: shipmentId, field: null,
@@ -346,6 +323,17 @@ export class ReviewService {
       shipmentId, leg: source, outcome: 'corrected', correctedFieldCount: 0, actorId,
       reasons: ['linked-into-existing'],
     })
+    // #129 / #173 A′: human multi-candidate pick vs suggestion (display pos + decisionRef)
+    try {
+      logAmbiguityPickFromLink({
+        sourceShipmentId: shipmentId,
+        humanChoiceShipmentId: dto.targetShipmentId,
+        actorId,
+        criticReview: (source.criticReview ?? null) as CriticReview | null,
+      })
+    } catch {
+      /* never fail link */
+    }
     return { ok: true as const, targetShipmentId: dto.targetShipmentId }
   }
 

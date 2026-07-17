@@ -85,9 +85,22 @@ export class CreateDecisionDto {
   /** Why the gate withheld auto-apply (empty when autoApply) — surfaced in the review queue ahead of raw conflicts. */
   @IsOptional() @IsArray() @IsString({ each: true }) reviewReasons?: string[]
 
+  /**
+   * #152 ops-only party notes (Mesh-add / API-down / port LOCODE). Not gate review reasons.
+   * Merged into stored reviewReasons + criticReview so they are visible on the leg.
+   */
+  @IsOptional() @IsArray() @IsString({ each: true }) opsNotes?: string[]
+
   /** Critic advisory JSON (confidence band, conflicts, risk flags) — persisted on the leg for the review UI.
    *  Loose object at the HTTP boundary; shape documented in critic-review.types.ts. Omitted by legacy callers. */
   @IsOptional() @IsObject() criticReview?: object
+
+  /**
+   * #129 multi-candidate match: closed-set legs the email matched (queue matcher).
+   * Merged into criticReview.matchAmbiguity on ingest for ReviewCard candidate picker.
+   * Never invent IDs — only pass through agent payload.
+   */
+  @IsOptional() @IsObject() matchAmbiguity?: object
 
   /** Queue band-routing recommendation (Phase 2 shadow). Independent of disposition/autoApply gate.
    *  ShipTrack dual-computes band vs gate; under default critic_routing_mode=gate this is shadow-only. */

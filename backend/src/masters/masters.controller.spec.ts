@@ -34,4 +34,8 @@ describe('MastersController — Resolution Rules access retrofit', () => {
       expect(write(m)).toBeUndefined()
     }
   })
+
+  it('POST /masters/sync is ADMIN-only (#161)', () => {
+    expect(roles('syncNow')).toEqual(['ADMIN'])
+  })
 })

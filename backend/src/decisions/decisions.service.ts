@@ -50,7 +50,31 @@ export class DecisionsService {
     // Email disposition (matcher gates review): derive / escalate from lookupContext + payload.
     // `skip` must NOT commit — empty match-key would mint phantom JOB-XXXX legs on every ingest.
     const disp = resolveEmailDisposition(dto)
-    const critic = (dto.criticReview ?? null) as CriticReview | null
+    // #129: merge top-level matchAmbiguity into criticReview for persistence / ReviewCard
+    const baseCritic = (dto.criticReview ?? null) as CriticReview | null
+    const critic: CriticReview | null = dto.matchAmbiguity
+      ? ({
+          ...(baseCritic ?? {
+            confidence: { score: dto.confidence, band: 'low', label: 'low' },
+            summary: '',
+            observations: [],
+            priorState: { headline: '', fields: [] },
+            proposedChanges: [],
+            riskFlags: [],
+            recommendedHumanAction: 'review',
+            reasons: [],
+          }),
+          matchAmbiguity: dto.matchAmbiguity as CriticReview['matchAmbiguity'],
+        } as CriticReview)
+      : baseCritic
+        ? ({
+            ...baseCritic,
+            // Prefer nested matchAmbiguity already on criticReview from queue embed
+            matchAmbiguity:
+              baseCritic.matchAmbiguity ??
+              (dto.matchAmbiguity as CriticReview['matchAmbiguity'] | undefined),
+          } as CriticReview)
+        : null
 
     if (disp.disposition === 'skip') {
       // Shadow even on skip when critic present (shipmentId null — nothing committed).
@@ -107,8 +131,11 @@ export class DecisionsService {
     let reviewReasons: string[] | null = [
       ...(dto.reviewReasons ?? []),
       ...(disp.disposition === 'review' ? disp.reasons : []),
+      // #152: party ops notes (Mesh/API/port) — store on every leg including auto/confirmed
+      ...(dto.opsNotes ?? []),
     ]
     if (!reviewReasons.length) reviewReasons = null
+    else reviewReasons = [...new Set(reviewReasons)]
 
     // Cancel flag: always force Awaiting Review with "Booking cancelled" as the TOP reason.
     // Cancelled payloads that already arrive provisional would otherwise set leg_status=CANCELLED
@@ -183,7 +210,8 @@ export class DecisionsService {
       confidence: dto.confidence,
       reviewStatus,
       reviewReasons,
-      criticReview: dto.criticReview ?? null,
+      // Prefer merged critic (includes matchAmbiguity) over raw dto
+      criticReview: critic ?? dto.criticReview ?? null,
       dualAutoTarget: dto.dualAutoTarget ?? null,
     }
 
