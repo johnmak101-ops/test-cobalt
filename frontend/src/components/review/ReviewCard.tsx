@@ -19,37 +19,7 @@ import { CandidateLegsPanel } from './CandidateLegsPanel'
 import type { ReviewShipment } from '../../hooks/use-review-queue'
 import type { ShipmentDetail } from '../../hooks/use-shipments'
 import { cn, formatDateTime } from '../../lib/utils'
-import { categorizeReason, humanizeReasons, type ReasonCategory } from '../../lib/review-reasons'
-
-/**
- * Which reason category a queue risk-flag code already explains, so ShipTrack's own committer reason
- * saying the same thing is not repeated below it. A code absent here explains NOTHING and therefore
- * suppresses no reason — the safe default: a redundant bullet is cheap, a hidden reason is not.
- * Mirrors the queue's RISK catalog (cobalt-queue src/critic-agent/review/types.ts).
- * NOTE: no flag maps to 'master_miss' except PARTY_UNRESOLVED — master-data misses are raised by
- * ShipTrack's committer, which is exactly why the union (not a fallback) is required here.
- */
-const RISK_CODE_CATEGORY: Record<string, ReasonCategory> = {
-  INTRA_EMAIL_FIELD_CONFLICT: 'conflict',
-  INTRA_EMAIL_CARGO_CONFLICT: 'conflict',
-  BACKEND_CONFLICT: 'conflict',
-  FIELD_LOCK_CLASH: 'conflict',
-  INTRA_EMAIL_MULTI_STRONG_ID: 'multi_id',
-  AMBIGUOUS_MATCH: 'multi_id',
-  PO_REASSIGN: 'multi_id',
-  PO_ONLY_WEAK_MATCH: 'multi_id',
-  MULTI_LEG_SUSPECT: 'multi_id',
-  MULTI_DESTINATION_SUSPECT: 'multi_id',
-  THREAD_SUPERSEDE: 'multi_id',
-  WEAK_IDENTITY: 'no_identity',
-  PORTAL_ECHO: 'portal',
-  PARTY_UNRESOLVED: 'master_miss',
-  PARTY_OPS: 'master_miss',
-  MISSING_ATTACHMENT: 'extraction',
-  EXTRACTION_INCOMPLETE: 'extraction',
-  SCAN_OCR_RISK: 'extraction',
-  CARGO_SANITY: 'extraction',
-}
+import { buildNeedsAttention } from './needs-attention'
 
 /**
  * ONE geometry for every button in the card's action bar; variants change COLOUR only, never size,
@@ -239,31 +209,16 @@ export function ReviewCard({
       ),
     [emails],
   )
-  // WHY this leg is queued — the UNION of two INDEPENDENT sources, not a primary + fallback:
-  // the queue critic's riskFlags (what the agent saw in the email) and ShipTrack's own committer
-  // reviewReasons (master-data resolution misses the queue never sees). Showing only the flags hid
-  // the master-data reasons on every flagged leg. Reasons whose category a flag already explains are
-  // dropped so the same problem is not stated twice.
-  const whyReview = useMemo(() => {
-    const flags = (criticReview?.riskFlags ?? []).filter((f) => f?.message)
-    const explained = new Set<ReasonCategory>()
-    for (const f of flags) {
-      const c = RISK_CODE_CATEGORY[f.code]
-      if (c) explained.add(c)
-    }
-    const out = flags.map((f, i) => ({
-      key: `${f.code}-${i}`,
-      severity: f.severity as 'low' | 'medium' | 'high',
-      text: f.message,
-    }))
-    const reasons = (shipment as { reviewReasons?: string[] | null }).reviewReasons ?? []
-    // Do not promise a field table "below" when critic conflicts are absent (#146).
-    for (const { raw, text } of humanizeReasons(reasons, { fieldDetailAvailable: conflicts.length > 0 })) {
-      if (explained.has(categorizeReason(raw))) continue
-      out.push({ key: `reason-${raw}`, severity: 'medium', text })
-    }
-    return out
-  }, [criticReview, shipment, conflicts.length])
+  // Needs attention — non-field decision context only (design 2026-07-17). Field diffs live in the table.
+  const needsAttention = useMemo(
+    () =>
+      buildNeedsAttention({
+        riskFlags: criticReview?.riskFlags,
+        reviewReasons: (shipment as { reviewReasons?: string[] | null }).reviewReasons,
+        conflictsCount: conflicts.length,
+      }),
+    [criticReview, shipment, conflicts.length],
+  )
   const [resolutions, setResolutions] = useState<Record<string, string>>(() =>
     initialResolutions(conflicts),
   )
@@ -535,26 +490,36 @@ export function ReviewCard({
             </div>
           )}
 
-          {whyReview.length > 0 && (
-            <div className="rounded-lg bg-surface-900 px-3 py-2" data-testid="why-review">
-              <p className="text-[11px] font-medium text-text-muted">Why review?</p>
-              <ul className="mt-1 space-y-1">
-                {whyReview.map((r) => (
-                  <li key={r.key} className="flex items-start gap-1.5 text-xs text-text-secondary">
-                    <span
-                      className={cn(
-                        'mt-1 inline-block h-1.5 w-1.5 shrink-0 rounded-full',
-                        r.severity === 'high'
-                          ? 'bg-status-critical'
-                          : r.severity === 'medium'
-                            ? 'bg-status-warning'
-                            : 'bg-surface-600',
-                      )}
-                    />
-                    {r.text}
-                  </li>
-                ))}
-              </ul>
+          {needsAttention.length > 0 && (
+            <div
+              className={cn(
+                'rounded-lg bg-surface-900 px-3 py-2',
+                editing && 'border-l-2 border-status-warning bg-status-warning/5',
+              )}
+              data-testid="needs-attention"
+              data-editing={editing ? 'true' : 'false'}
+            >
+              {/* data-testid why-review kept for legacy tests */}
+              <div data-testid="why-review">
+                <p className="text-[11px] font-medium text-text-muted">Needs attention</p>
+                <ul className="mt-1 space-y-1">
+                  {needsAttention.map((r) => (
+                    <li key={r.key} className="flex items-start gap-1.5 text-xs text-text-secondary">
+                      <span
+                        className={cn(
+                          'mt-1 inline-block h-1.5 w-1.5 shrink-0 rounded-full',
+                          r.severity === 'high'
+                            ? 'bg-status-critical'
+                            : r.severity === 'medium'
+                              ? 'bg-status-warning'
+                              : 'bg-surface-600',
+                        )}
+                      />
+                      {r.text}
+                    </li>
+                  ))}
+                </ul>
+              </div>
             </div>
           )}
 

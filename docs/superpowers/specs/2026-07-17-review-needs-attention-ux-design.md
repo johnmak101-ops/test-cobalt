@@ -1,7 +1,8 @@
 # Review Card — Needs attention UX (simple)
 
 **Date:** 2026-07-17  
-**Status:** Approved direction (mockups 5 / 9–11); awaiting implement plan  
+**Status:** Implemented on `feat/review-needs-attention-ux` (T1–T4; presentation-only)  
+
 **Repo:** cobalt-shiptrack (`frontend` Review Queue / ReviewCard)  
 **Related:** #166 (ingest reason dedupe — shipped), #168 (bare field-conflict bullets — shipped), #167 (full taxonomy — **out of scope for this slice**)
 

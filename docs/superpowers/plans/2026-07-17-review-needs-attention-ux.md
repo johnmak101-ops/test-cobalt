@@ -198,12 +198,13 @@ Presentation only. No new metrics required. Optional: none.
 
 ## Implementation checklist
 
-- [ ] **T1 (P1)** — `needs-attention.ts` filter + unit tests  
-- [ ] **T2 (P1)** — ReviewCard label once + hide empty  
-- [ ] **T3 (P1)** — Edit mode left border on Needs attention only  
-- [ ] **T4 (P1)** — ReviewCard tests for suppress / title / edit class  
-- [ ] **T5 (P2)** — Copy only if humanize insufficient  
-- [ ] **T6 (P3)** — Spec status note  
+- [x] **T1 (P1)** — `needs-attention.ts` filter + unit tests  
+- [x] **T2 (P1)** — ReviewCard label once + hide empty  
+- [x] **T3 (P1)** — Edit mode left border on Needs attention only  
+- [x] **T4 (P1)** — ReviewCard tests for suppress / title / edit class  
+- [ ] **T5 (P2)** — Copy only if humanize insufficient (deferred — humanize OK)  
+- [x] **T6 (P3)** — Spec status note  
+
 
 **Verify:**  
 ```bash

@@ -273,9 +273,9 @@ describe('ReviewCard', () => {
     expect(items[0]!.textContent).toMatch(/cargo details may be incomplete/)
   })
 
-  // #168 live shape: gate "N field conflict(s)" must not appear as a bare second bullet when critic
-  // already has INTRA_EMAIL_FIELD_CONFLICT / BACKEND_CONFLICT (no field names in gate string).
-  it('why-review suppresses gate "N field conflict(s)" when conflict riskFlags already explain', () => {
+  // Needs attention (2026-07-17): conflict table owns field diffs — hide conflict-class flags/reasons.
+  // Cap 2: non-field decision context only (multi_id / no_identity / master_miss).
+  it('why-review hides conflict flags when the conflict table is present (table owns comparison)', () => {
     render(
       <ReviewCard
         shipment={baseShipment({
@@ -321,16 +321,20 @@ describe('ReviewCard', () => {
       />,
     )
     const why = screen.getByTestId('why-review')
-    // flags shown with useful messages
-    expect(within(why).getByText(/Email disagrees with what is already stored/)).toBeInTheDocument()
-    expect(within(why).getByText(/3 field conflicts — values disagree/)).toBeInTheDocument()
-    expect(within(why).getByText(/Matched an existing shipment on PO alone/)).toBeInTheDocument()
-    // track-only reasons kept
-    expect(within(why).getByText(/Port of Loading.*CHINADONG|did not match a known port/i)).toBeInTheDocument()
-    expect(within(why).getByText(/real shipment|No booking/i)).toBeInTheDocument()
-    // bare gate count + backend conflict reason suppressed (category conflict already explained)
+    expect(screen.getByTestId('needs-attention')).toBeInTheDocument()
+    expect(within(why).getByText(/Needs attention/i)).toBeInTheDocument()
+    // Conflict-class flags suppressed — table already shows Qty
+    expect(within(why).queryByText(/Email disagrees with what is already stored/)).toBeNull()
+    expect(within(why).queryByText(/3 field conflicts — values disagree/)).toBeNull()
     expect(within(why).queryByText(/^3 field conflict\(s\)$/)).toBeNull()
     expect(within(why).queryByText(/Emails disagree about: Qty, Gross Weight, Measurement/)).toBeNull()
+    // Non-field context kept (cap 2 — at least multi_id / no_identity)
+    expect(within(why).getByText(/Matched an existing shipment on PO alone/)).toBeInTheDocument()
+    expect(within(why).getByText(/real shipment|No booking/i)).toBeInTheDocument()
+    const items = within(why).getAllByRole('listitem')
+    expect(items.length).toBeLessThanOrEqual(2)
+    // Table still owns the field comparison
+    expect(screen.getByRole('table')).toBeInTheDocument()
   })
 
   it('requires a note before Save & Approve when the resolution differs from the stored value', async () => {
