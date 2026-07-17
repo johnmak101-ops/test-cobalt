@@ -91,6 +91,16 @@ const TRANSLATIONS: Translation[] = [
     },
   },
   {
+    // Gate wording (queue review-gate): "3 field conflict(s)" — #168 must humanize + categorize as conflict
+    match: /(\d+)\s*field conflict\(s\)/i,
+    text: (m, opts) => {
+      if (opts?.fieldDetailAvailable === false) {
+        return `${m[1]} field(s) received different values from different emails — open the full shipment to compare values`
+      }
+      return `${m[1]} field(s) received different values from different emails — see the conflict table for which fields and values`
+    },
+  },
+  {
     match: /matched multiple backend legs/i,
     text: () =>
       'This email matched more than one existing leg — pick the right shipment below (multiple legs / 拼柜 is often normal)',
@@ -342,6 +352,8 @@ const CATEGORY_RULES: Array<{ match: RegExp; category: ReasonCategory }> = [
   { match: /only a portal alert/i, category: 'portal' },
   { match: /backend conflict on /i, category: 'conflict' },
   { match: /unresolved field conflict/i, category: 'conflict' },
+  // Gate emits "N field conflict(s)" without "unresolved" — must still be conflict (#168)
+  { match: /\d+\s*field conflict\(s\)/i, category: 'conflict' },
   { match: /disagrees with what.s already on the shipment/i, category: 'conflict' },
   { match: /mode change \S+ → \S+/i, category: 'conflict' },
   { match: /transport switched between sea and air/i, category: 'conflict' },
