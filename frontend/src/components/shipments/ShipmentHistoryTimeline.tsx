@@ -79,12 +79,16 @@ export function ShipmentHistoryTimeline({ history }: ShipmentHistoryTimelineProp
               </div>
 
               {/* Old → New value */}
-              <div className="mt-1 flex items-center gap-1.5 text-xs">
-                <span className="text-text-muted line-through">
+              {/* Values can be long comma-joined lists with no spaces (an item/style set), which
+                  is one unbreakable word to the layout — min-w-0 lets these flex items shrink and
+                  break-words lets the token wrap instead of overflowing. flex-wrap is what keeps a
+                  long value from crushing a short sibling ("(empty)") into a 1-char-per-line column. */}
+              <div className="mt-1 flex flex-wrap items-center gap-1.5 text-xs">
+                <span className="min-w-0 break-words text-text-muted line-through">
                   {formatFieldValue(entry.field, entry.oldValue)}
                 </span>
                 <ArrowRight size={10} className="shrink-0 text-text-muted" />
-                <span className="font-medium text-text-secondary">
+                <span className="min-w-0 break-words font-medium text-text-secondary">
                   {formatFieldValue(entry.field, entry.newValue)}
                 </span>
               </div>
@@ -109,7 +113,8 @@ export function ShipmentHistoryTimeline({ history }: ShipmentHistoryTimelineProp
                   title="Open the source email"
                   className="mt-1 inline-flex max-w-full cursor-pointer items-center gap-1 text-left text-xs italic text-text-muted hover:text-cobalt-primary-light hover:underline"
                 >
-                  <span className="truncate">{entry.notes}</span>
+                  {/* min-w-0: truncate can only ellipsize once the flex item is allowed to shrink */}
+                  <span className="min-w-0 truncate">{entry.notes}</span>
                   <ExternalLink size={10} className="shrink-0" />
                 </button>
               ) : (

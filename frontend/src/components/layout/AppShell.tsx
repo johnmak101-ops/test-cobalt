@@ -14,7 +14,10 @@ export function AppShell() {
           only at lg+ does it reserve room for the persistent rail. */}
       <div
         className={cn(
-          'flex flex-1 flex-col transition-all duration-200',
+          // min-w-0: without it this flex item takes its content's min-content width, so one
+          // unbreakable string anywhere widens the whole page (and every card in it) instead
+          // of overflowing its own box. h-screen's overflow-hidden then hides the evidence.
+          'flex min-w-0 flex-1 flex-col transition-all duration-200',
           'ml-0',
           sidebarCollapsed ? 'lg:ml-16' : 'lg:ml-56'
         )}
