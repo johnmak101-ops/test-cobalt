@@ -72,6 +72,36 @@ describe('ReviewService.confirm/correct — provisional-only + optimistic concur
     expect(shipments.updateLeg).not.toHaveBeenCalled()
   })
 
+  it('correct rejects unknown field names with 400 (no SQL explode)', async () => {
+    const { svc, shipments } = makeService()
+    await expect(svc.correct('leg-1', { fields: { notAColumn: 'x' } }, 'user-1')).rejects.toBeInstanceOf(
+      BadRequestException,
+    )
+    expect(shipments.updateLeg).not.toHaveBeenCalled()
+  })
+
+  it('correct applies multi-field critic resolution including port/forwarder raw columns', async () => {
+    const { svc, shipments, locks } = makeService()
+    const res = await svc.correct(
+      'leg-1',
+      {
+        fields: {
+          eta: '2026-08-01',
+          soNo: 'SO-NEW',
+          polRaw: 'CNSHK',
+          forwarderRaw: 'SEH',
+          mode: 'SEA',
+        },
+        reason: 'resolve all conflicts',
+      },
+      'user-1',
+    )
+    expect(res.reviewStatus).toBe('confirmed')
+    expect(res.corrected).toEqual(expect.arrayContaining(['eta', 'soNo', 'polRaw', 'forwarderRaw', 'mode']))
+    expect(shipments.updateLeg).toHaveBeenCalled()
+    expect(locks.lock.mock.calls.length).toBe(5)
+  })
+
   it('confirm rejects stale expectedUpdatedAt with 409', async () => {
     const { svc, shipments } = makeService()
     await expect(

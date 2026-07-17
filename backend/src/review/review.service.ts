@@ -27,6 +27,19 @@ const DATE_FIELDS = new Set([
 
 const NUMERIC_FIELDS = new Set(['qty', 'grossWeight', 'measurement'])
 
+/**
+ * Columns /correct may write. Must stay aligned with frontend mapCriticFieldToColumn /
+ * EDITABLE_FIELDS + critic extras (polRaw, mode, …). Unknown keys → BadRequest (never SQL explode).
+ */
+const CORRECTABLE_COLUMNS = new Set([
+  'bookingNo', 'soNo', 'itemStyleNo', 'qty', 'qtyUnit', 'grossWeight', 'measurement', 'htsCode',
+  'containerNo', 'hblAwbFcrNo', 'mbl', 'scacCode', 'consigneeName', 'consigneeAddress',
+  'vesselName', 'voyageNo', 'cargoReadyDate', 'cfsCutoff', 'etd', 'atd', 'eta', 'ata',
+  'warehouseStartDate', 'warehouseEndDate', 'inDcDate',
+  // critic extras (not all on Order Details form)
+  'mode', 'polRaw', 'podRaw', 'forwarderRaw', 'vendorRaw', 'flightNo', 'mawb',
+])
+
 /** Coerce a human-entered value to the shipment column's type (dates → Date, numerics → number). */
 function coerce(field: string, value: unknown): unknown {
   if (value == null || value === '') return null
@@ -205,6 +218,9 @@ export class ReviewService {
     forwarder: string | null,
     learningNote: string | null = note,
   ): Promise<unknown> {
+    if (!CORRECTABLE_COLUMNS.has(field)) {
+      throw new BadRequestException(`field not correctable: ${field}`)
+    }
     const value = coerce(field, raw)
     await this.shipments.updateLeg(shipmentId, { [field]: value })
     await this.fieldLocks.lock('shipment', shipmentId, field, toStr(value), actorId)

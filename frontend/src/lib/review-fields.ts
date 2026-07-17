@@ -127,14 +127,43 @@ const COLUMN_SET = new Set(EDITABLE_FIELDS.map((f) => f.column))
 const snakeToCamel = (s: string) => s.replace(/_([a-z0-9])/g, (_, c: string) => c.toUpperCase())
 
 /**
+ * Critic-only field names that map to leg columns outside the Order Details form vocabulary.
+ * Without these, Review Queue shows pol/forwarder conflicts under "Other" but Save silently drops them (#181).
+ */
+const CRITIC_EXTRA_COLUMNS: Record<string, string> = {
+  pol: 'polRaw',
+  pod: 'podRaw',
+  forwarder_name: 'forwarderRaw',
+  vendor_code: 'vendorRaw',
+  mode: 'mode',
+  flight_no: 'flightNo',
+  mawb: 'mawb',
+  // already camel
+  polRaw: 'polRaw',
+  podRaw: 'podRaw',
+  forwarderRaw: 'forwarderRaw',
+  vendorRaw: 'vendorRaw',
+  flightNo: 'flightNo',
+}
+
+const WRITABLE_COLUMN_SET = new Set([...COLUMN_SET, ...Object.values(CRITIC_EXTRA_COLUMNS)])
+
+/**
  * Critic `conflict.field` (parser snake_case e.g. `hbl_awb_fcr_no`, or already-camel leg column)
  * → POST /api/review/:id/correct leg column. Unknown keys → null (do not invent columns).
  */
 export function mapCriticFieldToColumn(field: string): string | null {
   if (!field) return null
-  if (COLUMN_SET.has(field)) return field
+  if (CRITIC_EXTRA_COLUMNS[field]) return CRITIC_EXTRA_COLUMNS[field]!
+  if (WRITABLE_COLUMN_SET.has(field)) return field
   const camel = snakeToCamel(field)
-  return COLUMN_SET.has(camel) ? camel : null
+  if (CRITIC_EXTRA_COLUMNS[camel]) return CRITIC_EXTRA_COLUMNS[camel]!
+  return WRITABLE_COLUMN_SET.has(camel) ? camel : null
+}
+
+/** True when /correct will accept this camelCase leg column (frontend + backend allowlists must match). */
+export function isWritableLegColumn(column: string): boolean {
+  return WRITABLE_COLUMN_SET.has(column)
 }
 
 /**
@@ -176,6 +205,8 @@ export const REVIEW_GROUP_ORDER: ReviewGroup[] = [
  * beats silently-gone.
  */
 export function reviewGroupOf(field: string): ReviewGroup {
+  // Ports / mode / parties from critic → Shipping (not a lonely "Other" bin)
+  if (/^(pol|pod|mode|forwarder|vendor)/i.test(field)) return 'Shipping'
   const column = mapCriticFieldToColumn(field)
   const meta = column ? EDITABLE_FIELDS.find((f) => f.column === column) : null
   return meta?.section ?? 'Other'

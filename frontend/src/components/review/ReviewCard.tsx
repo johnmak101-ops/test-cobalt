@@ -265,13 +265,20 @@ export function ReviewCard({
   const band = compact?.band ?? criticReview?.confidence?.band ?? null
   const lineCompact = compact ?? (criticReview ? compactFromReview(criticReview) : null)
 
+  /**
+   * Leg columns to POST on Save & Approve. Keys are camelCase correct-DTO columns so every
+   * contested field that maps (incl. pol→polRaw, forwarder_name→forwarderRaw) is applied — not
+   * only the Order Details form vocabulary. Unmappable critic fields are excluded (see Other rows).
+   */
   const fieldsToApply = useMemo(() => {
     const fields: Record<string, unknown> = {}
     for (const c of conflicts) {
+      const col = mapCriticFieldToColumn(c.field)
+      if (!col) continue
       const v = (resolutions[c.field] ?? '').trim()
       const existing = existingValue(c)
       // Apply when operator set a value that differs from what's already stored.
-      if (v !== '' && v !== existing) fields[c.field] = v
+      if (v !== '' && v !== existing) fields[col] = v
     }
     return fields
   }, [conflicts, resolutions])
@@ -285,13 +292,17 @@ export function ReviewCard({
   const corrections = useMemo(
     () =>
       conflicts
-        .filter((c) => c.field in fieldsToApply)
-        .map((c) => ({
-          field: c.field,
-          existing: existingValue(c),
-          aiProposed: proposedValueOf(c),
-          humanFinal: String(fieldsToApply[c.field] ?? ''),
-        })),
+        .map((c) => {
+          const col = mapCriticFieldToColumn(c.field)
+          if (!col || !(col in fieldsToApply)) return null
+          return {
+            field: c.field,
+            existing: existingValue(c),
+            aiProposed: proposedValueOf(c),
+            humanFinal: String(fieldsToApply[col] ?? ''),
+          }
+        })
+        .filter((x): x is NonNullable<typeof x> => x != null),
     [conflicts, fieldsToApply],
   )
 
@@ -658,15 +669,17 @@ export function ReviewCard({
                     </tr>
                     {rows.map((c) => {
                       const units = unitsFor(c)
+                      const writable = mapCriticFieldToColumn(c.field) != null
                       return (
                         <ConflictRow
                           key={c.field}
                           conflict={c}
                           value={resolutions[c.field] ?? ''}
                           onChange={(v) => setResolution(c.field, v)}
-                          editing={editing && !readOnly}
+                          editing={editing && !readOnly && writable}
                           existingUnit={units.existing}
                           proposedUnit={units.proposed}
+                          notWritable={!writable}
                         />
                       )
                     })}

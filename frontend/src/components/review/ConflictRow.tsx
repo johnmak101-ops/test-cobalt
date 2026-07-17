@@ -12,6 +12,8 @@ export interface ConflictRowProps {
   existingUnit?: string | null
   /** Unit shown beside the agent's value. Null when we cannot honestly claim one — see ReviewCard. */
   proposedUnit?: string | null
+  /** Critic field has no leg column — show hint; Edit cannot commit it from Review Queue. */
+  notWritable?: boolean
 }
 
 /** A number is meaningless without its unit ('14' vs '14 cartons'), so render them together. */
@@ -61,6 +63,7 @@ export function ConflictRow({
   editing,
   existingUnit,
   proposedUnit,
+  notWritable = false,
 }: ConflictRowProps) {
   const { existing, proposed } = splitCandidates(conflict)
   const listId = `candidates-${conflict.field}`
@@ -71,6 +74,11 @@ export function ConflictRow({
     <tr className="border-b border-border last:border-0 align-top">
       <td className="px-3 py-2.5 text-xs font-medium text-text-primary">
         <span title={conflict.rationale}>{label}</span>
+        {notWritable && (
+          <p className="mt-0.5 text-[10px] font-normal text-status-warning" data-testid="conflict-not-writable">
+            Not savable here — open full shipment
+          </p>
+        )}
       </td>
       <td className="px-3 py-2.5">
         {existing?.value ? (

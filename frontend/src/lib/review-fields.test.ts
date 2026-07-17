@@ -92,6 +92,18 @@ describe('mapCriticFieldToColumn / mapCriticFieldsToColumns', () => {
     expect(mapCriticFieldToColumn('')).toBeNull()
   })
 
+  it('maps critic port/party/mode fields so Review Queue can resolve those conflicts', () => {
+    expect(mapCriticFieldToColumn('pol')).toBe('polRaw')
+    expect(mapCriticFieldToColumn('pod')).toBe('podRaw')
+    expect(mapCriticFieldToColumn('forwarder_name')).toBe('forwarderRaw')
+    expect(mapCriticFieldToColumn('mode')).toBe('mode')
+    expect(mapCriticFieldToColumn('flight_no')).toBe('flightNo')
+    expect(mapCriticFieldToColumn('mawb')).toBe('mawb')
+    expect(
+      mapCriticFieldsToColumns({ pol: 'CNSHK', forwarder_name: 'SEH', eta: '2026-08-01' }),
+    ).toEqual({ polRaw: 'CNSHK', forwarderRaw: 'SEH', eta: '2026-08-01' })
+  })
+
   it('rewrites a fields bag for CorrectDto (idempotent on camelCase)', () => {
     expect(
       mapCriticFieldsToColumns({
