@@ -184,6 +184,7 @@ export class DecisionsService {
       reviewStatus,
       reviewReasons,
       criticReview: dto.criticReview ?? null,
+      dualAutoTarget: dto.dualAutoTarget ?? null,
     }
 
     const result = await this.committer.apply(group)

@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common'
 import { formatJobNo } from '../common/job-no'
 import type { Insertable } from 'kysely'
 import type { DB } from '../db/kysely/db'
-import { strongKeys, normKey, str, date } from './match-keys'
+import { strongKeys, keysOverlap, normKey, str, date } from './match-keys'
 import {
   guardVendorForwarder,
   isPlatformNotForwarder,
@@ -28,6 +28,7 @@ import {
   findAdoptableZeroIdLeg,
   findSupersededByIdentityCorrection,
   findSiblingBooking,
+  strongKeysConflict,
 } from './committer-match'
 import { aliasMapsFromFacts, MasterResolver } from './committer-master-resolver'
 import { planPoReconcile, mergeReviewReasonsWithDataIssues } from './committer-po-reconciler'
@@ -67,6 +68,8 @@ export interface ReconGroup {
   reviewReasons?: string[] | null
   /** Critic advisory JSON (agent path). Undefined on legacy reconcile — do not wipe existing column on amend. */
   criticReview?: object | null
+  /** #173 dual-auto pin from queue — honor after strong-match verify. */
+  dualAutoTarget?: { shipmentId: string; basis?: string } | null
   /** every value each identity field ever held (current + alternates) — persisted as searchable history */
   identifiers?: {
     type: string
@@ -256,6 +259,31 @@ export class CommitterService {
     // sees is byte-identical to the old per-leg poNumbersFor; the matching itself is the pure, unit-tested fn.
     const posByBooking = await this.bookings.poNumbersByBooking(legs.map((l) => l.bookingId))
     let existing = findExistingLeg(legs, posByBooking, gk, groupPos, g.conversationId)
+
+    // #173 C1.5: dual-auto pin — honor target after verify (never silent first-match when pin present)
+    if (g.dualAutoTarget?.shipmentId) {
+      const pinId = g.dualAutoTarget.shipmentId
+      const pinned = legs.find((l) => l.id === pinId && l.linkedShipmentId == null)
+      if (!pinned) {
+        reviewHints.push(
+          `dualAutoTarget ${pinId} not among candidate legs — provisional (no silent re-match)`,
+        )
+        // keep first-match existing only if it is the pin (impossible here) — else leave existing for
+        // normal path but force provisional via reviewHints → needsReview
+      } else {
+        const legStrong = strongKeys(pinned.matchKeys as Record<string, unknown>)
+        const conflict = strongKeysConflict(gk, legStrong)
+        const overlap = gk.size > 0 && keysOverlap(legStrong, gk)
+        if (conflict || !overlap) {
+          reviewHints.push(
+            `dualAutoTarget ${pinId} failed strong-key verify — provisional (no silent re-match)`,
+          )
+        } else {
+          existing = pinned
+        }
+      }
+    }
+
     // Thread-gains-its-first-identity: a keyed group that matched nothing may still be the SAME nascent
     // shipment as the thread's zero-identity provisional leg (created before any booking/SO/HBL arrived).
     // Adopt it — the normal amend path fills the identity + match_keys — instead of spawning a duplicate.
@@ -301,7 +329,19 @@ export class CommitterService {
         metaPatch.reviewReasons = effReasons
       }
       // Only write criticReview when the group carried it — legacy / field-only amends must not wipe.
-      if (g.criticReview !== undefined) metaPatch.criticReview = g.criticReview ?? null
+      // #175: surface which leg absorbed the fields (first-match or dual-auto pin).
+      if (g.criticReview !== undefined) {
+        metaPatch.criticReview = {
+          ...(typeof g.criticReview === 'object' && g.criticReview ? g.criticReview : {}),
+          committerChosenLegId: shipmentId,
+          dualAutoTarget: g.dualAutoTarget ?? null,
+        }
+      } else {
+        metaPatch.criticReview = {
+          committerChosenLegId: shipmentId,
+          dualAutoTarget: g.dualAutoTarget ?? null,
+        }
+      }
       if (g.cancelled) metaPatch.legStatus = 'CANCELLED'
       if (Object.keys(metaPatch).length) await this.shipments.updateLeg(shipmentId, metaPatch)
     } else {

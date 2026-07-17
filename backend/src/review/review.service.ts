@@ -307,6 +307,30 @@ export class ReviewService {
     if (srcKeys.size > 0 && !keysOverlap(srcKeys, tgtKeys))
       throw new BadRequestException('leg carries a different identity than the target — not a duplicate; edit it on the shipment page instead')
 
+    // #173 A′: human pick telemetry when source carried multi-candidate matchAmbiguity
+    try {
+      const { recordAmbiguityPick, pickContextFromLeg } = await import('./ambiguity-pick-log.js')
+      const ctx = pickContextFromLeg(source)
+      if (ctx) {
+        recordAmbiguityPick({
+          humanChoice: dto.targetShipmentId,
+          suggestionShipmentId: ctx.suggestionShipmentId,
+          suggestionSource: ctx.suggestionSource,
+          suggestionDisplayPosition: ctx.suggestionDisplayPosition,
+          agreedWithSuggestion:
+            ctx.suggestionShipmentId != null
+              ? ctx.suggestionShipmentId === dto.targetShipmentId
+              : null,
+          candidateIds: ctx.candidateIds,
+          emailKey: ctx.emailKey,
+          decisionRef: ctx.decisionRef,
+          sourceShipmentId: shipmentId,
+        })
+      }
+    } catch {
+      /* never fail link on telemetry */
+    }
+
     await this.shipments.linkProvisionalLeg(shipmentId, dto.targetShipmentId)
     await this.audit.write({
       entityType: 'shipment', entityId: shipmentId, field: null,
