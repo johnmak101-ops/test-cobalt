@@ -5,6 +5,7 @@ import { IngestRepository } from '../db/repositories/ingest.repository'
 import { RoutingShadowRepository } from '../db/repositories/routing-shadow.repository'
 import type { CreateDecisionDto } from './dto'
 import { resolveEmailDisposition } from './email-disposition'
+import { assembleIngestReviewReasons } from './review-reasons-assemble'
 import { collectSourceEvents } from '../reconcile/source-events'
 import { resolveBandRouting } from './band-routing'
 import type { CriticReview } from './critic-review.types'
@@ -128,15 +129,10 @@ export class DecisionsService {
           : dto.autoApply === undefined
             ? dto.confidence >= threshold ? 'confirmed' : 'provisional'
             : 'provisional'
-    let reviewReasons: string[] | null = [
-      ...(dto.reviewReasons ?? []),
-      ...(disp.disposition === 'review' ? disp.reasons : []),
-      // #152: party ops notes (Mesh/API/port) — store on every leg including auto/confirmed
-      ...(dto.opsNotes ?? []),
-    ]
+    // #166: do not double-concat dto.reviewReasons with disp.reasons when disposition=review
+    // (email-disposition returns the same array as reasons). Union + first-wins dedupe.
+    let reviewReasons: string[] | null = assembleIngestReviewReasons(dto, disp)
     if (!reviewReasons.length) reviewReasons = null
-    else reviewReasons = [...new Set(reviewReasons)]
-
     // Cancel flag: always force Awaiting Review with "Booking cancelled" as the TOP reason.
     // Cancelled payloads that already arrive provisional would otherwise set leg_status=CANCELLED
     // without a cancel review bullet.

@@ -8,6 +8,7 @@ const CASES: Array<[string, string]> = [
   ['the email is only a portal alert (not a real booking update)', 'portal'],
   ['backend conflict on qty, gross_weight', 'conflict'],
   ['2 unresolved field conflict(s)', 'conflict'],
+  ['3 field conflict(s)', 'conflict'], // gate wording #168
   ['the email disagrees with what’s already on the shipment', 'conflict'],
   ['mode change SEA → AIR', 'conflict'],
   ['transport switched between sea and air', 'conflict'],
@@ -88,6 +89,9 @@ describe('humanizeReason — engineering audit strings → ops language', () => 
 
   it('explains conflict counts, PO moves and mode changes', () => {
     expect(humanizeReason('3 unresolved field conflict(s)')).toMatch(/3 field\(s\) received different values/)
+    // Gate raw (no "unresolved") — #168
+    expect(humanizeReason('3 field conflict(s)')).toMatch(/3 field\(s\) received different values/)
+    expect(humanizeReason('3 field conflict(s)')).not.toBe('3 field conflict(s)')
     expect(humanizeReason('a PO on this email currently belongs to a different shipment — moving/splitting a PO needs review')).toMatch(
       /already linked to another shipment/,
     )

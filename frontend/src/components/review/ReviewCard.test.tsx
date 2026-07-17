@@ -273,6 +273,66 @@ describe('ReviewCard', () => {
     expect(items[0]!.textContent).toMatch(/cargo details may be incomplete/)
   })
 
+  // #168 live shape: gate "N field conflict(s)" must not appear as a bare second bullet when critic
+  // already has INTRA_EMAIL_FIELD_CONFLICT / BACKEND_CONFLICT (no field names in gate string).
+  it('why-review suppresses gate "N field conflict(s)" when conflict riskFlags already explain', () => {
+    render(
+      <ReviewCard
+        shipment={baseShipment({
+          reviewReasons: [
+            '3 field conflict(s)',
+            'backend conflict on qty, gross_weight, measurement',
+            'no booking/SO/HBL identity and no lifecycle email type — verify this is a real shipment',
+            'pol "CHINADONG GGUANG" did not exact/curated-match a port master — left unlinked',
+          ],
+        })}
+        criticReview={baseReview({
+          conflicts: [
+            {
+              field: 'qty',
+              label: 'Qty',
+              candidates: [
+                { value: '10', source: 'System' },
+                { value: '12', source: 'SO' },
+              ],
+              rationale: 'Qty disagree',
+            },
+          ],
+          riskFlags: [
+            {
+              code: 'BACKEND_CONFLICT',
+              severity: 'high',
+              message: 'Email disagrees with what is already stored on Qty, Gross weight, Measurement — needs a human call.',
+            },
+            {
+              code: 'INTRA_EMAIL_FIELD_CONFLICT',
+              severity: 'high',
+              message: '3 field conflicts — values disagree (see conflict table).',
+            },
+            {
+              code: 'PO_ONLY_WEAK_MATCH',
+              severity: 'medium',
+              message: 'Matched an existing shipment on PO alone — could be a different leg sharing the same PO.',
+            },
+          ],
+        })}
+        compact={compact}
+        defaultExpanded={true}
+      />,
+    )
+    const why = screen.getByTestId('why-review')
+    // flags shown with useful messages
+    expect(within(why).getByText(/Email disagrees with what is already stored/)).toBeInTheDocument()
+    expect(within(why).getByText(/3 field conflicts — values disagree/)).toBeInTheDocument()
+    expect(within(why).getByText(/Matched an existing shipment on PO alone/)).toBeInTheDocument()
+    // track-only reasons kept
+    expect(within(why).getByText(/Port of Loading.*CHINADONG|did not match a known port/i)).toBeInTheDocument()
+    expect(within(why).getByText(/real shipment|No booking/i)).toBeInTheDocument()
+    // bare gate count + backend conflict reason suppressed (category conflict already explained)
+    expect(within(why).queryByText(/^3 field conflict\(s\)$/)).toBeNull()
+    expect(within(why).queryByText(/Emails disagree about: Qty, Gross Weight, Measurement/)).toBeNull()
+  })
+
   it('requires a note before Save & Approve when the resolution differs from the stored value', async () => {
     const user = userEvent.setup()
     const onSave = vi.fn().mockResolvedValue(undefined)
