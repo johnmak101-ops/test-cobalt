@@ -18,6 +18,7 @@ import { useShipment } from '../hooks/use-shipments'
 import { Badge } from '../components/ui/Badge'
 import { ReviewCard } from '../components/review/ReviewCard'
 import { Pagination, usePagination, PageSizeSelect } from '../components/ui/Pagination'
+import { toast } from '../components/ui/Toast'
 import { cn, formatRelativeTime } from '../lib/utils'
 import {
   categoriesOf,
@@ -25,6 +26,7 @@ import {
   CATEGORY_ORDER,
   type ReasonCategory,
 } from '../lib/review-reasons'
+import { mapCriticFieldsToColumns } from '../lib/review-fields'
 
 /** Inline expand: loads full criticReview for the conflict card (queue list only has compact). */
 function ExpandedReviewPanel({
@@ -179,15 +181,27 @@ export default function ReviewQueuePage() {
     setStaleBanner(null)
     try {
       const fields = payload.fields
+      const mapped = mapCriticFieldsToColumns(fields)
       const hasFields = Object.keys(fields).length > 0
-      if (hasFields) {
+      const hasMappable = Object.keys(mapped).length > 0
+      if (hasFields && !hasMappable) {
+        // Contested keys that do not map to leg columns — would have been a silent POST drop.
+        toast('Those conflict fields cannot be saved here — open full shipment to edit.')
+        return
+      }
+      if (hasMappable) {
         await correctMutation.mutateAsync({
           shipmentId: s.id,
-          fields,
+          fields: mapped,
           reason: payload.note,
           expectedUpdatedAt: payload.expectedUpdatedAt ?? s.updatedAt,
         })
       } else {
+        // #181: Approve with no contested-field deltas is confirm-only — operators often think
+        // other edits stuck. Be explicit so this never looks like a silent no-op.
+        toast(
+          'Confirmed — no contested field changes to save. Open full shipment to edit other fields.',
+        )
         await confirmMutation.mutateAsync({
           shipmentId: s.id,
           note: payload.note || undefined,
@@ -209,7 +223,7 @@ export default function ReviewQueuePage() {
 
   const viewCopy: Record<ReviewQueueView, string> = {
     active:
-      'Provisional shipments awaiting confirmation — resolve critic conflicts, then approve. Dismiss what is not a real shipment (portal echoes, no-move notices).',
+      'Provisional shipments awaiting confirmation — resolve contested (AI conflict) fields, then approve. Other field edits: open full shipment. Dismiss what is not a real shipment.',
     rejected: 'Dismissed items — ruled "not a trackable shipment". Restore anything dismissed by mistake.',
     approved: 'Recently confirmed legs that carried an AI critic review — read-only history.',
   }

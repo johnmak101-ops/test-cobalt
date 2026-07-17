@@ -175,6 +175,27 @@ describe('ReviewCard', () => {
     expect(screen.getByRole('table')).toBeInTheDocument()
   })
 
+  // #181: operators must see that only contested fields are in scope
+  it('documents that Save applies contested conflict fields only', () => {
+    render(
+      <MemoryRouter>
+        <ReviewCard
+          shipment={baseShipment()}
+          criticReview={baseReview()}
+          compact={compact}
+          defaultExpanded={true}
+          fullShipmentPath="/shipments/leg-1"
+        />
+      </MemoryRouter>,
+    )
+    const hint = screen.getByTestId('review-edit-scope-hint')
+    expect(hint.textContent).toMatch(/contested \(AI conflict\) fields/i)
+    expect(within(hint).getByRole('link', { name: /Open full shipment/i })).toHaveAttribute(
+      'href',
+      '/shipments/leg-1',
+    )
+  })
+
   it('why-review falls back to humanized reviewReasons when the critic payload is absent', () => {
     render(
       <ReviewCard
@@ -422,8 +443,10 @@ describe('ReviewCard', () => {
         />
       </MemoryRouter>,
     )
-    const link = screen.getByRole('link', { name: /open full shipment/i })
-    expect(link).toHaveAttribute('href', '/shipments/leg-1')
+    // Header link + #181 scope-hint link
+    const links = screen.getAllByRole('link', { name: /open full shipment/i })
+    expect(links.length).toBeGreaterThanOrEqual(1)
+    expect(links.every((a) => a.getAttribute('href') === '/shipments/leg-1')).toBe(true)
   })
 
   it('readOnly: shows resolved values, hides inputs and primary Save button', () => {

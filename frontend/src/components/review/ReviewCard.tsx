@@ -615,6 +615,21 @@ export function ReviewCard({
 
           {conflicts.length > 0 && (
             <div className="overflow-x-auto rounded-lg border border-border">
+              <p
+                className="border-b border-border bg-surface-900/40 px-3 py-1.5 text-[11px] text-text-muted"
+                data-testid="review-edit-scope-hint"
+              >
+                Save applies <span className="font-medium text-text-secondary">contested (AI conflict) fields</span>{' '}
+                only. Other shipment fields →{' '}
+                {fullShipmentPath ? (
+                  <Link to={fullShipmentPath} className="font-medium text-cobalt-primary-light hover:underline">
+                    Open full shipment
+                  </Link>
+                ) : (
+                  'Open full shipment'
+                )}
+                .
+              </p>
               {/* table-fixed: auto layout re-measures when the Proposed cell swaps text for an
                   input, so the columns visibly jumped every time Edit was toggled. Fixed widths
                   make the two modes the same table. */}
