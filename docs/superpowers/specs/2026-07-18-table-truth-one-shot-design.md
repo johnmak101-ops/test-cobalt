@@ -1,7 +1,7 @@
 # Tabular extraction — one-shot kill design ("table truth")
 
 **Date:** 2026-07-18
-**Status:** design approved; pending implementation plan
+**Status:** PR-T (track P4+P5) implemented on `feat/table-truth-one-shot`; queue PR-Q1/Q2 + soul promote still pending
 **Repos:** cobalt-queue (P1, P2, P3, P6) + cobalt-shiptrack (P4, P5)
 **Trigger case:** IZAC booking SOKLPO024608A — POs 12199/12201/12204/12206/12208 all showing the same 5-item style list; `PO 12204: item_style_no conflict …(5-item list A) vs (5-item list B)… — verify`
 

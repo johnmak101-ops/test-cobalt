@@ -4,7 +4,7 @@
  * payload, and the review-reason strings so the rules stay unit-testable without a DB.
  */
 import { keysOverlap, strongKeys, normKey, str, num } from './match-keys'
-import { type PoEnrichment, type UnattributedStatement } from './po-enrichment'
+import { type PoEnrichment, type UnattributedStatement, summarizeStyleConflict } from './po-enrichment'
 import { poQtyIssue, describePoQtyIssue } from './po-qty-consistency'
 
 export interface PoLinkPlan {
@@ -56,10 +56,16 @@ export function planPoReconcile(args: {
     // review-flag (enr.broadcastSuspected still drives sharedBroadcastTotal presentation only).
     if (enr?.brandConflict)
       poFlagReasons.push(`PO ${poNo}: brand conflict ${enr.brandConflict.join(' vs ')} (kept ${enr.brand}) — verify`)
+    // T2: symmetric-diff style conflict copy (not full multi-list dump)
     if (enr?.styleConflict)
+      poFlagReasons.push(`PO ${poNo}: ${summarizeStyleConflict(enr.styleConflict, enr.itemStyleNo)}`)
+    // T1b: multi-token style copied across ≥3 POs of one email (flag only)
+    if (enr?.styleBroadcastSuspected) {
+      const n = enr.styleBroadcastPoCount ?? 3
       poFlagReasons.push(
-        `PO ${poNo}: item_style_no conflict ${enr.styleConflict.join(' vs ')} (kept ${enr.itemStyleNo}) — verify`,
+        `PO ${poNo}: item/style looks copied across all ${n} POs of this email — verify per-PO`,
       )
+    }
     links.push({ poNo, perPoQty, perPoUnit, enr })
   }
 
@@ -90,7 +96,9 @@ export function isRecomputedDataIssueReason(reason: string): boolean {
   const r = String(reason)
   // brand / item_style enrichment conflicts (planPoReconcile poFlagReasons)
   if (/^PO\s+\S+:\s*brand conflict\b/i.test(r)) return true
+  // old format (pre-T2) + new T2 "item/style …" + T1b "item/style looks copied"
   if (/^PO\s+\S+:\s*item_style_no conflict\b/i.test(r)) return true
+  if (/^PO\s+\S+:\s*item\/style\b/i.test(r)) return true
   // unattributed shipment-level brand/style
   if (/^shipment-level (brand|item_style_no)\b/i.test(r)) return true
   // per-PO qty vs ERP order (planPoReconcile poQtyIssues)

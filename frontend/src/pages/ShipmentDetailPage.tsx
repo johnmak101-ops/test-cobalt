@@ -11,7 +11,7 @@ import { formatDate, formatDateTime, formatDateMaybeTime, cn } from '../lib/util
 import { buildNeedsAttentionGroups, looksLikeLocode } from '../components/review/needs-attention'
 import { EDITABLE_FIELDS, fieldLabel, numericFieldWarn, dateOrderWarn, type EditableField } from '../lib/review-fields'
 import { toast } from '../components/ui/Toast'
-import { ArrowLeft, Mail, Clock, ClipboardList, Package, Ship, Calendar, AlertTriangle, AlertCircle, Info, Pencil, Check, X, NotebookPen } from 'lucide-react'
+import { ArrowLeft, Mail, Clock, ClipboardList, Package, Ship, Calendar, AlertTriangle, AlertCircle, Info, Pencil, Check, X, NotebookPen, ChevronDown, ChevronRight } from 'lucide-react'
 
 // The human-editable leg fields, grouped like the read-only card. `db` = the backend column the PATCH writes
 // (+ locks + audits); `get` reads the current value off the loaded shipment (whose UI names differ from db).
@@ -125,6 +125,8 @@ export default function ShipmentDetailPage() {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState<Record<string, string>>({})
   const [note, setNote] = useState('')
+  // P5 table-truth: PO table collapsed by default (header still shows count + shipment total)
+  const [posExpanded, setPosExpanded] = useState(false)
 
   if (isLoading) {
     return (
@@ -402,56 +404,69 @@ export default function ShipmentDetailPage() {
         />
       </Card>
 
-      {/* Linked POs card — PO# + style/item are the useful columns; shipment cargo total lives under Order Details → Qty. */}
+      {/* Linked POs card — collapsed by default (P5); expand to browse PO# + style. */}
       {linkedPOs.length > 0 && (
         <Card>
-          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <button
+            type="button"
+            onClick={() => setPosExpanded((v) => !v)}
+            className="mb-0 flex w-full flex-wrap items-center justify-between gap-2 text-left"
+            data-testid="pos-card-toggle"
+            aria-expanded={posExpanded}
+          >
             <div className="flex items-center gap-2">
+              {posExpanded ? (
+                <ChevronDown size={14} className="text-text-muted" />
+              ) : (
+                <ChevronRight size={14} className="text-text-muted" />
+              )}
               <Package size={14} className="text-text-muted" />
               <h4 className="text-sm font-semibold text-text-primary">
                 Customer Purchase Orders
                 <span className="ml-2 text-xs font-normal text-text-muted">
-                  {linkedPOs.length} PO{linkedPOs.length !== 1 ? 's' : ''} on this shipment
+                  · {linkedPOs.length} PO{linkedPOs.length !== 1 ? 's' : ''}
+                  {(linkedPOs[0]?.sharedBroadcastTotal != null || shipment.quantityShipped != null) && (
+                    <>
+                      {' '}
+                      · shipment total{' '}
+                      <span className="font-medium text-text-secondary">
+                        {linkedPOs[0]?.sharedBroadcastTotal ?? shipment.quantityShipped}
+                        {(linkedPOs[0]?.sharedBroadcastUnit ?? shipment.quantityUnit)
+                          ? ` ${linkedPOs[0]?.sharedBroadcastUnit ?? shipment.quantityUnit}`
+                          : ''}
+                      </span>
+                    </>
+                  )}
                 </span>
               </h4>
             </div>
-            {/* Most bookings only have a shipment carton total, not a per-PO split — show it once, quietly. */}
-            {(linkedPOs[0]?.sharedBroadcastTotal != null || shipment.quantityShipped != null) && (
-              <p className="text-xs text-text-muted">
-                Shipment total:{' '}
-                <span className="font-medium text-text-secondary">
-                  {linkedPOs[0]?.sharedBroadcastTotal ?? shipment.quantityShipped}
-                  {(linkedPOs[0]?.sharedBroadcastUnit ?? shipment.quantityUnit)
-                    ? ` ${linkedPOs[0]?.sharedBroadcastUnit ?? shipment.quantityUnit}`
-                    : ''}
-                </span>
-              </p>
-            )}
-          </div>
-          <div className="overflow-x-auto overflow-y-hidden rounded-lg border border-border">
-            <table className="w-full min-w-[20rem]">
-              <thead>
-                <tr className="border-b border-border bg-surface-900/50">
-                  <th className="px-3 py-2 text-left text-[11px] font-medium text-text-muted">Customer PO#</th>
-                  <th className="px-3 py-2 text-left text-[11px] font-medium text-text-muted">Item / Style</th>
-                </tr>
-              </thead>
-              <tbody>
-                {linkedPOs.map((po) => (
-                  <tr
-                    key={po.id}
-                    onClick={() => navigate(`/purchase-orders/${po.id}`, { state: { fromShipment: id } })}
-                    className="cursor-pointer border-b border-border last:border-0 transition-colors hover:bg-surface-700"
-                  >
-                    <td className="px-3 py-2 font-mono text-sm text-cobalt-primary-light">{po.poNumber}</td>
-                    <td className="px-3 py-2 font-mono text-sm text-text-secondary">
-                      {po.itemStyleNo?.trim() ? po.itemStyleNo : '—'}
-                    </td>
+          </button>
+          {posExpanded && (
+            <div className="mt-3 overflow-x-auto overflow-y-hidden rounded-lg border border-border" data-testid="pos-card-table">
+              <table className="w-full min-w-[20rem]">
+                <thead>
+                  <tr className="border-b border-border bg-surface-900/50">
+                    <th className="px-3 py-2 text-left text-[11px] font-medium text-text-muted">Customer PO#</th>
+                    <th className="px-3 py-2 text-left text-[11px] font-medium text-text-muted">Item / Style</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {linkedPOs.map((po) => (
+                    <tr
+                      key={po.id}
+                      onClick={() => navigate(`/purchase-orders/${po.id}`, { state: { fromShipment: id } })}
+                      className="cursor-pointer border-b border-border last:border-0 transition-colors hover:bg-surface-700"
+                    >
+                      <td className="px-3 py-2 font-mono text-sm text-cobalt-primary-light">{po.poNumber}</td>
+                      <td className="px-3 py-2 font-mono text-sm text-text-secondary">
+                        {po.itemStyleNo?.trim() ? po.itemStyleNo : '—'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </Card>
       )}
 

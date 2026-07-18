@@ -11,6 +11,12 @@ export interface PoEnrichment {
   quantityUnit: (typeof QTY_UNIT)[number] | null
   /** the kept total_quantity is a same-value-across-≥3-POs broadcast, not a per-PO fact — flag, don't drop */
   broadcastSuspected: boolean
+  /**
+   * Multi-token item_style_no identical across ≥3 POs of the same email (parser broadcast).
+   * Kept on the PO (de-correction); flag for review. Count is how many POs share the list.
+   */
+  styleBroadcastSuspected: boolean
+  styleBroadcastPoCount: number | null
   /** ≥2 diverging brand labels on this PO across the thread (newest kept); the competing values to verify */
   brandConflict: string[] | null
   /** ≥2 diverging item_style_no values on this PO (newest kept); the competing values to verify */
@@ -33,18 +39,31 @@ const validUnit = (v: unknown): PoEnrichment['quantityUnit'] => {
   return s && (QTY_UNIT as readonly string[]).includes(s) ? (s as PoEnrichment['quantityUnit']) : null
 }
 
+/** Comma-token count for style lists ("A, B, C" → 3). Empty → 0. */
+export function styleCommaCount(raw: string): number {
+  return String(raw ?? '')
+    .split(',')
+    .map((x) => x.trim())
+    .filter(Boolean).length
+}
+
 /** The PO this record speaks for: its own po_no, else the customer_po match-key. Neither → belongs to no PO. */
 const poKeyOf = (r: PoEvidenceInput): string => normKey(r.poNo) || normKey(r.matchKeys?.customer_po)
 
 /**
  * Resolve per-PO brand / item_style_no / total_quantity(+unit) from parsed evidence, keyed by normalized PO.
  *
- * Each field is taken from the LATEST-received email that states a non-null value for it (per-field
- * coalescing), which is the deterministic tie-break for the parser brand-leak — the same PO showing two
- * brands across a thread resolves to whichever the newest email carried. total_quantity and its unit are
- * taken TOGETHER from the newest record that has a qty (so the unit always matches the number), and the unit
- * stays null when there is no qty. A record with no PO of its own (a shipment/SO-level brand statement)
- * belongs to no PO and is dropped — this is what stops the aggregate brand from leaking onto every PO.
+ * Brand / qty: LATEST-received non-null wins (parser brand-leak tie-break). total_quantity + unit come
+ * TOGETHER from the newest record with a qty. qty broadcast guard (same value ≥3 POs) is de-correction
+ * flag-only.
+ *
+ * item_style_no (table-truth T1a): **fewest comma-tokens first**, newest among ties — a specific single
+ * beats a broadcast multi-list even when the list is newer. #124 OCR family pick still applies among
+ * the specific (min-token) candidates only.
+ *
+ * style broadcast (T1b): multi-token style identical across ≥3 POs of the same email → flag, keep value.
+ *
+ * A record with no PO of its own belongs to no PO and is dropped (SO-level brand leak guard).
  */
 export function resolvePoEnrichment(rows: PoEvidenceInput[]): Map<string, PoEnrichment> {
   const byPo = new Map<string, PoEvidenceInput[]>()
@@ -106,12 +125,14 @@ export function resolvePoEnrichment(rows: PoEvidenceInput[]): Map<string, PoEnri
 
     const enr: PoEnrichment = {
       brand: null, itemStyleNo: null, totalQuantity: null, quantityUnit: null,
-      broadcastSuspected: false, brandConflict: null, styleConflict: null,
+      broadcastSuspected: false, styleBroadcastSuspected: false, styleBroadcastPoCount: null,
+      brandConflict: null, styleConflict: null,
     }
     // newest broadcast qty, used ONLY as a fallback when no genuine per-PO qty exists for this PO —
     // de-correction (b1): keep the model's value + flag it, instead of silently dropping to null.
     let broadcastFallback: { q: number; unit: PoEnrichment['quantityUnit'] } | null = null
     const brands: string[] = []
+    // styles newest-first (ordered is newest first) — T1a picks fewest tokens among these
     const styles: string[] = []
     for (const r of ordered) {
       const f = r.fields ?? {}
@@ -120,8 +141,6 @@ export function resolvePoEnrichment(rows: PoEvidenceInput[]): Map<string, PoEnri
       const sty = str(f.item_style_no)
       if (sty) styles.push(sty)
       if (enr.brand == null) enr.brand = b
-      // item_style: first non-null in newest-first order is provisional; may be upgraded by OCR family pick below
-      if (enr.itemStyleNo == null) enr.itemStyleNo = sty
       if (enr.totalQuantity == null) {
         const q = num(f.qty)
         if (q != null) {
@@ -134,12 +153,18 @@ export function resolvePoEnrichment(rows: PoEvidenceInput[]): Map<string, PoEnri
         }
       }
     }
-    // #124: among OCR near-homoglyph styles, keep the letter-suffix form even if an older PDF reading
-    // lost to a newer screenshot under pure newest-first (PS1 beats 951 within the same family).
-    if (styles.length >= 2) {
-      const fam0 = styleFamilyKey(styles[0]!)
-      if (fam0.length >= 8 && styles.every((s) => styleFamilyKey(s) === fam0)) {
-        enr.itemStyleNo = styles.reduce((a, b) => (styleLetterScore(b) > styleLetterScore(a) ? b : a))
+    // T1a: fewest comma-tokens first (specific single beats broadcast list), newest among ties.
+    // styles[] is already newest-first; among min-token candidates the first is newest.
+    if (styles.length) {
+      const minTok = Math.min(...styles.map(styleCommaCount))
+      const specific = styles.filter((s) => styleCommaCount(s) === minTok)
+      enr.itemStyleNo = specific[0] ?? styles[0] ?? null
+      // #124 OCR family: among the specific (min-token) candidates only, prefer letter-suffix form
+      if (specific.length >= 2) {
+        const fam0 = styleFamilyKey(specific[0]!)
+        if (fam0.length >= 8 && specific.every((s) => styleFamilyKey(s) === fam0)) {
+          enr.itemStyleNo = specific.reduce((a, b) => (styleLetterScore(b) > styleLetterScore(a) ? b : a))
+        }
       }
     }
     // No genuine per-PO qty found, only a broadcast total: keep it (fill purchase_orders.total_quantity)
@@ -157,7 +182,77 @@ export function resolvePoEnrichment(rows: PoEvidenceInput[]): Map<string, PoEnri
     enr.styleConflict = conflictingValues(styles)
     out.set(key, enr)
   }
+
+  // T1b style-broadcast: multi-token item_style_no identical across ≥3 POs of the SAME email.
+  // Flag only (keep value) — de-correction. Per-message scope mirrors qty broadcast.
+  {
+    const perMsg = new Map<string, Map<string, Set<string>>>() // msg → styleKey → poKeys
+    for (const r of rows) {
+      const po = poKeyOf(r)
+      const msg = r.messageId
+      const sty = str(r.fields?.item_style_no)
+      if (!po || !msg || !sty || styleCommaCount(sty) < 2) continue
+      const sk = sty.split(',').map((x) => x.trim().toUpperCase()).filter(Boolean).join(',')
+      const byStyle = perMsg.get(msg) ?? perMsg.set(msg, new Map()).get(msg)!
+      const pos = byStyle.get(sk) ?? byStyle.set(sk, new Set()).get(sk)!
+      pos.add(po)
+    }
+    for (const byStyle of perMsg.values()) {
+      for (const [, pos] of byStyle) {
+        if (pos.size < 3) continue
+        for (const po of pos) {
+          const enr = out.get(po)
+          if (!enr?.itemStyleNo || styleCommaCount(enr.itemStyleNo) < 2) continue
+          // Only flag when the PO's kept style is itself multi-token (broadcast signature)
+          enr.styleBroadcastSuspected = true
+          enr.styleBroadcastPoCount = pos.size
+        }
+      }
+    }
+  }
+
   return out
+}
+
+/**
+ * T2 conflict copy: show only the symmetric-difference tokens (what actually differs), cap 2 + `+N more`,
+ * always name the kept value. Example: `item/style "B0NNIE" vs "BONNIE" (kept PUH26BHALE) — verify`
+ */
+export function summarizeStyleConflict(competing: string[], kept: string | null): string {
+  const tokens = (v: string): string[] =>
+    String(v ?? '')
+      .split(',')
+      .map((x) => x.trim())
+      .filter(Boolean)
+  const sets = competing.map((c) => new Set(tokens(c).map((t) => t.toUpperCase())))
+  const diffs: string[] = []
+  const seen = new Set<string>()
+  for (let i = 0; i < competing.length; i++) {
+    for (const t of tokens(competing[i]!)) {
+      const u = t.toUpperCase()
+      const inCount = sets.filter((s) => s.has(u)).length
+      if (inCount < sets.length && !seen.has(u)) {
+        seen.add(u)
+        diffs.push(t)
+      }
+    }
+  }
+  let mid: string
+  if (diffs.length >= 2) {
+    const shown = diffs.slice(0, 2)
+    const more = diffs.length - 2
+    mid = shown.map((d) => `"${d}"`).join(' vs ')
+    if (more > 0) mid += ` +${more} more`
+  } else if (diffs.length === 1) {
+    mid = `"${diffs[0]}"`
+  } else {
+    // no token-level diff (e.g. reordering) — fall back to first two full values, truncated lightly
+    const shown = competing.slice(0, 2)
+    mid = shown.map((c) => `"${c.length > 40 ? c.slice(0, 37) + '…' : c}"`).join(' vs ')
+    if (competing.length > 2) mid += ` +${competing.length - 2} more`
+  }
+  const keptPart = kept ? ` (kept ${kept})` : ''
+  return `item/style ${mid}${keptPart} — verify`
 }
 
 /**

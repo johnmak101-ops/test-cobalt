@@ -225,6 +225,20 @@ const TRANSLATIONS: Translation[] = [
     match: /^PO\s+(\S+):\s*brand conflict\s+(.+?)\s+\(kept\s+(.+?)\)/i,
     text: (m) => `PO ${m[1]}: brand conflict ${m[2]} (kept ${m[3]}) — verify`,
   },
+  // T2 style conflict (new) + legacy item_style_no conflict dump
+  {
+    match: /^PO\s+(\S+):\s*item\/style\s+(.+)$/i,
+    text: (m) => `PO ${m[1]}: item/style ${m[2]}`,
+  },
+  {
+    match: /^PO\s+(\S+):\s*item_style_no conflict\s+(.+?)\s+\(kept\s+(.+?)\)/i,
+    text: (m) => `PO ${m[1]}: item/style conflict (kept ${m[3]}) — verify`,
+  },
+  {
+    match: /^PO\s+(\S+):\s*item\/style looks copied across all\s+(\d+)\s+POs/i,
+    text: (m) =>
+      `PO ${m[1]}: the same item/style list was copied onto all ${m[2]} POs in one email — check each PO's style`,
+  },
   {
     match: /broadcast total/i,
     text: () => 'A quantity was repeated across several POs (shared shipment total) — verify per-PO split',
@@ -369,6 +383,8 @@ const CATEGORY_RULES: Array<{ match: RegExp; category: ReasonCategory }> = [
   { match: /mode change \S+ → \S+/i, category: 'conflict' },
   { match: /transport switched between sea and air/i, category: 'conflict' },
   { match: /brand conflict/i, category: 'conflict' },
+  { match: /item(?:_style_no conflict|\/style)/i, category: 'conflict' },
+  { match: /item\/style looks copied/i, category: 'extraction' },
   { match: /identity supersede/i, category: 'multi_id' },
   { match: /distinct co-current values/i, category: 'multi_id' },
   { match: /matched multiple backend legs/i, category: 'multi_id' },
