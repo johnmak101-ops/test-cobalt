@@ -1,4 +1,5 @@
 import { BadRequestException } from '@nestjs/common'
+import { QTY_UNIT, SHIPMENT_MODE } from '../db/enums'
 
 /** Leg columns coerced to a Date. */
 export const DATE_FIELDS = new Set([
@@ -64,6 +65,20 @@ export function coerceLegField(field: string, value: unknown): unknown {
   }
   if (field === 'containerNo' && !CONTAINER_RE.test(text)) {
     throw new BadRequestException('Container No. must be 4 letters + 7 digits, e.g. MSBU7281200')
+  }
+  // Enum gates mirror ck_shipments_qty_unit / mode CHECK constraints (exact / case-sensitive).
+  // Human edit path only — agent committer never hits coerceLegField (de-correction preserved).
+  if (field === 'qtyUnit') {
+    if (!(QTY_UNIT as readonly string[]).includes(text)) {
+      throw new BadRequestException(`UOM must be one of: ${QTY_UNIT.join(', ')}`)
+    }
+    return text
+  }
+  if (field === 'mode') {
+    if (!(SHIPMENT_MODE as readonly string[]).includes(text)) {
+      throw new BadRequestException(`Mode must be one of: ${SHIPMENT_MODE.join(', ')}`)
+    }
+    return text
   }
   return text
 }

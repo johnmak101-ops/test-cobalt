@@ -6,6 +6,7 @@ import helmet from 'helmet'
 import { Logger } from 'nestjs-pino'
 import { AppModule } from './app.module'
 import { resolveCorsOrigins } from './config/cors'
+import { DbExceptionFilter } from './common/db-exception.filter'
 
 async function bootstrap() {
   // bufferLogs so Nest's own startup lines are held until the pino logger is installed.
@@ -23,6 +24,8 @@ async function bootstrap() {
   // ever put in front (otherwise both read the wrong hop). See the cobalt-production-url note.
   app.set('trust proxy', 1)
   app.useGlobalPipes(new ValidationPipe({ transform: true, whitelist: true }))
+  // SQL CHECK/unique/NOT NULL → HTTP 400 (clean message) instead of opaque 500s on write paths.
+  app.useGlobalFilters(new DbExceptionFilter())
   app.use(helmet({ contentSecurityPolicy: false })) // security headers; CSP tuning deferred (would block the served SPA)
   // Credentialed CORS pinned to an allow-list (never `origin:true`, which reflects any site).
   app.enableCors({ origin: resolveCorsOrigins(process.env.CORS_ORIGINS), credentials: true })

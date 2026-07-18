@@ -9,7 +9,7 @@ import { ShipmentHistoryTimeline } from '../components/shipments/ShipmentHistory
 import { AlertCard } from '../components/alerts/AlertCard'
 import { formatDate, formatDateTime, formatDateMaybeTime, cn } from '../lib/utils'
 import { buildNeedsAttentionGroups, looksLikeLocode } from '../components/review/needs-attention'
-import { EDITABLE_FIELDS, fieldLabel, type EditableField } from '../lib/review-fields'
+import { EDITABLE_FIELDS, fieldLabel, numericFieldWarn, type EditableField } from '../lib/review-fields'
 import { toast } from '../components/ui/Toast'
 import { ArrowLeft, Mail, Clock, ClipboardList, Package, Ship, Calendar, AlertTriangle, AlertCircle, Info, Pencil, Check, X, NotebookPen } from 'lucide-react'
 
@@ -18,7 +18,13 @@ import { ArrowLeft, Mail, Clock, ClipboardList, Package, Ship, Calendar, AlertTr
 // Customer / vendor codes are NOT free-text (master links). Mode / POL / POD / forwarderRaw ARE editable
 // free-text (#183). PO# / Item·Style stay on the Customer Purchase Orders card, not this form.
 type EditType = 'text' | 'number' | 'date'
-interface EditField { db: string; label: string; type: EditType; get: (s: ShipmentDetail) => unknown }
+interface EditField {
+  db: string
+  label: string
+  type: EditType
+  options?: readonly string[]
+  get: (s: ShipmentDetail) => unknown
+}
 /**
  * Derived from EDITABLE_FIELDS, never hand-listed: this modal used to keep its own copy of every
  * label and it drifted from both the read view below it and the review queue's conflict table.
@@ -32,6 +38,7 @@ const EDIT_SECTIONS: { title: string; fields: EditField[] }[] = (() => {
       db: f.column,
       label: f.label,
       type: f.type,
+      options: f.options,
       get: (s: ShipmentDetail) => {
         // Prefer free-text raw; fall back to resolved master name so edit is not blank when only FK is set.
         if (f.column === 'forwarderRaw') {
@@ -199,14 +206,18 @@ export default function ShipmentDetailPage() {
         // Surface the server's specific reason (e.g. "Total Quantity cannot be negative"); request()
         // prefixes it with "API error <status>:" — strip that for a clean inline message.
         const reason = (e instanceof Error ? e.message : '').replace(/^API error \d+:\s*/, '').trim()
-        toast(reason ? `Save failed — ${reason}` : 'Save failed — please retry')
+        toast.error(reason ? `Save failed — ${reason}` : 'Save failed — please retry')
       },
     })
   }
 
   // A note is mandatory whenever there are real edits — Save stays blocked until it's written.
+  // Hard numeric errors (negative qty, etc.) also block Save (inline error + no 400 round-trip).
   const editedCount = editing ? Object.keys(computeChanged()).length : 0
-  const saveBlocked = editedCount > 0 && !note.trim()
+  const hasNumericErrors = editing && EDIT_SECTIONS.some((sec) =>
+    sec.fields.some((f) => f.type === 'number' && numericFieldWarn(f.db, draft[f.db]) != null),
+  )
+  const saveBlocked = (editedCount > 0 && !note.trim()) || hasNumericErrors
 
   // Collapsed Needs attention groups (same builder as ReviewCard) — show for any shipment with items.
   // Conflict table lives on Review Queue (ReviewCard), not here — so we pass conflictsCount for
@@ -458,7 +469,13 @@ export default function ShipmentDetailPage() {
                 type="button"
                 onClick={saveEdit}
                 disabled={update.isPending || saveBlocked}
-                title={saveBlocked ? 'Add a note for the agent before saving' : undefined}
+                title={
+                  hasNumericErrors
+                    ? 'Fix invalid numeric values before saving'
+                    : editedCount > 0 && !note.trim()
+                      ? 'Add a note for the agent before saving'
+                      : undefined
+                }
                 className="inline-flex items-center gap-1 rounded-lg bg-cobalt-primary px-3 py-1.5 text-xs font-medium text-white hover:bg-cobalt-primary-light disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <Check size={13} /> {update.isPending ? 'Saving…' : 'Save'}
@@ -506,34 +523,61 @@ export default function ShipmentDetailPage() {
                 <DetailSection key={sec.title} title={sec.title} icon={<ClipboardList size={14} className="text-text-muted" />}>
                   {sec.fields
                     .filter((f) => shippingFieldVisible(f.db, draft.mode || shipment.mode))
-                    .map((f) => (
+                    .map((f) => {
+                      const cur = draft[f.db] ?? ''
+                      const numErr = f.type === 'number' ? numericFieldWarn(f.db, cur) : null
+                      const controlClass =
+                        'h-8 w-full rounded-md border border-border bg-surface-700 px-2 text-sm text-text-primary placeholder:text-text-muted/70 focus:border-cobalt-primary focus:outline-none'
+                      return (
                     <div key={f.db} className="grid grid-cols-[7rem_1fr] sm:grid-cols-[9rem_1fr] items-center gap-x-2">
                       <label htmlFor={`${fieldId}-${f.db}`} className="truncate text-xs text-text-muted">{f.label}</label>
-                      <input
-                        id={`${fieldId}-${f.db}`}
-                        type={f.type}
-                        min={f.type === 'number' ? 0 : undefined}
-                        step={f.db === 'qty' ? 1 : f.type === 'number' ? 'any' : undefined}
-                        value={draft[f.db] ?? ''}
-                        onChange={(e) => setDraft((d) => ({ ...d, [f.db]: e.target.value }))}
-                        placeholder={
-                          f.db === 'mode'
-                            ? 'AIR, SEA_FCL, SEA_LCL…'
-                            : f.db === 'polRaw' || f.db === 'podRaw'
+                      {f.options ? (
+                        <select
+                          id={`${fieldId}-${f.db}`}
+                          data-testid={`edit-select-${f.db}`}
+                          value={cur}
+                          onChange={(e) => setDraft((d) => ({ ...d, [f.db]: e.target.value }))}
+                          className={controlClass}
+                        >
+                          <option value="">—</option>
+                          {cur && !(f.options as readonly string[]).includes(cur) && (
+                            <option value={cur}>{cur} (unrecognized)</option>
+                          )}
+                          {f.options.map((opt) => (
+                            <option key={opt} value={opt}>{opt}</option>
+                          ))}
+                        </select>
+                      ) : (
+                        <input
+                          id={`${fieldId}-${f.db}`}
+                          type={f.type}
+                          min={f.type === 'number' ? 0 : undefined}
+                          step={f.db === 'qty' ? 1 : f.type === 'number' ? 'any' : undefined}
+                          value={cur}
+                          onChange={(e) => setDraft((d) => ({ ...d, [f.db]: e.target.value }))}
+                          placeholder={
+                            f.db === 'polRaw' || f.db === 'podRaw'
                               ? 'UN/LOCODE or airport (e.g. CNSHA, HKG)'
                               : f.db === 'flightNo'
                                 ? 'e.g. CA1398'
                                 : undefined
-                        }
-                        className="h-8 w-full rounded-md border border-border bg-surface-700 px-2 text-sm text-text-primary placeholder:text-text-muted/70 focus:border-cobalt-primary focus:outline-none"
-                      />
-                      {f.db === 'htsCode' && htsLooksOff(draft[f.db]) && (
+                          }
+                          className={controlClass}
+                        />
+                      )}
+                      {numErr && (
+                        <p className="col-start-2 mt-1 text-xs text-status-critical" data-testid={`edit-err-${f.db}`}>
+                          {numErr}
+                        </p>
+                      )}
+                      {f.db === 'htsCode' && htsLooksOff(cur) && (
                         <p className="col-start-2 mt-1 text-xs text-status-warning">
                           HTS looks off — expected digits, e.g. 6110.20.2020
                         </p>
                       )}
                     </div>
-                  ))}
+                      )
+                  })}
                 </DetailSection>
               ))}
             </div>
@@ -556,10 +600,12 @@ export default function ShipmentDetailPage() {
                 placeholder="e.g. Booking No. came off the SO line — use the CW# on the booking confirmation, not the invoice"
                 className={cn(
                   'w-full rounded-md border bg-surface-700 p-2 text-sm text-text-primary placeholder:text-text-muted focus:outline-none',
-                  saveBlocked ? 'border-status-warning/60 focus:border-status-warning' : 'border-border focus:border-cobalt-primary',
+                  editedCount > 0 && !note.trim()
+                    ? 'border-status-warning/60 focus:border-status-warning'
+                    : 'border-border focus:border-cobalt-primary',
                 )}
               />
-              {saveBlocked && (
+              {editedCount > 0 && !note.trim() && (
                 <p className="mt-1 text-xs text-status-warning">
                   Add a note to save your {editedCount} edit{editedCount !== 1 ? 's' : ''}.
                 </p>

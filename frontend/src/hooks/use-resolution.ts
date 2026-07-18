@@ -33,7 +33,7 @@ function useInvalidatingMutation<V>(
       toast(messages.ok)
       keys.forEach((k) => qc.invalidateQueries({ queryKey: k }))
     },
-    onError: (e) => toast(apiErrorMessage(e, messages.fail)),
+    onError: (e) => toast.error(apiErrorMessage(e, messages.fail)),
   })
 }
 

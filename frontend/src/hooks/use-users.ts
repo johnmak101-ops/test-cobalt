@@ -38,7 +38,7 @@ export function useCreateUser() {
   return useMutation({
     mutationFn: (input: CreateUserInput) => api.post<AdminUser>('/users', input),
     onSuccess: () => qc.invalidateQueries({ queryKey: KEY }),
-    onError: (e) => toast(apiErrorMessage(e, 'Failed to create user')),
+    onError: (e) => toast.error(apiErrorMessage(e, 'Failed to create user')),
   })
 }
 export function useUpdateUser() {
@@ -46,7 +46,7 @@ export function useUpdateUser() {
   return useMutation({
     mutationFn: ({ id, patch }: { id: string; patch: UpdateUserInput }) => api.patch<AdminUser>(`/users/${id}`, patch),
     onSuccess: () => qc.invalidateQueries({ queryKey: KEY }),
-    onError: (e) => { toast(apiErrorMessage(e, 'Failed to update user')); qc.invalidateQueries({ queryKey: KEY }) },
+    onError: (e) => { toast.error(apiErrorMessage(e, 'Failed to update user')); qc.invalidateQueries({ queryKey: KEY }) },
   })
 }
 export function useDeactivateUser() {
@@ -54,6 +54,6 @@ export function useDeactivateUser() {
   return useMutation({
     mutationFn: (id: string) => api.delete<AdminUser>(`/users/${id}`),
     onSuccess: () => qc.invalidateQueries({ queryKey: KEY }),
-    onError: (e) => toast(apiErrorMessage(e, 'Failed to deactivate user')),
+    onError: (e) => toast.error(apiErrorMessage(e, 'Failed to deactivate user')),
   })
 }

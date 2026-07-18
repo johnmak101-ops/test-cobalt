@@ -14,7 +14,9 @@ import {
   toInputValue,
   parseStyleEntries,
   serializeStyleEntries,
+  numericFieldWarn,
 } from './review-fields'
+import { MODE_OPTIONS, UOM_OPTIONS } from './enums'
 
 describe('EDITABLE_FIELDS', () => {
   it('maps every UI key to a leg column with a type', () => {
@@ -38,6 +40,38 @@ describe('EDITABLE_FIELDS', () => {
     // still map critic snake_case via extras / writable set
     expect(mapCriticFieldToColumn('pol')).toBe('polRaw')
     expect(mapCriticFieldToColumn('mode')).toBe('mode')
+  })
+
+  it('wires UOM and Mode as enum dropdown option lists (mirrors backend enums)', () => {
+    expect(EDITABLE_FIELDS.find((f) => f.column === 'qtyUnit')?.options).toEqual([...UOM_OPTIONS])
+    expect(EDITABLE_FIELDS.find((f) => f.column === 'mode')?.options).toEqual([...MODE_OPTIONS])
+  })
+})
+
+describe('numericFieldWarn — mirrors backend coerceLegField numeric rules', () => {
+  it('qty: negative → error', () => {
+    expect(numericFieldWarn('qty', '-20')).toBe('Total Quantity cannot be negative')
+  })
+  it('qty: zero / fractional → error', () => {
+    expect(numericFieldWarn('qty', '0')).toMatch(/whole number greater than 0/)
+    expect(numericFieldWarn('qty', '1.5')).toMatch(/whole number greater than 0/)
+  })
+  it('qty: valid whole number → null', () => {
+    expect(numericFieldWarn('qty', '12')).toBeNull()
+  })
+  it('empty / non-numeric → null', () => {
+    expect(numericFieldWarn('qty', '')).toBeNull()
+    expect(numericFieldWarn('qty', undefined)).toBeNull()
+    expect(numericFieldWarn('qty', 'abc')).toBeNull()
+  })
+  it('grossWeight / measurement: negative only', () => {
+    expect(numericFieldWarn('grossWeight', '-1')).toBe('Gross Weight cannot be negative')
+    expect(numericFieldWarn('measurement', '-0.1')).toBe('Measurement cannot be negative')
+    expect(numericFieldWarn('grossWeight', '0')).toBeNull()
+    expect(numericFieldWarn('measurement', '1.48')).toBeNull()
+  })
+  it('unknown columns → null', () => {
+    expect(numericFieldWarn('bookingNo', '-1')).toBeNull()
   })
 })
 
