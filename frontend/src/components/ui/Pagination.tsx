@@ -1,3 +1,4 @@
+import { useId } from 'react'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { cn } from '../../lib/utils'
 
@@ -11,10 +12,12 @@ export function PageSizeSelect({
   value: number
   onChange: (size: number) => void
 }) {
+  const id = useId()
   return (
     <div className="flex items-center gap-1.5">
-      <label className="text-xs text-text-muted">Show</label>
+      <label htmlFor={id} className="text-xs text-text-muted">Show</label>
       <select
+        id={id}
         value={value}
         onChange={(e) => onChange(Number(e.target.value))}
         className="h-7 rounded-md border border-border bg-surface-700 px-1.5 text-xs text-text-primary focus:border-cobalt-primary focus:outline-none"
@@ -75,6 +78,7 @@ export function Pagination({
         <div className="flex items-center gap-1">
           <button
             type="button"
+            aria-label="Previous page"
             onClick={() => onPageChange(currentPage - 1)}
             disabled={currentPage <= 1}
             className="inline-flex h-8 w-8 items-center justify-center rounded-md text-text-muted transition-colors hover:bg-surface-700 hover:text-text-primary disabled:opacity-30 disabled:hover:bg-transparent"
@@ -107,6 +111,7 @@ export function Pagination({
           )}
           <button
             type="button"
+            aria-label="Next page"
             onClick={() => onPageChange(currentPage + 1)}
             disabled={currentPage >= totalPages}
             className="inline-flex h-8 w-8 items-center justify-center rounded-md text-text-muted transition-colors hover:bg-surface-700 hover:text-text-primary disabled:opacity-30 disabled:hover:bg-transparent"

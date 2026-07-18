@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useId, useState } from 'react'
 import { useParams, useNavigate, useLocation, Link } from 'react-router-dom'
 import { useShipment, useUpdateShipment, type ShipmentDetail } from '../hooks/use-shipments'
 import { useShipmentHistory } from '../hooks/use-shipment-history'
@@ -73,6 +73,7 @@ function AttentionTextWithConflictLink({ text, expandId }: { text: string; expan
 }
 
 export default function ShipmentDetailPage() {
+  const fieldId = useId()
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const location = useLocation()
@@ -462,8 +463,9 @@ export default function ShipmentDetailPage() {
                 <DetailSection key={sec.title} title={sec.title} icon={<ClipboardList size={14} className="text-text-muted" />}>
                   {sec.fields.map((f) => (
                     <div key={f.db} className="grid grid-cols-[7rem_1fr] sm:grid-cols-[9rem_1fr] items-center gap-x-2">
-                      <label className="truncate text-xs text-text-muted">{f.label}</label>
+                      <label htmlFor={`${fieldId}-${f.db}`} className="truncate text-xs text-text-muted">{f.label}</label>
                       <input
+                        id={`${fieldId}-${f.db}`}
                         type={f.type}
                         value={draft[f.db] ?? ''}
                         onChange={(e) => setDraft((d) => ({ ...d, [f.db]: e.target.value }))}
@@ -483,7 +485,7 @@ export default function ShipmentDetailPage() {
             </div>
             {/* Required feedback for agent-soul iteration — a save with real edits is blocked without it. */}
             <div className="mt-6 border-t border-border pt-4">
-              <label className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-text-primary">
+              <label htmlFor={`${fieldId}-note`} className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-text-primary">
                 <NotebookPen size={13} className="text-text-muted" />
                 Note for the agent
                 {editedCount > 0 && <span className="text-status-warning">· required</span>}
@@ -493,6 +495,7 @@ export default function ShipmentDetailPage() {
                 your edit and used to improve extraction.
               </p>
               <textarea
+                id={`${fieldId}-note`}
                 value={note}
                 onChange={(e) => setNote(e.target.value)}
                 rows={2}

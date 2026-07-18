@@ -411,6 +411,7 @@ export default function ReviewQueuePage() {
                             <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                               <input
                                 type="checkbox"
+                                aria-label={`Select ${s.bookingNo ?? s.soNo ?? 'shipment'}`}
                                 checked={selected.has(s.id)}
                                 onChange={() => toggleRow(s.id)}
                                 className="h-3.5 w-3.5 accent-cobalt-primary"
