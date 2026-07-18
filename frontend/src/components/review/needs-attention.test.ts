@@ -135,8 +135,29 @@ describe('buildNeedsAttention / groups', () => {
       reviewReasons: [],
     })
     expect(items.some((i) => /Party not linked to master — left unlinked/.test(i.text))).toBe(false)
-    expect(items.some((i) => /Maersk/i.test(i.text) && /Mesh|rematch|Forwarder|forwarder/i.test(i.text))).toBe(true)
+    expect(
+      items.some(
+        (i) =>
+          /Maersk \(China\) Shipping Co\., Ltd\./i.test(i.text) &&
+          /not found in Mesh Database/i.test(i.text) &&
+          /advise add in Mesh/i.test(i.text),
+      ),
+    ).toBe(true)
     expect(items.some((i) => /Vendor|factory/i.test(i.text))).toBe(true)
+  })
+
+  it('Mesh miss copy names the party and advises add in Mesh', () => {
+    const items = buildNeedsAttention({
+      conflictsCount: 0,
+      riskFlags: [],
+      reviewReasons: [
+        'Cannot match "DP WORLD CHINA CO., LTD. GUANGZHOU BRANCH" in the forwarder list. Please add it in Cobalt Fashion Data Mesh System, then rematch.',
+      ],
+    })
+    expect(items).toHaveLength(1)
+    expect(items[0]!.text).toBe(
+      '"DP WORLD CHINA CO., LTD. GUANGZHOU BRANCH" not found in Mesh Database — advise add in Mesh, then rematch',
+    )
   })
 
   it('shows all groups (no hard cap of 2)', () => {

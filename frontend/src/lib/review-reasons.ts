@@ -146,9 +146,17 @@ const TRANSLATIONS: Translation[] = [
     text: () => 'Port name did not match UN/LOCODE masters — add or alias the port, then rematch',
   },
   {
+    match: /Cannot match "([^"]+)" in the (?:forwarder|customer|vendor|consignee) list/i,
+    text: (m) => `"${m[1]}" not found in Mesh Database — advise add in Mesh, then rematch`,
+  },
+  {
     match: /Cannot match .+ Cobalt Fashion Data Mesh System/i,
     text: () =>
-      'Party name not in master list — add it in Cobalt Fashion Data Mesh System, then rematch (ops; not a normal review fix)',
+      'Party not found in Mesh Database — advise add in Mesh, then rematch',
+  },
+  {
+    match: /^(\w+)\s+"([^"]+)"\s+did not exact-match a master/i,
+    text: (m) => `"${m[2]}" not found in Mesh Database — advise add in Mesh, then rematch`,
   },
   {
     match: /Cannot match .+ masters catalog is empty/i,
@@ -190,8 +198,9 @@ const TRANSLATIONS: Translation[] = [
     text: (m) => `${fieldLabel(m[1]!)} "${m[2]}" did not match a known port — left unlinked`,
   },
   {
+    // Port-specific handled above; party master miss uses Mesh copy (earlier rule also matches).
     match: /^(\w+)\s+"([^"]+)"\s+did not exact-match a master/i,
-    text: (m) => `${fieldLabel(m[1]!)} "${m[2]}" did not match master data — left unlinked`,
+    text: (m) => `"${m[2]}" not found in Mesh Database — advise add in Mesh, then rematch`,
   },
   {
     match: /did not exact(?:\/curated)?-match a port master/i,
@@ -199,7 +208,7 @@ const TRANSLATIONS: Translation[] = [
   },
   {
     match: /did not exact-match a master/i,
-    text: () => 'A party name did not match master data — left unlinked',
+    text: () => 'Party not found in Mesh Database — advise add in Mesh, then rematch',
   },
   {
     // "PO 2605358: total_quantity 692 looks like a broadcast total …"
