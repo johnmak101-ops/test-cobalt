@@ -19,6 +19,11 @@ const LABELS: Record<string, string> = {
   measurement: 'Measurement',
 }
 
+/** SCAC = Standard Carrier Alpha Code: 2-4 letters. */
+const SCAC_RE = /^[A-Za-z]{2,4}$/
+/** Container = ISO 6346 shape: 4 letters (owner + U/J/Z category) + 7 digits (6 serial + 1 check). */
+const CONTAINER_RE = /^[A-Za-z]{4}\d{7}$/
+
 /**
  * Coerce a HUMAN-entered value to its leg column's type, and sanity-gate numerics.
  *
@@ -49,5 +54,16 @@ export function coerceLegField(field: string, value: unknown): unknown {
     }
     return n
   }
-  return String(value)
+  const text = String(value)
+  // Format gates for fields with a well-defined shape. Human edit path only (see above), so a
+  // malformed value is a person's typo — the agent's committer writes never reach here. HTS is
+  // deliberately NOT gated: its forms vary (6/8/10-digit, dotted like 6110.20.2020), so it is a
+  // frontend warning, not a backend reject.
+  if (field === 'scacCode' && !SCAC_RE.test(text)) {
+    throw new BadRequestException('SCAC Code must be 2–4 letters (e.g. MAEU)')
+  }
+  if (field === 'containerNo' && !CONTAINER_RE.test(text)) {
+    throw new BadRequestException('Container No. must be 4 letters + 7 digits, e.g. MSBU7281200')
+  }
+  return text
 }

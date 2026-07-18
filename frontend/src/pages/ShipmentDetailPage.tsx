@@ -76,6 +76,12 @@ function houseBillLabel(mode: string | null | undefined): string {
   return isAirMode(mode) ? 'HAWB' : fieldLabel('hblAwbFcrNo')
 }
 
+/** HTS/HS codes are digits, optionally dotted (6110.20.2020). Flag anything else (e.g. "6110test") as a
+ *  soft warning only — HTS is never blocked on save, since its forms vary too much to hard-reject. */
+function htsLooksOff(value: string | undefined): boolean {
+  return !!value && !/^[\d.\s]*$/.test(value)
+}
+
 /**
  * Turn the "see conflict table" clause into a Review Queue deep-link.
  * Conflict comparison UI lives on ReviewCard, not shipment detail.
@@ -521,6 +527,11 @@ export default function ShipmentDetailPage() {
                         }
                         className="h-8 w-full rounded-md border border-border bg-surface-700 px-2 text-sm text-text-primary placeholder:text-text-muted/70 focus:border-cobalt-primary focus:outline-none"
                       />
+                      {f.db === 'htsCode' && htsLooksOff(draft[f.db]) && (
+                        <p className="col-start-2 mt-1 text-xs text-status-warning">
+                          HTS looks off — expected digits, e.g. 6110.20.2020
+                        </p>
+                      )}
                     </div>
                   ))}
                 </DetailSection>

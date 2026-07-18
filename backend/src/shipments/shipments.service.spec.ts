@@ -17,14 +17,17 @@ function makeService(legOverride: Record<string, unknown> = {}) {
   }
   const fieldLocks = { lock: vi.fn(async () => undefined) }
   const audit = { write: vi.fn(async () => undefined) }
+  const committer = {
+    apply: vi.fn(async () => ({ shipmentId: 'new-leg', jobNo: 'J1', state: 'provisional', action: 'created' })),
+  }
   const svc = new ShipmentsService(
     shipments as unknown as ShipmentRepository,
     {} as unknown as BookingRepository,
     fieldLocks as unknown as FieldLockRepository,
     audit as unknown as AuditRepository,
-    {} as unknown as CommitterService,
+    committer as unknown as CommitterService,
   )
-  return { svc, shipments, fieldLocks, audit }
+  return { svc, shipments, fieldLocks, audit, committer }
 }
 
 describe('ShipmentsService.editFields — numeric sanity gate (manual edit path)', () => {
@@ -52,5 +55,23 @@ describe('ShipmentsService.editFields — numeric sanity gate (manual edit path)
       svc.editFields('leg-1', { grossWeight: '-5' }, 'user-1', 'weight'),
     ).rejects.toBeInstanceOf(BadRequestException)
     expect(shipments.updateLeg).not.toHaveBeenCalled()
+  })
+})
+
+describe('ShipmentsService.createManual — same gate on the New shipment form (agent path untouched)', () => {
+  it('rejects a negative quantity before committing anything', async () => {
+    const { svc, committer } = makeService()
+    await expect(
+      svc.createManual({ bookingNo: 'BK1', qty: '-10' }, 'user-1'),
+    ).rejects.toBeInstanceOf(BadRequestException)
+    expect(committer.apply).not.toHaveBeenCalled() // never reaches the committer (the agent's write path)
+  })
+
+  it('rejects a malformed container number before committing anything', async () => {
+    const { svc, committer } = makeService()
+    await expect(
+      svc.createManual({ containerNo: 'garbage' }, 'user-1'),
+    ).rejects.toBeInstanceOf(BadRequestException)
+    expect(committer.apply).not.toHaveBeenCalled()
   })
 })
