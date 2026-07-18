@@ -85,6 +85,8 @@ export type NeedsAttentionItem = {
   text: string
   category: ReasonCategory
   groupId: NeedsAttentionGroupId
+  /** Diagnostics folded into this line (tooltip); not separate bullets. */
+  evidence?: string[]
 }
 
 export type NeedsAttentionGroup = {
@@ -137,7 +139,28 @@ function lockedFieldsFromMsg(msg: string): string | null {
   return m?.[1]?.trim() || null
 }
 
-type LineHit = { lineId: string; text: string; category: ReasonCategory }
+type LineHit = {
+  lineId: string
+  text: string
+  category: ReasonCategory
+  evidence?: string[]
+}
+
+/** Quoted party name from matcher/ops prose, if any. */
+function extractQuotedParty(raw: string): string | null {
+  return raw.match(/"([^"]+)"/)?.[1]?.trim() || null
+}
+
+/** Port/city name from "X not in master data" style prose. */
+function extractPortName(raw: string): string | null {
+  const fromStart = raw.match(/^([A-Za-z][A-Za-z .'-]{2,60})\s+not in master data/i)?.[1]
+  if (fromStart) return fromStart.trim()
+  if (/raw value kept/i.test(raw)) {
+    const m = raw.match(/([A-Za-z][A-Za-z .'-]{2,60})\s+not in master/i)?.[1]
+    if (m) return m.trim()
+  }
+  return null
+}
 
 /** Map a risk flag to a canonical short line. */
 function lineFromFlag(code: string, message: string): LineHit | null {
@@ -343,6 +366,19 @@ function lineFromReason(raw: string, humanized: string): LineHit | null {
   }
 
   // Fields disagree
+  if (
+    /field\(s\)\s+received different values/i.test(raw) ||
+    /received different values from different emails/i.test(raw)
+  ) {
+    const n = raw.match(/(\d+)\s*field/i)?.[1]
+    return {
+      lineId: n ? `f-count:${n}` : 'f-count',
+      text: n
+        ? `${n} field(s) disagree — see conflict table`
+        : 'Field values disagree — see conflict table',
+      category: 'conflict',
+    }
+  }
   if (/backend conflict on /i.test(raw) || /disagrees with what.?s already on the shipment/i.test(raw)) {
     const fields = fieldsFromBackendMsg(raw) || fieldsFromBackendMsg(humanized)
     return {
@@ -442,13 +478,119 @@ function lineFromReason(raw: string, humanized: string): LineHit | null {
       category: 'master_miss',
     }
   }
-  if (/Cannot match .+ Cobalt Fashion Data Mesh|Cannot match .+ as a port/i.test(raw)) {
+
+  // --- Synonym families (collapse LLM/ops prose spam) ---
+
+  // Customer unlinked / not resolvable
+  if (
+    /no\s+4-?char\s+customer\s+code/i.test(raw) ||
+    /no\s+customer\s+code/i.test(raw) ||
+    /customer\s+code\s+(not\s+)?resolvable/i.test(raw) ||
+    /brand\/party not resolvable/i.test(raw) ||
+    /sourcing house, not a (customer|resolvable)/i.test(raw) ||
+    /is a shipment ref, not a customer code/i.test(raw)
+  ) {
+    const partyName =
+      raw.match(/FENIX FASHION LIMITED/i)?.[0] ??
+      raw.match(/invoice party is ([A-Z][A-Z0-9 &.'-]{3,80})/i)?.[1] ??
+      raw.match(/([A-Z][A-Z0-9 &.'-]{3,80})\s+is a sourcing house/i)?.[1] ??
+      extractQuotedParty(raw)
+    const ref = raw.match(/subject has ([A-Z0-9][A-Z0-9_-]{4,})/i)?.[1] ?? null
+    const evidence = [
+      partyName ? `Invoice party: ${partyName}` : null,
+      ref ? `Rejected subject token: ${ref}` : null,
+      /4-?char/i.test(raw) ? 'No 4-char customer code in subject/body' : null,
+      /sourcing house/i.test(raw) ? 'Treated as sourcing house, not Mesh customer code' : null,
+    ].filter(Boolean) as string[]
     return {
-      lineId: 'm-mesh',
-      text: 'Add or alias in Mesh/port masters, then rematch',
+      lineId: 'm-customer',
+      text: partyName
+        ? `Customer not linked — "${partyName}" (not a Mesh customer code)`
+        : 'Customer not linked to Mesh — no resolvable customer code in email',
+      category: 'master_miss',
+      evidence: evidence.length ? evidence : undefined,
+    }
+  }
+
+  // Vendor missing
+  if (/no\s+vendor\s+code/i.test(raw) || /factory not identified/i.test(raw)) {
+    return {
+      lineId: 'm-vendor',
+      text: 'Vendor / factory not stated in email',
+      category: 'extraction',
+    }
+  }
+
+  // Consignee missing
+  if (/consignee not stated/i.test(raw) || /consignee not (in|found)/i.test(raw)) {
+    return {
+      lineId: 'm-consignee',
+      text: /only POD/i.test(raw)
+        ? 'Consignee not stated (only POD mentioned)'
+        : 'Consignee not stated in email',
+      category: 'extraction',
+    }
+  }
+
+  // Port city prose ("Ho Chi Minh City not in master data; raw value kept")
+  {
+    const city = extractPortName(raw)
+    if (city || (/not in master data/i.test(raw) && /raw value kept/i.test(raw))) {
+      const name = (city ?? 'Port').trim()
+      return {
+        lineId: `m-port:${name}`,
+        text: `Port "${name}" not in UN/LOCODE masters — add or alias, then rematch`,
+        category: 'master_miss',
+      }
+    }
+  }
+
+  // Generic UN/LOCODE / port-name miss (fold with value-specific m-port:* later)
+  if (
+    /port name did not match UN\/LOCODE/i.test(raw) ||
+    /did not match UN\/LOCODE masters/i.test(raw)
+  ) {
+    return {
+      lineId: 'm-port',
+      text: 'Port not in UN/LOCODE masters — add or alias, then rematch',
       category: 'master_miss',
     }
   }
+
+  if (/Cannot match .+ as a port/i.test(raw)) {
+    const quoted = extractQuotedParty(raw)
+    if (quoted) {
+      return {
+        lineId: `m-port:${quoted}`,
+        text: `Port "${quoted}" not in UN/LOCODE masters — add or alias, then rematch`,
+        category: 'master_miss',
+      }
+    }
+    return {
+      lineId: 'm-port',
+      text: 'Port not in UN/LOCODE masters — add or alias, then rematch',
+      category: 'master_miss',
+    }
+  }
+
+  if (
+    /Cannot match .+ Cobalt Fashion Data Mesh|Party name not in master list/i.test(raw)
+  ) {
+    const quoted = extractQuotedParty(raw)
+    if (quoted) {
+      return {
+        lineId: `m-party:${quoted}`,
+        text: `Party "${quoted}" not in Mesh — Ops: add alias, then rematch`,
+        category: 'master_miss',
+      }
+    }
+    return {
+      lineId: 'm-mesh',
+      text: 'Ops · Mesh: add missing party/port, then rematch',
+      category: 'master_miss',
+    }
+  }
+
   if (/master candidates API was unreachable|masters catalog is empty/i.test(raw)) {
     return {
       lineId: 'm-api',
@@ -542,10 +684,49 @@ function pushUnique(
     byLine.set(item.lineId, item)
     return
   }
-  // Keep higher severity
-  if ((SEV_RANK[item.severity] ?? 0) > (SEV_RANK[prev.severity] ?? 0)) {
-    byLine.set(item.lineId, item)
-  }
+  const mergedEvidence = [
+    ...(prev.evidence ?? []),
+    ...(item.evidence ?? []),
+    // keep discarded human/raw titles as evidence when text differs
+    ...(prev.text !== item.text ? [item.text] : []),
+  ].filter((s, i, a) => s && a.indexOf(s) === i)
+
+  // Prefer text that names a concrete party/port (contains a quote or known proper noun)
+  const preferNew =
+    (SEV_RANK[item.severity] ?? 0) > (SEV_RANK[prev.severity] ?? 0) ||
+    (/"[^"]+"/.test(item.text) && !/"[^"]+"/.test(prev.text)) ||
+    (/FENIX|Ho Chi Minh/i.test(item.text) && !/FENIX|Ho Chi Minh/i.test(prev.text))
+
+  byLine.set(item.lineId, {
+    ...(preferNew ? item : prev),
+    evidence: mergedEvidence.length ? mergedEvidence : undefined,
+    // keep higher severity
+    severity:
+      (SEV_RANK[item.severity] ?? 0) > (SEV_RANK[prev.severity] ?? 0) ? item.severity : prev.severity,
+  })
+}
+
+/** Fold generic m-port into a value-specific m-port:* line when both exist. */
+function collapseGenericPort(byLine: Map<string, NeedsAttentionItem>): void {
+  const portKeys = [...byLine.keys()].filter((k) => k.startsWith('m-port:'))
+  if (portKeys.length === 0 || !byLine.has('m-port')) return
+  const generic = byLine.get('m-port')!
+  const preferredKey = portKeys[0]!
+  const preferred = byLine.get(preferredKey)!
+  const mergedEvidence = [
+    ...(preferred.evidence ?? []),
+    ...(generic.evidence ?? []),
+    ...(preferred.text !== generic.text ? [generic.text] : []),
+  ].filter((s, i, a) => s && a.indexOf(s) === i)
+  byLine.set(preferredKey, {
+    ...preferred,
+    evidence: mergedEvidence.length ? mergedEvidence : undefined,
+    severity:
+      (SEV_RANK[generic.severity] ?? 0) > (SEV_RANK[preferred.severity] ?? 0)
+        ? generic.severity
+        : preferred.severity,
+  })
+  byLine.delete('m-port')
 }
 
 /**
@@ -579,6 +760,7 @@ export function buildNeedsAttention(opts: {
       text: hit.text,
       category: hit.category,
       groupId: categoryToGroup(hit.category),
+      evidence: hit.evidence,
     })
   }
 
@@ -605,8 +787,11 @@ export function buildNeedsAttention(opts: {
       text: hit.text,
       category: hit.category,
       groupId: categoryToGroup(hit.category),
+      evidence: hit.evidence,
     })
   }
+
+  collapseGenericPort(byLine)
 
   let items = [...byLine.values()]
   items.sort((a, b) => (SEV_RANK[b.severity] ?? 0) - (SEV_RANK[a.severity] ?? 0))
