@@ -29,6 +29,7 @@ export class ErrorBoundary extends Component<Props, State> {
             <p className="text-lg font-semibold text-text-primary">Something went wrong</p>
             <p className="text-sm text-text-muted">An unexpected error occurred. Try reloading the page.</p>
             <button
+              type="button"
               onClick={() => window.location.reload()}
               className="mt-2 rounded-lg bg-cobalt-primary px-4 py-2 text-sm font-semibold text-white hover:opacity-90"
             >

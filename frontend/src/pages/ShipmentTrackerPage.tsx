@@ -67,6 +67,7 @@ export default function ShipmentTrackerPage() {
         <h1 className="text-lg font-semibold text-text-primary">Shipment Tracker</h1>
         <div className="flex flex-wrap items-center gap-2">
           <button
+            type="button"
             onClick={() => setShowNew(true)}
             className="inline-flex items-center gap-1.5 rounded-lg bg-cobalt-primary px-3 py-1.5 text-xs font-medium text-white hover:bg-cobalt-primary-light"
           >

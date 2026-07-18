@@ -179,6 +179,7 @@ function AttachmentChip({ att }: { att: { id: string; filename: string; sizeByte
   }
   return (
     <button
+      type="button"
       onClick={() => void run()}
       disabled={status === 'loading'}
       title={

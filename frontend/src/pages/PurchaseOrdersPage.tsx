@@ -304,6 +304,7 @@ export default function PurchaseOrdersPage() {
           />
           {(dateFrom || dateTo) && (
             <button
+              type="button"
               onClick={clearDateFilter}
               className="h-9 rounded-lg border border-border bg-surface-700 px-2 text-xs text-text-secondary hover:bg-surface-600 hover:text-text-primary"
             >
@@ -312,6 +313,7 @@ export default function PurchaseOrdersPage() {
           )}
         </div>
         <button
+          type="button"
           onClick={handleExport}
           disabled={exporting || filtered.length === 0}
           className="inline-flex items-center gap-1.5 rounded-lg bg-cobalt-primary px-3 py-1.5 text-xs font-medium text-white hover:bg-cobalt-primary-light disabled:opacity-50 disabled:cursor-not-allowed"

@@ -29,6 +29,7 @@ export function EmailViewerModal({ email, onClose }: { email: RelatedEmail | nul
         <div className="flex items-start justify-between gap-3 border-b border-border px-6 py-4">
           <h2 className="text-lg font-semibold leading-snug text-text-primary">{email.subject || '(no subject)'}</h2>
           <button
+            type="button"
             onClick={onClose}
             className="shrink-0 rounded-lg p-1.5 text-text-muted hover:bg-surface-700 hover:text-text-primary"
             aria-label="Close"

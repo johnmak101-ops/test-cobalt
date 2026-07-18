@@ -108,7 +108,7 @@ export function NewShipmentModal({ onClose }: { onClose: () => void }) {
               </p>
             </div>
           </div>
-          <button onClick={onClose} className="shrink-0 rounded-lg p-1.5 text-text-muted hover:bg-surface-700 hover:text-text-primary" aria-label="Close">
+          <button type="button" onClick={onClose} className="shrink-0 rounded-lg p-1.5 text-text-muted hover:bg-surface-700 hover:text-text-primary" aria-label="Close">
             <X size={18} />
           </button>
         </div>
@@ -134,10 +134,11 @@ export function NewShipmentModal({ onClose }: { onClose: () => void }) {
             {create.isError ? 'Failed to create — please try again.' : !canSubmit ? 'Enter a booking/SO/HBL/MBL/container number or a PO.' : ''}
           </span>
           <div className="flex items-center gap-2">
-            <button onClick={onClose} className="rounded-lg bg-surface-700 px-3 py-1.5 text-xs font-medium text-text-secondary hover:bg-surface-600 hover:text-text-primary">
+            <button type="button" onClick={onClose} className="rounded-lg bg-surface-700 px-3 py-1.5 text-xs font-medium text-text-secondary hover:bg-surface-600 hover:text-text-primary">
               Cancel
             </button>
             <button
+              type="button"
               onClick={submit}
               disabled={!canSubmit || create.isPending}
               className="inline-flex items-center gap-1.5 rounded-lg bg-cobalt-primary px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-cobalt-primary-light disabled:cursor-not-allowed disabled:opacity-50"

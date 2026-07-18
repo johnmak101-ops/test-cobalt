@@ -188,6 +188,7 @@ export function Sidebar() {
           {collapsed ? (
             /* Collapsed (desktop): logo swaps to expand button on hover */
             <button
+              type="button"
               onClick={toggleSidebar}
               aria-label="Expand sidebar"
               className="group relative flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-cobalt-primary transition-colors hover:bg-surface-700"
@@ -213,6 +214,7 @@ export function Sidebar() {
               </div>
               <div className="flex items-center gap-1">
                 <button
+                  type="button"
                   onClick={closeMobileNav}
                   aria-label="Close navigation menu"
                   className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-text-muted transition-colors hover:bg-surface-700 hover:text-text-primary lg:hidden"
@@ -220,6 +222,7 @@ export function Sidebar() {
                   <X size={16} />
                 </button>
                 <button
+                  type="button"
                   onClick={toggleSidebar}
                   aria-label="Collapse sidebar"
                   className="hidden h-7 w-7 shrink-0 items-center justify-center rounded-md text-text-muted transition-colors hover:bg-surface-700 hover:text-text-primary lg:flex"

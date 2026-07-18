@@ -74,6 +74,7 @@ export function Pagination({
       {totalPages > 1 && (
         <div className="flex items-center gap-1">
           <button
+            type="button"
             onClick={() => onPageChange(currentPage - 1)}
             disabled={currentPage <= 1}
             className="inline-flex h-8 w-8 items-center justify-center rounded-md text-text-muted transition-colors hover:bg-surface-700 hover:text-text-primary disabled:opacity-30 disabled:hover:bg-transparent"
@@ -90,6 +91,7 @@ export function Pagination({
               </span>
             ) : (
               <button
+                type="button"
                 key={p}
                 onClick={() => onPageChange(p)}
                 className={cn(
@@ -104,6 +106,7 @@ export function Pagination({
             )
           )}
           <button
+            type="button"
             onClick={() => onPageChange(currentPage + 1)}
             disabled={currentPage >= totalPages}
             className="inline-flex h-8 w-8 items-center justify-center rounded-md text-text-muted transition-colors hover:bg-surface-700 hover:text-text-primary disabled:opacity-30 disabled:hover:bg-transparent"

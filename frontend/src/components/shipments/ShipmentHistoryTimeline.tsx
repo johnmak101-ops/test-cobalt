@@ -103,6 +103,7 @@ export function ShipmentHistoryTimeline({ history }: ShipmentHistoryTimelineProp
               {/* The source email: subject as a clickable link → the reading-pane popup */}
               {entry.notes && entry.sourceType === 'email' && entry.sourceId ? (
                 <button
+                  type="button"
                   onClick={() =>
                     window.open(
                       `/email/${entry.sourceId}?type=`,

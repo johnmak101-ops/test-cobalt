@@ -257,6 +257,7 @@ export default function ReviewQueuePage() {
               ] as const
             ).map((t) => (
               <button
+                type="button"
                 key={t.key}
                 onClick={() => switchView(t.key)}
                 className={cn(
@@ -283,6 +284,7 @@ export default function ReviewQueuePage() {
       {/* Reason-category filter chips (degrade gracefully when reasons empty) */}
       <div className="flex flex-wrap items-center gap-1.5">
         <button
+          type="button"
           onClick={() => pickCategory('all')}
           className={cn(
             'rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors',
@@ -295,6 +297,7 @@ export default function ReviewQueuePage() {
         </button>
         {CATEGORY_ORDER.filter((c) => (categoryCounts.get(c) ?? 0) > 0).map((c) => (
           <button
+            type="button"
             key={c}
             onClick={() => pickCategory(c)}
             className={cn(
@@ -320,6 +323,7 @@ export default function ReviewQueuePage() {
             className="h-8 min-w-56 flex-1 rounded-lg border border-border bg-surface-900 px-3 text-xs text-text-primary placeholder:text-text-muted"
           />
           <button
+            type="button"
             onClick={handleDismissSelected}
             disabled={anyMutating}
             className="inline-flex items-center gap-1.5 rounded-lg bg-status-critical/15 px-3 py-1.5 text-xs font-medium text-status-critical transition-colors hover:bg-status-critical/25 disabled:cursor-not-allowed disabled:opacity-50"
@@ -328,6 +332,7 @@ export default function ReviewQueuePage() {
             Dismiss {selected.size} — not shipments
           </button>
           <button
+            type="button"
             onClick={resetSelection}
             className="rounded-lg px-2 py-1.5 text-xs text-text-muted hover:text-text-primary"
           >
@@ -457,6 +462,7 @@ export default function ReviewQueuePage() {
                             <div className="inline-flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
                               {isRejectedView ? (
                                 <button
+                                  type="button"
                                   onClick={() => handleRestore(s.id)}
                                   disabled={anyMutating}
                                   title="Return this item to the active review queue"
@@ -471,6 +477,7 @@ export default function ReviewQueuePage() {
                                 </button>
                               ) : (
                                 <button
+                                  type="button"
                                   onClick={() => navigate(`/shipments/${s.id}`)}
                                   className="inline-flex items-center gap-1.5 rounded-lg bg-surface-700 px-2.5 py-1.5 text-xs font-medium text-text-secondary transition-colors hover:bg-surface-600 hover:text-text-primary"
                                 >

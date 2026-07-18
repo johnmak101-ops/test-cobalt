@@ -159,6 +159,7 @@ export default function ShipmentDetailPage() {
       {/* Header */}
       <div>
         <button
+          type="button"
           onClick={() => navigate(fromAlerts ? '/alerts' : '/shipments')}
           className="mb-3 inline-flex items-center gap-1.5 text-sm text-text-muted hover:text-text-primary"
         >
@@ -354,6 +355,7 @@ export default function ShipmentDetailPage() {
           {editing ? (
             <div className="flex items-center gap-2">
               <button
+                type="button"
                 onClick={cancelEdit}
                 disabled={update.isPending}
                 className="inline-flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-medium text-text-secondary hover:bg-surface-700 hover:text-text-primary disabled:opacity-50"
@@ -361,6 +363,7 @@ export default function ShipmentDetailPage() {
                 <X size={13} /> Cancel
               </button>
               <button
+                type="button"
                 onClick={saveEdit}
                 disabled={update.isPending || saveBlocked}
                 title={saveBlocked ? 'Add a note for the agent before saving' : undefined}
@@ -371,6 +374,7 @@ export default function ShipmentDetailPage() {
             </div>
           ) : (
             <button
+              type="button"
               onClick={startEdit}
               className="inline-flex items-center gap-1.5 rounded-lg bg-surface-700 px-3 py-1.5 text-xs font-medium text-text-secondary hover:bg-surface-600 hover:text-text-primary"
             >
@@ -549,6 +553,7 @@ export default function ShipmentDetailPage() {
       {/* Tab switcher: Alerts/Emails vs History */}
       <div className="flex gap-1 rounded-lg bg-surface-900 p-1">
         <button
+          type="button"
           onClick={() => setActiveTab('details')}
           className={cn(
             'rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
@@ -560,6 +565,7 @@ export default function ShipmentDetailPage() {
           Alerts & Emails
         </button>
         <button
+          type="button"
           onClick={() => setActiveTab('history')}
           className={cn(
             'flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
