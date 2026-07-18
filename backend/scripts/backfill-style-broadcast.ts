@@ -173,9 +173,10 @@ async function main() {
           gk: strongKeys((leg.matchKeys as Record<string, unknown>) ?? {}),
         })
         const next = mergeReviewReasonsWithDataIssues(kept, plan.poFlagReasons)
+        // review_reasons is nvarchar(max) JSON — tedious rejects a raw JS array
         await db
           .updateTable('shipments')
-          .set({ reviewReasons: next as never, updatedAt: new Date() })
+          .set({ reviewReasons: JSON.stringify(next) as never, updatedAt: new Date() })
           .where('id', '=', shipmentId)
           .execute()
       }
