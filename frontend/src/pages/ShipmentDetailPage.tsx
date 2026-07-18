@@ -7,7 +7,7 @@ import { Card } from '../components/ui/Card'
 import { MilestoneTimeline } from '../components/shipments/MilestoneTimeline'
 import { ShipmentHistoryTimeline } from '../components/shipments/ShipmentHistoryTimeline'
 import { AlertCard } from '../components/alerts/AlertCard'
-import { formatDate, formatDateTime, formatDateMaybeTime, cn } from '../lib/utils'
+import { formatDate, formatDateTime, formatDateMaybeTime, cn, parsePONumbers } from '../lib/utils'
 import { humanizeReasons } from '../lib/review-reasons'
 import { EDITABLE_FIELDS, fieldLabel, type EditableField } from '../lib/review-fields'
 import { toast } from '../components/ui/Toast'
@@ -585,7 +585,9 @@ export default function ShipmentDetailPage() {
               Prefer scoped rematch over full corpus. Run in cobalt-queue (not in this UI):
             </p>
             {(() => {
-              const po = (shipment.poNumbers ?? []).find((p) => p && String(p).trim())
+              // poNumbers is a JSON-encoded string from the API (e.g. '["4501…"]'), not string[].
+              // Calling .find on the raw string throws → ErrorBoundary "Something went wrong".
+              const po = parsePONumbers(shipment.poNumbers ?? '').find((p) => p && String(p).trim())
               const bk = shipment.bookingNo?.trim()
               const cmd = bk
                 ? `pnpm exec tsx src/dev/run-matcher.ts --booking=${bk}`
@@ -603,8 +605,8 @@ export default function ShipmentDetailPage() {
                     title="Copy rematch command"
                     onClick={() => {
                       void navigator.clipboard.writeText(cmd).then(
-                        () => toast.success('Rematch command copied'),
-                        () => toast.error('Copy failed'),
+                        () => toast('Rematch command copied'),
+                        () => toast('Copy failed'),
                       )
                     }}
                   >
