@@ -124,6 +124,7 @@ export default function AlertRulesPage() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-3">
           <button
+            type="button"
             onClick={() => navigate('/alerts')}
             className="rounded-lg p-1.5 text-text-muted hover:bg-surface-700 hover:text-text-primary"
           >
@@ -171,6 +172,7 @@ export default function AlertRulesPage() {
                     </span>
                   </div>
                   <button
+                    type="button"
                     onClick={() => !rule.locked && updateRule(rule.id, 'enabled', !rule.enabled)}
                     disabled={rule.locked || !canEdit}
                     className={cn(
@@ -279,6 +281,7 @@ export default function AlertRulesPage() {
           {canEdit && (
           <div className="flex items-center justify-end gap-3 pt-2">
             <button
+              type="button"
               onClick={() => setDraft(null)}
               disabled={!dirty}
               className="rounded-lg px-4 py-2 text-sm text-text-secondary hover:text-text-primary disabled:opacity-50"
@@ -286,6 +289,7 @@ export default function AlertRulesPage() {
               Reset to Defaults
             </button>
             <button
+              type="button"
               onClick={() => saveRules.mutate(localRules)}
               disabled={!dirty || saveRules.isPending}
               className="rounded-lg bg-cobalt-primary px-4 py-2 text-sm font-medium text-white hover:bg-cobalt-primary-light disabled:opacity-50"

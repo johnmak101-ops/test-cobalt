@@ -195,6 +195,7 @@ export default function AlertsPage() {
           <h1 className="text-lg font-semibold text-text-primary">Alerts</h1>
         </div>
         <button
+          type="button"
           onClick={() => navigate('/alerts/rules')}
           className="inline-flex items-center gap-1.5 rounded-lg bg-surface-700 px-3 py-1.5 text-xs font-medium text-text-secondary hover:bg-surface-600 hover:text-text-primary"
         >
@@ -215,6 +216,7 @@ export default function AlertsPage() {
                   : readCount
             return (
               <button
+                type="button"
                 key={tab.key}
                 onClick={() => setFilter(tab.key)}
                 className={cn(
@@ -256,6 +258,7 @@ export default function AlertsPage() {
           />
           {(dateFrom || dateTo) && (
             <button
+              type="button"
               onClick={clearDateFilter}
               className="h-8 rounded-lg border border-border bg-surface-700 px-2 text-xs text-text-secondary hover:bg-surface-600 hover:text-text-primary"
             >
@@ -264,6 +267,7 @@ export default function AlertsPage() {
           )}
         </div>
         <button
+          type="button"
           onClick={handleExport}
           disabled={exporting || filtered.length === 0}
           className="inline-flex items-center gap-1.5 rounded-lg bg-cobalt-primary px-3 py-1.5 text-xs font-medium text-white hover:bg-cobalt-primary-light disabled:opacity-50 disabled:cursor-not-allowed"

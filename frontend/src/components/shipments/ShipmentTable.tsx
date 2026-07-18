@@ -221,6 +221,7 @@ export function ShipmentTable({ shipments }: ShipmentTableProps) {
                     <td className="px-2 py-3 text-center">
                       {poCount > 0 ? (
                         <button
+                          type="button"
                           onClick={(e) => toggleExpanded(s.id, e)}
                           className="inline-flex h-5 w-5 items-center justify-center rounded text-text-muted hover:bg-surface-600 hover:text-text-primary transition-colors"
                         >

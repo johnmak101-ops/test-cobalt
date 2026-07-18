@@ -76,6 +76,7 @@ export function LinkShipmentModal({
             </div>
           </div>
           <button
+            type="button"
             onClick={onClose}
             className="shrink-0 rounded-lg p-1.5 text-text-muted hover:bg-surface-700 hover:text-text-primary"
             aria-label="Close"
@@ -122,6 +123,7 @@ export function LinkShipmentModal({
                 return (
                   <li key={s.id}>
                     <button
+                      type="button"
                       onClick={() => setSelectedId(s.id)}
                       className={
                         'flex w-full items-center gap-3 rounded-lg border px-3 py-2.5 text-left transition-colors ' +
@@ -159,12 +161,14 @@ export function LinkShipmentModal({
           </span>
           <div className="flex items-center gap-2">
             <button
+              type="button"
               onClick={onClose}
               className="rounded-lg bg-surface-700 px-3 py-1.5 text-xs font-medium text-text-secondary hover:bg-surface-600 hover:text-text-primary"
             >
               Cancel
             </button>
             <button
+              type="button"
               onClick={handleConfirm}
               disabled={!selectedId || linkMutation.isPending}
               className="inline-flex items-center gap-1.5 rounded-lg bg-cobalt-primary px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-cobalt-primary-light disabled:cursor-not-allowed disabled:opacity-50"

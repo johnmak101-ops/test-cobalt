@@ -79,6 +79,7 @@ export function TopBar() {
     <header className="flex h-14 shrink-0 items-center border-b border-border bg-surface-900 px-4 sm:px-6">
       {/* Left: hamburger opens the nav drawer (mobile/tablet only). */}
       <button
+        type="button"
         onClick={openMobileNav}
         aria-label="Open navigation menu"
         aria-controls="app-sidebar"
@@ -92,6 +93,7 @@ export function TopBar() {
       <div className="ml-auto flex items-center gap-2">
         {/* Theme toggle */}
         <button
+          type="button"
           onClick={toggleTheme}
           className="rounded-lg p-2 text-text-secondary hover:bg-surface-700 hover:text-text-primary"
           title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`}
@@ -102,6 +104,7 @@ export function TopBar() {
         {/* Notifications */}
         <div ref={notiRef} className="relative">
           <button
+            type="button"
             onClick={() => setNotiOpen((v) => !v)}
             className={cn(
               'relative rounded-lg p-2 text-text-secondary hover:bg-surface-700 hover:text-text-primary',
@@ -127,6 +130,7 @@ export function TopBar() {
                   { key: 'review' as NotiTab, label: 'Review', icon: <ClipboardCheck size={13} />, color: 'text-cobalt-primary-light' },
                 ]).map((tab) => (
                   <button
+                    type="button"
                     key={tab.key}
                     onClick={() => setNotiTab(tab.key)}
                     className={cn(
@@ -165,6 +169,7 @@ export function TopBar() {
                     ) : (
                       unreadAlerts.map((alert) => (
                         <button
+                          type="button"
                           key={alert.id}
                           onClick={() => {
                             markRead.mutate(alert.id)
@@ -198,6 +203,7 @@ export function TopBar() {
                     ) : (
                       unreadEmails.map((email) => (
                         <button
+                          type="button"
                           key={email.id}
                           onClick={() => { setNotiOpen(false); navigate('/inbox') }}
                           className="flex w-full items-start gap-2.5 px-4 py-2.5 text-left transition-colors hover:bg-surface-700"
@@ -226,6 +232,7 @@ export function TopBar() {
                     ) : (
                       unreadReviews.map((item) => (
                         <button
+                          type="button"
                           key={item.id}
                           onClick={() => { setNotiOpen(false); navigate(`/shipments/${item.id}`) }}
                           className="flex w-full items-start gap-2.5 px-4 py-2.5 text-left transition-colors hover:bg-surface-700"
@@ -252,6 +259,7 @@ export function TopBar() {
               {/* Footer — View All link */}
               <div className="border-t border-border px-4 py-2">
                 <button
+                  type="button"
                   onClick={() => {
                     setNotiOpen(false)
                     navigate(
@@ -272,6 +280,7 @@ export function TopBar() {
         {/* User menu */}
         <div ref={menuRef} className="relative">
           <button
+            type="button"
             onClick={() => setMenuOpen((v) => !v)}
             className={cn(
               'flex items-center gap-2 rounded-lg px-2 py-1.5 transition-colors',
@@ -307,6 +316,7 @@ export function TopBar() {
                 <p className="text-xs text-text-muted">{user?.email}</p>
               </div>
               <button
+                type="button"
                 onClick={() => {
                   setMenuOpen(false)
                   logout()

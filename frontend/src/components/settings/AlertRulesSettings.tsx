@@ -135,6 +135,7 @@ export function AlertRulesSettings() {
 
               {/* Enabled toggle */}
               <button
+                type="button"
                 onClick={() => !rule.locked && updateRule(rule.id, 'enabled', !rule.enabled)}
                 disabled={rule.locked}
                 className={cn(
@@ -244,6 +245,7 @@ export function AlertRulesSettings() {
       )}
       <div className="flex items-center justify-end gap-3 pt-2">
         <button
+          type="button"
           onClick={() => setDraft(null)}
           disabled={!dirty}
           className="rounded-lg px-4 py-2 text-sm text-text-secondary hover:text-text-primary disabled:opacity-50"
@@ -251,6 +253,7 @@ export function AlertRulesSettings() {
           Reset to Defaults
         </button>
         <button
+          type="button"
           onClick={() => saveRules.mutate(localRules)}
           disabled={!canEdit || !dirty || saveRules.isPending}
           className="rounded-lg bg-cobalt-primary px-4 py-2 text-sm font-medium text-white hover:bg-cobalt-primary-light disabled:opacity-50"

@@ -23,6 +23,7 @@ export function ShipmentFilters({ value, onChange }: StatusFilterProps) {
     <div className="flex flex-wrap items-center gap-2">
       {statuses.map((s) => (
         <button
+          type="button"
           key={s}
           onClick={() => onChange(s)}
           className={cn(

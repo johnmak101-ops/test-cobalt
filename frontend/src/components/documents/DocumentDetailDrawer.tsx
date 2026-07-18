@@ -95,6 +95,7 @@ export function DocumentDetailDrawer({
             </div>
           </div>
           <button
+            type="button"
             onClick={onClose}
             className="shrink-0 rounded-lg p-1.5 text-text-muted hover:bg-surface-700 hover:text-text-primary"
             aria-label="Close"
@@ -153,6 +154,7 @@ export function DocumentDetailDrawer({
             <p className="text-xs text-status-critical">Failed to dismiss — please try again.</p>
           )}
           <button
+            type="button"
             onClick={openSourceEmail}
             disabled={!emailId}
             title={emailId ? undefined : 'No source email available for this document'}
@@ -162,6 +164,7 @@ export function DocumentDetailDrawer({
             View source email
           </button>
           <button
+            type="button"
             onClick={() => onLink(row)}
             className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-cobalt-primary px-3 py-2 text-xs font-medium text-white transition-colors hover:bg-cobalt-primary-light"
           >
@@ -169,6 +172,7 @@ export function DocumentDetailDrawer({
             Link to shipment
           </button>
           <button
+            type="button"
             onClick={handleDismiss}
             disabled={dismissMutation.isPending}
             className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-status-critical/30 px-3 py-2 text-xs font-medium text-status-critical transition-colors hover:bg-status-critical/10 disabled:cursor-not-allowed disabled:opacity-50"

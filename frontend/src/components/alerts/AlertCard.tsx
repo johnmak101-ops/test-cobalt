@@ -74,6 +74,7 @@ export function AlertCard({ alert, compact }: AlertCardProps) {
 
         {!compact && (
           <button
+            type="button"
             onClick={(e) => {
               e.stopPropagation()
               if (isRead) {

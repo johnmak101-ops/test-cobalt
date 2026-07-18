@@ -61,6 +61,7 @@ export default function DashboardPage() {
               Alerts Requiring Attention
             </h2>
             <button
+              type="button"
               onClick={() => navigate('/alerts')}
               className="text-xs font-medium text-cobalt-primary-light hover:underline"
             >

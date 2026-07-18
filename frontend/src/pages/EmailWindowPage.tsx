@@ -64,6 +64,7 @@ export default function EmailWindowPage() {
               const current = m.id === id
               return (
                 <button
+                  type="button"
                   key={m.id}
                   onClick={() => !current && navigate(`/email/${m.id}?type=`)}
                   disabled={current}

@@ -161,6 +161,7 @@ export default function UnlinkedDocumentsPage() {
                       </td>
                       <td className="px-4 py-3 text-right">
                         <button
+                          type="button"
                           onClick={(e) => {
                             e.stopPropagation()
                             setLinkTarget(d)
