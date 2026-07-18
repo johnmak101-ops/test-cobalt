@@ -191,7 +191,7 @@ export class ShipmentsService {
    * reviewer's note (the agent-soul iteration signal). Master-resolved fields (customer/forwarder/ports) are
    * skipped — they need resolution, not a direct write. Returns the edited leg columns.
    */
-  async applyExtractionCorrection(shipmentId: string, extraction: Record<string, unknown>, actorId: string | null, note?: string | null) {
+  applyExtractionCorrection(shipmentId: string, extraction: Record<string, unknown>, actorId: string | null, note?: string | null) {
     const legFields: Record<string, unknown> = {}
     for (const [k, v] of Object.entries(extraction ?? {})) {
       const leg = PARSER_TO_LEG[k]

@@ -107,7 +107,7 @@ export class PurchaseOrderRepository {
   }
 
   /** Every PO's linked shipments with the PO-list search fields, batched. */
-  async shipmentSummariesByPo() {
+  shipmentSummariesByPo() {
     return this.db.selectFrom('shipmentPos')
       .innerJoin('shipments', 'shipmentPos.shipmentId', 'shipments.id')
       .leftJoin('ports as pol', 'shipments.polId', 'pol.id')

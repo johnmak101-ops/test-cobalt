@@ -129,7 +129,7 @@ export class ShipmentRepository {
 
   /** Live legs of one email thread — the adoption candidate set (A2's index can't cover this:
    *  a zero-identity leg has no strong keys, so it only exists in match_keys JSON). */
-  async legsByConversationId(conversationId: string) {
+  legsByConversationId(conversationId: string) {
     return this.db
       .selectFrom('shipments')
       .selectAll()

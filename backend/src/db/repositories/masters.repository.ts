@@ -22,19 +22,19 @@ export type PortLinkTier = 'unlocode_exact' | 'abbreviation' | 'iata' | 'alias' 
 export class MastersRepository {
   constructor(@Inject(KYSELY) private readonly db: Kysely<DB>) {}
 
-  async listCustomers() {
+  listCustomers() {
     return this.db.selectFrom('customers').orderBy('name').selectAll().execute()
   }
-  async listVendors() {
+  listVendors() {
     return this.db.selectFrom('vendors').orderBy('name').selectAll().execute()
   }
-  async listForwarders() {
+  listForwarders() {
     return this.db.selectFrom('forwarders').orderBy('name').selectAll().execute()
   }
-  async listPorts() {
+  listPorts() {
     return this.db.selectFrom('ports').orderBy('unlocode').selectAll().execute()
   }
-  async listConsignees() {
+  listConsignees() {
     return this.db.selectFrom('consignees').orderBy('name').selectAll().execute()
   }
 
@@ -107,7 +107,7 @@ export class MastersRepository {
     return r ?? null
   }
   /** All forwarder aliases (name / domain / chinese_name rows) — retrieval signals for the candidates endpoint. */
-  async listForwarderAliases() {
+  listForwarderAliases() {
     return this.db.selectFrom('forwarderAliases').select(['forwarderId', 'aliasType', 'value']).execute()
   }
 
@@ -335,14 +335,14 @@ export class MastersRepository {
 
   // --- carriers (ocean carriers keyed by SCAC — seeded + ops-maintained, no ERP home; the data home
   //     for SCAC extraction/validation) ---
-  async listCarriers() {
+  listCarriers() {
     return this.db.selectFrom('carriers').orderBy('scac').selectAll().execute()
   }
   async carrierByScac(scac: string) {
     const r = await this.db.selectFrom('carriers').selectAll().where('scac', '=', scac.trim().toUpperCase()).executeTakeFirst()
     return r ?? null
   }
-  async createCarrier(v: { scac: string; name: string }) {
+  createCarrier(v: { scac: string; name: string }) {
     return this.db
       .insertInto('carriers')
       .values({ scac: v.scac.trim().toUpperCase(), name: v.name.trim() })
@@ -358,10 +358,10 @@ export class MastersRepository {
   }
 
   // --- master resolution (curated facts + proposals) ---
-  async listResolution(status: 'approved' | 'proposed' | 'rejected') {
+  listResolution(status: 'approved' | 'proposed' | 'rejected') {
     return this.db.selectFrom('masterResolution').where('status', '=', status).where('active', '=', true).orderBy('createdAt', 'desc').selectAll().execute()
   }
-  async listResolutionManage() {
+  listResolutionManage() {
     return this.db.selectFrom('masterResolution').where('status', '=', 'approved').orderBy('kind').orderBy('lhs').selectAll().execute()
   }
   async getFact(id: string) {

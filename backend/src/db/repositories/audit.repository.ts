@@ -26,7 +26,7 @@ export class AuditRepository {
     return this.db.insertInto('changeLog').values(row).execute()
   }
 
-  async listForEntity(entityType: string, entityId: string) {
+  listForEntity(entityType: string, entityId: string) {
     return this.db.selectFrom('changeLog')
       .where('entityType', '=', entityType)
       .where('entityId', '=', entityId)
