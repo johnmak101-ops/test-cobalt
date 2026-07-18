@@ -80,6 +80,14 @@ describe('ReviewService.confirm/correct — provisional-only + optimistic concur
     expect(shipments.updateLeg).not.toHaveBeenCalled()
   })
 
+  it('correct rejects a negative quantity with 400 and writes nothing', async () => {
+    const { svc, shipments } = makeService()
+    await expect(svc.correct('leg-1', { fields: { qty: '-10' } }, 'user-1')).rejects.toBeInstanceOf(
+      BadRequestException,
+    )
+    expect(shipments.updateLeg).not.toHaveBeenCalled()
+  })
+
   it('correct applies multi-field critic resolution including port/forwarder raw columns', async () => {
     const { svc, shipments, locks } = makeService()
     const res = await svc.correct(

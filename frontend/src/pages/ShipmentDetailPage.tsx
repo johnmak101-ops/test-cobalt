@@ -189,7 +189,12 @@ export default function ShipmentDetailPage() {
         const n = (r as { edited?: string[] } | undefined)?.edited?.length ?? Object.keys(changed).length
         toast(`Saved ${n} field(s)`)
       },
-      onError: () => toast('Save failed — please retry'),
+      onError: (e) => {
+        // Surface the server's specific reason (e.g. "Total Quantity cannot be negative"); request()
+        // prefixes it with "API error <status>:" — strip that for a clean inline message.
+        const reason = (e instanceof Error ? e.message : '').replace(/^API error \d+:\s*/, '').trim()
+        toast(reason ? `Save failed — ${reason}` : 'Save failed — please retry')
+      },
     })
   }
 
@@ -501,6 +506,8 @@ export default function ShipmentDetailPage() {
                       <input
                         id={`${fieldId}-${f.db}`}
                         type={f.type}
+                        min={f.type === 'number' ? 0 : undefined}
+                        step={f.db === 'qty' ? 1 : f.type === 'number' ? 'any' : undefined}
                         value={draft[f.db] ?? ''}
                         onChange={(e) => setDraft((d) => ({ ...d, [f.db]: e.target.value }))}
                         placeholder={

@@ -7,6 +7,7 @@ import { CommitterService, type ReconGroup } from '../reconcile/committer.servic
 import { strongKeys, keysOverlap, normKey, str } from '../reconcile/match-keys'
 import { deriveRoute } from '../presentation/adapters/derive'
 import { syncIdentityMatchKeys } from './identity-keys'
+import { coerceLegField, DATE_FIELDS } from './coerce-field'
 
 /** A human-entered new-shipment form. Every field optional; at least one identity OR a PO is required. */
 export interface ManualShipmentInput {
@@ -67,8 +68,6 @@ const PARSER_TO_LEG: Record<string, string> = Object.fromEntries(
 // mode + polRaw/podRaw/forwarderRaw are free-text leg columns (same as review /correct extras) so
 // operators can fix extraction without a master picker (#183). Resolved polId/podId/forwarderId
 // are not written here — raw text still drives route display via deriveRoute fallbacks.
-const DATE_FIELDS = new Set(['cargoReadyDate', 'cfsCutoff', 'warehouseStartDate', 'warehouseEndDate', 'etd', 'atd', 'eta', 'ata', 'inDcDate'])
-const NUMERIC_FIELDS = new Set(['qty', 'grossWeight', 'measurement'])
 const EDITABLE_FIELDS = new Set([
   'bookingNo', 'soNo', 'hblAwbFcrNo', 'mbl', 'containerNo', 'scacCode',
   'qty', 'qtyUnit', 'grossWeight', 'measurement', 'itemStyleNo', 'htsCode',
@@ -76,12 +75,6 @@ const EDITABLE_FIELDS = new Set([
   'consigneeName', 'consigneeAddress', 'vesselName', 'voyageNo', 'flightNo', 'mawb',
   ...DATE_FIELDS,
 ])
-function coerceField(field: string, value: unknown): unknown {
-  if (value == null || value === '') return null
-  if (DATE_FIELDS.has(field)) { const d = new Date(String(value)); return Number.isNaN(d.getTime()) ? null : d }
-  if (NUMERIC_FIELDS.has(field)) { const n = Number(value); return Number.isFinite(n) ? n : null }
-  return String(value)
-}
 const asStr = (v: unknown): string | null => (v == null ? null : v instanceof Date ? v.toISOString() : String(v))
 
 @Injectable()
@@ -167,9 +160,12 @@ export class ShipmentsService {
     const feedback = (note ?? '').trim() || 'edited on shipment detail'
     const edited: string[] = []
     const editedValues: Record<string, unknown> = {}
-    for (const [field, raw] of Object.entries(fields ?? {})) {
-      if (!EDITABLE_FIELDS.has(field)) continue
-      const value = coerceField(field, raw)
+    // Coerce + sanity-gate EVERY field up front, so one bad value (e.g. a negative quantity) rejects the
+    // whole edit with a 400 before anything is written — no partial save, no orphaned lock/audit row.
+    const coerced = Object.entries(fields ?? {})
+      .filter(([field]) => EDITABLE_FIELDS.has(field))
+      .map(([field, raw]) => [field, coerceLegField(field, raw)] as const)
+    for (const [field, value] of coerced) {
       if (asStr(current[field]) === asStr(value)) continue // no-op edit — skip lock/audit noise
       await this.shipments.updateLeg(id, { [field]: value })
       await this.fieldLocks.lock('shipment', id, field, asStr(value), actorId)

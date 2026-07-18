@@ -27,8 +27,19 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
     ...options,
   })
   if (!res.ok) {
-    const error = await res.text()
-    throw new Error(`API error ${res.status}: ${error}`)
+    const body = await res.text()
+    // Surface NestJS's `message` (the specific reason, e.g. a failed validation like "Total Quantity
+    // cannot be negative") when the error body is JSON; fall back to the raw text. Keep the status
+    // prefix so callers that branch on the code still can.
+    let detail = body
+    try {
+      const j = JSON.parse(body) as { message?: string | string[] }
+      const m = Array.isArray(j.message) ? j.message.join(' ') : j.message
+      if (m) detail = m
+    } catch {
+      /* non-JSON error body — keep the raw text */
+    }
+    throw new Error(`API error ${res.status}: ${detail}`)
   }
   const text = await res.text()
   if (!text) return undefined as T
