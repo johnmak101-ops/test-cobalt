@@ -1,7 +1,7 @@
 # Edit-fields form robustness — design
 
 **Date:** 2026-07-18
-**Status:** design approved; pending implementation
+**Status:** implemented on `feat/edit-fields-robustness` (commit 239f062)
 **Follows:** #221 (numeric sanity gate), #222 (SCAC/container format gates)
 
 ## Problem
