@@ -7,11 +7,11 @@ import { Card } from '../components/ui/Card'
 import { MilestoneTimeline } from '../components/shipments/MilestoneTimeline'
 import { ShipmentHistoryTimeline } from '../components/shipments/ShipmentHistoryTimeline'
 import { AlertCard } from '../components/alerts/AlertCard'
-import { formatDate, formatDateTime, formatDateMaybeTime, cn, parsePONumbers } from '../lib/utils'
+import { formatDate, formatDateTime, formatDateMaybeTime, cn } from '../lib/utils'
 import { buildNeedsAttentionGroups } from '../components/review/needs-attention'
 import { EDITABLE_FIELDS, fieldLabel, type EditableField } from '../lib/review-fields'
 import { toast } from '../components/ui/Toast'
-import { ArrowLeft, Mail, Clock, ClipboardList, Package, Ship, Calendar, AlertTriangle, AlertCircle, Info, Pencil, Check, X, NotebookPen, Copy } from 'lucide-react'
+import { ArrowLeft, Mail, Clock, ClipboardList, Package, Ship, Calendar, AlertTriangle, AlertCircle, Info, Pencil, Check, X, NotebookPen } from 'lucide-react'
 
 // The human-editable leg fields, grouped like the read-only card. `db` = the backend column the PATCH writes
 // (+ locks + audits); `get` reads the current value off the loaded shipment (whose UI names differ from db).
@@ -659,45 +659,6 @@ export default function ShipmentDetailPage() {
                 ))}
             </div>
           )}
-
-          {/* Ops: scoped rematch command (queue CLI — Graph-first design #209) */}
-          <Card>
-            <h4 className="mb-2 text-sm font-semibold text-text-primary">Queue rematch (ops)</h4>
-            <p className="mb-2 text-xs text-text-muted">
-              Prefer scoped rematch over full corpus. Run in cobalt-queue (not in this UI):
-            </p>
-            {(() => {
-              // poNumbers is a JSON-encoded string from the API (e.g. '["4501…"]'), not string[].
-              // Calling .find on the raw string throws → ErrorBoundary "Something went wrong".
-              const po = parsePONumbers(shipment.poNumbers ?? '').find((p) => p && String(p).trim())
-              const bk = shipment.bookingNo?.trim()
-              const cmd = bk
-                ? `pnpm exec tsx src/dev/run-matcher.ts --booking=${bk}`
-                : po
-                  ? `pnpm exec tsx src/dev/run-matcher.ts --po=${po}`
-                  : `pnpm exec tsx src/dev/run-matcher.ts --all`
-              return (
-                <div className="flex flex-wrap items-center gap-2">
-                  <code className="max-w-full flex-1 truncate rounded bg-surface-900 px-2 py-1.5 font-mono text-xs text-text-secondary">
-                    {cmd}
-                  </code>
-                  <button
-                    type="button"
-                    className="inline-flex items-center gap-1 rounded border border-border px-2 py-1 text-xs text-text-secondary hover:border-cobalt-primary hover:text-text-primary"
-                    title="Copy rematch command"
-                    onClick={() => {
-                      void navigator.clipboard.writeText(cmd).then(
-                        () => toast('Rematch command copied'),
-                        () => toast('Copy failed'),
-                      )
-                    }}
-                  >
-                    <Copy size={12} /> Copy
-                  </button>
-                </div>
-              )
-            })()}
-          </Card>
 
           {/* Related Emails — always shown so orphan links (body wiped) are not invisible */}
           <Card>
