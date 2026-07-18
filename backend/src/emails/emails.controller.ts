@@ -30,7 +30,18 @@ export class EmailsController {
   @Get('attachments/:id/download')
   async download(@Param('id') id: string, @Res() res: Response) {
     const file = await this.emails.getAttachmentOriginal(id)
-    if (!file) throw new NotFoundException('attachment original not available')
+    if (!file) {
+      // Graph-first: distinguish "no local blob" paths for ops (UI shows message).
+      throw new NotFoundException({
+        statusCode: 404,
+        error: 'Not Found',
+        message:
+          'Attachment not available: no local copy and Graph re-fetch failed or is not configured. ' +
+          'If this was a MIME-only file never handed off at match, re-parse/match the email once. ' +
+          'If Graph-sourced, check mailbox access / graph_attachment_id.',
+        code: 'ATTACHMENT_UNAVAILABLE',
+      })
+    }
     res.setHeader('Content-Type', file.mime)
     res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(file.filename)}`)
     res.send(file.body)

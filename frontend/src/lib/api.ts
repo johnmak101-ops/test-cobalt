@@ -48,7 +48,22 @@ export async function downloadAttachment(attachmentId: string, filename: string)
   const res = await fetch(`${API_BASE}/emails/attachments/${encodeURIComponent(attachmentId)}/download`, {
     credentials: 'include',
   })
-  if (!res.ok) throw new Error(`download failed (${res.status})`)
+  if (!res.ok) {
+    let detail = `download failed (${res.status})`
+    try {
+      const j = (await res.json()) as { message?: string | string[]; code?: string }
+      const m = Array.isArray(j.message) ? j.message.join(' ') : j.message
+      if (m) detail = m
+      if (j.code === 'ATTACHMENT_UNAVAILABLE') {
+        detail =
+          m ||
+          'Attachment unavailable: mailbox/Graph re-fetch failed, or MIME file was never stored at match time.'
+      }
+    } catch {
+      /* keep status detail */
+    }
+    throw new Error(detail)
+  }
   const blob = await res.blob()
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
