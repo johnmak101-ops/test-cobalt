@@ -14,7 +14,7 @@ export interface ManualShipmentInput {
   customerCode?: string; vendorCode?: string; forwarderName?: string; pol?: string; pod?: string; mode?: string
   qty?: number | string; qtyUnit?: string; grossWeight?: number | string; measurement?: number | string
   itemStyleNo?: string; htsCode?: string; consigneeName?: string; consigneeAddress?: string
-  vesselName?: string; voyageNo?: string
+  vesselName?: string; voyageNo?: string; flightNo?: string; mawb?: string
   cargoReadyDate?: string; warehouseStartDate?: string; warehouseEndDate?: string
   etd?: string; atd?: string; eta?: string; ata?: string; inDcDate?: string
   pos?: string[]; note?: string
