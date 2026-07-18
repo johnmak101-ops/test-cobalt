@@ -264,7 +264,7 @@ describe('fieldLabel — the one vocabulary, used by every surface that names a 
     // renamed/removed COLUMN fails here instead of silently rendering the raw column name.
     const rendered = [
       'bookingNo', 'soNo',
-      'qty', 'qtyUnit', 'grossWeight', 'measurement', 'htsCode', 'containerNo', 'hblAwbFcrNo', 'mbl', 'scacCode',
+      'qty', 'qtyUnit', 'grossWeight', 'measurement', 'htsCode', 'containerNo', 'hblAwbFcrNo', 'mbl', 'mawb', 'scacCode',
       'mode', 'polRaw', 'podRaw', 'forwarderRaw',
       'consigneeName', 'consigneeAddress', 'vesselName', 'voyageNo', 'flightNo',
       'cargoReadyDate', 'warehouseStartDate', 'warehouseEndDate', 'cfsCutoff',

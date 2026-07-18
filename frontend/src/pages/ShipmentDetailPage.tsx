@@ -56,17 +56,24 @@ function isAirMode(mode: string | null | undefined): boolean {
 function isSeaMode(mode: string | null | undefined): boolean {
   return (mode ?? '').toUpperCase().startsWith('SEA')
 }
-/** Hide sea-only or air-only shipping fields based on mode. */
+/** Hide sea-only or air-only transport/doc fields based on mode. */
 function shippingFieldVisible(dbColumn: string, mode: string | null | undefined): boolean {
-  if (dbColumn === 'vesselName' || dbColumn === 'voyageNo') {
+  // Sea: vessel + voyage + ocean MBL (not flight/MAWB)
+  if (dbColumn === 'vesselName' || dbColumn === 'voyageNo' || dbColumn === 'mbl') {
     if (isAirMode(mode)) return false
-    return true // sea or unknown
+    return true
   }
-  if (dbColumn === 'flightNo') {
+  // Air: flight + MAWB (not vessel/voyage/MBL)
+  if (dbColumn === 'flightNo' || dbColumn === 'mawb') {
     if (isSeaMode(mode)) return false
-    return true // air or unknown
+    return true
   }
   return true
+}
+
+/** House bill label: HAWB on air, HBL/FCR on sea. */
+function houseBillLabel(mode: string | null | undefined): string {
+  return isAirMode(mode) ? 'HAWB' : fieldLabel('hblAwbFcrNo')
 }
 
 /**
@@ -588,12 +595,17 @@ export default function ShipmentDetailPage() {
               value={shipment.containerNo}
               hint={shipment.containerNo ? undefined : 'assigned at loading (Draft/Final B/L stage)'}
             />
-            <DetailRow label={fieldLabel('hblAwbFcrNo')} value={shipment.hblNumber} />
-            <DetailRow
-              label={fieldLabel('mbl')}
-              value={shipment.mblNumber}
-              hint={!shipment.mblNumber && shipment.hblNumber ? 'house B/L — carrier master B/L not shared' : undefined}
-            />
+            <DetailRow label={houseBillLabel(shipment.mode)} value={shipment.hblNumber} />
+            {shippingFieldVisible('mbl', shipment.mode) && (
+              <DetailRow
+                label={fieldLabel('mbl')}
+                value={shipment.mblNumber}
+                hint={!shipment.mblNumber && shipment.hblNumber ? 'house B/L — carrier master B/L not shared' : undefined}
+              />
+            )}
+            {shippingFieldVisible('mawb', shipment.mode) && (
+              <DetailRow label={fieldLabel('mawb')} value={shipment.mawb ?? null} />
+            )}
             <DetailRow label={fieldLabel('scacCode')} value={shipment.scacCode} />
           </DetailSection>
 

@@ -43,8 +43,9 @@ export const EDITABLE_FIELDS: EditableField[] = [
   { section: 'Cargo & Logistics', label: 'Measurement', uiKey: 'measurement', column: 'measurement', type: 'number', unit: 'CBM' },
   { section: 'Cargo & Logistics', label: 'HTS Code', uiKey: 'htsCode', column: 'htsCode', type: 'text' },
   { section: 'Cargo & Logistics', label: 'Container No.', uiKey: 'containerNo', column: 'containerNo', type: 'text' },
-  { section: 'Cargo & Logistics', label: 'HBL / AWB / FCR No.', uiKey: 'hblNumber', column: 'hblAwbFcrNo', type: 'text' },
+  { section: 'Cargo & Logistics', label: 'HBL / HAWB / FCR No.', uiKey: 'hblNumber', column: 'hblAwbFcrNo', type: 'text' },
   { section: 'Cargo & Logistics', label: 'MBL', uiKey: 'mblNumber', column: 'mbl', type: 'text' },
+  { section: 'Cargo & Logistics', label: 'MAWB', uiKey: 'mawb', column: 'mawb', type: 'text' },
   { section: 'Cargo & Logistics', label: 'SCAC Code', uiKey: 'scacCode', column: 'scacCode', type: 'text' },
   // Mode + port/forwarder *raw* free text — also on PATCH detail edit / review correct. Master
   // customer/vendor stay out (need pickers). #183: operators could see Route/Forwarder read-only
