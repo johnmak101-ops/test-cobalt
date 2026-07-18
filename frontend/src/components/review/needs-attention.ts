@@ -455,7 +455,7 @@ function lineFromReason(raw: string, humanized: string): LineHit | null {
     if (party) {
       return {
         lineId: `m-party:${party[2]}`,
-        text: `"${party[2]}" not found in Mesh Database — advise add in Mesh, then rematch`,
+        text: `"${party[2]}" not found in Mesh Database — advise add in Mesh.`,
         category: 'master_miss',
       }
     }
@@ -472,8 +472,8 @@ function lineFromReason(raw: string, humanized: string): LineHit | null {
     return {
       lineId: quoted ? `m-party:${quoted}` : 'm-party',
       text: quoted
-        ? `"${quoted}" not found in Mesh Database — advise add in Mesh, then rematch`
-        : 'Party not found in Mesh Database — advise add in Mesh, then rematch',
+        ? `"${quoted}" not found in Mesh Database — advise add in Mesh.`
+        : 'Party not found in Mesh Database — advise add in Mesh.',
       category: 'master_miss',
     }
   }
@@ -485,7 +485,7 @@ function lineFromReason(raw: string, humanized: string): LineHit | null {
     if (listHit) {
       return {
         lineId: `m-party:${listHit[1]}`,
-        text: `"${listHit[1]}" not found in Mesh Database — advise add in Mesh, then rematch`,
+        text: `"${listHit[1]}" not found in Mesh Database — advise add in Mesh.`,
         category: 'master_miss',
       }
     }
@@ -605,13 +605,13 @@ function lineFromReason(raw: string, humanized: string): LineHit | null {
     if (quoted) {
       return {
         lineId: `m-party:${quoted}`,
-        text: `"${quoted}" not found in Mesh Database — advise add in Mesh, then rematch`,
+        text: `"${quoted}" not found in Mesh Database — advise add in Mesh.`,
         category: 'master_miss',
       }
     }
     return {
       lineId: 'm-mesh',
-      text: 'Party not found in Mesh Database — advise add in Mesh, then rematch',
+      text: 'Party not found in Mesh Database — advise add in Mesh.',
       category: 'master_miss',
     }
   }
