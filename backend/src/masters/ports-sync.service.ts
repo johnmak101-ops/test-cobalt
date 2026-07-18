@@ -4,7 +4,7 @@
  */
 import { Inject, Injectable, Logger } from '@nestjs/common'
 import { sql, type Kysely } from 'kysely'
-import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'fs'
+import { readFile, writeFile, mkdir } from 'fs/promises'
 import { join } from 'path'
 import type { DB } from '../db/kysely/db'
 import { KYSELY } from '../db/kysely.provider'
@@ -128,13 +128,17 @@ export class PortsSyncService {
     cacheDir?: string
   }): Promise<string> {
     if (opts.path) {
-      return readFileSync(opts.path, 'utf8')
+      return await readFile(opts.path, 'utf8')
     }
     const cacheDir = opts.cacheDir ?? process.env.PORTS_CACHE_DIR ?? ''
     if (cacheDir) {
       const cachePath = join(cacheDir, opts.cacheName)
-      if (existsSync(cachePath) && process.env.PORTS_CACHE_READ === '1') {
-        return readFileSync(cachePath, 'utf8')
+      if (process.env.PORTS_CACHE_READ === '1') {
+        try {
+          return await readFile(cachePath, 'utf8')
+        } catch {
+          /* cache miss — fall through to fetch */
+        }
       }
     }
     const res = await fetch(opts.url, {
@@ -145,8 +149,8 @@ export class PortsSyncService {
     const text = await res.text()
     if (cacheDir) {
       try {
-        mkdirSync(cacheDir, { recursive: true })
-        writeFileSync(join(cacheDir, opts.cacheName), text, 'utf8')
+        await mkdir(cacheDir, { recursive: true })
+        await writeFile(join(cacheDir, opts.cacheName), text, 'utf8')
       } catch {
         /* ignore cache write */
       }
