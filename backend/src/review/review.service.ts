@@ -8,6 +8,7 @@ import type { CalibrationOutcome } from '../db/kysely/db'
 import type { CriticReview } from '../decisions/critic-review.types'
 import { QueueLearningClient } from './queue-learning.client'
 import { syncIdentityMatchKeys } from '../shipments/identity-keys'
+import { coerceLegField } from '../shipments/coerce-field'
 import { keysOverlap, normBookingKey, normKey, strongKeys } from '../reconcile/match-keys'
 import type { CorrectDto, IdentifyDto, LinkDto } from './dto'
 import { logAmbiguityPickFromLink } from './ambiguity-pick-log'
@@ -20,12 +21,6 @@ const KEY_TO_LEG_COLUMN: Record<IdentifyDto['field'], string> = {
   mbl: 'mbl',
   container_no: 'containerNo',
 }
-
-const DATE_FIELDS = new Set([
-  'cargoReadyDate', 'cfsCutoff', 'warehouseStartDate', 'warehouseEndDate', 'etd', 'atd', 'eta', 'ata', 'inDcDate',
-])
-
-const NUMERIC_FIELDS = new Set(['qty', 'grossWeight', 'measurement'])
 
 /**
  * Columns /correct may write. Must stay aligned with frontend mapCriticFieldToColumn /
@@ -40,19 +35,6 @@ const CORRECTABLE_COLUMNS = new Set([
   'mode', 'polRaw', 'podRaw', 'forwarderRaw', 'vendorRaw', 'flightNo', 'mawb',
 ])
 
-/** Coerce a human-entered value to the shipment column's type (dates → Date, numerics → number). */
-function coerce(field: string, value: unknown): unknown {
-  if (value == null || value === '') return null
-  if (DATE_FIELDS.has(field)) {
-    const d = new Date(String(value))
-    return Number.isNaN(d.getTime()) ? null : d
-  }
-  if (NUMERIC_FIELDS.has(field)) {
-    const n = Number(value)
-    return Number.isFinite(n) ? n : null
-  }
-  return String(value)
-}
 const toStr = (v: unknown): string | null => (v == null ? null : v instanceof Date ? v.toISOString() : String(v))
 
 /** Leg (camelCase) column → the queue's snake_case parse-field name (booking_no, hbl_awb_fcr_no, …). The
@@ -221,7 +203,7 @@ export class ReviewService {
     if (!CORRECTABLE_COLUMNS.has(field)) {
       throw new BadRequestException(`field not correctable: ${field}`)
     }
-    const value = coerce(field, raw)
+    const value = coerceLegField(field, raw)
     await this.shipments.updateLeg(shipmentId, { [field]: value })
     await this.fieldLocks.lock('shipment', shipmentId, field, toStr(value), actorId)
     await this.audit.write({
@@ -243,6 +225,12 @@ export class ReviewService {
   async correct(shipmentId: string, dto: CorrectDto, actorId: string) {
     const leg = await this.loadLegForReview(shipmentId, dto.expectedUpdatedAt)
     const current = leg as Record<string, unknown>
+    // All-or-nothing: reject unknown columns and coerce + sanity-gate every value BEFORE the first write,
+    // so a bad value (e.g. a negative quantity) 400s without leaving a partial, half-corrected leg.
+    for (const [field, raw] of Object.entries(dto.fields ?? {})) {
+      if (!CORRECTABLE_COLUMNS.has(field)) throw new BadRequestException(`field not correctable: ${field}`)
+      coerceLegField(field, raw)
+    }
     const corrected: string[] = []
     // Attribute the corrections to a source email (graph id → the queue resolves it to the parsed record);
     // fall back to the shipment id so the correction is still captured when no source email is linked.
