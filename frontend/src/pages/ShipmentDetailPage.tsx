@@ -49,6 +49,26 @@ function toInputValue(v: unknown, type: EditType): string {
   return String(v)
 }
 
+/** Sea modes show vessel/voyage; air modes show flight. Unknown mode shows all present fields. */
+function isAirMode(mode: string | null | undefined): boolean {
+  return (mode ?? '').toUpperCase().startsWith('AIR')
+}
+function isSeaMode(mode: string | null | undefined): boolean {
+  return (mode ?? '').toUpperCase().startsWith('SEA')
+}
+/** Hide sea-only or air-only shipping fields based on mode. */
+function shippingFieldVisible(dbColumn: string, mode: string | null | undefined): boolean {
+  if (dbColumn === 'vesselName' || dbColumn === 'voyageNo') {
+    if (isAirMode(mode)) return false
+    return true // sea or unknown
+  }
+  if (dbColumn === 'flightNo') {
+    if (isSeaMode(mode)) return false
+    return true // air or unknown
+  }
+  return true
+}
+
 /**
  * Turn the "see conflict table" clause into a Review Queue deep-link.
  * Conflict comparison UI lives on ReviewCard, not shipment detail.
@@ -466,7 +486,9 @@ export default function ShipmentDetailPage() {
             <div className="grid grid-cols-1 gap-x-8 gap-y-6 md:grid-cols-2">
               {EDIT_SECTIONS.map((sec) => (
                 <DetailSection key={sec.title} title={sec.title} icon={<ClipboardList size={14} className="text-text-muted" />}>
-                  {sec.fields.map((f) => (
+                  {sec.fields
+                    .filter((f) => shippingFieldVisible(f.db, draft.mode || shipment.mode))
+                    .map((f) => (
                     <div key={f.db} className="grid grid-cols-[7rem_1fr] sm:grid-cols-[9rem_1fr] items-center gap-x-2">
                       <label htmlFor={`${fieldId}-${f.db}`} className="truncate text-xs text-text-muted">{f.label}</label>
                       <input
@@ -479,7 +501,9 @@ export default function ShipmentDetailPage() {
                             ? 'AIR, SEA_FCL, SEA_LCL…'
                             : f.db === 'polRaw' || f.db === 'podRaw'
                               ? 'UN/LOCODE or airport (e.g. CNSHA, HKG)'
-                              : undefined
+                              : f.db === 'flightNo'
+                                ? 'e.g. CA1398'
+                                : undefined
                         }
                         className="h-8 w-full rounded-md border border-border bg-surface-700 px-2 text-sm text-text-primary placeholder:text-text-muted/70 focus:border-cobalt-primary focus:outline-none"
                       />
@@ -582,8 +606,15 @@ export default function ShipmentDetailPage() {
             />
             <DetailRow label={fieldLabel('consigneeName')} value={shipment.consigneeName} />
             <DetailRow label={fieldLabel('consigneeAddress')} value={shipment.consigneeAddress} />
-            <DetailRow label={fieldLabel('vesselName')} value={shipment.vesselName} />
-            <DetailRow label={fieldLabel('voyageNo')} value={shipment.voyageNumber} />
+            {shippingFieldVisible('vesselName', shipment.mode) && (
+              <DetailRow label={fieldLabel('vesselName')} value={shipment.vesselName} />
+            )}
+            {shippingFieldVisible('voyageNo', shipment.mode) && (
+              <DetailRow label={fieldLabel('voyageNo')} value={shipment.voyageNumber} />
+            )}
+            {shippingFieldVisible('flightNo', shipment.mode) && (
+              <DetailRow label={fieldLabel('flightNo')} value={shipment.flightNo ?? null} />
+            )}
             <DetailRow label={fieldLabel('polRaw')} value={shipment.polRaw ?? null} />
             <DetailRow label={fieldLabel('podRaw')} value={shipment.podRaw ?? null} />
             <DetailRow label="Route" value={shipment.route} />

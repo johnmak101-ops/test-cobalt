@@ -266,7 +266,7 @@ describe('fieldLabel — the one vocabulary, used by every surface that names a 
       'bookingNo', 'soNo',
       'qty', 'qtyUnit', 'grossWeight', 'measurement', 'htsCode', 'containerNo', 'hblAwbFcrNo', 'mbl', 'scacCode',
       'mode', 'polRaw', 'podRaw', 'forwarderRaw',
-      'consigneeName', 'consigneeAddress', 'vesselName', 'voyageNo',
+      'consigneeName', 'consigneeAddress', 'vesselName', 'voyageNo', 'flightNo',
       'cargoReadyDate', 'warehouseStartDate', 'warehouseEndDate', 'cfsCutoff',
       'etd', 'atd', 'eta', 'ata', 'inDcDate',
     ]
