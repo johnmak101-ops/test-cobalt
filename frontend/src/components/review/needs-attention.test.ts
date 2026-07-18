@@ -173,4 +173,57 @@ describe('buildNeedsAttention / groups', () => {
     })
     expect(items[0]!.text).toMatch(/Email and system differ on Qty, Gross Weight — choose which values to keep/)
   })
+
+  it('collapses customer/vendor/port/consignee synonym spam into one line per fact', () => {
+    const spam = [
+      '1 field(s) received different values from different emails — see the conflict table for which fields and values',
+      'No 4-char customer code in subject or body; brand/party not resolvable from email content.',
+      'No vendor code in subject or body; factory not identified.',
+      'Consignee not stated in email; only POD Ho Chi Minh City mentioned.',
+      'Party name not in master list — add it in Cobalt Fashion Data Mesh System, then rematch (ops; not a normal review fix)',
+      'Port name did not match UN/LOCODE masters — add or alias the port, then rematch',
+      'No customer code in subject or body; subject has JBSL--SBK0003718107 which is a shipment ref, not a customer code',
+      'No vendor code in subject or body',
+      'No customer code resolvable; invoice party is FENIX FASHION LIMITED (sourcing house, not a customer master code)',
+      'Ho Chi Minh City not in master data; raw value kept',
+      'No 4-char customer code in subject; brand/party not resolvable from email content',
+      'No customer code found in email; FENIX FASHION LIMITED is a sourcing house, not a resolvable 4-char code',
+    ]
+    const items = buildNeedsAttention({
+      conflictsCount: 1, // conflict table owns field-conflict prose
+      riskFlags: [],
+      reviewReasons: spam,
+    })
+    const texts = items.map((i) => i.text)
+
+    // Conflict prose suppressed when table present
+    expect(texts.some((t) => /field\(s\) disagree|conflict table/i.test(t))).toBe(false)
+
+    // One customer line, mentions FENIX if possible
+    const customer = items.filter((i) => i.lineId === 'm-customer' || i.lineId.startsWith('m-customer'))
+    expect(customer.length).toBe(1)
+    expect(customer[0]!.text).toMatch(/Customer/i)
+    expect(customer[0]!.text).toMatch(/FENIX/i)
+
+    // One vendor
+    expect(items.filter((i) => i.lineId === 'm-vendor').length).toBe(1)
+
+    // One consignee
+    expect(items.filter((i) => i.lineId === 'm-consignee').length).toBe(1)
+
+    // One port (prefer value-specific id)
+    const ports = items.filter((i) => i.lineId === 'm-port' || i.lineId.startsWith('m-port:'))
+    expect(ports.length).toBe(1)
+    expect(ports[0]!.text).toMatch(/Ho Chi Minh|port/i)
+
+    // Mesh generic merges into party/port, not a 6th customer
+    expect(items.length).toBeLessThanOrEqual(5)
+
+    const groups = buildNeedsAttentionGroups({
+      conflictsCount: 1,
+      riskFlags: [],
+      reviewReasons: spam,
+    })
+    expect(groups.some((g) => g.groupId === 'master_miss')).toBe(true)
+  })
 })
