@@ -1,6 +1,13 @@
 import { describe, it, expect } from 'vitest'
 import { normKey } from './match-keys'
-import { resolvePoEnrichment, conflictingValues, unattributedBrandStyle, type PoEvidenceInput } from './po-enrichment'
+import {
+  resolvePoEnrichment,
+  conflictingValues,
+  unattributedBrandStyle,
+  summarizeStyleConflict,
+  styleCommaCount,
+  type PoEvidenceInput,
+} from './po-enrichment'
 
 /** Build a parsed_record-shaped evidence row. */
 const row = (over: Partial<PoEvidenceInput> & { id: string }): PoEvidenceInput => ({
@@ -24,6 +31,8 @@ describe('resolvePoEnrichment', () => {
       totalQuantity: 24,
       quantityUnit: 'cartons',
       broadcastSuspected: false,
+      styleBroadcastSuspected: false,
+      styleBroadcastPoCount: null,
       brandConflict: null,
       styleConflict: null,
     })
@@ -54,14 +63,14 @@ describe('resolvePoEnrichment', () => {
     const map = resolvePoEnrichment([
       row({ id: 'a', poNo: 'PO-3', receivedAt: at('2026-06-01T00:00:00Z'), fields: { qty: '1,200 CTNS', qty_unit: 'boxes' } }),
     ])
-    expect(map.get(normKey('PO-3'))).toEqual({ brand: null, itemStyleNo: null, totalQuantity: 1200, quantityUnit: null, broadcastSuspected: false, brandConflict: null, styleConflict: null })
+    expect(map.get(normKey('PO-3'))).toMatchObject({ brand: null, itemStyleNo: null, totalQuantity: 1200, quantityUnit: null, broadcastSuspected: false })
   })
 
   it('leaves quantityUnit null when there is no qty', () => {
     const map = resolvePoEnrichment([
       row({ id: 'a', poNo: 'PO-4', receivedAt: at('2026-06-01T00:00:00Z'), fields: { brand: 'ACME', qty_unit: 'cartons' } }),
     ])
-    expect(map.get(normKey('PO-4'))).toEqual({ brand: 'ACME', itemStyleNo: null, totalQuantity: null, quantityUnit: null, broadcastSuspected: false, brandConflict: null, styleConflict: null })
+    expect(map.get(normKey('PO-4'))).toMatchObject({ brand: 'ACME', itemStyleNo: null, totalQuantity: null, quantityUnit: null, broadcastSuspected: false })
   })
 
   it('falls back to match_keys.customer_po when po_no is null', () => {
@@ -320,6 +329,95 @@ describe('resolvePoEnrichment — #124 style OCR family keep letter form', () =>
     expect(enr.itemStyleNo).toMatch(/PS1/)
     expect(enr.itemStyleNo).not.toMatch(/951/)
     expect(enr.styleConflict).toBeNull()
+  })
+})
+
+describe('resolvePoEnrichment — T1a specific-beats-superset item_style_no', () => {
+  it('picks a single style over a newer multi-token broadcast list', () => {
+    // IZAC class: correct single at 03:39; broadcast 5-list committed earlier but still "newer" mid-thread
+    const map = resolvePoEnrichment([
+      row({
+        id: 'single',
+        poNo: '12204',
+        messageId: 'm1',
+        receivedAt: at('2026-07-18T03:07:00Z'),
+        fields: { item_style_no: 'PUH26BHALE' },
+      }),
+      row({
+        id: 'bcast',
+        poNo: '12204',
+        messageId: 'm1',
+        receivedAt: at('2026-07-18T03:10:00Z'),
+        fields: {
+          item_style_no: 'PUH26BAINE, PUH26BENJI, PUH26BHALE, BONNIE, BOH26YACOTE',
+        },
+      }),
+    ])
+    expect(map.get(normKey('12204'))?.itemStyleNo).toBe('PUH26BHALE')
+    expect(styleCommaCount(map.get(normKey('12204'))!.itemStyleNo!)).toBe(1)
+  })
+
+  it('among same token-count, newest wins', () => {
+    const map = resolvePoEnrichment([
+      row({ id: 'old', poNo: 'PO-X', receivedAt: at('2026-06-01T00:00:00Z'), fields: { item_style_no: 'AAA' } }),
+      row({ id: 'new', poNo: 'PO-X', receivedAt: at('2026-06-02T00:00:00Z'), fields: { item_style_no: 'BBB' } }),
+    ])
+    expect(map.get(normKey('PO-X'))?.itemStyleNo).toBe('BBB')
+  })
+
+  it('genuine multi-style PO (only multi-token statements) keeps multi-token', () => {
+    const map = resolvePoEnrichment([
+      row({
+        id: 'a',
+        poNo: 'PO-M',
+        receivedAt: at('2026-06-02T00:00:00Z'),
+        fields: { item_style_no: 'STYLE-A, STYLE-B' },
+      }),
+    ])
+    expect(map.get(normKey('PO-M'))?.itemStyleNo).toBe('STYLE-A, STYLE-B')
+  })
+})
+
+describe('resolvePoEnrichment — T1b style broadcast across ≥3 POs of one email', () => {
+  it('flags when the same multi-token list appears on ≥3 POs', () => {
+    const list = 'A, B, C, D, E'
+    const map = resolvePoEnrichment([
+      row({ id: '1', poNo: 'PO-1', messageId: 'msg', receivedAt: at('2026-06-30T05:00:00Z'), fields: { item_style_no: list } }),
+      row({ id: '2', poNo: 'PO-2', messageId: 'msg', receivedAt: at('2026-06-30T05:00:00Z'), fields: { item_style_no: list } }),
+      row({ id: '3', poNo: 'PO-3', messageId: 'msg', receivedAt: at('2026-06-30T05:00:00Z'), fields: { item_style_no: list } }),
+    ])
+    for (const po of ['PO-1', 'PO-2', 'PO-3']) {
+      expect(map.get(normKey(po))?.styleBroadcastSuspected).toBe(true)
+      expect(map.get(normKey(po))?.styleBroadcastPoCount).toBe(3)
+      expect(map.get(normKey(po))?.itemStyleNo).toBe(list) // kept (de-correction)
+    }
+  })
+
+  it('does NOT flag when each PO has its own single', () => {
+    const map = resolvePoEnrichment([
+      row({ id: '1', poNo: 'PO-1', messageId: 'msg', receivedAt: at('2026-06-30T05:00:00Z'), fields: { item_style_no: 'S1' } }),
+      row({ id: '2', poNo: 'PO-2', messageId: 'msg', receivedAt: at('2026-06-30T05:00:00Z'), fields: { item_style_no: 'S2' } }),
+      row({ id: '3', poNo: 'PO-3', messageId: 'msg', receivedAt: at('2026-06-30T05:00:00Z'), fields: { item_style_no: 'S3' } }),
+    ])
+    for (const po of ['PO-1', 'PO-2', 'PO-3']) {
+      expect(map.get(normKey(po))?.styleBroadcastSuspected).toBe(false)
+    }
+  })
+})
+
+describe('summarizeStyleConflict (T2)', () => {
+  it('shows only differing tokens and the kept value', () => {
+    const s = summarizeStyleConflict(['B0NNIE, PUH26BHALE', 'BONNIE, PUH26BHALE'], 'PUH26BHALE')
+    expect(s).toMatch(/item\/style/)
+    expect(s).toMatch(/B0NNIE/)
+    expect(s).toMatch(/BONNIE/)
+    expect(s).toMatch(/kept PUH26BHALE/)
+    expect(s).not.toMatch(/PUH26BHALE vs/) // common token not dumped as a vs pair alone
+  })
+
+  it('caps at 2 diffs + N more', () => {
+    const s = summarizeStyleConflict(['A,B,C', 'D,E,F'], 'A')
+    expect(s).toMatch(/\+2 more|\+4 more|vs/)
   })
 })
 

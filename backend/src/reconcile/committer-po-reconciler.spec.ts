@@ -13,6 +13,8 @@ const enr = (over: Partial<PoEnrichment> = {}): PoEnrichment => ({
   totalQuantity: null,
   quantityUnit: null,
   broadcastSuspected: false,
+  styleBroadcastSuspected: false,
+  styleBroadcastPoCount: null,
   brandConflict: null,
   styleConflict: null,
   ...over,
@@ -114,12 +116,73 @@ describe('mergeReviewReasonsWithDataIssues (recompute, do not accumulate)', () =
   })
 
   it('replaces old style conflict with a fresh one (does not keep both)', () => {
-    const fresh =
-      'PO 16068194: item_style_no conflict AAA vs BBB (kept AAA) — verify'
+    const fresh = 'PO 16068194: item/style "AAA" vs "BBB" (kept AAA) — verify'
     const merged = mergeReviewReasonsWithDataIssues([staleStyle, masterMiss], [fresh])
     expect(merged).toEqual([masterMiss, fresh])
-    expect(merged.filter((r) => /item_style_no conflict/i.test(r))).toHaveLength(1)
+    expect(merged.filter((r) => /item(?:_style_no conflict|\/style)/i.test(r))).toHaveLength(1)
     expect(merged.some((r) => /951/.test(r))).toBe(false)
+  })
+
+  it('classifies new T2 item/style and T1b copied-style reasons as recomputed', () => {
+    expect(
+      isRecomputedDataIssueReason(
+        'PO 12204: item/style "B0NNIE" vs "BONNIE" (kept PUH26BHALE) — verify',
+      ),
+    ).toBe(true)
+    expect(
+      isRecomputedDataIssueReason(
+        'PO 12204: item/style looks copied across all 5 POs of this email — verify per-PO',
+      ),
+    ).toBe(true)
+  })
+
+  it('emits T2-format style conflict (not full list dump)', () => {
+    // Map keys are normKey(po) — same as production planPoReconcile lookup
+    const map = new Map([
+      [
+        '12204',
+        enr({
+          itemStyleNo: 'PUH26BHALE',
+          styleConflict: ['B0NNIE, PUH26BHALE', 'BONNIE, PUH26BHALE'],
+        }),
+      ],
+    ])
+    const plan = planPoReconcile({
+      pos: ['12204'],
+      fields: {},
+      poEnrichment: map,
+      unattributed: [],
+      gk: new Set(),
+    })
+    const r = plan.poFlagReasons.find((x) => /item\/style/i.test(x))
+    expect(r).toBeDefined()
+    expect(r).toMatch(/PO 12204: item\/style/)
+    expect(r).toMatch(/kept PUH26BHALE/)
+    expect(r).not.toMatch(/item_style_no conflict/)
+  })
+
+  it('emits T1b style-broadcast flag when enrichment marks it', () => {
+    // Map key = normKey('PO-A') → 'POA'
+    const map = new Map([
+      [
+        'POA',
+        enr({
+          itemStyleNo: 'A, B, C, D, E',
+          styleBroadcastSuspected: true,
+          styleBroadcastPoCount: 5,
+        }),
+      ],
+    ])
+    const plan = planPoReconcile({
+      pos: ['PO-A'],
+      fields: {},
+      poEnrichment: map,
+      unattributed: [],
+      gk: new Set(),
+    })
+    expect(
+      plan.poFlagReasons.some((r) => /item\/style looks copied across all 5 POs of this email/i.test(r)),
+    ).toBe(true)
   })
 
   it('preserves order of non-recomputed priors and appends new data issues', () => {
