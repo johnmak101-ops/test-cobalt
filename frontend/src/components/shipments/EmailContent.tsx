@@ -164,14 +164,17 @@ export function EmailAttachments({
  */
 function AttachmentChip({ att }: { att: { id: string; filename: string; sizeBytes: number } }) {
   const [status, setStatus] = useState<'idle' | 'loading' | 'error'>('idle')
+  const [errMsg, setErrMsg] = useState<string | null>(null)
   const run = async () => {
     if (status === 'loading') return
     setStatus('loading')
+    setErrMsg(null)
     try {
       await downloadAttachment(att.id, att.filename)
       setStatus('idle')
-    } catch {
+    } catch (e) {
       setStatus('error')
+      setErrMsg(e instanceof Error ? e.message : 'Download failed')
     }
   }
   return (
@@ -180,7 +183,7 @@ function AttachmentChip({ att }: { att: { id: string; filename: string; sizeByte
       disabled={status === 'loading'}
       title={
         status === 'loading' ? `Downloading ${att.filename}…`
-        : status === 'error' ? `Download failed — click to retry`
+        : status === 'error' ? (errMsg ?? 'Download failed — click to retry')
         : `Download ${att.filename}`
       }
       aria-busy={status === 'loading'}
