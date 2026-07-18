@@ -8,7 +8,7 @@ import { MilestoneTimeline } from '../components/shipments/MilestoneTimeline'
 import { ShipmentHistoryTimeline } from '../components/shipments/ShipmentHistoryTimeline'
 import { AlertCard } from '../components/alerts/AlertCard'
 import { formatDate, formatDateTime, formatDateMaybeTime, cn, parsePONumbers } from '../lib/utils'
-import { humanizeReasons } from '../lib/review-reasons'
+import { buildNeedsAttentionGroups } from '../components/review/needs-attention'
 import { EDITABLE_FIELDS, fieldLabel, type EditableField } from '../lib/review-fields'
 import { toast } from '../components/ui/Toast'
 import { ArrowLeft, Mail, Clock, ClipboardList, Package, Ship, Calendar, AlertTriangle, AlertCircle, Info, Pencil, Check, X, NotebookPen, Copy } from 'lucide-react'
@@ -146,6 +146,13 @@ export default function ShipmentDetailPage() {
   const editedCount = editing ? Object.keys(computeChanged()).length : 0
   const saveBlocked = editedCount > 0 && !note.trim()
 
+  // Collapsed Needs attention groups (same builder as ReviewCard) — show for any shipment with items.
+  const attentionGroups = buildNeedsAttentionGroups({
+    reviewReasons: shipment.reviewReasons ?? [],
+    riskFlags: shipment.criticReview?.riskFlags ?? [],
+    conflictsCount: (shipment.fieldConflicts ?? []).length,
+  })
+
   return (
     <div className="space-y-6">
 
@@ -183,21 +190,15 @@ export default function ShipmentDetailPage() {
         </div>
       </div>
 
-      {/* Review banner — a provisional shipment is committed but unconfirmed; surface WHY + the fix path */}
+      {/* Review banner — provisional = committed but unconfirmed; fix path is Review Queue */}
       {shipment.reviewStatus === 'provisional' && (
         <div className="flex flex-wrap items-start gap-3 rounded-xl border border-status-warning/40 bg-status-warning/10 px-4 py-3">
           <AlertTriangle size={16} className="mt-0.5 shrink-0 text-status-warning" />
           <div className="min-w-0 flex-1">
             <p className="text-sm font-medium text-status-warning">Awaiting Review</p>
-            {(shipment.reviewReasons?.length ?? 0) > 0 && (
-              <ul className="mt-1.5 list-disc space-y-1 pl-4 text-xs text-text-secondary">
-                {humanizeReasons(shipment.reviewReasons!).map(({ raw, text }) => (
-                  <li key={raw} title={raw}>
-                    {text}
-                  </li>
-                ))}
-              </ul>
-            )}
+            <p className="mt-0.5 text-xs text-text-secondary">
+              This shipment is committed but unconfirmed. Resolve issues below, then approve in the review queue.
+            </p>
           </div>
           <Link
             to="/review-queue"
@@ -206,6 +207,33 @@ export default function ShipmentDetailPage() {
           >
             Review & approve →
           </Link>
+        </div>
+      )}
+
+      {/* Needs attention — grouped/collapsed (same as ReviewCard); not limited to provisional */}
+      {attentionGroups.length > 0 && (
+        <div
+          className="rounded-xl border border-border bg-surface-900/40 px-4 py-3"
+          data-testid="needs-attention-detail"
+        >
+          <p className="text-sm font-medium text-text-primary">Needs attention</p>
+          <div className="mt-2 space-y-3">
+            {attentionGroups.map((g) => (
+              <div key={g.groupId}>
+                <p className="text-xs font-semibold uppercase tracking-wide text-text-muted">{g.title}</p>
+                <ul className="mt-1 list-disc space-y-1 pl-4 text-xs text-text-secondary">
+                  {g.items.map((it) => (
+                    <li
+                      key={it.lineId}
+                      title={[it.key, ...(it.evidence ?? [])].filter(Boolean).join('\n')}
+                    >
+                      {it.text}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 

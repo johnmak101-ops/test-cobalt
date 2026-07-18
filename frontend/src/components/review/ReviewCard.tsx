@@ -544,7 +544,11 @@ export function ReviewCard({
                       <p className="text-[11px] font-medium text-text-secondary">{g.title}</p>
                       <ul className="mt-0.5 space-y-1">
                         {g.items.map((r) => (
-                          <li key={r.key} className="flex items-start gap-1.5 text-xs text-text-secondary">
+                          <li
+                            key={r.key}
+                            className="flex items-start gap-1.5 text-xs text-text-secondary"
+                            title={r.evidence?.join(' · ') || undefined}
+                          >
                             <span
                               className={cn(
                                 'mt-1 inline-block h-1.5 w-1.5 shrink-0 rounded-full',

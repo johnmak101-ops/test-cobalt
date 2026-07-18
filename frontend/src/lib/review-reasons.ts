@@ -354,6 +354,8 @@ const CATEGORY_RULES: Array<{ match: RegExp; category: ReasonCategory }> = [
   { match: /unresolved field conflict/i, category: 'conflict' },
   // Gate emits "N field conflict(s)" without "unresolved" — must still be conflict (#168)
   { match: /\d+\s*field conflict\(s\)/i, category: 'conflict' },
+  // Humanized / collapsed conflict prose ("1 field(s) received different values…")
+  { match: /received different values/i, category: 'conflict' },
   { match: /disagrees with what.s already on the shipment/i, category: 'conflict' },
   { match: /mode change \S+ → \S+/i, category: 'conflict' },
   { match: /transport switched between sea and air/i, category: 'conflict' },
@@ -375,8 +377,17 @@ const CATEGORY_RULES: Array<{ match: RegExp; category: ReasonCategory }> = [
   { match: /Cannot match/i, category: 'master_miss' },
   { match: /Cobalt Fashion Data Mesh/i, category: 'master_miss' },
   { match: /UN\/LOCODE/i, category: 'master_miss' },
+  // Synonym spam / collapse prose (customer, port city, Mesh humanize)
+  { match: /no\s+4-?char\s+customer\s+code|no\s+customer\s+code|sourcing house, not a/i, category: 'master_miss' },
+  { match: /shipment ref, not a customer code/i, category: 'master_miss' },
+  { match: /not in master data|raw value kept/i, category: 'master_miss' },
+  { match: /Party name not in master list/i, category: 'master_miss' },
+  { match: /Port name did not match UN\/LOCODE/i, category: 'master_miss' },
   { match: /vision_pending|output_truncated|input_truncated|content_filter/i, category: 'extraction' },
   { match: /attachment|missing cargo detail|screenshot|broadcast total/i, category: 'extraction' },
+  // Vendor/consignee missing from email (incomplete extract, not Mesh master miss)
+  { match: /no\s+vendor\s+code|factory not identified/i, category: 'extraction' },
+  { match: /consignee not stated/i, category: 'extraction' },
 ]
 
 /** Bucket one raw review reason for the queue's filter chips. Unknown strings → 'other'. */
