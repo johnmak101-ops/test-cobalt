@@ -6,6 +6,7 @@
 import type { Band, CriticReview } from '../../decisions/critic-review.types'
 import { stateToUiStatus } from '../adapters/enums'
 import { deriveRoute, portLabel, deriveOriginCountry, poNumbersJson, isoOrNull } from '../adapters/derive'
+import { filterPortMissReasons } from './port-miss-reasons'
 
 export interface MasterRef {
   id: string
@@ -199,7 +200,11 @@ export function toUiShipment(
     cancelled: leg.legStatus === 'CANCELLED',
     riskLevel: leg.riskLevel ?? null,
     reviewStatus: leg.reviewStatus ?? null,
-    reviewReasons: leg.reviewReasons ?? [],
+    // Drop stale "Cannot match FRANCE as a port" when pol/pod already auto-linked to LOCODEs.
+    reviewReasons: filterPortMissReasons(leg.reviewReasons ?? [], {
+      polLinked: !!(leg as { polId?: string | null }).polId || !!input.polPort?.unlocode,
+      podLinked: !!(leg as { podId?: string | null }).podId || !!input.podPort?.unlocode,
+    }),
     dismissedAt: isoOrNull(leg.dismissedAt ?? null),
     legNo: legMeta.legNo ?? 1,
     legCount: legMeta.legCount ?? 1,
