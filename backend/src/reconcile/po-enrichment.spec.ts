@@ -234,6 +234,44 @@ describe('resolvePoEnrichment — brand/style conflict surfacing (de-correction 
     ])
     expect(map.get(normKey('PO-4'))?.brandConflict).toBeNull()
   })
+
+  it('does NOT flag PRMK vs primark as brand conflict (customer code vs full name)', () => {
+    // Live Primark packing: Customer CODE=PRMK on table; LLM/subject sometimes emits brand=primark.
+    const map = resolvePoEnrichment([
+      row({
+        id: 'llm',
+        poNo: 'C13756522',
+        receivedAt: at('2026-07-16T02:45:00Z'),
+        fields: { brand: 'primark', customer_code: 'PRMK' },
+      }),
+      row({
+        id: 'old',
+        poNo: 'C13756522',
+        receivedAt: at('2026-07-02T03:30:00Z'),
+        fields: { brand: 'PRMK' },
+      }),
+    ])
+    const enr = map.get(normKey('C13756522'))
+    expect(enr?.brandConflict).toBeNull()
+    // Prefer the short master code when collapsing code↔name
+    expect(enr?.brand).toBe('PRMK')
+  })
+
+  it('case-insensitive brand: primark vs PRIMARK is not a conflict', () => {
+    const map = resolvePoEnrichment([
+      row({ id: 'a', poNo: 'PO-5', receivedAt: at('2026-06-02T00:00:00Z'), fields: { brand: 'primark' } }),
+      row({ id: 'b', poNo: 'PO-5', receivedAt: at('2026-06-01T00:00:00Z'), fields: { brand: 'PRIMARK' } }),
+    ])
+    expect(map.get(normKey('PO-5'))?.brandConflict).toBeNull()
+  })
+
+  it('still flags true brand conflicts (Barbour vs FENIX)', () => {
+    const map = resolvePoEnrichment([
+      row({ id: 'old', poNo: 'PO-6', receivedAt: at('2026-06-01T00:00:00Z'), fields: { brand: 'Barbour' } }),
+      row({ id: 'new', poNo: 'PO-6', receivedAt: at('2026-06-02T00:00:00Z'), fields: { brand: 'FENIX' } }),
+    ])
+    expect([...(map.get(normKey('PO-6'))?.brandConflict ?? [])].sort()).toEqual(['Barbour', 'FENIX'])
+  })
 })
 
 describe('conflictingValues', () => {
