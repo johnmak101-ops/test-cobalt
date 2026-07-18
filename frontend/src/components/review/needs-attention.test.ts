@@ -156,7 +156,7 @@ describe('buildNeedsAttention / groups', () => {
     })
     expect(items).toHaveLength(1)
     expect(items[0]!.text).toBe(
-      '"DP WORLD CHINA CO., LTD. GUANGZHOU BRANCH" not found in Mesh Database — advise add in Mesh, then rematch',
+      '"DP WORLD CHINA CO., LTD. GUANGZHOU BRANCH" not found in Mesh Database — advise add in Mesh.',
     )
   })
 

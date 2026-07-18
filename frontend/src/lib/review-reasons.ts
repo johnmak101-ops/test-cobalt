@@ -147,16 +147,16 @@ const TRANSLATIONS: Translation[] = [
   },
   {
     match: /Cannot match "([^"]+)" in the (?:forwarder|customer|vendor|consignee) list/i,
-    text: (m) => `"${m[1]}" not found in Mesh Database — advise add in Mesh, then rematch`,
+    text: (m) => `"${m[1]}" not found in Mesh Database — advise add in Mesh.`,
   },
   {
     match: /Cannot match .+ Cobalt Fashion Data Mesh System/i,
     text: () =>
-      'Party not found in Mesh Database — advise add in Mesh, then rematch',
+      'Party not found in Mesh Database — advise add in Mesh.',
   },
   {
     match: /^(\w+)\s+"([^"]+)"\s+did not exact-match a master/i,
-    text: (m) => `"${m[2]}" not found in Mesh Database — advise add in Mesh, then rematch`,
+    text: (m) => `"${m[2]}" not found in Mesh Database — advise add in Mesh.`,
   },
   {
     match: /Cannot match .+ masters catalog is empty/i,
@@ -200,7 +200,7 @@ const TRANSLATIONS: Translation[] = [
   {
     // Port-specific handled above; party master miss uses Mesh copy (earlier rule also matches).
     match: /^(\w+)\s+"([^"]+)"\s+did not exact-match a master/i,
-    text: (m) => `"${m[2]}" not found in Mesh Database — advise add in Mesh, then rematch`,
+    text: (m) => `"${m[2]}" not found in Mesh Database — advise add in Mesh.`,
   },
   {
     match: /did not exact(?:\/curated)?-match a port master/i,
@@ -208,7 +208,7 @@ const TRANSLATIONS: Translation[] = [
   },
   {
     match: /did not exact-match a master/i,
-    text: () => 'Party not found in Mesh Database — advise add in Mesh, then rematch',
+    text: () => 'Party not found in Mesh Database — advise add in Mesh.',
   },
   {
     // "PO 2605358: total_quantity 692 looks like a broadcast total …"
