@@ -43,6 +43,8 @@ const DATES: Field[] = [
 ]
 
 const STRONG: (keyof CreateShipmentInput)[] = ['bookingNo', 'soNo', 'hblAwbFcrNo', 'mbl', 'containerNo']
+/** Rendered as number inputs with min=0 (the backend rejects negatives / bad counts regardless). */
+const NUMERIC: (keyof CreateShipmentInput)[] = ['qty', 'grossWeight', 'measurement']
 
 export function NewShipmentModal({ onClose }: { onClose: () => void }) {
   const navigate = useNavigate()
@@ -79,6 +81,9 @@ export function NewShipmentModal({ onClose }: { onClose: () => void }) {
         value={form[fld.key] ?? ''}
         onChange={(e) => set(fld.key, e.target.value)}
         placeholder={fld.placeholder}
+        type={NUMERIC.includes(fld.key) ? 'number' : undefined}
+        min={NUMERIC.includes(fld.key) ? 0 : undefined}
+        step={fld.key === 'qty' ? 1 : NUMERIC.includes(fld.key) ? 'any' : undefined}
         className="h-9 rounded-lg border border-border bg-surface-900 px-3 text-sm text-text-primary placeholder:text-text-muted focus:border-cobalt-primary focus:outline-none"
       />
     </label>
@@ -131,7 +136,9 @@ export function NewShipmentModal({ onClose }: { onClose: () => void }) {
 
         <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border p-4">
           <span className="text-xs text-status-critical">
-            {create.isError ? 'Failed to create — please try again.' : !canSubmit ? 'Enter a booking/SO/HBL/MBL/container number or a PO.' : ''}
+            {create.isError
+              ? `Failed to create — ${(create.error instanceof Error ? create.error.message : '').replace(/^API error \d+:\s*/, '') || 'please try again.'}`
+              : !canSubmit ? 'Enter a booking/SO/HBL/MBL/container number or a PO.' : ''}
           </span>
           <div className="flex items-center gap-2">
             <button type="button" onClick={onClose} className="rounded-lg bg-surface-700 px-3 py-1.5 text-xs font-medium text-text-secondary hover:bg-surface-600 hover:text-text-primary">

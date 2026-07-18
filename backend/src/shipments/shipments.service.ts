@@ -106,6 +106,10 @@ export class ShipmentsService {
     for (const m of CREATE_FIELD_MAP) {
       const v = val(m.dto)
       if (v == null) continue
+      // Same human-input gate as editFields (numeric + SCAC/container format). createManual is human-only
+      // (POST /shipments), so this rejects a person's typo before the committer — the agent's write path
+      // never comes through here, so gating it does not violate the de-correction principle.
+      coerceLegField(m.dto, v)
       fields[m.parser] = v
       if (STRONG_DTO.has(m.dto)) matchKeys[m.parser] = String(v)
     }

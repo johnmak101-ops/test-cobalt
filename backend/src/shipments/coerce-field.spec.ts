@@ -43,8 +43,32 @@ describe('coerceLegField — human-edit coercion + numeric sanity gate', () => {
     expect(coerceLegField('etd', 'not-a-date')).toBeNull()
   })
 
-  it('passes text columns through as string (HTS format is NOT gated in this scope)', () => {
+  it('passes text columns through as string; HTS is warn-only (frontend), never backend-rejected', () => {
     expect(coerceLegField('soNo', 123)).toBe('123')
     expect(coerceLegField('htsCode', '6110test')).toBe('6110test')
+    expect(coerceLegField('htsCode', '6110.20.2020')).toBe('6110.20.2020')
+  })
+
+  it('rejects a malformed SCAC (not 2-4 letters) with 400', () => {
+    expect(() => coerceLegField('scacCode', 'MSC1')).toThrow(BadRequestException) // has a digit
+    expect(() => coerceLegField('scacCode', 'TOOLONG')).toThrow(BadRequestException) // > 4
+    expect(() => coerceLegField('scacCode', 'M')).toThrow(BadRequestException) // < 2
+  })
+
+  it('accepts a valid SCAC (2-4 letters, any case) and clears a blank one', () => {
+    expect(coerceLegField('scacCode', 'MAEU')).toBe('MAEU')
+    expect(coerceLegField('scacCode', 'msc')).toBe('msc')
+    expect(coerceLegField('scacCode', '')).toBeNull()
+  })
+
+  it('rejects a malformed container (not ISO-6346 4 letters + 7 digits) with 400', () => {
+    expect(() => coerceLegField('containerNo', 'MSBU728120')).toThrow(BadRequestException) // 6 digits
+    expect(() => coerceLegField('containerNo', 'MS1U7281200')).toThrow(BadRequestException) // digit in prefix
+    expect(() => coerceLegField('containerNo', 'garbage')).toThrow(BadRequestException)
+  })
+
+  it('accepts a valid container number and clears a blank one', () => {
+    expect(coerceLegField('containerNo', 'MSBU7281200')).toBe('MSBU7281200')
+    expect(coerceLegField('containerNo', '')).toBeNull()
   })
 })
