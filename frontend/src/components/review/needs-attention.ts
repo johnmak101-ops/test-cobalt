@@ -736,6 +736,39 @@ function collapseGenericPort(byLine: Map<string, NeedsAttentionItem>): void {
   byLine.delete('m-port')
 }
 
+/** UN/LOCODE (5-char) — used to detect that a port slot already auto-matched. */
+const LOCODE_RE = /^[A-Z]{2}[A-Z0-9]{3}$/i
+
+/** True when a free-text looks like a resolved LOCODE (e.g. CNYTN, VNSGN). */
+export function looksLikeLocode(value: string | null | undefined): boolean {
+  return !!value && LOCODE_RE.test(String(value).trim())
+}
+
+/**
+ * Infer linked ports from a UI route string like "CNYTN→VNSGN" or "CNYTN -> VNSGN".
+ * Review-queue rows only carry `route`, not polId/podId.
+ */
+export function portsLinkedFromRoute(route: string | null | undefined): { pol: boolean; pod: boolean } {
+  if (!route?.trim()) return { pol: false, pod: false }
+  const parts = route.split(/\s*(?:→|->|—|–)\s*/).map((s) => s.trim()).filter(Boolean)
+  return {
+    pol: looksLikeLocode(parts[0]),
+    pod: looksLikeLocode(parts[1]),
+  }
+}
+
+/** Port-miss Needs-attention lines (country/city synonyms after LOCODE auto-match). */
+function isPortMissLine(hit: { lineId: string; text: string }): boolean {
+  if (hit.lineId === 'm-port' || hit.lineId.startsWith('m-port:')) return true
+  return (
+    /as a port\b/i.test(hit.text) ||
+    /UN\/LOCODE/i.test(hit.text) ||
+    /not in UN\/LOCODE/i.test(hit.text) ||
+    /did not match a known port/i.test(hit.text) ||
+    (/not in master data/i.test(hit.text) && /raw value kept|raw kept/i.test(hit.text))
+  )
+}
+
 /**
  * Flat list of unique short lines (no cap). Prefer {@link buildNeedsAttentionGroups} for UI.
  */
@@ -744,8 +777,14 @@ export function buildNeedsAttention(opts: {
   reviewReasons?: string[] | null
   conflictsCount: number
   max?: number
+  /**
+   * When either pol or pod is already LOCODE-linked, drop port-miss flags/reasons
+   * (e.g. "Port VIETNAM" / "Ho Chi Minh City" after pod=VNSGN).
+   */
+  portsLinked?: { pol?: boolean; pod?: boolean } | null
 }): NeedsAttentionItem[] {
   const tableOwnsConflicts = opts.conflictsCount > 0
+  const dropPortMiss = !!(opts.portsLinked?.pol || opts.portsLinked?.pod)
   const flags = (opts.riskFlags ?? []).filter((f) => f?.message)
   const byLine = new Map<string, NeedsAttentionItem>()
   const explained = new Set<ReasonCategory>()
@@ -760,6 +799,7 @@ export function buildNeedsAttention(opts: {
     const hit = lineFromFlag(f.code, f.message!)
     if (!hit) continue
     if (hit.category === 'conflict' && tableOwnsConflicts) continue
+    if (dropPortMiss && isPortMissLine(hit)) continue
     pushUnique(byLine, {
       key: `flag-${f.code}-${i}`,
       lineId: hit.lineId,
@@ -778,6 +818,7 @@ export function buildNeedsAttention(opts: {
     const hit = lineFromReason(raw, text)
     if (!hit) continue
     if (hit.category === 'conflict' && tableOwnsConflicts) continue
+    if (dropPortMiss && isPortMissLine(hit)) continue
     // Drop reason if a flag already explained that category (and line not more specific)
     if (explained.has(hit.category) && !hit.lineId.startsWith('m-port:') && !hit.lineId.startsWith('m-party:')) {
       // Still allow master detail lines with quoted values when only generic party flag present
@@ -813,6 +854,7 @@ export function buildNeedsAttentionGroups(opts: {
   riskFlags?: Array<{ code: string; severity?: string; message?: string }> | null
   reviewReasons?: string[] | null
   conflictsCount: number
+  portsLinked?: { pol?: boolean; pod?: boolean } | null
 }): NeedsAttentionGroup[] {
   const items = buildNeedsAttention(opts)
   const byGroup = new Map<NeedsAttentionGroupId, NeedsAttentionItem[]>()

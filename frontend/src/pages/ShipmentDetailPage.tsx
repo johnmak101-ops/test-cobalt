@@ -8,7 +8,7 @@ import { MilestoneTimeline } from '../components/shipments/MilestoneTimeline'
 import { ShipmentHistoryTimeline } from '../components/shipments/ShipmentHistoryTimeline'
 import { AlertCard } from '../components/alerts/AlertCard'
 import { formatDate, formatDateTime, formatDateMaybeTime, cn } from '../lib/utils'
-import { buildNeedsAttentionGroups } from '../components/review/needs-attention'
+import { buildNeedsAttentionGroups, looksLikeLocode } from '../components/review/needs-attention'
 import { EDITABLE_FIELDS, fieldLabel, type EditableField } from '../lib/review-fields'
 import { toast } from '../components/ui/Toast'
 import { ArrowLeft, Mail, Clock, ClipboardList, Package, Ship, Calendar, AlertTriangle, AlertCircle, Info, Pencil, Check, X, NotebookPen } from 'lucide-react'
@@ -178,6 +178,11 @@ export default function ShipmentDetailPage() {
     reviewReasons: shipment.reviewReasons ?? [],
     riskFlags: shipment.criticReview?.riskFlags ?? [],
     conflictsCount: fieldConflictCount,
+    // LOCODE on polRaw/podRaw ⇒ auto-matched — hide country/city port-miss noise (VIETNAM, HCMC)
+    portsLinked: {
+      pol: looksLikeLocode(shipment.polRaw),
+      pod: looksLikeLocode(shipment.podRaw),
+    },
   })
   const reviewQueueState = { expandId: shipment.id }
   const showConflictTableCta = fieldConflictCount > 0
