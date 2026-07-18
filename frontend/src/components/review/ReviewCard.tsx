@@ -19,7 +19,7 @@ import { CandidateLegsPanel } from './CandidateLegsPanel'
 import type { ReviewShipment } from '../../hooks/use-review-queue'
 import type { ShipmentDetail } from '../../hooks/use-shipments'
 import { cn, formatDateTime } from '../../lib/utils'
-import { buildNeedsAttentionGroups } from './needs-attention'
+import { buildNeedsAttentionGroups, portsLinkedFromRoute } from './needs-attention'
 
 /**
  * ONE geometry for every button in the card's action bar; variants change COLOUR only, never size,
@@ -219,6 +219,7 @@ export function ReviewCard({
         riskFlags: criticReview?.riskFlags,
         reviewReasons: (shipment as { reviewReasons?: string[] | null }).reviewReasons,
         conflictsCount: conflicts.length,
+        portsLinked: portsLinkedFromRoute((shipment as { route?: string | null }).route),
       }),
     [criticReview, shipment, conflicts.length],
   )

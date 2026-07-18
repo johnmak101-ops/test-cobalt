@@ -70,6 +70,52 @@ describe('buildNeedsAttention / groups', () => {
     expect(items.filter((i) => i.lineId === 'w-multi-match')).toHaveLength(1)
   })
 
+  it('drops Port VIETNAM / HCMC flags when pod already LOCODE-linked', () => {
+    const items = buildNeedsAttention({
+      conflictsCount: 0,
+      portsLinked: { pol: true, pod: true },
+      riskFlags: [
+        {
+          code: 'PARTY_OPS',
+          severity: 'low',
+          message:
+            'Cannot match "VIETNAM" as a port UN/LOCODE. Add or alias the port in ShipTrack port masters (UN/LOCODE), then rematch.',
+        },
+        {
+          code: 'PARTY_OPS',
+          severity: 'low',
+          message:
+            'Cannot match "Ho Chi Minh City" as a port UN/LOCODE. Add or alias the port in ShipTrack port masters (UN/LOCODE), then rematch.',
+        },
+        {
+          code: 'PARTY_OPS',
+          severity: 'low',
+          message:
+            'Cannot match "Maersk (China) Shipping Co., Ltd." in the forwarder list. Please add it in Cobalt Fashion Data Mesh System, then rematch.',
+        },
+      ],
+      reviewReasons: ['Ho Chi Minh City not in master data; raw value kept'],
+    })
+    expect(items.every((i) => !/VIETNAM|Ho Chi Minh|UN\/LOCODE|port master/i.test(i.text))).toBe(true)
+    expect(items.some((i) => /Maersk/i.test(i.text))).toBe(true)
+  })
+
+  it('keeps port miss when neither port is LOCODE-linked', () => {
+    const items = buildNeedsAttention({
+      conflictsCount: 0,
+      portsLinked: { pol: false, pod: false },
+      riskFlags: [
+        {
+          code: 'PARTY_OPS',
+          severity: 'low',
+          message: 'Cannot match "Ho Chi Minh City" as a port UN/LOCODE. Add alias, then rematch.',
+        },
+      ],
+      reviewReasons: [],
+    })
+    expect(items.some((i) => /Ho Chi Minh/i.test(i.text))).toBe(true)
+  })
+
   it('PARTY_OPS riskFlags keep party type + name (not blank Party not linked)', () => {
     const items = buildNeedsAttention({
       conflictsCount: 0,
