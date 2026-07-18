@@ -48,8 +48,7 @@ describe('AuthService — forced first-login password reset (mustReset)', () => 
 
   it('changePassword with the correct current password sets a new password and clears mustReset', async () => {
     const u = await seed(true)
-    const ok = await auth.changePassword(u.id, 'temp-pass', 'brand-new-pass')
-    expect(ok).toBe(true)
+    await auth.changePassword(u.id, 'temp-pass', 'brand-new-pass')
     // old password no longer works; the new one does, and mustReset is cleared
     expect(await auth.login('newbie@cobalt.hk', 'temp-pass')).toBeNull()
     const res = await auth.login('newbie@cobalt.hk', 'brand-new-pass')
@@ -59,8 +58,7 @@ describe('AuthService — forced first-login password reset (mustReset)', () => 
 
   it('changePassword with a wrong current password fails and leaves the account unchanged', async () => {
     const u = await seed(true)
-    const ok = await auth.changePassword(u.id, 'WRONG-pass', 'brand-new-pass')
-    expect(ok).toBe(false)
+    await expect(auth.changePassword(u.id, 'WRONG-pass', 'brand-new-pass')).rejects.toThrow()
     // still the old password, still must-reset
     const res = await auth.login('newbie@cobalt.hk', 'temp-pass')
     expect(res).not.toBeNull()

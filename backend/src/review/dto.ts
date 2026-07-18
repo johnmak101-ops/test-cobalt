@@ -1,8 +1,11 @@
+import { Type } from 'class-transformer'
 import { ArrayNotEmpty, IsArray, IsIn, IsObject, IsOptional, IsString, Length } from 'class-validator'
 
 /** A human's correction of a provisional shipment: edited fields (camelCase columns) + a reason. */
 export class CorrectDto {
-  @IsObject() fields!: Record<string, unknown>
+  @IsObject()
+  @Type(() => Object)
+  fields!: Record<string, unknown>
   @IsOptional() @IsString() reason?: string
   /** ISO timestamp from the client load; rejects with 409 when the leg has since been updated. */
   @IsOptional() @IsString() expectedUpdatedAt?: string

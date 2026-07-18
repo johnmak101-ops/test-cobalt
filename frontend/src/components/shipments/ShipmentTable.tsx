@@ -5,6 +5,7 @@ import { formatShortDate, formatRelativeTime } from '../../lib/utils'
 import { useNavigate } from 'react-router-dom'
 import { AlertTriangle, ChevronRight, ChevronDown, Package } from 'lucide-react'
 import type { LinkedPO, Shipment } from '../../hooks/use-shipments'
+import { interactiveProps } from '../../lib/interactive'
 
 interface ShipmentTableProps {
   shipments: Shipment[]
@@ -86,7 +87,7 @@ function CustomerPoChip({
     open && coords && poCount > 0
       ? createPortal(
           <div
-            role="dialog"
+            role="region"
             aria-label="Customer Purchase Orders"
             data-testid="customer-po-popover"
             style={{
@@ -215,7 +216,7 @@ export function ShipmentTable({ shipments }: ShipmentTableProps) {
                 <Fragment key={s.id}>
                   {/* Shipment parent row */}
                   <tr
-                    onClick={() => navigate(`/shipments/${s.id}`)}
+                    {...interactiveProps(() => navigate(`/shipments/${s.id}`))}
                     className="cursor-pointer border-b border-border last:border-0 hover:bg-surface-700 transition-colors"
                   >
                     <td className="px-2 py-3 text-center">
@@ -291,7 +292,7 @@ export function ShipmentTable({ shipments }: ShipmentTableProps) {
                   {isExpanded && s.linkedPOs?.map((po) => (
                     <tr
                       key={`${s.id}-${po.id}`}
-                      onClick={() => navigate(`/shipments/${s.id}`)}
+                      {...interactiveProps(() => navigate(`/shipments/${s.id}`))}
                       className="cursor-pointer border-b border-border last:border-0 bg-surface-900/40 hover:bg-surface-700/50 transition-colors"
                     >
                       <td className="px-2 py-2"></td>

@@ -74,18 +74,18 @@ export default function AlertsPage() {
     try {
       // Fetch full shipment detail for each unique shipment in the alerts
       const api = (await import('../lib/api')).api
-      const shipmentCache = new Map<string, any>()
-
-      for (const a of filtered) {
-        if (a.shipmentId && !shipmentCache.has(a.shipmentId)) {
+      const shipmentIds = [...new Set(filtered.flatMap((a) => (a.shipmentId ? [a.shipmentId] : [])))]
+      const shipmentEntries = await Promise.all(
+        shipmentIds.map(async (id) => {
           try {
-            const detail = await api.get(`/shipments/${a.shipmentId}`)
-            shipmentCache.set(a.shipmentId, detail)
+            const detail = await api.get(`/shipments/${id}`)
+            return [id, detail] as const
           } catch {
-            shipmentCache.set(a.shipmentId, null)
+            return [id, null] as const
           }
-        }
-      }
+        }),
+      )
+      const shipmentCache = new Map<string, any>(shipmentEntries)
 
       const headers = [
         // Alert fields

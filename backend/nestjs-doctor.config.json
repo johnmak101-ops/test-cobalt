@@ -1,0 +1,36 @@
+{
+  "notes": [
+    "minScore 90: gate for chore/doctor-score-90 excellence track (score with these ignores was already ~95).",
+    "Ignored rules — intentional product choices, not backlog:",
+    "  security/require-guards-on-endpoints — JwtAuthGuard is APP_GUARD global; per-route @Public/@Roles cover exceptions.",
+    "  architecture/require-module-boundaries — monorepo-style feature modules share RepositoriesModule; strict boundaries would force a large restructure.",
+    "  performance/no-unused-module-exports — several exports exist for tests / future wiring and CLI reuse.",
+    "ignore.files — CLI / one-shot scripts outside Nest DI (manual new + process.env OK):",
+    "  sync-masters, sync-ports, migrate-cli, seed.",
+    "architecture/no-manual-instantiation excludeClasses — lightweight collaborators (MasterResolver) and runtime Mesh wire-up (MastersSyncService/MeshClient) are not Nest providers by design."
+  ],
+  "ignore": {
+    "rules": [
+      "security/require-guards-on-endpoints",
+      "architecture/require-module-boundaries",
+      "performance/no-unused-module-exports"
+    ],
+    "files": [
+      "src/db/sync-masters.ts",
+      "src/db/sync-ports.ts",
+      "src/db/migrate-cli.ts",
+      "src/db/seed.ts"
+    ]
+  },
+  "rules": {
+    "architecture/no-manual-instantiation": {
+      "excludeClasses": [
+        "MasterResolver",
+        "MastersSyncService",
+        "MeshClient",
+        "MilestoneSynchronizer"
+      ]
+    }
+  },
+  "minScore": 90
+}

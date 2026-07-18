@@ -49,13 +49,16 @@ describe('MastersSyncSchedulerService', () => {
       listResolution: vi.fn().mockResolvedValue([]),
     }) as unknown as MastersRepository
 
+  const envConfig = { get: (k: string) => process.env[k] } as any
+  const makeSvc = () => new MastersSyncSchedulerService(makeMasters(), makeSettings(), envConfig)
+
   it('onModuleInit does nothing when MESH_SYNC_INTERVAL_MS is 0', async () => {
     process.env.MESH_SYNC_INTERVAL_MS = '0'
     process.env.MESH_TENANT_ID = 't'
     process.env.MESH_CLIENT_ID = 'c'
     process.env.MESH_CLIENT_SECRET = 's'
     process.env.MESH_SCOPE = 'scope'
-    const svc = new MastersSyncSchedulerService(makeMasters(), makeSettings())
+    const svc = makeSvc()
     svc.onModuleInit()
     await vi.advanceTimersByTimeAsync(30_000)
     // no crash; schedule disabled
@@ -65,13 +68,13 @@ describe('MastersSyncSchedulerService', () => {
   it('shouldSyncOnBoot is false when last_ok is fresh', async () => {
     settingsStore.clear()
     settingsStore.set(MESH_SYNC_LAST_OK_KEY, new Date().toISOString())
-    const svc = new MastersSyncSchedulerService(makeMasters(), makeSettings())
+    const svc = makeSvc()
     expect(await svc.shouldSyncOnBoot()).toBe(false)
   })
 
   it('shouldSyncOnBoot is true when last_ok is stale or missing', async () => {
     settingsStore.clear()
-    const svc = new MastersSyncSchedulerService(makeMasters(), makeSettings())
+    const svc = makeSvc()
     expect(await svc.shouldSyncOnBoot()).toBe(true)
     settingsStore.set(
       MESH_SYNC_LAST_OK_KEY,
@@ -83,7 +86,7 @@ describe('MastersSyncSchedulerService', () => {
   it('shouldSyncOnBoot respects MESH_SYNC_ON_BOOT=0 / 1', async () => {
     settingsStore.clear()
     settingsStore.set(MESH_SYNC_LAST_OK_KEY, new Date().toISOString())
-    const svc = new MastersSyncSchedulerService(makeMasters(), makeSettings())
+    const svc = makeSvc()
     process.env.MESH_SYNC_ON_BOOT = '0'
     expect(await svc.shouldSyncOnBoot()).toBe(false)
     process.env.MESH_SYNC_ON_BOOT = '1'
@@ -98,7 +101,7 @@ describe('MastersSyncSchedulerService', () => {
     process.env.MESH_SCOPE = 'scope'
     // Inject a slow sync via monkey-patch after constructing with valid mesh env is hard;
     // test running flag through concurrent tick when syncService is null → both null
-    const svc = new MastersSyncSchedulerService(makeMasters(), makeSettings())
+    const svc = makeSvc()
     // without onModuleInit syncService is null
     const a = await svc.tick('a')
     expect(a).toBeNull()

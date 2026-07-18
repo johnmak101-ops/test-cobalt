@@ -2,7 +2,7 @@
  * #129 Phase F / #173 A′ — log human multi-candidate picks (no full email body).
  * Appends under AMBIGUITY_PICK_DIR or data/ambiguity/picks-YYYY-MM-DD.jsonl.
  */
-import { appendFileSync, existsSync, mkdirSync } from 'node:fs'
+import { appendFile, mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { CriticReview } from '../decisions/critic-review.types'
 
@@ -24,10 +24,10 @@ export type AmbiguityPickEvent = {
   agreedWithSuggestion: boolean | null
 }
 
-function dataDir(): string {
+async function dataDir(): Promise<string> {
   const dir = process.env.AMBIGUITY_PICK_DIR?.trim()
     || join(process.cwd(), 'data', 'ambiguity')
-  if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
+  await mkdir(dir, { recursive: true })
   return dir
 }
 
@@ -73,12 +73,12 @@ export function buildAmbiguityPickEvent(opts: {
   }
 }
 
-export function appendAmbiguityPick(event: AmbiguityPickEvent): void {
+export async function appendAmbiguityPick(event: AmbiguityPickEvent): Promise<void> {
   if (process.env.AMBIGUITY_PICK_JSONL === '0' || process.env.AMBIGUITY_PICK_JSONL === 'false') return
   if (process.env.VITEST === 'true' || process.env.NODE_ENV === 'test') return
   try {
-    const path = join(dataDir(), `picks-${utcDay()}.jsonl`)
-    appendFileSync(path, `${JSON.stringify(event)}\n`, 'utf8')
+    const path = join(await dataDir(), `picks-${utcDay()}.jsonl`)
+    await appendFile(path, `${JSON.stringify(event)}\n`, 'utf8')
   } catch {
     // best-effort — never fail the human link action
   }
@@ -92,7 +92,7 @@ export function logAmbiguityPickFromLink(opts: {
 }): void {
   const event = buildAmbiguityPickEvent(opts)
   if (!event) return
-  appendAmbiguityPick(event)
+  void appendAmbiguityPick(event)
   const agree =
     event.agreedWithSuggestion == null
       ? 'n/a'

@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom'
 import { useMarkAlertRead, useMarkAlertUnread } from '../../hooks/use-alerts'
 import { CheckCircle, CircleDot } from 'lucide-react'
 import { cn } from '../../lib/utils'
+import { interactiveProps } from '../../lib/interactive'
 
 interface AlertCardProps {
   alert: {
@@ -43,7 +44,7 @@ export function AlertCard({ alert, compact }: AlertCardProps) {
 
   return (
     <div
-      onClick={() => navigate(`/shipments/${alert.shipmentId}`, { state: { fromAlerts: true } })}
+      {...interactiveProps(() => navigate(`/shipments/${alert.shipmentId}`, { state: { fromAlerts: true } }))}
       className={cn(
         'cursor-pointer rounded-lg border border-border border-l-4 bg-surface-800 transition-colors hover:bg-surface-700',
         severityBorder[alert.severity],

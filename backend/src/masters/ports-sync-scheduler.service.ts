@@ -3,6 +3,7 @@
  * Pattern mirrors MastersSyncSchedulerService (Mesh daily).
  */
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common'
+import { ConfigService } from '@nestjs/config'
 import { SettingsRepository } from '../db/repositories/settings.repository'
 import { PortsSyncService, type PortsSyncSummary } from './ports-sync.service'
 
@@ -38,10 +39,11 @@ export class PortsSyncSchedulerService implements OnModuleInit, OnModuleDestroy 
   constructor(
     private readonly portsSync: PortsSyncService,
     private readonly settings: SettingsRepository,
+    private readonly config: ConfigService,
   ) {}
 
   onModuleInit(): void {
-    const raw = process.env.PORTS_SYNC_INTERVAL_MS
+    const raw = this.config.get<string>('PORTS_SYNC_INTERVAL_MS')
     const intervalMs =
       raw === undefined || raw === '' ? DEFAULT_INTERVAL_MS : Number(raw)
     if (!Number.isFinite(intervalMs) || intervalMs <= 0) {
@@ -113,7 +115,7 @@ export class PortsSyncSchedulerService implements OnModuleInit, OnModuleDestroy 
   }
 
   async shouldSyncOnBoot(now: number = Date.now()): Promise<boolean> {
-    const force = process.env.PORTS_SYNC_ON_BOOT
+    const force = this.config.get<string>('PORTS_SYNC_ON_BOOT')
     if (force === '0' || force === 'false') return false
     if (force === '1' || force === 'true') return true
     const last = await this.settings.get<string>(PORTS_SYNC_LAST_OK_KEY)

@@ -1,4 +1,5 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common'
+import { ConfigService } from '@nestjs/config'
 import { MastersRepository } from '../db/repositories/masters.repository'
 import { SettingsRepository } from '../db/repositories/settings.repository'
 import { MeshClient } from './mesh/mesh.client'
@@ -28,10 +29,11 @@ export class MastersSyncSchedulerService implements OnModuleInit, OnModuleDestro
   constructor(
     private readonly masters: MastersRepository,
     private readonly settings: SettingsRepository,
+    private readonly config: ConfigService,
   ) {}
 
   onModuleInit(): void {
-    const raw = process.env.MESH_SYNC_INTERVAL_MS
+    const raw = this.config.get<string>('MESH_SYNC_INTERVAL_MS')
     const intervalMs =
       raw === undefined || raw === '' ? DEFAULT_INTERVAL_MS : Number(raw)
     if (!Number.isFinite(intervalMs) || intervalMs <= 0) {
@@ -39,7 +41,9 @@ export class MastersSyncSchedulerService implements OnModuleInit, OnModuleDestro
       return
     }
     try {
+      // Mesh client is config-driven and shared with CLI; construct here rather than module provider.
       const cfg = meshConfigFromEnv(process.env)
+      // nestjs-doctor-ignore-next-line architecture/no-manual-instantiation -- runtime Mesh config
       this.syncService = new MastersSyncService(new MeshClient(cfg), this.masters)
     } catch (e) {
       this.log.warn(
@@ -112,7 +116,7 @@ export class MastersSyncSchedulerService implements OnModuleInit, OnModuleDestro
 
   /** Pure-ish policy for tests: boot runs unless last_ok is fresh, unless MESH_SYNC_ON_BOOT forces. */
   async shouldSyncOnBoot(now: number = Date.now()): Promise<boolean> {
-    const force = process.env.MESH_SYNC_ON_BOOT
+    const force = this.config.get<string>('MESH_SYNC_ON_BOOT')
     if (force === '0' || force === 'false') return false
     if (force === '1' || force === 'true') return true
     const last = await this.settings.get<string>(MESH_SYNC_LAST_OK_KEY)

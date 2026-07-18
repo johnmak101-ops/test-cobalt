@@ -1,3 +1,4 @@
+import { Type } from 'class-transformer'
 import { IsIn, IsInt, IsObject, IsOptional, IsString, Max, Min, MinLength } from 'class-validator'
 import { MASTER_RESOLUTION_KIND } from '../db/enums'
 
@@ -67,5 +68,8 @@ export class MasterCandidatesDto {
   @IsOptional() @IsString() country?: string
   @IsOptional() @IsInt() @Min(1) @Max(50) limit?: number
   // Phase 2 co-occurrence context (agent-supplied; validated loosely — boosts only, never filters)
-  @IsOptional() @IsObject() context?: { customerCode?: string; poNumbers?: string[]; brand?: string }
+  @IsOptional()
+  @IsObject()
+  @Type(() => Object)
+  context?: { customerCode?: string; poNumbers?: string[]; brand?: string }
 }

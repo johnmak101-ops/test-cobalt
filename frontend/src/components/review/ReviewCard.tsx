@@ -168,11 +168,13 @@ function openEmailWindow(e: ReviewEmail): void {
   )
 }
 
+const EMPTY_EMAILS: ReviewEmail[] = []
+
 export function ReviewCard({
   shipment,
   criticReview,
   compact = null,
-  emails = [],
+  emails = EMPTY_EMAILS,
   fullShipmentPath,
   defaultExpanded = false,
   embedded = false,
@@ -484,11 +486,11 @@ export function ReviewCard({
           {emails.length > 0 && (
             <div className="space-y-2" data-testid="source-emails">
               <p className="text-[11px] font-medium text-text-muted">Source emails</p>
-              {sortedEmails.map((e, i) => {
+              {sortedEmails.map((e) => {
                 const openable = e.id != null && !e.bodyMissing
                 return (
                   <button
-                    key={e.id ?? `orphan-${i}`}
+                    key={e.id ?? `orphan-${e.subject}-${e.receivedAt ?? ''}-${e.sender ?? ''}`}
                     type="button"
                     onClick={() => openEmailWindow(e)}
                     disabled={!openable}

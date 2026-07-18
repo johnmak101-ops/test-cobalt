@@ -6,6 +6,7 @@ import { cn, formatShortDate, parsePONumbers } from '../lib/utils'
 import { poProgress, progressLabel } from '../lib/po-progress'
 import { ArrowLeft, AlertTriangle, Package, Ship } from 'lucide-react'
 import { Link } from 'react-router-dom'
+import { interactiveProps } from '../lib/interactive'
 
 export default function PurchaseOrderDetailPage() {
   const { id } = useParams<{ id: string }>()
@@ -205,7 +206,7 @@ UOM
                 {po.linkedShipments.map((shipment) => (
                   <tr
                     key={shipment.linkId}
-                    onClick={() => navigate(`/shipments/${shipment.id}`)}
+                    {...interactiveProps(() => navigate(`/shipments/${shipment.id}`))}
                     className="cursor-pointer border-b border-border last:border-0 transition-colors hover:bg-surface-700"
                   >
                     <td className="px-4 py-3 font-mono text-sm font-medium text-cobalt-primary-light">

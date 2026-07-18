@@ -12,9 +12,10 @@ describe('AlertSchedulerService', () => {
     delete process.env.ALERT_EVAL_INTERVAL_MS
   })
 
+  const envConfig = { get: (k: string) => process.env[k] } as any
   const make = (evaluate = vi.fn().mockResolvedValue({ evaluated: 2, fired: 1 })) => {
     const evaluator = { evaluate } as unknown as AlertEvaluatorService
-    const svc = new AlertSchedulerService(evaluator)
+    const svc = new AlertSchedulerService(evaluator, envConfig)
     return { svc, evaluate }
   }
 

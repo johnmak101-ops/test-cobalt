@@ -44,7 +44,7 @@ beforeAll(async () => {
     r.booking,
     r.fieldLock,
     r.audit,
-    new QueueLearningClient(),
+    new QueueLearningClient({ get: (k: string) => process.env[k] } as any),
     r.criticCalibration,
   )
   calibration = r.criticCalibration

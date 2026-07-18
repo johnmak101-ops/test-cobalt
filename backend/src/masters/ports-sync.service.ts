@@ -3,6 +3,7 @@
  * Shared by Nest scheduler and CLI `sync-ports.ts`.
  */
 import { Inject, Injectable, Logger } from '@nestjs/common'
+import { ConfigService } from '@nestjs/config'
 import { sql, type Kysely } from 'kysely'
 import { readFile, writeFile, mkdir } from 'fs/promises'
 import { join } from 'path'
@@ -33,7 +34,10 @@ const MERGE_BATCH = 400
 export class PortsSyncService {
   private readonly log = new Logger(PortsSyncService.name)
 
-  constructor(@Inject(KYSELY) private readonly db: Kysely<DB>) {}
+  constructor(
+    @Inject(KYSELY) private readonly db: Kysely<DB>,
+    private readonly config: ConfigService,
+  ) {}
 
   /**
    * Download (or read local paths) → parse → MERGE into ports.
@@ -130,10 +134,10 @@ export class PortsSyncService {
     if (opts.path) {
       return await readFile(opts.path, 'utf8')
     }
-    const cacheDir = opts.cacheDir ?? process.env.PORTS_CACHE_DIR ?? ''
+    const cacheDir = opts.cacheDir ?? this.config.get<string>('PORTS_CACHE_DIR') ?? ''
     if (cacheDir) {
       const cachePath = join(cacheDir, opts.cacheName)
-      if (process.env.PORTS_CACHE_READ === '1') {
+      if (this.config.get<string>('PORTS_CACHE_READ') === '1') {
         try {
           return await readFile(cachePath, 'utf8')
         } catch {

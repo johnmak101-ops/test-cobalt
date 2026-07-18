@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common'
+import { BadRequestException, Injectable, UnauthorizedException } from '@nestjs/common'
 import { JwtService } from '@nestjs/jwt'
 import { UsersRepository } from '../db/repositories/users.repository'
 import { hashPassword, verifyPassword } from './password'
@@ -32,12 +32,18 @@ export class AuthService {
     return { token, user }
   }
 
-  /** Change a user's password after verifying the current one; clears the forced-reset flag. */
-  async changePassword(userId: string, currentPassword: string, newPassword: string): Promise<boolean> {
+  /**
+   * Change a user's password after verifying the current one; clears the forced-reset flag.
+   * Throws BadRequest when new === current; Unauthorized when current is wrong / user missing.
+   */
+  async changePassword(userId: string, currentPassword: string, newPassword: string): Promise<void> {
+    if (newPassword === currentPassword) {
+      throw new BadRequestException('new password must be different from the current password')
+    }
     const user = await this.users.findById(userId)
-    if (!user) return false
-    if (!(await verifyPassword(currentPassword, user.passwordHash))) return false
+    if (!user || !(await verifyPassword(currentPassword, user.passwordHash))) {
+      throw new UnauthorizedException('current password is incorrect')
+    }
     await this.users.update(userId, { passwordHash: await hashPassword(newPassword), mustReset: false })
-    return true
   }
 }

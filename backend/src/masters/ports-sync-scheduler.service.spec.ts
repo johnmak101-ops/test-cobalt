@@ -25,8 +25,9 @@ describe('PortsSyncSchedulerService (#159)', () => {
     delete process.env.PORTS_SYNC_INTERVAL_MS
   })
 
+  const envConfig = { get: (k: string) => process.env[k] } as any
   function svc() {
-    return new PortsSyncSchedulerService(portsSync as never, settings as never)
+    return new PortsSyncSchedulerService(portsSync as never, settings as never, envConfig)
   }
 
   it('shouldSyncOnBoot true when never synced', async () => {
@@ -40,7 +41,7 @@ describe('PortsSyncSchedulerService (#159)', () => {
       get: async () => new Date().toISOString(),
       set: settings.set,
     }
-    const sch = new PortsSyncSchedulerService(portsSync as never, s as never)
+    const sch = new PortsSyncSchedulerService(portsSync as never, s as never, envConfig)
     expect(await sch.shouldSyncOnBoot()).toBe(false)
   })
 
@@ -50,7 +51,7 @@ describe('PortsSyncSchedulerService (#159)', () => {
       get: async () => old,
       set: settings.set,
     }
-    expect(await new PortsSyncSchedulerService(portsSync as never, s as never).shouldSyncOnBoot()).toBe(
+    expect(await new PortsSyncSchedulerService(portsSync as never, s as never, envConfig).shouldSyncOnBoot()).toBe(
       true,
     )
   })
@@ -82,7 +83,7 @@ describe('PortsSyncSchedulerService (#159)', () => {
         sets.push(`${k}=${v}`)
       },
     }
-    const sch = new PortsSyncSchedulerService(portsSync as never, s as never)
+    const sch = new PortsSyncSchedulerService(portsSync as never, s as never, envConfig)
     const r = await sch.tick('manual')
     expect(r?.fetched).toBe(10)
     expect(sets.some((x) => x.startsWith(PORTS_SYNC_LAST_OK_KEY))).toBe(true)
@@ -103,7 +104,7 @@ describe('PortsSyncSchedulerService (#159)', () => {
         sets.push(k)
       },
     }
-    await new PortsSyncSchedulerService(portsSync as never, s as never).tick('manual')
+    await new PortsSyncSchedulerService(portsSync as never, s as never, envConfig).tick('manual')
     expect(sets).not.toContain(PORTS_SYNC_LAST_OK_KEY)
   })
 })

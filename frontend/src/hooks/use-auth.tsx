@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback, useEffect } from 'react'
+import { createContext, useContext, useState, useCallback, useEffect, useMemo } from 'react'
 import type { ReactNode } from 'react'
 import { api } from '../lib/api'
 
@@ -76,8 +76,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null)
   }, [])
 
+  const value = useMemo(
+    () => ({ user, loading, login, changePassword, logout }),
+    [user, loading, login, changePassword, logout],
+  )
+
   return (
-    <AuthContext.Provider value={{ user, loading, login, changePassword, logout }}>{children}</AuthContext.Provider>
+    <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
   )
 }
 

@@ -109,8 +109,8 @@ export function ConflictRow({
             <Unit unit={proposedUnit} />
             {proposed.length > 1 && (
               <datalist id={listId}>
-                {proposed.map((c, i) => (
-                  <option key={`${c.source}-${c.value}-${i}`} value={c.value} />
+                {proposed.map((c) => (
+                  <option key={`${c.source}-${c.value}`} value={c.value} />
                 ))}
               </datalist>
             )}

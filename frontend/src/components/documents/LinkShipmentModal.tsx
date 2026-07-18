@@ -91,7 +91,6 @@ export function LinkShipmentModal({
             <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
             <input
               type="text"
-              autoFocus
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search shipments — booking#, customer, route… (comma or space for multiple)"

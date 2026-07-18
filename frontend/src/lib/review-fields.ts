@@ -190,9 +190,12 @@ export function parseStyleEntries(value: string | null | undefined): StyleEntry[
 /** Inverse of parseStyleEntries — empty rows dropped, 'po/style' or bare style, comma-joined. */
 export function serializeStyleEntries(rows: StyleEntry[]): string {
   return rows
-    .map((r) => ({ po: r.po.trim(), style: r.style.trim() }))
-    .filter((r) => r.po || r.style)
-    .map((r) => (r.po ? `${r.po}/${r.style || ''}`.replace(/\/$/, '') : r.style))
+    .flatMap((r) => {
+      const po = r.po.trim()
+      const style = r.style.trim()
+      if (!po && !style) return []
+      return [po ? `${po}/${style || ''}`.replace(/\/$/, '') : style]
+    })
     .join(', ')
 }
 
