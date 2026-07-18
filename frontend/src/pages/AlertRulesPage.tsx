@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../lib/api'
 import { Card } from '../components/ui/Card'
-import { useMemo, useState } from 'react'
+import { useId, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { usePageAccess } from '../hooks/use-page-access'
 import { cn } from '../lib/utils'
@@ -46,6 +46,7 @@ const SEVERITY_COLORS: Record<string, string> = {
 }
 
 export default function AlertRulesPage() {
+  const id = useId()
   const navigate = useNavigate()
   // Editability follows the Access Control matrix ('alert_rules'); the backend @PageWrite guard is authoritative.
   const { canEdit: canEditPage } = usePageAccess()
@@ -125,6 +126,7 @@ export default function AlertRulesPage() {
         <div className="flex min-w-0 items-center gap-3">
           <button
             type="button"
+            aria-label="Back to alerts"
             onClick={() => navigate('/alerts')}
             className="rounded-lg p-1.5 text-text-muted hover:bg-surface-700 hover:text-text-primary"
           >
@@ -173,6 +175,7 @@ export default function AlertRulesPage() {
                   </div>
                   <button
                     type="button"
+                    aria-label={`Toggle ${rule.name} enabled`}
                     onClick={() => !rule.locked && updateRule(rule.id, 'enabled', !rule.enabled)}
                     disabled={rule.locked || !canEdit}
                     className={cn(
@@ -196,8 +199,9 @@ export default function AlertRulesPage() {
                 {/* Settings row */}
                 <div className="mt-4 flex flex-wrap items-end gap-6">
                   <div>
-                    <label className="text-xs text-text-muted">Default threshold (days)</label>
+                    <label htmlFor={`${id}-${rule.id}-threshold`} className="text-xs text-text-muted">Default threshold (days)</label>
                     <input
+                      id={`${id}-${rule.id}-threshold`}
                       type="number"
                       min={0}
                       max={30}
@@ -211,8 +215,9 @@ export default function AlertRulesPage() {
                     />
                   </div>
                   <div>
-                    <label className="text-xs text-text-muted">Severity</label>
+                    <label htmlFor={`${id}-${rule.id}-severity`} className="text-xs text-text-muted">Severity</label>
                     <select
+                      id={`${id}-${rule.id}-severity`}
                       value={rule.severity}
                       onChange={(e) =>
                         !rule.locked && updateRule(rule.id, 'severity', e.target.value)
@@ -226,8 +231,8 @@ export default function AlertRulesPage() {
                     </select>
                   </div>
                   <div>
-                    <label className="text-xs text-text-muted">State</label>
-                    <p className="mt-1 flex h-9 items-center text-sm text-text-secondary">
+                    <label htmlFor={`${id}-${rule.id}-state`} className="text-xs text-text-muted">State</label>
+                    <p id={`${id}-${rule.id}-state`} className="mt-1 flex h-9 items-center text-sm text-text-secondary">
                       {rule.state ? (STATE_LABELS[rule.state] ?? rule.state.replace(/_/g, ' ')) : '—'}
                     </p>
                   </div>
@@ -236,13 +241,13 @@ export default function AlertRulesPage() {
                 {/* Country-specific thresholds */}
                 {!rule.locked && (
                   <div className="mt-4 rounded-lg border border-border bg-surface-800/50 p-3">
-                    <label className="text-xs font-medium text-text-secondary">
+                    <label htmlFor={`${id}-${rule.id}-country`} className="text-xs font-medium text-text-secondary">
                       Country thresholds
                     </label>
                     <p className="text-[10px] text-text-muted">
                       Override default threshold when shipment origin country matches
                     </p>
-                    <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                    <div id={`${id}-${rule.id}-country`} className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
                       {COUNTRY_LIST.map((country) => {
                         const currentDays = rule.countryThresholds?.[country.code]
                         return (

@@ -289,6 +289,7 @@ export default function PurchaseOrdersPage() {
           <Calendar size={14} className="text-text-muted" />
           <input
             type="date"
+            aria-label="Filter from date"
             value={dateFrom}
             onChange={(e) => { setDateFrom(e.target.value); setPage(1) }}
             className="h-9 w-full rounded-lg border border-border bg-surface-800 px-2 text-sm text-text-primary sm:w-auto"
@@ -297,6 +298,7 @@ export default function PurchaseOrdersPage() {
           <span className="text-text-muted text-xs">—</span>
           <input
             type="date"
+            aria-label="Filter to date"
             value={dateTo}
             onChange={(e) => { setDateTo(e.target.value); setPage(1) }}
             className="h-9 w-full rounded-lg border border-border bg-surface-800 px-2 text-sm text-text-primary sm:w-auto"

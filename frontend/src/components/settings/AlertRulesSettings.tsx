@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { useMemo, useState } from 'react'
+import { useId, useMemo, useState } from 'react'
 import { api } from '../../lib/api'
 import { Card } from '../ui/Card'
 import { cn } from '../../lib/utils'
@@ -48,6 +48,7 @@ function withOffsets(rules: AlertRule[]): AlertRule[] {
 }
 
 export function AlertRulesSettings() {
+  const id = useId()
   const { data, isLoading } = useQuery<{ rules: AlertRule[] }>({
     queryKey: ['alertRules'],
     queryFn: () => api.get('/alert-rules'),
@@ -136,6 +137,7 @@ export function AlertRulesSettings() {
               {/* Enabled toggle */}
               <button
                 type="button"
+                aria-label={`Toggle ${rule.name} enabled`}
                 onClick={() => !rule.locked && updateRule(rule.id, 'enabled', !rule.enabled)}
                 disabled={rule.locked}
                 className={cn(
@@ -155,10 +157,11 @@ export function AlertRulesSettings() {
 
             <div className="mt-5 flex flex-wrap items-center gap-x-8 gap-y-4">
               <div>
-                <label className="text-xs text-text-muted">
+                <label htmlFor={`${id}-${rule.id}-threshold`} className="text-xs text-text-muted">
                   Trigger {rule.triggerType === 'days_before' ? 'before' : 'after'} (days)
                 </label>
                 <input
+                  id={`${id}-${rule.id}-threshold`}
                   type="number"
                   min={0}
                   max={30}
@@ -172,8 +175,9 @@ export function AlertRulesSettings() {
                 />
               </div>
               <div>
-                <label className="text-xs text-text-muted">Severity</label>
+                <label htmlFor={`${id}-${rule.id}-severity`} className="text-xs text-text-muted">Severity</label>
                 <select
+                  id={`${id}-${rule.id}-severity`}
                   value={rule.severity}
                   onChange={(e) =>
                     !rule.locked && updateRule(rule.id, 'severity', e.target.value)
@@ -187,8 +191,8 @@ export function AlertRulesSettings() {
                 </select>
               </div>
               <div>
-                <label className="text-xs text-text-muted">State</label>
-                <p className="mt-1 h-9 flex items-center text-sm text-text-secondary">
+                <label htmlFor={`${id}-${rule.id}-state`} className="text-xs text-text-muted">State</label>
+                <p id={`${id}-${rule.id}-state`} className="mt-1 h-9 flex items-center text-sm text-text-secondary">
                   {rule.state ? rule.state.replace(/_/g, ' ') : '—'}
                 </p>
               </div>
@@ -197,12 +201,12 @@ export function AlertRulesSettings() {
             {/* Per-country warning days — extra days added to the default for a given origin country */}
             {!rule.locked && (
               <div className="mt-5 rounded-lg border border-border bg-surface-800/50 p-3.5">
-                <label className="text-xs font-medium text-text-secondary">Country warning days</label>
+                <label htmlFor={`${id}-${rule.id}-country`} className="text-xs font-medium text-text-secondary">Country warning days</label>
                 <p className="mt-0.5 text-[10px] text-text-muted">
                   Extra days before this alert fires, by shipment origin country (added to the default of{' '}
                   {rule.thresholdDays} {rule.thresholdDays === 1 ? 'day' : 'days'}). Leave blank for none.
                 </p>
-                <div className="mt-3 grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
+                <div id={`${id}-${rule.id}-country`} className="mt-3 grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
                   {ALERT_COUNTRY_LIST.map((country) => {
                     const off = rule.countryOffsets?.[country.code]
                     return (

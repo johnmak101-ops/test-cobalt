@@ -222,6 +222,7 @@ export function ShipmentTable({ shipments }: ShipmentTableProps) {
                       {poCount > 0 ? (
                         <button
                           type="button"
+                          aria-label={isExpanded ? 'Collapse purchase orders' : 'Expand purchase orders'}
                           onClick={(e) => toggleExpanded(s.id, e)}
                           className="inline-flex h-5 w-5 items-center justify-center rounded text-text-muted hover:bg-surface-600 hover:text-text-primary transition-colors"
                         >
