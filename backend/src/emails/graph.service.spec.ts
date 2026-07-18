@@ -13,7 +13,8 @@ it('fetchAttachments qualifies contentBytes with the fileAttachment type cast (b
     return new Response(JSON.stringify(body), { status: 200 })
   }))
   try {
-    await new GraphService().fetchAttachments('MSG-ID')
+    const envConfig = { get: (k: string) => process.env[k] } as any
+    await new GraphService(envConfig).fetchAttachments('MSG-ID')
     const attUrl = urls.find((u) => u.includes('/attachments'))!
     expect(attUrl).toContain('microsoft.graph.fileAttachment/contentBytes')
     expect(attUrl).not.toContain('size,contentBytes') // the old, 400-ing bare form

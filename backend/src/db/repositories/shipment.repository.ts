@@ -96,8 +96,8 @@ export class ShipmentRepository {
    * is NOT covered here — the caller keeps `allLegs()` for that rare branch.) `selectAll()` → same shape as
    * `allLegs()`. Returns [] when the group has neither strong keys nor POs (caller shouldn't call it then).
    */
-  async candidateLegs(strongPairs: { type: string; value: string }[], posNorm: string[]) {
-    if (!strongPairs.length && !posNorm.length) return []
+  candidateLegs(strongPairs: { type: string; value: string }[], posNorm: string[]) {
+    if (!strongPairs.length && !posNorm.length) return Promise.resolve([])
     // Linked husks (folded into another leg) must not poison matching: lookup + committer
     // both use this set. Do NOT filter dismissedAt — portal-echo dismissed legs still match
     // so re-ingest does not mint duplicates (#146).

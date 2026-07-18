@@ -1,6 +1,7 @@
 import { Badge } from '../ui/Badge'
 import { parsePONumbers, formatRelativeTime } from '../../lib/utils'
 import { useNavigate } from 'react-router-dom'
+import { interactiveProps } from '../../lib/interactive'
 
 interface Shipment {
   id: string
@@ -42,7 +43,7 @@ export function RecentActivityTable({ shipments }: RecentActivityTableProps) {
             {shipments.map((s) => (
               <tr
                 key={s.id}
-                onClick={() => navigate(`/shipments/${s.id}`)}
+                {...interactiveProps(() => navigate(`/shipments/${s.id}`))}
                 className="cursor-pointer border-b border-border last:border-0 hover:bg-surface-700"
               >
                 <td className="w-full px-5 py-3 font-mono text-sm text-text-primary">

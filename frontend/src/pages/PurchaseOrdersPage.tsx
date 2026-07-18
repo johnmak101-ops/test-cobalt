@@ -6,6 +6,7 @@ import { formatDate } from '../lib/utils'
 import { poProgress, furthestStatusLabel, type PoShipmentLink } from '../lib/po-progress'
 import { Package, Search, Download, Calendar, AlertTriangle } from 'lucide-react'
 import { Pagination, usePagination, PageSizeSelect } from '../components/ui/Pagination'
+import { interactiveProps } from '../lib/interactive'
 
 export default function PurchaseOrdersPage() {
   const navigate = useNavigate()
@@ -117,82 +118,73 @@ export default function PurchaseOrdersPage() {
         return [cell(pol), cell(pod)]
       }
 
-      for (const po of sorted) {
-        try {
-          const detail: any = await api.get(`/purchase-orders/${po.id}`)
-          const shipments = detail.linkedShipments ?? []
+      const emptyShipmentFields = Array(31).fill('') as string[]
 
-          if (shipments.length === 0) {
-            // PO with no linked shipments — one row with PO data, empty shipment fields
-            detailRows.push([
-              po.poNumber,
-              po.customer?.name ?? '',
-              po.vendor?.name ?? '',
-              String(po.totalQuantity ?? ''),
-              po.quantityUnit ?? '',
-              String(po.shippedQuantity ?? ''),
-              progressCell(po),
-              formatDate(po.createdAt),
-              // Shipment fields (empty)
-              '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '',
-            ])
-          } else {
-            // One row per shipment with full shipment detail
-            for (const s of shipments) {
-              detailRows.push([
-                po.poNumber,
-                po.customer?.name ?? '',
-                po.vendor?.name ?? '',
-                String(po.totalQuantity ?? ''),
-                po.quantityUnit ?? '',
-                String(po.shippedQuantity ?? ''),
-                progressCell(po, shipments),
-                formatDate(po.createdAt),
-                // Shipment detail fields
-                s.bookingNo ?? '',
-                s.soNumber ?? '',
-                s.itemStyleNo ?? '',
-                s.status ?? '',
-                s.riskLevel ?? '',
-                ...splitRoute(s.route),
-                String(s.quantityShipped ?? ''),
-                s.quantityUnit ?? '',
-                String(s.linkedQuantity ?? ''),
-                s.customer?.name ?? '',
-                s.vendor?.name ?? '',
-                s.forwarder?.name ?? '',
-                s.consigneeName ?? '',
-                s.consigneeAddress ?? '',
-                s.containerNo ?? '',
-                s.hblNumber ?? '',
-                s.mblNumber ?? '',
-                s.scacCode ?? '',
-                s.vesselName ?? '',
-                s.voyageNumber ?? '',
-                s.warehouseAddress ?? '',
-                s.crd ? formatDate(s.crd) : '',
-                s.cfsCutoff ? formatDate(s.cfsCutoff) : '',
-                s.etd ? formatDate(s.etd) : '',
-                s.eta ? formatDate(s.eta) : '',
-                s.actualDeparture ? formatDate(s.actualDeparture) : '',
-                s.actualArrival ? formatDate(s.actualArrival) : '',
-                s.warehouseStartDate ? formatDate(s.warehouseStartDate) : '',
-                s.warehouseEndDate ? formatDate(s.warehouseEndDate) : '',
-                s.inDcDate ? formatDate(s.inDcDate) : '',
-              ])
-            }
+      const details = await Promise.all(
+        sorted.map(async (po) => {
+          try {
+            const detail: any = await api.get(`/purchase-orders/${po.id}`)
+            return { po, shipments: detail.linkedShipments ?? [] as any[], ok: true as const }
+          } catch {
+            return { po, shipments: [] as any[], ok: false as const }
           }
-        } catch {
+        }),
+      )
+
+      for (const { po, shipments, ok } of details) {
+        const customerName = po.customer?.name ?? ''
+        const vendorName = po.vendor?.name ?? ''
+        const poBase = [
+          po.poNumber,
+          customerName,
+          vendorName,
+          String(po.totalQuantity ?? ''),
+          po.quantityUnit ?? '',
+          String(po.shippedQuantity ?? ''),
+          progressCell(po, ok && shipments.length > 0 ? shipments : undefined),
+          formatDate(po.createdAt),
+        ]
+
+        if (!ok || shipments.length === 0) {
+          detailRows.push([...poBase, ...emptyShipmentFields])
+          continue
+        }
+
+        for (const s of shipments) {
           detailRows.push([
-            po.poNumber,
-            po.customer?.name ?? '',
-            po.vendor?.name ?? '',
-            String(po.totalQuantity ?? ''),
-            po.quantityUnit ?? '',
-            String(po.shippedQuantity ?? ''),
-            progressCell(po),
-            formatDate(po.createdAt),
-            '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '',
+            ...poBase.slice(0, 6),
+            progressCell(po, shipments),
+            poBase[7]!,
+            s.bookingNo ?? '',
+            s.soNumber ?? '',
+            s.itemStyleNo ?? '',
+            s.status ?? '',
+            s.riskLevel ?? '',
+            ...splitRoute(s.route),
+            String(s.quantityShipped ?? ''),
+            s.quantityUnit ?? '',
+            String(s.linkedQuantity ?? ''),
+            s.customer?.name ?? '',
+            s.vendor?.name ?? '',
+            s.forwarder?.name ?? '',
+            s.consigneeName ?? '',
+            s.consigneeAddress ?? '',
+            s.containerNo ?? '',
+            s.hblNumber ?? '',
+            s.mblNumber ?? '',
+            s.scacCode ?? '',
+            s.vesselName ?? '',
+            s.voyageNumber ?? '',
+            s.warehouseAddress ?? '',
+            s.crd ? formatDate(s.crd) : '',
+            s.cfsCutoff ? formatDate(s.cfsCutoff) : '',
+            s.etd ? formatDate(s.etd) : '',
+            s.eta ? formatDate(s.eta) : '',
+            s.actualDeparture ? formatDate(s.actualDeparture) : '',
+            s.actualArrival ? formatDate(s.actualArrival) : '',
+            s.warehouseStartDate ? formatDate(s.warehouseStartDate) : '',
+            s.warehouseEndDate ? formatDate(s.warehouseEndDate) : '',
+            s.inDcDate ? formatDate(s.inDcDate) : '',
           ])
         }
       }
@@ -388,7 +380,7 @@ UOM
                   return (
                     <tr
                       key={po.id}
-                      onClick={() => navigate(`/purchase-orders/${po.id}`)}
+                      {...interactiveProps(() => navigate(`/purchase-orders/${po.id}`))}
                       className="cursor-pointer border-b border-border last:border-0 transition-colors hover:bg-surface-700"
                     >
                       <td className="px-4 py-3 font-mono text-sm font-medium text-cobalt-primary-light">

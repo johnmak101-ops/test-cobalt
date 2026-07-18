@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useEffectEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { X, FileText, Link2, ExternalLink, Ban, Loader2, Package } from 'lucide-react'
 import { useDocument, useDismissDocument, type UnlinkedDocument } from '../../hooks/use-documents'
@@ -34,16 +34,17 @@ export function DocumentDetailDrawer({
 }) {
   const { data: detail, isLoading, isError } = useDocument(row?.id ?? null)
   const dismissMutation = useDismissDocument()
+  const onCloseEvent = useEffectEvent(onClose)
 
   // Close on Escape.
   useEffect(() => {
     if (!row) return
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
+      if (e.key === 'Escape') onCloseEvent()
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [row, onClose])
+  }, [row])
 
   // Reset transient mutation state when a different document is opened.
   useEffect(() => {

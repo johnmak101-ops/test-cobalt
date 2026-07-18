@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { Card } from '../ui/Card'
 import { cn } from '../../lib/utils'
 import { UserPlus, KeyRound, Ban, RotateCcw } from 'lucide-react'
@@ -27,6 +27,7 @@ export function UsersSettings() {
           </p>
         </div>
         <button
+          type="button"
           onClick={() => setShowCreate(true)}
           className="flex shrink-0 items-center gap-1.5 rounded-lg bg-cobalt-primary px-3 py-2 text-sm font-semibold text-white hover:opacity-90"
         >
@@ -78,6 +79,7 @@ export function UsersSettings() {
                   <td className="px-4 py-3">
                     <div className="flex items-center justify-end gap-1">
                       <button
+                        type="button"
                         title="Reset password"
                         aria-label={`Reset password for ${u.email}`}
                         onClick={() => {
@@ -88,6 +90,7 @@ export function UsersSettings() {
                       ><KeyRound size={15} /></button>
                       {u.active ? (
                         <button
+                          type="button"
                           title="Deactivate"
                           aria-label={`Deactivate ${u.email}`}
                           onClick={() => { if (window.confirm(`Deactivate ${u.email}?`)) deactivate.mutate(u.id) }}
@@ -95,6 +98,7 @@ export function UsersSettings() {
                         ><Ban size={15} /></button>
                       ) : (
                         <button
+                          type="button"
                           title="Reactivate"
                           aria-label={`Reactivate ${u.email}`}
                           onClick={() => update.mutate({ id: u.id, patch: { active: true } })}
@@ -127,6 +131,29 @@ function CreateUserModal(props: { pending: boolean; onClose: () => void; onSubmi
   const [role, setRole] = useState('VIEWER')
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
+  const ref = useRef<HTMLDialogElement>(null)
+
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    // jsdom lacks HTMLDialogElement.showModal/close — fall back to the open attribute.
+    if (!el.open) {
+      if (typeof el.showModal === 'function') el.showModal()
+      else el.setAttribute('open', '')
+    }
+    const onCancel = (e: Event) => {
+      e.preventDefault()
+      props.onClose()
+    }
+    el.addEventListener('cancel', onCancel)
+    return () => {
+      el.removeEventListener('cancel', onCancel)
+      if (el.open) {
+        if (typeof el.close === 'function') el.close()
+        else el.removeAttribute('open')
+      }
+    }
+  }, [props.onClose])
 
   function submit(e: FormEvent) {
     e.preventDefault()
@@ -135,10 +162,12 @@ function CreateUserModal(props: { pending: boolean; onClose: () => void; onSubmi
   }
 
   return (
-    <div role="dialog" aria-modal="true" aria-label="Add user"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={props.onClose}>
-      <form onClick={(e) => e.stopPropagation()} onSubmit={submit}
-        className="w-full max-w-sm space-y-3 rounded-xl border border-border bg-surface-900 p-5">
+    <dialog
+      ref={ref}
+      aria-label="Add user"
+      className="w-full max-w-sm space-y-3 rounded-xl border border-border bg-surface-900 p-5 text-text-primary shadow-xl open:fixed open:inset-0 open:m-auto open:max-h-[90vh] backdrop:bg-black/50"
+    >
+      <form onSubmit={submit} className="space-y-3">
         <h3 className="text-sm font-semibold text-text-primary">Add User</h3>
         <input required type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email"
           className="w-full rounded-lg border border-border bg-surface-800 px-3 py-2 text-sm text-text-primary focus:border-cobalt-primary focus:outline-none" />
@@ -161,6 +190,6 @@ function CreateUserModal(props: { pending: boolean; onClose: () => void; onSubmi
           </button>
         </div>
       </form>
-    </div>
+    </dialog>
   )
 }

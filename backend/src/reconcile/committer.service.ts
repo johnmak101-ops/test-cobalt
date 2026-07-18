@@ -123,6 +123,7 @@ export class CommitterService {
     private readonly evidence: EvidenceRepository,
     private readonly purchaseOrders: PurchaseOrderRepository,
   ) {
+    // nestjs-doctor-ignore-next-line architecture/no-manual-instantiation -- lightweight collaborator, not a Nest provider
     this.mastersResolver = new MasterResolver(masters)
     this.milestones = new MilestoneSynchronizer(shipments)
   }

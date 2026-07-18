@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Get, Post, Res, UnauthorizedException } from '@nestjs/common'
+import { Body, Controller, Get, Post, Res, UnauthorizedException } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
 import { Throttle } from '@nestjs/throttler'
 import type { Response } from 'express'
@@ -61,11 +61,7 @@ export class AuthController {
     @CurrentUser() user: SessionUser,
     @Body() body: ChangePasswordDto,
   ) {
-    if (body.newPassword === body.currentPassword) {
-      throw new BadRequestException('new password must be different from the current password')
-    }
-    const ok = await this.auth.changePassword(user.id, body.currentPassword, body.newPassword)
-    if (!ok) throw new UnauthorizedException('current password is incorrect')
+    await this.auth.changePassword(user.id, body.currentPassword, body.newPassword)
     return { success: true }
   }
 }

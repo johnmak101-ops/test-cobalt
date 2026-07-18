@@ -12,7 +12,7 @@ import {
 } from './pages'
 
 /** app_settings key holding the sparse per-page/per-role override map (only non-default cells). */
-export const PAGE_ACCESS_KEY = 'page_access'
+export const PAGE_ACCESS_SETTING = 'page_access'
 
 type OverrideMap = Record<string, Partial<Record<ConfigRole, Level>>>
 
@@ -23,7 +23,7 @@ export class PageAccessService {
   constructor(private readonly repo: SettingsRepository) {}
 
   private async overrides(): Promise<OverrideMap> {
-    const v = await this.repo.get<OverrideMap>(PAGE_ACCESS_KEY)
+    const v = await this.repo.get<OverrideMap>(PAGE_ACCESS_SETTING)
     return v && typeof v === 'object' ? v : {}
   }
 
@@ -67,7 +67,7 @@ export class PageAccessService {
         ;(clean[pageId] ??= {})[role] = level
       }
     }
-    await this.repo.set(PAGE_ACCESS_KEY, clean, updatedBy)
+    await this.repo.set(PAGE_ACCESS_SETTING, clean, updatedBy)
     return this.matrix()
   }
 }

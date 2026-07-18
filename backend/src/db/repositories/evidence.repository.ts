@@ -36,8 +36,10 @@ export class EvidenceRepository {
   constructor(@Inject(KYSELY) private readonly db: Kysely<DB>) {}
 
   /** Parsed records of specific emails (email_message ids) — the Change History's per-email replay source. */
-  async forMessages(messageIds: string[]) {
-    if (!messageIds.length) return [] as { messageId: string; subject: string | null; sender: string | null; receivedAt: Date | null; fields: Record<string, unknown> | null }[]
+  forMessages(messageIds: string[]) {
+    if (!messageIds.length) {
+      return Promise.resolve([] as { messageId: string; subject: string | null; sender: string | null; receivedAt: Date | null; fields: Record<string, unknown> | null }[])
+    }
     return this.db.selectFrom('parsedRecord')
       .innerJoin('emailMessage', 'parsedRecord.messageId', 'emailMessage.id')
       .where('parsedRecord.messageId', 'in', messageIds)
@@ -107,8 +109,8 @@ export class EvidenceRepository {
   }
 
   /** Senders of the given source emails, keyed by graph_message_id. */
-  async sendersByGraphIds(graphMessageIds: string[]): Promise<{ graphMessageId: string | null; sender: string | null }[]> {
-    if (!graphMessageIds.length) return []
+  sendersByGraphIds(graphMessageIds: string[]): Promise<{ graphMessageId: string | null; sender: string | null }[]> {
+    if (!graphMessageIds.length) return Promise.resolve([])
     return this.db.selectFrom('emailMessage')
       .where('graphMessageId', 'in', graphMessageIds)
       .select(['graphMessageId', 'sender'])

@@ -1,4 +1,4 @@
-import { useState, type FormEvent, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { Card } from '../ui/Card'
 import { cn } from '../../lib/utils'
 import { Plus, Pencil, Ban, RotateCcw, Check, X } from 'lucide-react'
@@ -82,6 +82,7 @@ export function ResolutionRulesSettings() {
         </div>
         {canEdit ? (
           <button
+            type="button"
             onClick={() => setShowCreate(true)}
             className="flex shrink-0 items-center gap-1.5 rounded-lg bg-cobalt-primary px-3 py-2 text-sm font-semibold text-white hover:opacity-90"
           >
@@ -140,9 +141,9 @@ export function ResolutionRulesSettings() {
                   <td className="px-4 py-2.5 text-text-muted">{p.reason}</td>
                   <td className="px-4 py-2.5">
                     <div className="flex items-center justify-end gap-1">
-                      <button title="Approve" aria-label={`Approve ${p.lhs}`} onClick={() => approve.mutate(p.id)}
+                      <button type="button" title="Approve" aria-label={`Approve ${p.lhs}`} onClick={() => approve.mutate(p.id)}
                         className="rounded-md p-1.5 text-text-muted hover:bg-surface-700 hover:text-cobalt-primary"><Check size={15} /></button>
-                      <button title="Reject" aria-label={`Reject ${p.lhs}`} onClick={() => reject.mutate(p.id)}
+                      <button type="button" title="Reject" aria-label={`Reject ${p.lhs}`} onClick={() => reject.mutate(p.id)}
                         className="rounded-md p-1.5 text-text-muted hover:bg-surface-700 hover:text-status-critical"><X size={15} /></button>
                     </div>
                   </td>
@@ -202,7 +203,7 @@ export function ResolutionRulesSettings() {
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex items-center justify-end gap-1">
-                      <button title="Edit reason" aria-label={`Edit reason for ${f.lhs}`}
+                      <button type="button" title="Edit reason" aria-label={`Edit reason for ${f.lhs}`}
                         onClick={() => setEditReason({
                           id: f.id,
                           label: `${kindLabel(f.kind)} · ${f.lhs}`,
@@ -210,14 +211,14 @@ export function ResolutionRulesSettings() {
                         })}
                         className="rounded-md p-1.5 text-text-muted hover:bg-surface-700 hover:text-text-primary"><Pencil size={15} /></button>
                       {f.active ? (
-                        <button title="Deactivate" aria-label={`Deactivate ${f.lhs}`}
+                        <button type="button" title="Deactivate" aria-label={`Deactivate ${f.lhs}`}
                           onClick={() => setConfirmDeactivate({
                             id: f.id,
                             label: `${kindLabel(f.kind)} · ${f.lhs}`,
                           })}
                           className="rounded-md p-1.5 text-text-muted hover:bg-surface-700 hover:text-status-critical"><Ban size={15} /></button>
                       ) : (
-                        <button title="Reactivate" aria-label={`Reactivate ${f.lhs}`}
+                        <button type="button" title="Reactivate" aria-label={`Reactivate ${f.lhs}`}
                           onClick={() => reactivate.mutate(f.id)}
                           className="rounded-md p-1.5 text-text-muted hover:bg-surface-700 hover:text-cobalt-primary"><RotateCcw size={15} /></button>
                       )}
@@ -280,6 +281,35 @@ export function ResolutionRulesSettings() {
   )
 }
 
+const dialogClass =
+  'w-full max-w-sm space-y-3 rounded-xl border border-border bg-surface-900 p-5 text-text-primary shadow-xl open:fixed open:inset-0 open:m-auto open:max-h-[90vh] backdrop:bg-black/50'
+
+function useShowModal(onClose: () => void) {
+  const ref = useRef<HTMLDialogElement>(null)
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    // jsdom lacks HTMLDialogElement.showModal/close — fall back to the open attribute.
+    if (!el.open) {
+      if (typeof el.showModal === 'function') el.showModal()
+      else el.setAttribute('open', '')
+    }
+    const onCancel = (e: Event) => {
+      e.preventDefault()
+      onClose()
+    }
+    el.addEventListener('cancel', onCancel)
+    return () => {
+      el.removeEventListener('cancel', onCancel)
+      if (el.open) {
+        if (typeof el.close === 'function') el.close()
+        else el.removeAttribute('open')
+      }
+    }
+  }, [onClose])
+  return ref
+}
+
 function CreateFactModal(props: {
   pending: boolean
   onClose: () => void
@@ -290,6 +320,7 @@ function CreateFactModal(props: {
   const [rhs, setRhs] = useState('')
   const [reason, setReason] = useState('')
   const selected = KIND_OPTIONS.find((k) => k.value === kind) ?? KIND_OPTIONS[0]!
+  const ref = useShowModal(props.onClose)
 
   function submit(e: FormEvent) {
     e.preventDefault()
@@ -297,14 +328,12 @@ function CreateFactModal(props: {
   }
 
   return (
-    <div role="dialog" aria-modal="true" aria-label="Add rule"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={props.onClose}>
-      <form onClick={(e) => e.stopPropagation()} onSubmit={submit}
-        className="w-full max-w-sm space-y-3 rounded-xl border border-border bg-surface-900 p-5">
+    <dialog ref={ref} aria-label="Add rule" className={dialogClass}>
+      <form onSubmit={submit} className="space-y-3">
         <h3 className="text-sm font-semibold text-text-primary">Add resolution rule</h3>
         <div>
-          <label className="mb-1 block text-xs text-text-muted">Type</label>
-          <select aria-label="Type" value={kind} onChange={(e) => setKind(e.target.value)}
+          <label htmlFor="create-fact-kind" className="mb-1 block text-xs text-text-muted">Type</label>
+          <select id="create-fact-kind" value={kind} onChange={(e) => setKind(e.target.value)}
             className="w-full rounded-lg border border-border bg-surface-800 px-3 py-2 text-sm text-text-primary focus:border-cobalt-primary focus:outline-none">
             {KIND_OPTIONS.map((k) => (
               <option key={k.value} value={k.value}>{k.label}</option>
@@ -313,20 +342,20 @@ function CreateFactModal(props: {
           <p className="mt-1 text-[11px] text-text-muted">{selected.hint}</p>
         </div>
         <div>
-          <label className="mb-1 block text-xs text-text-muted">From</label>
-          <input required value={lhs} onChange={(e) => setLhs(e.target.value)}
+          <label htmlFor="create-fact-lhs" className="mb-1 block text-xs text-text-muted">From</label>
+          <input id="create-fact-lhs" required value={lhs} onChange={(e) => setLhs(e.target.value)}
             placeholder="Observed text, code, or pattern"
             className="w-full rounded-lg border border-border bg-surface-800 px-3 py-2 text-sm text-text-primary focus:border-cobalt-primary focus:outline-none" />
         </div>
         <div>
-          <label className="mb-1 block text-xs text-text-muted">To</label>
-          <input value={rhs} onChange={(e) => setRhs(e.target.value)}
+          <label htmlFor="create-fact-rhs" className="mb-1 block text-xs text-text-muted">To</label>
+          <input id="create-fact-rhs" value={rhs} onChange={(e) => setRhs(e.target.value)}
             placeholder="Resolved code or group (optional for some types)"
             className="w-full rounded-lg border border-border bg-surface-800 px-3 py-2 text-sm text-text-primary focus:border-cobalt-primary focus:outline-none" />
         </div>
         <div>
-          <label className="mb-1 block text-xs text-text-muted">Reason</label>
-          <input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Optional note"
+          <label htmlFor="create-fact-reason" className="mb-1 block text-xs text-text-muted">Reason</label>
+          <input id="create-fact-reason" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Optional note"
             className="w-full rounded-lg border border-border bg-surface-800 px-3 py-2 text-sm text-text-primary focus:border-cobalt-primary focus:outline-none" />
         </div>
         <div className="flex justify-end gap-2 pt-1">
@@ -338,7 +367,7 @@ function CreateFactModal(props: {
           </button>
         </div>
       </form>
-    </div>
+    </dialog>
   )
 }
 
@@ -350,6 +379,7 @@ function EditReasonModal(props: {
   onSubmit: (reason: string) => void
 }) {
   const [reason, setReason] = useState(props.initialReason)
+  const ref = useShowModal(props.onClose)
 
   function submit(e: FormEvent) {
     e.preventDefault()
@@ -357,14 +387,11 @@ function EditReasonModal(props: {
   }
 
   return (
-    <div role="dialog" aria-modal="true" aria-label="Edit reason"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={props.onClose}>
-      <form onClick={(e) => e.stopPropagation()} onSubmit={submit}
-        className="w-full max-w-sm space-y-3 rounded-xl border border-border bg-surface-900 p-5">
+    <dialog ref={ref} aria-label="Edit reason" className={dialogClass}>
+      <form onSubmit={submit} className="space-y-3">
         <h3 className="text-sm font-semibold text-text-primary">Edit reason</h3>
         <p className="text-xs text-text-muted">{props.label}</p>
         <input
-          autoFocus
           value={reason}
           onChange={(e) => setReason(e.target.value)}
           placeholder="Optional note"
@@ -379,7 +406,7 @@ function EditReasonModal(props: {
           </button>
         </div>
       </form>
-    </div>
+    </dialog>
   )
 }
 
@@ -392,11 +419,10 @@ function ConfirmModal(props: {
   onClose: () => void
   onConfirm: () => void
 }) {
+  const ref = useShowModal(props.onClose)
   return (
-    <div role="dialog" aria-modal="true" aria-label={props.title}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={props.onClose}>
-      <div onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-sm space-y-3 rounded-xl border border-border bg-surface-900 p-5">
+    <dialog ref={ref} aria-label={props.title} className={dialogClass}>
+      <div className="space-y-3">
         <h3 className="text-sm font-semibold text-text-primary">{props.title}</h3>
         <p className="text-sm text-text-secondary">{props.body}</p>
         <div className="flex justify-end gap-2 pt-1">
@@ -415,6 +441,6 @@ function ConfirmModal(props: {
           </button>
         </div>
       </div>
-    </div>
+    </dialog>
   )
 }

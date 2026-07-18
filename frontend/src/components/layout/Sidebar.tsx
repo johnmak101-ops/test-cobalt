@@ -46,6 +46,18 @@ const navItems: NavItem[] = [
   { to: '/settings', icon: Settings, label: 'Settings', roles: ['SUPERADMIN'], badgeKey: null },
 ]
 
+function renderBadge(count: number, isCollapsed: boolean) {
+  if (count <= 0) return null
+  if (isCollapsed) {
+    return <span className="absolute right-1 top-0.5 h-2 w-2 rounded-full bg-status-warning" />
+  }
+  return (
+    <span className="inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-status-warning px-1.5 text-[10px] font-bold text-white">
+      {count}
+    </span>
+  )
+}
+
 export function Sidebar() {
   const { sidebarCollapsed, toggleSidebar, mobileNavOpen, closeMobileNav } = useUIStore()
   const { user } = useAuth()
@@ -97,18 +109,6 @@ export function Sidebar() {
   }
 
   const isVisible = (roles: string[]) => !user || roles.includes(user.role)
-
-  const renderBadge = (count: number, isCollapsed: boolean) => {
-    if (count <= 0) return null
-    if (isCollapsed) {
-      return <span className="absolute right-1 top-0.5 h-2 w-2 rounded-full bg-status-warning" />
-    }
-    return (
-      <span className="inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-status-warning px-1.5 text-[10px] font-bold text-white">
-        {count}
-      </span>
-    )
-  }
 
   const renderLink = (item: NavItem, indent: boolean = false) => {
     const badgeCount = item.badgeKey ? badges[item.badgeKey] ?? 0 : 0

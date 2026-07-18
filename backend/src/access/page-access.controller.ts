@@ -1,4 +1,5 @@
 import { Body, Controller, Get, Put } from '@nestjs/common'
+import { Type } from 'class-transformer'
 import { IsObject } from 'class-validator'
 import { PageAccessService } from './page-access.service'
 import { Roles, CurrentUser } from '../auth/decorators'
@@ -7,7 +8,9 @@ import type { AuthUser } from '../auth/auth.service'
 class PageAccessDto {
   // The full override map { pageId: { role: level } }. The service validates/cleans each cell
   // (drops unknown pages/roles, junk levels, and any SUPERADMIN entry).
-  @IsObject() overrides!: Record<string, Record<string, string>>
+  @IsObject()
+  @Type(() => Object)
+  overrides!: Record<string, Record<string, string>>
 }
 
 @Controller('page-access')

@@ -41,6 +41,36 @@ const milestoneLabels: Record<string, string> = {
   DELIVERED: 'Delivered',
 }
 
+// Keyed on the UI-translated status (stateToUiStatus: RELEASED→DEPARTED, DELIVERED→ARRIVED).
+// Indices track the lean milestoneOrder (AT_WAREHOUSE / ARRIVED are no longer display stages — #126).
+const STATE_TO_INDEX: Record<string, number> = {
+  BOOKED: 0,
+  CONFIRMED: 1,
+  AT_WAREHOUSE: 1, // stage removed from display — floor at SO Received, never below
+  SAILED: 4, // Departure — the vessel has left
+  DEPARTED: 4, // Departure (UI status for leg state RELEASED)
+  ARRIVED: 5, // Delivered — stage removed from display, fold forward (UI status for leg state DELIVERED)
+}
+
+type TimelineStage = {
+  type: string
+  idx: number
+  label: string
+  done: boolean
+  isCurrent: boolean
+  isNext: boolean
+  isLast: boolean
+  date: string | null
+  est: string | null
+}
+
+function dateLine(s: TimelineStage, sz: string) {
+  if (s.date) return <p className={cn(sz, 'text-text-muted')}>{formatDate(s.date)}</p>
+  if (s.done) return <p className={cn(sz, 'text-text-muted')}>—</p> // implied complete, date unknown
+  if (s.est) return <p className={cn(sz, 'text-text-muted')}>Est. {formatDate(s.est)}</p>
+  return <p className={cn(sz, 'text-text-muted italic')}>Awaiting</p>
+}
+
 export function MilestoneTimeline({
   milestones,
   currentStatus,
@@ -98,24 +128,10 @@ export function MilestoneTimeline({
   // the derived STATE implies progress even with no per-stage milestone EVENT — e.g. a shipment whose emails
   // are all "Other" but carry an so_no sits in CONFIRMED with zero milestones. Never show less than the
   // state's stage, so the timeline agrees with the status badge.
-  // Keyed on the UI-translated status (stateToUiStatus: RELEASED→DEPARTED, DELIVERED→ARRIVED).
-  // Indices track the lean milestoneOrder (AT_WAREHOUSE / ARRIVED are no longer display stages — #126),
-  // and must never LOWER a state's floor: AT_WAREHOUSE folds back to SO Received, and SAILED/ARRIVED fold
-  // FORWARD to the stage that means the same thing. SAILED = the vessel left (state.ts bumps it from atd,
-  // or BUG-7 from Invoice/Billing + carrier doc + past ETD with NO atd) → Departure; a lower floor made
-  // those atd-less legs advertise an ESTIMATED departure for a ship already at sea.
-  const STATE_TO_INDEX: Record<string, number> = {
-    BOOKED: 0,
-    CONFIRMED: 1,
-    AT_WAREHOUSE: 1, // stage removed from display — floor at SO Received, never below
-    SAILED: 4, // Departure — the vessel has left
-    DEPARTED: 4, // Departure (UI status for leg state RELEASED)
-    ARRIVED: 5, // Delivered — stage removed from display, fold forward (UI status for leg state DELIVERED)
-  }
   currentIndex = Math.max(currentIndex, STATE_TO_INDEX[currentStatus] ?? -1)
 
   const lastIndex = milestoneOrder.length - 1
-  const stages = milestoneOrder.map((type, idx) => ({
+  const stages: TimelineStage[] = milestoneOrder.map((type, idx) => ({
     type,
     idx,
     label: milestoneLabels[type] ?? type,
@@ -129,14 +145,6 @@ export function MilestoneTimeline({
     date: actualDate(type),
     est: estDate(type),
   }))
-
-  type Stage = (typeof stages)[number]
-  const dateLine = (s: Stage, sz: string) => {
-    if (s.date) return <p className={cn(sz, 'text-text-muted')}>{formatDate(s.date)}</p>
-    if (s.done) return <p className={cn(sz, 'text-text-muted')}>—</p> // implied complete, date unknown
-    if (s.est) return <p className={cn(sz, 'text-text-muted')}>Est. {formatDate(s.est)}</p>
-    return <p className={cn(sz, 'text-text-muted italic')}>Awaiting</p>
-  }
 
   if (horizontal) {
     return (

@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common'
+import { ConfigService } from '@nestjs/config'
 
 /** What "view original" returns — either the fetched email, or why it isn't available. */
 export interface OriginalEmail {
@@ -75,12 +76,14 @@ export class GraphService {
   private readonly log = new Logger('GraphService')
   private token: { value: string; exp: number } | null = null
 
+  constructor(private readonly config: ConfigService) {}
+
   private cfg() {
     return {
-      tenant: process.env.GRAPH_TENANT_ID ?? '',
-      clientId: process.env.GRAPH_CLIENT_ID ?? '',
-      secret: process.env.GRAPH_CLIENT_SECRET ?? '',
-      mailbox: process.env.GRAPH_MAILBOX ?? '',
+      tenant: this.config.get<string>('GRAPH_TENANT_ID') ?? '',
+      clientId: this.config.get<string>('GRAPH_CLIENT_ID') ?? '',
+      secret: this.config.get<string>('GRAPH_CLIENT_SECRET') ?? '',
+      mailbox: this.config.get<string>('GRAPH_MAILBOX') ?? '',
     }
   }
 

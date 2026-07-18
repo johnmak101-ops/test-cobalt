@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common'
+import { ConfigService } from '@nestjs/config'
 
 /** One field signal, in the shape the queue learning feed (POST /review/correction) expects. `kind`
  *  distinguishes a real correction (a human changed the value) from a "looks right" confirm-sentinel
@@ -39,13 +40,19 @@ export class QueueLearningClient {
    */
   fetchImpl: FetchLike = fetch
 
+  constructor(private readonly config: ConfigService) {}
+
   private base(): string | null {
-    const b = (process.env.QUEUE_API_BASE ?? '').trim().replace(/\/+$/, '')
+    const b = (this.config.get<string>('QUEUE_API_BASE') ?? '').trim().replace(/\/+$/, '')
     return b || null
   }
 
   private password(): string {
-    return (process.env.QUEUE_API_PASSWORD ?? process.env.QUEUE_VIEWER_PASSWORD ?? '').trim()
+    return (
+      this.config.get<string>('QUEUE_API_PASSWORD') ??
+      this.config.get<string>('QUEUE_VIEWER_PASSWORD') ??
+      ''
+    ).trim()
   }
 
   /** Probe GET /auth → { required }. Cached for process lifetime (restart after password policy change). */

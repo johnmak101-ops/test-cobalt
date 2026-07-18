@@ -1,4 +1,4 @@
-import { Fragment, useMemo, useState } from 'react'
+import { Fragment, useMemo, useReducer, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { CheckCircle, Ship, Package, Loader2, XCircle, RotateCcw } from 'lucide-react'
 import {
@@ -27,6 +27,77 @@ import {
   type ReasonCategory,
 } from '../lib/review-reasons'
 import { mapCriticFieldsToColumns } from '../lib/review-fields'
+
+const VIEW_COPY: Record<ReviewQueueView, string> = {
+  active:
+    'Provisional shipments awaiting confirmation — resolve contested (AI conflict) fields, then approve. Other field edits: open full shipment. Dismiss what is not a real shipment.',
+  rejected: 'Dismissed items — ruled "not a trackable shipment". Restore anything dismissed by mistake.',
+  approved: 'Recently confirmed legs that carried an AI critic review — read-only history.',
+}
+
+/** Filter / selection state that often transitions together (view switch clears category, page, selection). */
+type QueueUiState = {
+  view: ReviewQueueView
+  page: number
+  category: ReasonCategory | 'all'
+  selected: Set<string>
+  expandedId: string | null
+  staleBanner: string | null
+}
+
+type QueueUiAction =
+  | { type: 'switchView'; view: ReviewQueueView }
+  | { type: 'pickCategory'; category: ReasonCategory | 'all' }
+  | { type: 'setPage'; page: number }
+  | { type: 'setExpandedId'; id: string | null }
+  | { type: 'setStaleBanner'; msg: string | null }
+  | { type: 'resetSelection' }
+  | { type: 'toggleRow'; id: string }
+  | { type: 'toggleAll'; ids: string[]; allSelected: boolean }
+  | { type: 'deselectRow'; id: string }
+
+function queueUiReducer(state: QueueUiState, action: QueueUiAction): QueueUiState {
+  switch (action.type) {
+    case 'switchView':
+      return {
+        view: action.view,
+        page: 1,
+        category: 'all',
+        selected: new Set(),
+        expandedId: null,
+        staleBanner: null,
+      }
+    case 'pickCategory':
+      return { ...state, category: action.category, page: 1, selected: new Set() }
+    case 'setPage':
+      return { ...state, page: action.page }
+    case 'setExpandedId':
+      return { ...state, expandedId: action.id }
+    case 'setStaleBanner':
+      return { ...state, staleBanner: action.msg }
+    case 'resetSelection':
+      return { ...state, selected: new Set() }
+    case 'toggleRow': {
+      const next = new Set(state.selected)
+      if (next.has(action.id)) next.delete(action.id)
+      else next.add(action.id)
+      return { ...state, selected: next }
+    }
+    case 'toggleAll':
+      return {
+        ...state,
+        selected: action.allSelected ? new Set() : new Set(action.ids),
+      }
+    case 'deselectRow': {
+      if (!state.selected.has(action.id)) return state
+      const next = new Set(state.selected)
+      next.delete(action.id)
+      return { ...state, selected: next }
+    }
+    default:
+      return state
+  }
+}
 
 /** Inline expand: loads full criticReview for the conflict card (queue list only has compact). */
 function ExpandedReviewPanel({
@@ -88,7 +159,16 @@ function ExpandedReviewPanel({
 }
 
 export default function ReviewQueuePage() {
-  const [view, setView] = useState<ReviewQueueView>('active')
+  const location = useLocation()
+  const [ui, dispatch] = useReducer(queueUiReducer, {
+    view: 'active' as ReviewQueueView,
+    page: 1,
+    category: 'all' as ReasonCategory | 'all',
+    selected: new Set<string>(),
+    expandedId: (location.state as { expandId?: string } | null)?.expandId ?? null,
+    staleBanner: null as string | null,
+  })
+  const { view, page, category, selected, expandedId, staleBanner } = ui
   const { data, isLoading, isError, refetch } = useReviewQueue(view)
   const { data: counts } = useReviewCounts()
   const confirmMutation = useConfirmShipment()
@@ -96,18 +176,10 @@ export default function ReviewQueuePage() {
   const dismissMutation = useDismissShipments()
   const restoreMutation = useRestoreShipment()
   const navigate = useNavigate()
-  const location = useLocation()
 
-  const [page, setPage] = useState(1)
   const [perPage, setPerPage] = useState(25)
   const [busyId, setBusyId] = useState<string | null>(null)
-  const [category, setCategory] = useState<ReasonCategory | 'all'>('all')
-  const [selected, setSelected] = useState<Set<string>>(new Set())
   const [bulkNote, setBulkNote] = useState('')
-  const [expandedId, setExpandedId] = useState<string | null>(
-    (location.state as { expandId?: string } | null)?.expandId ?? null,
-  )
-  const [staleBanner, setStaleBanner] = useState<string | null>(null)
 
   const shipments = useMemo(() => data?.shipments ?? [], [data?.shipments])
 
@@ -125,34 +197,21 @@ export default function ReviewQueuePage() {
   const { totalItems, totalPages, pageSize, getPage } = usePagination(filtered, perPage)
   const pageShipments = getPage(page)
 
-  const resetSelection = () => setSelected(new Set())
-  const switchView = (v: ReviewQueueView) => {
-    setView(v)
-    setCategory('all')
-    setPage(1)
-    setExpandedId(null)
-    setStaleBanner(null)
-    resetSelection()
-  }
-  const pickCategory = (c: ReasonCategory | 'all') => {
-    setCategory(c)
-    setPage(1)
-    resetSelection()
-  }
-  const toggleRow = (id: string) =>
-    setSelected((prev) => {
-      const next = new Set(prev)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      return next
-    })
+  const resetSelection = () => dispatch({ type: 'resetSelection' })
+  const switchView = (v: ReviewQueueView) => dispatch({ type: 'switchView', view: v })
+  const pickCategory = (c: ReasonCategory | 'all') => dispatch({ type: 'pickCategory', category: c })
+  const setPage = (p: number) => dispatch({ type: 'setPage', page: p })
+  const setExpandedId = (id: string | null) => dispatch({ type: 'setExpandedId', id })
+  const setStaleBanner = (msg: string | null) => dispatch({ type: 'setStaleBanner', msg })
+  const toggleRow = (id: string) => dispatch({ type: 'toggleRow', id })
   const allFilteredSelected = filtered.length > 0 && filtered.every((s) => selected.has(s.id))
-  const toggleAll = () => setSelected(allFilteredSelected ? new Set() : new Set(filtered.map((s) => s.id)))
+  const toggleAll = () =>
+    dispatch({ type: 'toggleAll', ids: filtered.map((s) => s.id), allSelected: allFilteredSelected })
 
   const handleStale = async (err: unknown) => {
     if (!isStaleConflict(err)) throw err
-    setStaleBanner('This shipment was modified elsewhere — reloading the queue.')
-    setExpandedId(null)
+    dispatch({ type: 'setStaleBanner', msg: 'This shipment was modified elsewhere — reloading the queue.' })
+    dispatch({ type: 'setExpandedId', id: null })
     await refetch()
   }
 
@@ -221,13 +280,6 @@ export default function ReviewQueuePage() {
   // rejected/approved = band + customer + booking + route + status + action (Restore / Open).
   const colSpan = 6
 
-  const viewCopy: Record<ReviewQueueView, string> = {
-    active:
-      'Provisional shipments awaiting confirmation — resolve contested (AI conflict) fields, then approve. Other field edits: open full shipment. Dismiss what is not a real shipment.',
-    rejected: 'Dismissed items — ruled "not a trackable shipment". Restore anything dismissed by mistake.',
-    approved: 'Recently confirmed legs that carried an AI critic review — read-only history.',
-  }
-
   const emptyCopy = (): string => {
     if (isActiveView) {
       return category === 'all'
@@ -244,7 +296,7 @@ export default function ReviewQueuePage() {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0">
           <h1 className="text-lg font-semibold text-text-primary">Review Queue</h1>
-          <p className="mt-0.5 text-xs text-text-muted">{viewCopy[view]}</p>
+          <p className="mt-0.5 text-xs text-text-muted">{VIEW_COPY[view]}</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {/* View tabs — Active | Rejected | Approved */}
@@ -295,21 +347,25 @@ export default function ReviewQueuePage() {
         >
           All ({shipments.length})
         </button>
-        {CATEGORY_ORDER.filter((c) => (categoryCounts.get(c) ?? 0) > 0).map((c) => (
-          <button
-            type="button"
-            key={c}
-            onClick={() => pickCategory(c)}
-            className={cn(
-              'rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors',
-              category === c
-                ? 'border-cobalt-primary bg-cobalt-primary/15 text-cobalt-primary-light'
-                : 'border-border bg-surface-800 text-text-secondary hover:text-text-primary',
-            )}
-          >
-            {CATEGORY_LABEL[c]} ({categoryCounts.get(c)})
-          </button>
-        ))}
+        {CATEGORY_ORDER.flatMap((c) => {
+          const count = categoryCounts.get(c) ?? 0
+          if (count <= 0) return []
+          return [
+            <button
+              type="button"
+              key={c}
+              onClick={() => pickCategory(c)}
+              className={cn(
+                'rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors',
+                category === c
+                  ? 'border-cobalt-primary bg-cobalt-primary/15 text-cobalt-primary-light'
+                  : 'border-border bg-surface-800 text-text-secondary hover:text-text-primary',
+              )}
+            >
+              {CATEGORY_LABEL[c]} ({count})
+            </button>,
+          ]
+        })}
       </div>
 
       {/* Bulk-dismiss bar (active view, ≥1 selected) */}
@@ -516,11 +572,7 @@ export default function ReviewQueuePage() {
                                         await dismissMutation.mutateAsync({ shipmentIds: [s.id] })
                                         // Drop it from the bulk selection too — this is now the only
                                         // dismiss path, and a dismissed row must not linger in it.
-                                        setSelected((prev) => {
-                                          const next = new Set(prev)
-                                          next.delete(s.id)
-                                          return next
-                                        })
+                                        dispatch({ type: 'deselectRow', id: s.id })
                                         setExpandedId(null)
                                       }
                                     : undefined

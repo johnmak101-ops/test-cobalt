@@ -68,9 +68,9 @@ export class MasterResolver {
     return link ?? { id: null, tier: null }
   }
 
-  async resolvePortLink(code: unknown, aliases: CuratedAliasMaps = emptyAliasMaps()): Promise<PortLink | null> {
+  resolvePortLink(code: unknown, aliases: CuratedAliasMaps = emptyAliasMaps()): Promise<PortLink | null> {
     const c = str(code)
-    if (!c) return null
+    if (!c) return Promise.resolve(null)
     // Curated exact alias: raw → UN/LOCODE (also covered by portLinkByCodeOrName facts; pre-map is explicit for batch load)
     const aliased = aliases.portAlias.get(c.toUpperCase())
     return this.masters.portLinkByCodeOrName(aliased ?? c)

@@ -11,6 +11,7 @@ import { formatDate, formatDateTime, formatDateMaybeTime, cn } from '../lib/util
 import { buildNeedsAttentionGroups, looksLikeLocode } from '../components/review/needs-attention'
 import { EDITABLE_FIELDS, fieldLabel, numericFieldWarn, dateOrderWarn, type EditableField } from '../lib/review-fields'
 import { toast } from '../components/ui/Toast'
+import { interactiveProps } from '../lib/interactive'
 import { ArrowLeft, Mail, Clock, ClipboardList, Package, Ship, Calendar, AlertTriangle, AlertCircle, Info, Pencil, Check, X, NotebookPen, ChevronDown, ChevronRight } from 'lucide-react'
 
 // The human-editable leg fields, grouped like the read-only card. `db` = the backend column the PATCH writes
@@ -34,19 +35,23 @@ const EDIT_SECTIONS: { title: string; fields: EditField[] }[] = (() => {
   const order: EditableField['section'][] = ['Order Info', 'Cargo & Logistics', 'Shipping', 'Key Dates']
   return order.map((title) => ({
     title,
-    fields: EDITABLE_FIELDS.filter((f) => f.section === title && f.column !== 'itemStyleNo').map((f) => ({
-      db: f.column,
-      label: f.label,
-      type: f.type,
-      options: f.options,
-      get: (s: ShipmentDetail) => {
-        // Prefer free-text raw; fall back to resolved master name so edit is not blank when only FK is set.
-        if (f.column === 'forwarderRaw') {
-          return s.forwarderRaw ?? s.forwarder?.name ?? null
-        }
-        return (s as unknown as Record<string, unknown>)[f.uiKey]
-      },
-    })),
+    fields: EDITABLE_FIELDS.reduce<EditField[]>((acc, f) => {
+      if (f.section !== title || f.column === 'itemStyleNo') return acc
+      acc.push({
+        db: f.column,
+        label: f.label,
+        type: f.type,
+        options: f.options,
+        get: (s: ShipmentDetail) => {
+          // Prefer free-text raw; fall back to resolved master name so edit is not blank when only FK is set.
+          if (f.column === 'forwarderRaw') {
+            return s.forwarderRaw ?? s.forwarder?.name ?? null
+          }
+          return (s as unknown as Record<string, unknown>)[f.uiKey]
+        },
+      })
+      return acc
+    }, []),
   }))
 })()
 /** A stored value → the string an <input> expects (date → YYYY-MM-DD). */
@@ -149,8 +154,7 @@ export default function ShipmentDetailPage() {
   // which is ingest time (e.g. a reparse date), not when any email actually arrived.
   const lastEmailAt =
     (shipment.emails ?? [])
-      .map((e) => e.receivedAt)
-      .filter(Boolean)
+      .flatMap((e) => (e.receivedAt ? [e.receivedAt] : []))
       .sort()
       .at(-1) ?? null
   // Title from MEANINGFUL identifiers — booking no / SO no (then a PO), never the opaque UUID.
@@ -454,7 +458,7 @@ export default function ShipmentDetailPage() {
                   {linkedPOs.map((po) => (
                     <tr
                       key={po.id}
-                      onClick={() => navigate(`/purchase-orders/${po.id}`, { state: { fromShipment: id } })}
+                      {...interactiveProps(() => navigate(`/purchase-orders/${po.id}`, { state: { fromShipment: id } }))}
                       className="cursor-pointer border-b border-border last:border-0 transition-colors hover:bg-surface-700"
                     >
                       <td className="px-3 py-2 font-mono text-sm text-cobalt-primary-light">{po.poNumber}</td>
@@ -542,14 +546,13 @@ export default function ShipmentDetailPage() {
             <div className="grid grid-cols-1 gap-x-8 gap-y-6 md:grid-cols-2">
               {EDIT_SECTIONS.map((sec) => (
                 <DetailSection key={sec.title} title={sec.title} icon={<ClipboardList size={14} className="text-text-muted" />}>
-                  {sec.fields
-                    .filter((f) => shippingFieldVisible(f.db, draft.mode || shipment.mode))
-                    .map((f) => {
+                  {sec.fields.flatMap((f) => {
+                      if (!shippingFieldVisible(f.db, draft.mode || shipment.mode)) return []
                       const cur = draft[f.db] ?? ''
                       const numErr = f.type === 'number' ? numericFieldWarn(f.db, cur) : null
                       const controlClass =
                         'h-8 w-full rounded-md border border-border bg-surface-700 px-2 text-sm text-text-primary placeholder:text-text-muted/70 focus:border-cobalt-primary focus:outline-none'
-                      return (
+                      return [(
                     <div key={f.db} className="grid grid-cols-[7rem_1fr] sm:grid-cols-[9rem_1fr] items-center gap-x-2">
                       <label htmlFor={`${fieldId}-${f.db}`} className="truncate text-xs text-text-muted">{f.label}</label>
                       {f.options ? (
@@ -597,7 +600,7 @@ export default function ShipmentDetailPage() {
                         </p>
                       )}
                     </div>
-                      )
+                      )]
                   })}
                 </DetailSection>
               ))}
@@ -777,28 +780,30 @@ export default function ShipmentDetailPage() {
       {activeTab === 'details' ? (
         <>
           {/* Active Alerts */}
-          {shipment.alerts && shipment.alerts.filter((a) => a.status === 'ACTIVE').length > 0 && (
+          {shipment.alerts && shipment.alerts.some((a) => a.status === 'ACTIVE') && (
             <div className="space-y-2">
               <h4 className="text-sm font-semibold text-text-primary">Active Alerts</h4>
-              {shipment.alerts
-                .filter((a) => a.status === 'ACTIVE')
-                .map((alert) => (
-                  <AlertCard
-                    key={alert.id}
-                    alert={{
-                      ...alert,
-                      shipmentId: shipment.id,
-                      // Detail alerts omit nested summary server-side; pass parent PO/consignee for header.
-                      shipment: {
-                        id: shipment.id,
-                        poNumbers: shipment.poNumbers,
-                        route: shipment.route,
-                        consigneeName: shipment.consigneeName ?? null,
-                      },
-                    }}
-                    compact
-                  />
-                ))}
+              {shipment.alerts.flatMap((alert) =>
+                alert.status !== 'ACTIVE'
+                  ? []
+                  : [
+                      <AlertCard
+                        key={alert.id}
+                        alert={{
+                          ...alert,
+                          shipmentId: shipment.id,
+                          // Detail alerts omit nested summary server-side; pass parent PO/consignee for header.
+                          shipment: {
+                            id: shipment.id,
+                            poNumbers: shipment.poNumbers,
+                            route: shipment.route,
+                            consigneeName: shipment.consigneeName ?? null,
+                          },
+                        }}
+                        compact
+                      />,
+                    ],
+              )}
             </div>
           )}
 
@@ -809,21 +814,21 @@ export default function ShipmentDetailPage() {
               <p className="text-sm text-text-muted">No related emails linked to this shipment.</p>
             ) : (
               <div className="space-y-2">
-                {(shipment.emails ?? []).map((email, i) => {
+                {(shipment.emails ?? []).map((email) => {
                   const openable = email.id != null && !email.bodyMissing
+                  const emailKey = email.id ?? `orphan-${email.subject}-${email.receivedAt ?? ''}-${email.sender ?? ''}`
                   return (
                     <div
-                      key={email.id ?? `orphan-${i}`}
-                      onClick={
-                        openable
-                          ? () =>
-                              window.open(
-                                `/email/${email.id}?type=${encodeURIComponent(email.emailType ?? '')}`,
-                                `email_${email.id}`,
-                                'popup,width=880,height=940,resizable=yes,scrollbars=yes',
-                              )
-                          : undefined
-                      }
+                      key={emailKey}
+                      {...(openable
+                        ? interactiveProps(() =>
+                            window.open(
+                              `/email/${email.id}?type=${encodeURIComponent(email.emailType ?? '')}`,
+                              `email_${email.id}`,
+                              'popup,width=880,height=940,resizable=yes,scrollbars=yes',
+                            ),
+                          )
+                        : {})}
                       className={
                         openable
                           ? 'flex cursor-pointer items-center gap-3 rounded-lg bg-surface-900 p-3 transition-colors hover:bg-surface-700'

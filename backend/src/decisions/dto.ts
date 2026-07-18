@@ -1,24 +1,35 @@
+import { Type } from 'class-transformer'
 import { IsArray, IsBoolean, IsIn, IsInt, IsObject, IsOptional, IsString, Max, Min } from 'class-validator'
 
 /** One scored shipment decision, POSTed by the Agent VM (Matcher merged it, Critic scored it). */
 export class CreateDecisionDto {
   /** The strong-key bag the shipment is matched/upserted on (so_no, booking_no, hbl_awb_fcr_no, mbl, container_no, customer_po). */
-  @IsObject() matchKey!: Record<string, unknown>
+  @IsObject()
+  @Type(() => Object)
+  matchKey!: Record<string, unknown>
 
   /** Consolidated field values (the Matcher's merged picture). */
-  @IsObject() fields!: Record<string, unknown>
+  @IsObject()
+  @Type(() => Object)
+  fields!: Record<string, unknown>
 
   @IsOptional() @IsArray() @IsString({ each: true }) pos?: string[]
 
   /** Per-PO unambiguous shipped qty, keyed by normalized po_no. Present only when a real qty can be attributed
    *  to an individual PO; absent (or a PO omitted) when the qty is a broadcast total. Omitted by legacy callers. */
-  @IsOptional() @IsObject() poQty?: Record<string, number>
+  @IsOptional()
+  @IsObject()
+  @Type(() => Object)
+  poQty?: Record<string, number>
 
   @IsOptional() @IsString() mode?: string
   @IsOptional() @IsArray() @IsString({ each: true }) emailTypes?: string[]
 
   /** Per-email events that built this shipment (for milestones + view-original). */
-  @IsOptional() @IsArray() events?: { emailType: string; receivedAt: string; graphId?: string }[]
+  @IsOptional()
+  @IsArray()
+  @Type(() => Object)
+  events?: { emailType: string; receivedAt: string; graphId?: string }[]
 
   /** Human-readable disagreement notes the Matcher surfaced (GENUINE conflicts only). */
   @IsOptional() @IsArray() @IsString({ each: true }) conflicts?: string[]
@@ -27,7 +38,10 @@ export class CreateDecisionDto {
   @IsOptional() @IsArray() @IsString({ each: true }) supersedes?: string[]
 
   /** Every value each identity field ever held (current + alternates) — persisted as searchable history. */
-  @IsOptional() @IsArray() identifiers?: {
+  @IsOptional()
+  @IsArray()
+  @Type(() => Object)
+  identifiers?: {
     type: string
     value: string
     docType?: string
@@ -40,7 +54,10 @@ export class CreateDecisionDto {
   /** Co-valid customer entities with roles — persisted as shipment_parties. Present only when ≥2 RELATED
    *  customer codes co-occur; the isPrimary one equals fields.customer_code (booking.customer_id). Omitted
    *  by legacy callers → no parties written (unchanged). */
-  @IsOptional() @IsArray() entities?: {
+  @IsOptional()
+  @IsArray()
+  @Type(() => Object)
+  entities?: {
     type: string
     value: string
     role?: string | null
@@ -72,7 +89,10 @@ export class CreateDecisionDto {
 
   /** Cross-leg / master-lookup signals the agent attaches so track can gate review without a full DB scan
    *  (email disposition). Omitted by legacy callers → payload-only gates. */
-  @IsOptional() @IsObject() lookupContext?: {
+  @IsOptional()
+  @IsObject()
+  @Type(() => Object)
+  lookupContext?: {
     knownCustomer?: boolean
     newCustomer?: boolean
     modeChange?: boolean
@@ -93,14 +113,20 @@ export class CreateDecisionDto {
 
   /** Critic advisory JSON (confidence band, conflicts, risk flags) — persisted on the leg for the review UI.
    *  Loose object at the HTTP boundary; shape documented in critic-review.types.ts. Omitted by legacy callers. */
-  @IsOptional() @IsObject() criticReview?: object
+  @IsOptional()
+  @IsObject()
+  @Type(() => Object)
+  criticReview?: object
 
   /**
    * #129 multi-candidate match: closed-set legs the email matched (queue matcher).
    * Merged into criticReview.matchAmbiguity on ingest for ReviewCard candidate picker.
    * Never invent IDs — only pass through agent payload.
    */
-  @IsOptional() @IsObject() matchAmbiguity?: object
+  @IsOptional()
+  @IsObject()
+  @Type(() => Object)
+  matchAmbiguity?: object
 
   /** Queue band-routing recommendation (Phase 2 shadow). Independent of disposition/autoApply gate.
    *  ShipTrack dual-computes band vs gate; under default critic_routing_mode=gate this is shadow-only. */
@@ -110,7 +136,10 @@ export class CreateDecisionDto {
    * #173 C1.5 — dual-confirm pin: commit onto this shipmentId after verify (intersection+llm).
    * Absent → committer first-match-wins (legacy). Verification fail → provisional, never silent re-match.
    */
-  @IsOptional() @IsObject() dualAutoTarget?: { shipmentId: string; basis?: string }
+  @IsOptional()
+  @IsObject()
+  @Type(() => Object)
+  dualAutoTarget?: { shipmentId: string; basis?: string }
 
   /** True when EVERY source email came from the CVP/TradeLinkOne notification platform — the leg is a
    *  vendor/PO notification, not a booked move (routed to Documents, classifyKind rule (c)). Omitted by
@@ -118,13 +147,19 @@ export class CreateDecisionDto {
   @IsOptional() @IsBoolean() fromPlatform?: boolean
 
   /** Pointers back to the source emails (Graph is the permanent source of truth for "view original"). */
-  @IsOptional() @IsArray() evidenceRefs?: { graphId?: string; graphMessageId?: string; sourceFile?: string; receivedAt?: string; emailType?: string }[]
+  @IsOptional()
+  @IsArray()
+  @Type(() => Object)
+  evidenceRefs?: { graphId?: string; graphMessageId?: string; sourceFile?: string; receivedAt?: string; emailType?: string }[]
 
   @IsOptional() @IsString() conversationId?: string
 
   /** Per-email parsed records + email metadata that back Change-History / PO-enrichment after the DB split.
    *  Additive: legacy callers omit it → no ingest write (unchanged). Populated by cobalt-queue's send-side. */
-  @IsOptional() @IsArray() evidence?: {
+  @IsOptional()
+  @IsArray()
+  @Type(() => Object)
+  evidence?: {
     graphMessageId: string
     /** Microsoft Graph item id (AAMk…) for on-demand body/attachment re-fetch — distinct from graphMessageId. */
     graphId?: string | null

@@ -16,7 +16,9 @@ async function main() {
     process.env.SQL_SERVER_URL ??
       'Server=localhost,1433;Database=cobalt;User Id=sa;Password=YourStrong!Passw0rd;Encrypt=false;TrustServerCertificate=true',
   )
-  const svc = new PortsSyncService(db)
+  // CLI path — ConfigService-compatible stub over process.env (Nest DI not available).
+  const envConfig = { get: (k: string) => process.env[k] } as import('@nestjs/config').ConfigService
+  const svc = new PortsSyncService(db, envConfig)
   const summary = await svc.sync({
     unlocodePath: unlocodePath || undefined,
     airportsPath: airportsPath || undefined,

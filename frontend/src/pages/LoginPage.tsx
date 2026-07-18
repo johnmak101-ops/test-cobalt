@@ -84,6 +84,7 @@ export default function LoginPage() {
               {DEV_USERS.map((u) => (
                 <button
                   key={u.email}
+                  type="button"
                   onClick={() => void doLogin(u.email, DEV_PASSWORD)}
                   disabled={busy}
                   className="flex w-full items-center gap-3 rounded-lg border border-border bg-surface-800 px-4 py-3 text-left transition-all hover:border-cobalt-primary/40 hover:bg-surface-700 disabled:opacity-50"

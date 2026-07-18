@@ -1,6 +1,10 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
 import { QueueLearningClient } from './queue-learning.client'
 
+/** ConfigService stub that mirrors process.env (matches Nest ConfigModule default). */
+const envConfig = { get: (k: string) => process.env[k] } as any
+const makeClient = () => new QueueLearningClient(envConfig)
+
 const payload = {
   messageId: 'm1',
   field: 'consignee_name',
@@ -33,7 +37,7 @@ describe('QueueLearningClient.postCorrection — auth + loud failure (#116)', ()
   it('is a no-op when QUEUE_API_BASE is unset (never calls fetch)', async () => {
     const f = vi.fn()
     vi.stubGlobal('fetch', f)
-    await new QueueLearningClient().postCorrection(payload)
+    await makeClient().postCorrection(payload)
     expect(f).not.toHaveBeenCalled()
   })
 
@@ -44,7 +48,7 @@ describe('QueueLearningClient.postCorrection — auth + loud failure (#116)', ()
       return { ok: true, status: 200, text: async () => '' }
     })
     vi.stubGlobal('fetch', f)
-    const client = new QueueLearningClient()
+    const client = makeClient()
     client.fetchImpl = f as never
     await client.postCorrection(payload)
     const correction = f.mock.calls.find((c) => String(c[0]).includes('/review/correction')) as
@@ -74,7 +78,7 @@ describe('QueueLearningClient.postCorrection — auth + loud failure (#116)', ()
       }
       throw new Error(`unexpected url ${u}`)
     })
-    const client = new QueueLearningClient()
+    const client = makeClient()
     client.fetchImpl = f as never
     await client.postCorrection(payload)
     expect(f).toHaveBeenCalled()
@@ -97,7 +101,7 @@ describe('QueueLearningClient.postCorrection — auth + loud failure (#116)', ()
       }
       throw new Error(u)
     })
-    const client = new QueueLearningClient()
+    const client = makeClient()
     client.fetchImpl = f as never
     await client.postCorrection(payload)
     expect(correctionHits).toBe(2)
@@ -111,7 +115,7 @@ describe('QueueLearningClient.postCorrection — auth + loud failure (#116)', ()
       if (String(url).endsWith('/auth')) return { ok: true, status: 200, json: async () => ({ required: true }) }
       throw new Error(`should not call ${url}`)
     })
-    const client = new QueueLearningClient()
+    const client = makeClient()
     client.fetchImpl = f as never
     // must not throw (review save)
     await expect(client.postCorrection(payload)).resolves.toBeUndefined()
@@ -123,7 +127,7 @@ describe('QueueLearningClient.postCorrection — auth + loud failure (#116)', ()
     const f = vi.fn(async () => {
       throw new Error('ECONNREFUSED')
     })
-    const client = new QueueLearningClient()
+    const client = makeClient()
     client.fetchImpl = f as never
     await expect(client.postCorrection(payload)).resolves.toBeUndefined()
   })
@@ -137,7 +141,7 @@ describe('QueueLearningClient.postCorrection — auth + loud failure (#116)', ()
       if (u.endsWith('/login')) return { ok: true, status: 200, json: async () => ({ token: 'jwt' }) }
       return { ok: false, status: 401, text: async () => 'still unauthorized' }
     })
-    const client = new QueueLearningClient()
+    const client = makeClient()
     client.fetchImpl = f as never
     await expect(client.postCorrection(payload)).resolves.toBeUndefined()
     // two correction attempts (initial + after re-login)

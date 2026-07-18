@@ -1,4 +1,5 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common'
+import { ConfigService } from '@nestjs/config'
 import { AlertEvaluatorService } from './alert-evaluator.service'
 
 /** Default cadence: every 15 minutes. Override with ALERT_EVAL_INTERVAL_MS (ms); 0/negative = off. */
@@ -18,10 +19,13 @@ export class AlertSchedulerService implements OnModuleInit, OnModuleDestroy {
   private bootHandle: ReturnType<typeof setTimeout> | null = null
   private running = false
 
-  constructor(private readonly evaluator: AlertEvaluatorService) {}
+  constructor(
+    private readonly evaluator: AlertEvaluatorService,
+    private readonly config: ConfigService,
+  ) {}
 
   onModuleInit(): void {
-    const raw = process.env.ALERT_EVAL_INTERVAL_MS
+    const raw = this.config.get<string>('ALERT_EVAL_INTERVAL_MS')
     const intervalMs =
       raw === undefined || raw === ''
         ? DEFAULT_INTERVAL_MS
