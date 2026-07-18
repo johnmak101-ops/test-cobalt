@@ -85,6 +85,7 @@ const leg = (over: Partial<ShipmentLegRow> = {}): ShipmentLegRow => ({
   hblAwbFcrNo: 'HBL-777',
   vesselName: 'EVER GLOBE',
   voyageNo: 'V42',
+  flightNo: null,
   scacCode: 'MAEU',
   originCountry: null,
   polRaw: null,
@@ -131,6 +132,7 @@ describe('toUiShipment — flat active-leg projection', () => {
     expect(s.mblNumber).toBe('MBL-555')
     expect(s.hblNumber).toBe('HBL-777')
     expect(s.voyageNumber).toBe('V42')
+    expect(s.flightNo).toBeNull()
     expect(s.quantityShipped).toBe(120)
     expect(s.quantityUnit).toBe('cartons')
     expect(s.bookingNo).toBe('BK-100')

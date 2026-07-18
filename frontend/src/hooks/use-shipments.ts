@@ -63,6 +63,8 @@ export interface Shipment {
   hblNumber: string | null
   vesselName: string | null
   voyageNumber: string | null
+  /** Air flight number (e.g. CA1398). Sea legs use vessel/voyage instead. */
+  flightNo?: string | null
   warehouseAddress: string | null
   quantityShipped: number | null
   quantityUnit: string | null

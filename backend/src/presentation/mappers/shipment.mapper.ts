@@ -77,6 +77,7 @@ export interface ShipmentLegRow {
   hblAwbFcrNo: string | null
   vesselName: string | null
   voyageNo: string | null
+  flightNo?: string | null
   scacCode: string | null
   originCountry: string | null
   polRaw: string | null
@@ -161,6 +162,8 @@ export interface UiShipment {
   hblNumber: string | null
   vesselName: string | null
   voyageNumber: string | null
+  /** Air flight number (e.g. CA1398); sea legs leave null. */
+  flightNo: string | null
   warehouseAddress: string | null
   quantityShipped: number | null
   quantityUnit: string | null
@@ -231,6 +234,7 @@ export function toUiShipment(
     hblNumber: leg.hblAwbFcrNo ?? null,
     vesselName: leg.vesselName ?? null,
     voyageNumber: leg.voyageNo ?? null,
+    flightNo: leg.flightNo ?? null,
     warehouseAddress: null, // Phase 3 column
     quantityShipped: leg.qty ?? null,
     quantityUnit: leg.qtyUnit ?? null,
