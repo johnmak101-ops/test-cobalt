@@ -150,7 +150,10 @@ export function resolvePoEnrichment(rows: PoEvidenceInput[]): Map<string, PoEnri
       enr.broadcastSuspected = true
     }
     // de-correction (b2): surface a per-PO brand/style CONFLICT instead of silently resolving to newest.
-    enr.brandConflict = conflictingValues(brands)
+    // Brand: collapse code↔name (PRMK vs primark) and case variants before flagging.
+    const brandRes = resolveBrandLabels(brands)
+    if (brandRes.canonical) enr.brand = brandRes.canonical
+    enr.brandConflict = brandRes.conflict
     enr.styleConflict = conflictingValues(styles)
     out.set(key, enr)
   }
@@ -206,6 +209,70 @@ export function conflictingValues(values: string[]): string[] | null {
     }
   }
   return survivors.length >= 2 ? survivors : null
+}
+
+const brandAlnum = (s: string): string => s.toUpperCase().replace(/[^A-Z0-9]/g, '')
+
+/** 3–6 letter token that looks like a mesh/brand code (PRMK, FENIX, BARB). */
+export function isBrandCodeLike(v: string): boolean {
+  const a = brandAlnum(v)
+  return a.length >= 3 && a.length <= 6 && /^[A-Z]+$/.test(a)
+}
+
+/**
+ * True when `code` is an ordered-letter acronym of `name` (PRMK ⊂ PRIMARK, BARB ⊂ BARBOUR).
+ * Rejects unrelated short/long pairs (FENIX ⊄ BARBOUR).
+ */
+export function isBrandCodeForName(code: string, name: string): boolean {
+  const c = brandAlnum(code)
+  const n = brandAlnum(name)
+  if (!isBrandCodeLike(code) || n.length <= c.length) return false
+  let i = 0
+  for (const ch of n) {
+    if (ch === c[i]) i++
+    if (i === c.length) return true
+  }
+  return false
+}
+
+/**
+ * Collapse brand labels that are the same buyer under different surface forms:
+ * case (primark/PRIMARK), code↔name (PRMK/primark). Prefer short code when present.
+ * Returns canonical brand + conflict set (null when only synonyms remain).
+ */
+export function resolveBrandLabels(brands: string[]): {
+  canonical: string | null
+  conflict: string[] | null
+} {
+  if (!brands.length) return { canonical: null, conflict: null }
+  // Case-insensitive dedupe, keep first appearance (newest-first from caller)
+  const byUpper = new Map<string, string>()
+  for (const b of brands) {
+    const u = b.trim()
+    if (!u) continue
+    const k = u.toUpperCase()
+    if (!byUpper.has(k)) byUpper.set(k, u)
+  }
+  let survivors = [...byUpper.values()]
+
+  // Collapse code↔name pairs: drop the full name when a matching code is present
+  const drop = new Set<string>()
+  for (let i = 0; i < survivors.length; i++) {
+    for (let j = 0; j < survivors.length; j++) {
+      if (i === j) continue
+      const a = survivors[i]!
+      const b = survivors[j]!
+      if (isBrandCodeForName(a, b)) drop.add(b) // drop name, keep code
+      else if (isBrandCodeForName(b, a)) drop.add(a)
+    }
+  }
+  survivors = survivors.filter((v) => !drop.has(v))
+
+  // Prefer short code among remaining synonyms; else first (newest)
+  const codes = survivors.filter((v) => isBrandCodeLike(v))
+  const canonical = codes[0] ?? survivors[0] ?? null
+  const conflict = survivors.length >= 2 ? survivors : null
+  return { canonical, conflict }
 }
 
 /**
