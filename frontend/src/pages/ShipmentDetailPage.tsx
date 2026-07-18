@@ -49,6 +49,29 @@ function toInputValue(v: unknown, type: EditType): string {
   return String(v)
 }
 
+/**
+ * Turn the "see conflict table" clause into a Review Queue deep-link.
+ * Conflict comparison UI lives on ReviewCard, not shipment detail.
+ */
+function AttentionTextWithConflictLink({ text, expandId }: { text: string; expandId: string }) {
+  const m = text.match(/^(.*?)(see conflict table)(.*)$/i)
+  if (!m) return <>{text}</>
+  return (
+    <>
+      {m[1]}
+      <Link
+        to="/review-queue"
+        state={{ expandId }}
+        className="font-medium text-cobalt-primary underline-offset-2 hover:underline"
+        data-testid="conflict-table-link"
+      >
+        {m[2]}
+      </Link>
+      {m[3]}
+    </>
+  )
+}
+
 export default function ShipmentDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
@@ -147,11 +170,17 @@ export default function ShipmentDetailPage() {
   const saveBlocked = editedCount > 0 && !note.trim()
 
   // Collapsed Needs attention groups (same builder as ReviewCard) — show for any shipment with items.
+  // Conflict table lives on Review Queue (ReviewCard), not here — so we pass conflictsCount for
+  // suppress-on-card semantics, then re-surface a linked CTA when fieldConflicts exist.
+  const fieldConflictCount = shipment.fieldConflicts?.length ?? 0
   const attentionGroups = buildNeedsAttentionGroups({
     reviewReasons: shipment.reviewReasons ?? [],
     riskFlags: shipment.criticReview?.riskFlags ?? [],
-    conflictsCount: (shipment.fieldConflicts ?? []).length,
+    conflictsCount: fieldConflictCount,
   })
+  const reviewQueueState = { expandId: shipment.id }
+  const showConflictTableCta = fieldConflictCount > 0
+  const showNeedsAttention = attentionGroups.length > 0 || showConflictTableCta
 
   return (
     <div className="space-y-6">
@@ -211,14 +240,33 @@ export default function ShipmentDetailPage() {
         </div>
       )}
 
-      {/* Needs attention — grouped/collapsed (same as ReviewCard); not limited to provisional */}
-      {attentionGroups.length > 0 && (
+      {/* Needs attention — grouped/collapsed (same as ReviewCard); not limited to provisional.
+          "see conflict table" links to Review Queue with expandId (table is on the review card). */}
+      {showNeedsAttention && (
         <div
           className="rounded-xl border border-border bg-surface-900/40 px-4 py-3"
           data-testid="needs-attention-detail"
         >
           <p className="text-sm font-medium text-text-primary">Needs attention</p>
           <div className="mt-2 space-y-3">
+            {showConflictTableCta && (
+              <div data-testid="needs-group-fields_disagree-cta">
+                <p className="text-xs font-semibold uppercase tracking-wide text-text-muted">Fields disagree</p>
+                <ul className="mt-1 list-disc space-y-1 pl-4 text-xs text-text-secondary">
+                  <li>
+                    {fieldConflictCount} field(s) disagree —{' '}
+                    <Link
+                      to="/review-queue"
+                      state={reviewQueueState}
+                      className="font-medium text-cobalt-primary underline-offset-2 hover:underline"
+                      data-testid="conflict-table-link"
+                    >
+                      see conflict table
+                    </Link>
+                  </li>
+                </ul>
+              </div>
+            )}
             {attentionGroups.map((g) => (
               <div key={g.groupId}>
                 <p className="text-xs font-semibold uppercase tracking-wide text-text-muted">{g.title}</p>
@@ -228,7 +276,7 @@ export default function ShipmentDetailPage() {
                       key={it.lineId}
                       title={[it.key, ...(it.evidence ?? [])].filter(Boolean).join('\n')}
                     >
-                      {it.text}
+                      <AttentionTextWithConflictLink text={it.text} expandId={shipment.id} />
                     </li>
                   ))}
                 </ul>
