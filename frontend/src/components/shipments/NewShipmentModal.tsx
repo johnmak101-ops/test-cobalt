@@ -3,7 +3,8 @@ import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
 import { X, PlusCircle, Loader2 } from 'lucide-react'
 import { useCreateShipment, type CreateShipmentInput } from '../../hooks/use-shipments'
-import { fieldLabel } from '../../lib/review-fields'
+import { fieldLabel, numericFieldWarn } from '../../lib/review-fields'
+import { MODE_OPTIONS, UOM_OPTIONS } from '../../lib/enums'
 
 /**
  * Manually create a shipment the pipeline never saw (e.g. the original booking email / attachment was
@@ -13,7 +14,13 @@ import { fieldLabel } from '../../lib/review-fields'
  */
 /** `label` defaults to the ONE vocabulary (fieldLabel). Spell one out ONLY for a key that is not an
  *  editable leg column — PO#(s), customer/forwarder and the ports have no EDITABLE_FIELDS entry. */
-type Field = { key: keyof CreateShipmentInput; label?: string; placeholder?: string; wide?: boolean }
+type Field = {
+  key: keyof CreateShipmentInput
+  label?: string
+  placeholder?: string
+  wide?: boolean
+  options?: readonly string[]
+}
 
 const IDENTITY: Field[] = [
   { key: 'bookingNo' },
@@ -26,12 +33,13 @@ const IDENTITY: Field[] = [
 const ROUTE: Field[] = [
   { key: 'customerCode', label: 'Customer Code' },
   { key: 'forwarderName', label: 'Forwarder' },
+  { key: 'mode', options: MODE_OPTIONS },
   { key: 'pol', label: 'POL', placeholder: 'e.g. HKG' },
   { key: 'pod', label: 'POD', placeholder: 'e.g. FRA' },
 ]
 const CARGO: Field[] = [
   { key: 'qty' },
-  { key: 'qtyUnit', placeholder: 'e.g. cartons' },
+  { key: 'qtyUnit', options: UOM_OPTIONS },
   { key: 'grossWeight' },
   { key: 'measurement' },
   { key: 'itemStyleNo', wide: true },
@@ -45,6 +53,9 @@ const DATES: Field[] = [
 const STRONG: (keyof CreateShipmentInput)[] = ['bookingNo', 'soNo', 'hblAwbFcrNo', 'mbl', 'containerNo']
 /** Rendered as number inputs with min=0 (the backend rejects negatives / bad counts regardless). */
 const NUMERIC: (keyof CreateShipmentInput)[] = ['qty', 'grossWeight', 'measurement']
+
+const controlClass =
+  'h-9 rounded-lg border border-border bg-surface-900 px-3 text-sm text-text-primary placeholder:text-text-muted focus:border-cobalt-primary focus:outline-none'
 
 export function NewShipmentModal({ onClose }: { onClose: () => void }) {
   const navigate = useNavigate()
@@ -61,9 +72,10 @@ export function NewShipmentModal({ onClose }: { onClose: () => void }) {
   const set = (k: string, v: string) => setForm((f) => ({ ...f, [k]: v }))
   const has = (k: string) => (form[k] ?? '').trim() !== ''
   const canSubmit = STRONG.some((k) => has(k)) || has('pos')
+  const hasNumericErrors = NUMERIC.some((k) => numericFieldWarn(String(k), form[k]) != null)
 
   const submit = () => {
-    if (!canSubmit || create.isPending) return
+    if (!canSubmit || create.isPending || hasNumericErrors) return
     const body: CreateShipmentInput = { note: note.trim() || undefined }
     for (const [k, raw] of Object.entries(form)) {
       const v = raw.trim()
@@ -74,20 +86,41 @@ export function NewShipmentModal({ onClose }: { onClose: () => void }) {
     create.mutate(body, { onSuccess: (res) => { onClose(); navigate(`/shipments/${res.id}`) } })
   }
 
-  const renderField = (fld: Field) => (
-    <label key={fld.key} className={fld.wide ? 'flex flex-col gap-1 sm:col-span-2' : 'flex flex-col gap-1'}>
-      <span className="text-xs text-text-muted">{fld.label ?? fieldLabel(fld.key)}</span>
-      <input
-        value={form[fld.key] ?? ''}
-        onChange={(e) => set(fld.key, e.target.value)}
-        placeholder={fld.placeholder}
-        type={NUMERIC.includes(fld.key) ? 'number' : undefined}
-        min={NUMERIC.includes(fld.key) ? 0 : undefined}
-        step={fld.key === 'qty' ? 1 : NUMERIC.includes(fld.key) ? 'any' : undefined}
-        className="h-9 rounded-lg border border-border bg-surface-900 px-3 text-sm text-text-primary placeholder:text-text-muted focus:border-cobalt-primary focus:outline-none"
-      />
-    </label>
-  )
+  const renderField = (fld: Field) => {
+    const cur = form[fld.key] ?? ''
+    const numErr = NUMERIC.includes(fld.key) ? numericFieldWarn(String(fld.key), cur) : null
+    return (
+      <label key={fld.key} className={fld.wide ? 'flex flex-col gap-1 sm:col-span-2' : 'flex flex-col gap-1'}>
+        <span className="text-xs text-text-muted">{fld.label ?? fieldLabel(fld.key)}</span>
+        {fld.options ? (
+          <select
+            data-testid={`create-select-${fld.key}`}
+            value={cur}
+            onChange={(e) => set(fld.key, e.target.value)}
+            className={controlClass}
+          >
+            <option value="">—</option>
+            {fld.options.map((opt) => (
+              <option key={opt} value={opt}>{opt}</option>
+            ))}
+          </select>
+        ) : (
+          <input
+            value={cur}
+            onChange={(e) => set(fld.key, e.target.value)}
+            placeholder={fld.placeholder}
+            type={NUMERIC.includes(fld.key) ? 'number' : undefined}
+            min={NUMERIC.includes(fld.key) ? 0 : undefined}
+            step={fld.key === 'qty' ? 1 : NUMERIC.includes(fld.key) ? 'any' : undefined}
+            className={controlClass}
+          />
+        )}
+        {numErr && (
+          <p className="text-xs text-status-critical" data-testid={`create-err-${fld.key}`}>{numErr}</p>
+        )}
+      </label>
+    )
+  }
 
   const section = (title: string, fields: Field[]) => (
     <div className="space-y-2">
@@ -129,7 +162,7 @@ export function NewShipmentModal({ onClose }: { onClose: () => void }) {
               value={note}
               onChange={(e) => setNote(e.target.value)}
               placeholder="e.g. original NEW BOOKING email + attachment was never ingested"
-              className="h-9 rounded-lg border border-border bg-surface-900 px-3 text-sm text-text-primary placeholder:text-text-muted focus:border-cobalt-primary focus:outline-none"
+              className={controlClass}
             />
           </label>
         </div>
@@ -147,7 +180,7 @@ export function NewShipmentModal({ onClose }: { onClose: () => void }) {
             <button
               type="button"
               onClick={submit}
-              disabled={!canSubmit || create.isPending}
+              disabled={!canSubmit || create.isPending || hasNumericErrors}
               className="inline-flex items-center gap-1.5 rounded-lg bg-cobalt-primary px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-cobalt-primary-light disabled:cursor-not-allowed disabled:opacity-50"
             >
               {create.isPending ? <Loader2 size={14} className="animate-spin" /> : <PlusCircle size={14} />}

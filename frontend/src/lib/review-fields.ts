@@ -4,6 +4,8 @@
  * column = the leg column name POST /api/review/:id/correct expects (it updates the row and
  * field-locks by column). The backend coerces values (dates → Date, numerics → number).
  */
+import { MODE_OPTIONS, UOM_OPTIONS } from './enums'
+
 export type FieldType = 'text' | 'number' | 'date'
 
 /**
@@ -31,6 +33,11 @@ export interface EditableField {
    * (cartons vs pieces), so a constant here would state something untrue.
    */
   unit?: string
+  /**
+   * When set, the edit form renders a `<select>` instead of a free-text input (enum-constrained
+   * columns: UOM, Mode). Values mirror `backend/src/db/enums.ts`.
+   */
+  options?: readonly string[]
 }
 
 export const EDITABLE_FIELDS: EditableField[] = [
@@ -38,7 +45,7 @@ export const EDITABLE_FIELDS: EditableField[] = [
   { section: 'Order Info', label: 'SO#', uiKey: 'soNumber', column: 'soNo', type: 'text' },
   { section: 'Order Info', label: 'Item / Style No.', uiKey: 'itemStyleNo', column: 'itemStyleNo', type: 'text' },
   { section: 'Cargo & Logistics', label: 'Total Quantity', uiKey: 'quantityShipped', column: 'qty', type: 'number' },
-  { section: 'Cargo & Logistics', label: 'UOM', uiKey: 'quantityUnit', column: 'qtyUnit', type: 'text' },
+  { section: 'Cargo & Logistics', label: 'UOM', uiKey: 'quantityUnit', column: 'qtyUnit', type: 'text', options: UOM_OPTIONS },
   { section: 'Cargo & Logistics', label: 'Gross Weight', uiKey: 'grossWeight', column: 'grossWeight', type: 'number', unit: 'KGS' },
   { section: 'Cargo & Logistics', label: 'Measurement', uiKey: 'measurement', column: 'measurement', type: 'number', unit: 'CBM' },
   { section: 'Cargo & Logistics', label: 'HTS Code', uiKey: 'htsCode', column: 'htsCode', type: 'text' },
@@ -49,8 +56,8 @@ export const EDITABLE_FIELDS: EditableField[] = [
   { section: 'Cargo & Logistics', label: 'SCAC Code', uiKey: 'scacCode', column: 'scacCode', type: 'text' },
   // Mode + port/forwarder *raw* free text — also on PATCH detail edit / review correct. Master
   // customer/vendor stay out (need pickers). #183: operators could see Route/Forwarder read-only
-  // but not fix mode/POL/POD after bad extraction.
-  { section: 'Shipping', label: 'Mode', uiKey: 'mode', column: 'mode', type: 'text' },
+  // but not fix mode/POL/POD after bad extraction. Mode is enum-gated (dropdown).
+  { section: 'Shipping', label: 'Mode', uiKey: 'mode', column: 'mode', type: 'text', options: MODE_OPTIONS },
   { section: 'Shipping', label: 'POL', uiKey: 'polRaw', column: 'polRaw', type: 'text' },
   { section: 'Shipping', label: 'POD', uiKey: 'podRaw', column: 'podRaw', type: 'text' },
   { section: 'Shipping', label: 'Forwarder', uiKey: 'forwarderRaw', column: 'forwarderRaw', type: 'text' },
@@ -69,6 +76,29 @@ export const EDITABLE_FIELDS: EditableField[] = [
   { section: 'Key Dates', label: 'WH End Date', uiKey: 'warehouseEndDate', column: 'warehouseEndDate', type: 'date' },
   { section: 'Key Dates', label: 'In DC Date', uiKey: 'inDcDate', column: 'inDcDate', type: 'date' },
 ]
+
+/**
+ * Inline hard error for numeric leg columns on the human edit form. Mirrors backend
+ * `coerceLegField` numeric rules so Save can be disabled before a 400.
+ * Empty / non-numeric → null (no warning; backend clears or ignores junk).
+ */
+export function numericFieldWarn(column: string, value: string | undefined): string | null {
+  if (value == null || value.trim() === '') return null
+  const n = Number(value)
+  if (!Number.isFinite(n)) return null
+  const labels: Record<string, string> = {
+    qty: 'Total Quantity',
+    grossWeight: 'Gross Weight',
+    measurement: 'Measurement',
+  }
+  const label = labels[column]
+  if (!label) return null
+  if (n < 0) return `${label} cannot be negative`
+  if (column === 'qty' && (n === 0 || !Number.isInteger(n))) {
+    return `${label} must be a whole number greater than 0`
+  }
+  return null
+}
 
 /** Shipment value → what the <input> shows. Dates render as LOCAL datetime-local ("2026-06-29T15:00")
  *  so editing a timed cut-off (截仓时间 15:00) never silently drops the time; null renders ''. */

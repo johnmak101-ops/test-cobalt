@@ -1,24 +1,34 @@
 import { useEffect, useState } from 'react'
-import { CheckCircle } from 'lucide-react'
+import { CheckCircle, XCircle } from 'lucide-react'
 
 /**
  * Minimal fire-and-forget toast — module-level pub/sub so any handler can call toast('…')
  * without context wiring. One <Toaster /> is mounted in App; messages auto-dismiss.
+ *
+ * `toast(msg)` / `toast.success(msg)` → green success. `toast.error(msg)` → red critical.
  */
-type ToastItem = { id: number; message: string }
-let emit: ((message: string) => void) | null = null
+type ToastKind = 'success' | 'error'
+type ToastItem = { id: number; message: string; kind: ToastKind }
+type Emit = (message: string, kind: ToastKind) => void
+let emit: Emit | null = null
+
+function show(message: string, kind: ToastKind = 'success'): void {
+  emit?.(message, kind)
+}
 
 export function toast(message: string): void {
-  emit?.(message)
+  show(message, 'success')
 }
+toast.success = (message: string): void => show(message, 'success')
+toast.error = (message: string): void => show(message, 'error')
 
 export function Toaster() {
   const [items, setItems] = useState<ToastItem[]>([])
 
   useEffect(() => {
-    emit = (message) => {
+    emit = (message, kind) => {
       const id = Date.now() + Math.random()
-      setItems((t) => [...t, { id, message }])
+      setItems((t) => [...t, { id, message, kind }])
       setTimeout(() => setItems((t) => t.filter((x) => x.id !== id)), 2500)
     }
     return () => {
@@ -34,7 +44,11 @@ export function Toaster() {
           key={t.id}
           className="flex items-center gap-2 rounded-lg border border-border bg-surface-700 px-4 py-2 text-sm text-text-primary shadow-xl"
         >
-          <CheckCircle size={14} className="shrink-0 text-status-success" />
+          {t.kind === 'error' ? (
+            <XCircle size={14} className="shrink-0 text-status-critical" />
+          ) : (
+            <CheckCircle size={14} className="shrink-0 text-status-success" />
+          )}
           {t.message}
         </div>
       ))}

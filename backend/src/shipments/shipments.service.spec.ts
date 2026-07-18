@@ -74,4 +74,20 @@ describe('ShipmentsService.createManual — same gate on the New shipment form (
     ).rejects.toBeInstanceOf(BadRequestException)
     expect(committer.apply).not.toHaveBeenCalled()
   })
+
+  it('rejects a bad UOM before committing anything', async () => {
+    const { svc, committer } = makeService()
+    await expect(
+      svc.createManual({ bookingNo: 'BK1', qtyUnit: 'wqdqwd' }, 'user-1'),
+    ).rejects.toBeInstanceOf(BadRequestException)
+    expect(committer.apply).not.toHaveBeenCalled()
+  })
+
+  it('rejects a bad mode before committing anything', async () => {
+    const { svc, committer } = makeService()
+    await expect(
+      svc.createManual({ bookingNo: 'BK1', mode: 'banana' }, 'user-1'),
+    ).rejects.toBeInstanceOf(BadRequestException)
+    expect(committer.apply).not.toHaveBeenCalled()
+  })
 })

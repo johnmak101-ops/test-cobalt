@@ -34,6 +34,7 @@ const CREATE_FIELD_MAP: { dto: keyof ManualShipmentInput; parser: string; leg: s
   { dto: 'forwarderName', parser: 'forwarder_name', leg: null },
   { dto: 'pol', parser: 'pol', leg: null },
   { dto: 'pod', parser: 'pod', leg: null },
+  { dto: 'mode', parser: 'mode', leg: 'mode' },
   { dto: 'qty', parser: 'qty', leg: 'qty' },
   { dto: 'qtyUnit', parser: 'qty_unit', leg: 'qtyUnit' },
   { dto: 'grossWeight', parser: 'gross_weight', leg: 'grossWeight' },
