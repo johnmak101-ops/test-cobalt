@@ -8,7 +8,8 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "doctor": "react-doctor --no-telemetry"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.97.0",
@@ -31,6 +32,7 @@
     "@vitejs/plugin-react": "^4.3.4",
     "jsdom": "^25.0.1",
     "magic-string": "^0.30.0",
+    "react-doctor": "^0.8.0",
     "tailwindcss": "^4.2.2",
     "typescript": "^5.8.3",
     "vite": "^7.3.0",
