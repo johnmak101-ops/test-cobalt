@@ -1,5 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { PortsSyncSchedulerService, PORTS_SYNC_LAST_OK_KEY } from './ports-sync-scheduler.service'
+import {
+  PortsSyncSchedulerService,
+  PORTS_SYNC_LAST_OK_KEY,
+  clampTimerMs,
+  MAX_SAFE_TIMER_MS,
+} from './ports-sync-scheduler.service'
 
 describe('PortsSyncSchedulerService (#159)', () => {
   const settings = {
@@ -60,6 +65,13 @@ describe('PortsSyncSchedulerService (#159)', () => {
     ;(sch as unknown as { running: boolean }).running = true
     expect(await sch.tick('manual')).toBeNull()
     expect(portsSync.sync).not.toHaveBeenCalled()
+  })
+
+  it('clampTimerMs caps above Node signed-32-bit max (regression: 30d → 1ms thrash)', () => {
+    // 30 days in ms overflows setInterval and Node silently used delay=1
+    expect(clampTimerMs(30 * 24 * 60 * 60 * 1000)).toBe(MAX_SAFE_TIMER_MS)
+    expect(clampTimerMs(2_592_000_000)).toBe(MAX_SAFE_TIMER_MS)
+    expect(clampTimerMs(86_400_000)).toBe(86_400_000)
   })
 
   it('tick records last_ok on success', async () => {
