@@ -255,12 +255,19 @@ function lineFromFlag(code: string, message: string): LineHit | null {
       }
     }
     case 'PARTY_UNRESOLVED':
-    case 'PARTY_OPS':
+    case 'PARTY_OPS': {
+      // riskFlags carry the full ops note in `message` (e.g. Cannot match "Maersk…" in the forwarder list).
+      // Never collapse to a blank "Party not linked" — reuse the same synonym/value lines as reviewReasons.
+      const hit = lineFromReason(message, message)
+      if (hit && !hit.lineId.startsWith('reason:')) return hit
+      // Fallback: still surface the raw message rather than a useless generic
+      const snippet = message.trim()
       return {
-        lineId: 'm-party',
-        text: 'Party not linked to master — left unlinked',
+        lineId: `m-party:${snippet.slice(0, 48)}`,
+        text: snippet.length > 140 ? `${snippet.slice(0, 137)}…` : snippet || 'Party not linked to master — left unlinked',
         category: 'master_miss',
       }
+    }
     case 'EXTRACTION_INCOMPLETE':
       return {
         lineId: 'i-parse',
