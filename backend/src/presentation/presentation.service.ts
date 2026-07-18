@@ -27,6 +27,7 @@ import {
   type ShipmentMapperInput,
   type ShipmentLegRow,
 } from './mappers/shipment.mapper'
+import { filterPortMissReasons } from './mappers/port-miss-reasons'
 import type { CriticReview } from '../decisions/critic-review.types'
 import { toUiAlert } from './mappers/alert.mapper'
 import { toUiAlertRule } from './mappers/alert-rule.mapper'
@@ -467,7 +468,10 @@ export class PresentationService {
         ),
         state: r.state,
         status: stateToUiStatus(r.state, r.legStatus),
-        reviewReasons: r.reviewReasons ?? [],
+        reviewReasons: filterPortMissReasons(r.reviewReasons ?? [], {
+          polLinked: !!(r as { polId?: string | null }).polId || !!r.polCode,
+          podLinked: !!(r as { podId?: string | null }).podId || !!r.podCode,
+        }),
         // compact only — never project raw confidence score (sort stays server-side on confidence ASC)
         criticReviewCompact: compactCriticReview(r.criticReview as CriticReview | null | undefined),
         createdAt: isoOrNull(r.createdAt),
