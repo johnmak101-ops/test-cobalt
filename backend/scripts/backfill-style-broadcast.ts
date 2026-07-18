@@ -14,11 +14,7 @@ import { createKysely } from '../src/db/kysely/mssql-dialect'
 import type { DB } from '../src/db/kysely/db'
 import { resolvePoEnrichment, styleCommaCount, type PoEvidenceInput } from '../src/reconcile/po-enrichment'
 import { normKey } from '../src/reconcile/match-keys'
-import {
-  isRecomputedDataIssueReason,
-  mergeReviewReasonsWithDataIssues,
-  planPoReconcile,
-} from '../src/reconcile/committer-po-reconciler'
+import { planPoReconcile } from '../src/reconcile/committer-po-reconciler'
 import { strongKeys } from '../src/reconcile/match-keys'
 
 const SQL_SERVER_URL =
@@ -40,12 +36,8 @@ async function main() {
   // Shipments with ≥2 POs that share the same multi-token item_style_no (broadcast signature)
   const candidates = await sql<{
     shipmentId: string
-    style: string
-    poCount: number
   }>`
-    SELECT sp.shipment_id AS shipmentId,
-           po.item_style_no AS style,
-           COUNT(*) AS poCount
+    SELECT sp.shipment_id AS shipmentId
     FROM shipment_pos sp
     INNER JOIN purchase_orders po ON po.id = sp.po_id
     WHERE po.item_style_no IS NOT NULL
@@ -54,13 +46,29 @@ async function main() {
     HAVING COUNT(*) >= 2
   `.execute(db)
 
-  console.log(`Found ${candidates.rows.length} shipment×style broadcast signature(s)`)
+  // ALSO: legs still carrying a style conflict/broadcast reason (old dump or new format). The PO rows
+  // may already be fixed (a prior run, or another leg of the same booking processed first) — such legs
+  // never surface via the signature query, yet their stale reasons are exactly what needs refreshing.
+  // Verification found the IZAC ACTIVE leg stranded this way.
+  const staleReasonLegs = await sql<{ shipmentId: string }>`
+    SELECT s.id AS shipmentId
+    FROM shipments s
+    WHERE CAST(s.review_reasons AS NVARCHAR(MAX)) LIKE '%item_style_no conflict%'
+       OR CAST(s.review_reasons AS NVARCHAR(MAX)) LIKE '%item/style%'
+  `.execute(db)
+
+  const shipmentIds = [...new Set([
+    ...candidates.rows.map((r) => r.shipmentId),
+    ...staleReasonLegs.rows.map((r) => r.shipmentId),
+  ])]
+  console.log(
+    `Found ${candidates.rows.length} broadcast signature(s) + ${staleReasonLegs.rows.length} leg(s) with style reasons → ${shipmentIds.length} shipment(s) to examine`,
+  )
 
   let updatedPos = 0
   let touchedShipments = 0
 
-  for (const cand of candidates.rows) {
-    const shipmentId = cand.shipmentId
+  for (const shipmentId of shipmentIds) {
     // Linked POs for this shipment
     const linked = await db
       .selectFrom('shipmentPos')
@@ -141,38 +149,56 @@ async function main() {
       }
     }
 
-    if (!changes.length) continue
+    // Reason refresh — DECOUPLED from `changes`: shipment_pos links the same POs to multiple legs
+    // (active + superseded/cancelled). The first leg processed fixes the PO rows; later legs then see
+    // from===to, so gating the refresh on `changes` stranded their stale dumps (the IZAC ACTIVE leg).
+    const leg = await db
+      .selectFrom('shipments')
+      .where('id', '=', shipmentId)
+      .select(['id', 'reviewReasons', 'matchKeys'])
+      .executeTakeFirst()
+    let next: string[] = []
+    let staleDropped = 0
+    let reasonsChanged = false
+    if (leg) {
+      const prior = (Array.isArray(leg.reviewReasons)
+        ? (leg.reviewReasons as string[])
+        : typeof leg.reviewReasons === 'string'
+          ? (JSON.parse(leg.reviewReasons as string) as string[])
+          : []) as string[]
+      // Drop ONLY the enrichment-derived brand/style classes that the plan below regenerates — NOT the
+      // whole recomputed class (mergeReviewReasonsWithDataIssues): with fields:{} the plan cannot
+      // regenerate qty issues, so a full-class drop would silently lose legitimate qty reasons.
+      const ENRICH_RE = /^PO\s+\S+:\s*(?:brand conflict\b|item(?:_style_no conflict\b|\/style))/i
+      const kept = prior.filter((r) => !ENRICH_RE.test(String(r)))
+      staleDropped = prior.length - kept.length
+      const plan = planPoReconcile({
+        pos,
+        fields: {},
+        poEnrichment: enrichment,
+        unattributed: [],
+        gk: strongKeys((leg.matchKeys as Record<string, unknown>) ?? {}),
+      })
+      next = [...new Set([...kept, ...plan.poFlagReasons])]
+      // REPLACE stale flags, never seed flags onto legs that had none: only a leg that dropped a stale
+      // enrichment reason (or whose PO rows changed this run) gets the freshly-derived plan flags.
+      // Otherwise a backfill would spray brand/style flags across every examined leg — review-queue churn.
+      reasonsChanged =
+        (staleDropped > 0 || changes.length > 0) &&
+        (next.length !== prior.length || next.some((r, i) => r !== prior[i]))
+    }
+
+    if (!changes.length && !reasonsChanged) continue
     touchedShipments++
     console.log(`  shipment ${shipmentId}:`)
     for (const c of changes) {
       console.log(`    PO ${c.poNumber}: ${JSON.stringify(c.from)} → ${JSON.stringify(c.to)}${APPLY ? ' [written]' : ' [dry-run]'}`)
     }
-
-    // Refresh leg review_reasons: drop stale style conflicts, leave others
-    if (APPLY) {
-      const leg = await db
-        .selectFrom('shipments')
-        .where('id', '=', shipmentId)
-        .select(['id', 'reviewReasons', 'matchKeys'])
-        .executeTakeFirst()
-      if (leg) {
-        const prior = (Array.isArray(leg.reviewReasons)
-          ? (leg.reviewReasons as string[])
-          : typeof leg.reviewReasons === 'string'
-            ? (JSON.parse(leg.reviewReasons as string) as string[])
-            : []) as string[]
-        // Drop stale style-conflict / style-broadcast reasons, re-plan from current enrichment
-        const kept = prior.filter(
-          (r) => !(isRecomputedDataIssueReason(r) && /item(?:_style_no conflict|\/style)/i.test(r)),
-        )
-        const plan = planPoReconcile({
-          pos,
-          fields: {},
-          poEnrichment: enrichment,
-          unattributed: [],
-          gk: strongKeys((leg.matchKeys as Record<string, unknown>) ?? {}),
-        })
-        const next = mergeReviewReasonsWithDataIssues(kept, plan.poFlagReasons)
+    if (reasonsChanged) {
+      console.log(
+        `    reasons: ${staleDropped} enrichment reason(s) re-derived → ${next.length} total${APPLY ? ' [written]' : ' [dry-run]'}`,
+      )
+      if (APPLY) {
         // review_reasons is nvarchar(max) JSON — tedious rejects a raw JS array
         await db
           .updateTable('shipments')
