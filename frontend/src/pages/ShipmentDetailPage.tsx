@@ -9,7 +9,7 @@ import { ShipmentHistoryTimeline } from '../components/shipments/ShipmentHistory
 import { AlertCard } from '../components/alerts/AlertCard'
 import { formatDate, formatDateTime, formatDateMaybeTime, cn } from '../lib/utils'
 import { buildNeedsAttentionGroups, looksLikeLocode } from '../components/review/needs-attention'
-import { EDITABLE_FIELDS, fieldLabel, numericFieldWarn, type EditableField } from '../lib/review-fields'
+import { EDITABLE_FIELDS, fieldLabel, numericFieldWarn, dateOrderWarn, type EditableField } from '../lib/review-fields'
 import { toast } from '../components/ui/Toast'
 import { ArrowLeft, Mail, Clock, ClipboardList, Package, Ship, Calendar, AlertTriangle, AlertCircle, Info, Pencil, Check, X, NotebookPen } from 'lucide-react'
 
@@ -217,7 +217,11 @@ export default function ShipmentDetailPage() {
   const hasNumericErrors = editing && EDIT_SECTIONS.some((sec) =>
     sec.fields.some((f) => f.type === 'number' && numericFieldWarn(f.db, draft[f.db]) != null),
   )
-  const saveBlocked = (editedCount > 0 && !note.trim()) || hasNumericErrors
+  // Cross-field: an arrival date earlier than a departure date is impossible — blocks Save too.
+  const dateError = editing
+    ? dateOrderWarn({ etd: draft.etd, atd: draft.atd, eta: draft.eta, ata: draft.ata })
+    : null
+  const saveBlocked = (editedCount > 0 && !note.trim()) || hasNumericErrors || dateError != null
 
   // Collapsed Needs attention groups (same builder as ReviewCard) — show for any shipment with items.
   // Conflict table lives on Review Queue (ReviewCard), not here — so we pass conflictsCount for
@@ -472,9 +476,11 @@ export default function ShipmentDetailPage() {
                 title={
                   hasNumericErrors
                     ? 'Fix invalid numeric values before saving'
-                    : editedCount > 0 && !note.trim()
-                      ? 'Add a note for the agent before saving'
-                      : undefined
+                    : dateError
+                      ? dateError
+                      : editedCount > 0 && !note.trim()
+                        ? 'Add a note for the agent before saving'
+                        : undefined
                 }
                 className="inline-flex items-center gap-1 rounded-lg bg-cobalt-primary px-3 py-1.5 text-xs font-medium text-white hover:bg-cobalt-primary-light disabled:cursor-not-allowed disabled:opacity-50"
               >
@@ -581,6 +587,12 @@ export default function ShipmentDetailPage() {
                 </DetailSection>
               ))}
             </div>
+            {dateError && (
+              <p className="mt-3 flex items-center gap-1.5 text-xs text-status-critical" data-testid="edit-date-error">
+                <AlertTriangle size={13} className="shrink-0" />
+                {dateError}
+              </p>
+            )}
             {/* Required feedback for agent-soul iteration — a save with real edits is blocked without it. */}
             <div className="mt-6 border-t border-border pt-4">
               <label htmlFor={`${fieldId}-note`} className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-text-primary">

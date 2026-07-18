@@ -15,6 +15,7 @@ import {
   parseStyleEntries,
   serializeStyleEntries,
   numericFieldWarn,
+  dateOrderWarn,
 } from './review-fields'
 import { MODE_OPTIONS, UOM_OPTIONS } from './enums'
 
@@ -72,6 +73,26 @@ describe('numericFieldWarn — mirrors backend coerceLegField numeric rules', ()
   })
   it('unknown columns → null', () => {
     expect(numericFieldWarn('bookingNo', '-1')).toBeNull()
+  })
+})
+
+describe('dateOrderWarn — departure must be before arrival (est/actual float freely)', () => {
+  it('flags an arrival earlier than a departure (ATA before ETD)', () => {
+    expect(dateOrderWarn({ etd: '2026-08-05', ata: '2026-07-01' })).toMatch(/ATA is before ETD/)
+  })
+  it('flags ETD after ETA (estimated depart after estimated arrive)', () => {
+    expect(dateOrderWarn({ etd: '2026-08-05', eta: '2026-07-01' })).toMatch(/ETA is before ETD/)
+  })
+  it('does NOT compare estimate vs actual of the same event', () => {
+    expect(dateOrderWarn({ atd: '2026-07-01', etd: '2026-08-05' })).toBeNull() // ETD later than ATD is allowed
+    expect(dateOrderWarn({ ata: '2026-07-01', eta: '2026-08-05' })).toBeNull() // ETA later than ATA is allowed
+  })
+  it('passes a normal timeline and ignores missing / blank dates', () => {
+    expect(
+      dateOrderWarn({ etd: '2026-07-01', eta: '2026-08-05', atd: '2026-07-02', ata: '2026-08-06' }),
+    ).toBeNull()
+    expect(dateOrderWarn({ etd: '2026-08-05' })).toBeNull() // no arrival to compare
+    expect(dateOrderWarn({})).toBeNull()
   })
 })
 

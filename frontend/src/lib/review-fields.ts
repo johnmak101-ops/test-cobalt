@@ -100,6 +100,40 @@ export function numericFieldWarn(column: string, value: string | undefined): str
   return null
 }
 
+/**
+ * Cross-field date sanity for the human edit form: every departure (ETD/ATD) must be before every
+ * arrival (ETA/ATA). Estimate and actual float freely — ETD↔ATD and ETA↔ATA are never compared (an
+ * estimate may fall either side of the actual). Returns the first "arrival before departure"
+ * violation, or null. Lives here (not backend `coerceLegField`) because it needs sibling fields.
+ */
+export function dateOrderWarn(dates: {
+  etd?: string
+  atd?: string
+  eta?: string
+  ata?: string
+}): string | null {
+  const ms = (v: string | undefined): number | null => {
+    if (!v || v.trim() === '') return null
+    const t = new Date(v).getTime()
+    return Number.isNaN(t) ? null : t
+  }
+  const deps = [
+    { k: 'ETD', t: ms(dates.etd) },
+    { k: 'ATD', t: ms(dates.atd) },
+  ]
+  const arrs = [
+    { k: 'ETA', t: ms(dates.eta) },
+    { k: 'ATA', t: ms(dates.ata) },
+  ]
+  for (const d of deps) {
+    if (d.t == null) continue
+    for (const a of arrs) {
+      if (a.t != null && a.t < d.t) return `${a.k} is before ${d.k} — arrival can't be before departure`
+    }
+  }
+  return null
+}
+
 /** Shipment value → what the <input> shows. Dates render as LOCAL datetime-local ("2026-06-29T15:00")
  *  so editing a timed cut-off (截仓时间 15:00) never silently drops the time; null renders ''. */
 export function toInputValue(value: unknown, type: FieldType): string {
