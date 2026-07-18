@@ -65,6 +65,8 @@ export interface Shipment {
   voyageNumber: string | null
   /** Air flight number (e.g. CA1398). Sea legs use vessel/voyage instead. */
   flightNo?: string | null
+  /** Air master AWB (e.g. 999-94230150). Sea uses mblNumber. */
+  mawb?: string | null
   warehouseAddress: string | null
   quantityShipped: number | null
   quantityUnit: string | null

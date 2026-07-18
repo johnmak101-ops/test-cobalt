@@ -44,6 +44,7 @@ const CREATE_FIELD_MAP: { dto: keyof ManualShipmentInput; parser: string; leg: s
   { dto: 'vesselName', parser: 'vessel_name', leg: 'vesselName' },
   { dto: 'voyageNo', parser: 'voyage_no', leg: 'voyageNo' },
   { dto: 'flightNo', parser: 'flight_no', leg: 'flightNo' },
+  { dto: 'mawb', parser: 'mawb', leg: 'mawb' },
   { dto: 'cargoReadyDate', parser: 'cargo_ready_date', leg: 'cargoReadyDate' },
   { dto: 'warehouseStartDate', parser: 'warehouse_start_date', leg: 'warehouseStartDate' },
   { dto: 'warehouseEndDate', parser: 'warehouse_end_date', leg: 'warehouseEndDate' },
@@ -72,7 +73,7 @@ const EDITABLE_FIELDS = new Set([
   'bookingNo', 'soNo', 'hblAwbFcrNo', 'mbl', 'containerNo', 'scacCode',
   'qty', 'qtyUnit', 'grossWeight', 'measurement', 'itemStyleNo', 'htsCode',
   'mode', 'polRaw', 'podRaw', 'forwarderRaw',
-  'consigneeName', 'consigneeAddress', 'vesselName', 'voyageNo', 'flightNo',
+  'consigneeName', 'consigneeAddress', 'vesselName', 'voyageNo', 'flightNo', 'mawb',
   ...DATE_FIELDS,
 ])
 function coerceField(field: string, value: unknown): unknown {

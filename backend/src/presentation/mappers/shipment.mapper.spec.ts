@@ -86,6 +86,7 @@ const leg = (over: Partial<ShipmentLegRow> = {}): ShipmentLegRow => ({
   vesselName: 'EVER GLOBE',
   voyageNo: 'V42',
   flightNo: null,
+  mawb: null,
   scacCode: 'MAEU',
   originCountry: null,
   polRaw: null,
