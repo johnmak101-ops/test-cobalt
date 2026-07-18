@@ -70,6 +70,29 @@ describe('buildNeedsAttention / groups', () => {
     expect(items.filter((i) => i.lineId === 'w-multi-match')).toHaveLength(1)
   })
 
+  it('PARTY_OPS riskFlags keep party type + name (not blank Party not linked)', () => {
+    const items = buildNeedsAttention({
+      conflictsCount: 0,
+      riskFlags: [
+        {
+          code: 'PARTY_OPS',
+          severity: 'low',
+          message:
+            'Cannot match "Maersk (China) Shipping Co., Ltd." in the forwarder list. Please add it in Cobalt Fashion Data Mesh System, then rematch.',
+        },
+        {
+          code: 'PARTY_OPS',
+          severity: 'low',
+          message: 'No vendor code in subject or body; factory not identified.',
+        },
+      ],
+      reviewReasons: [],
+    })
+    expect(items.some((i) => /Party not linked to master — left unlinked/.test(i.text))).toBe(false)
+    expect(items.some((i) => /Maersk/i.test(i.text) && /Mesh|rematch|Forwarder|forwarder/i.test(i.text))).toBe(true)
+    expect(items.some((i) => /Vendor|factory/i.test(i.text))).toBe(true)
+  })
+
   it('shows all groups (no hard cap of 2)', () => {
     const items = buildNeedsAttention({
       conflictsCount: 0,
