@@ -50,7 +50,7 @@ export class EmailRepository {
       .execute()
   }
 
-  async attachmentsFor(graphMessageId: string) {
+  attachmentsFor(graphMessageId: string) {
     // messageGraphId feeds the same Graph re-fetch as attachmentById (emails.service fills byte-free
     // attachments here too), so it must be the Graph ITEM id (graph_id / AAMk…), NOT graph_message_id
     // (the internet <…@host> id, which Graph's /messages/{id}/attachments rejects with 400). Join +
@@ -72,7 +72,7 @@ export class EmailRepository {
   /** The inbox: recent ingested emails with their review-extraction overlay.
    *  Kysely's MssqlDialect (0.29) emits `limit` verbatim (not TOP/OFFSET-FETCH), so the row cap is applied
    *  via a `TOP N` raw fragment in the select list. */
-  async listInbox(limit = 100) {
+  listInbox(limit = 100) {
     const capped = Math.max(1, Math.floor(limit))
     return this.db
       .selectFrom('emailMessage')
@@ -155,7 +155,7 @@ export class EmailRepository {
    *
    *  LEFT JOIN so shipment_emails rows still surface after email_message is wiped (orphan links).
    *  Orphans return id/subject/sender null; graphMessageId falls back to shipment_emails.graph_message_id. */
-  async emailsForShipment(shipmentId: string) {
+  emailsForShipment(shipmentId: string) {
     return this.db
       .selectFrom('shipmentEmails')
       .leftJoin('emailMessage', (join) =>

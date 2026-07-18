@@ -55,7 +55,7 @@ export class UsersRepository {
    * (MSSQL: `WITH (UPDLOCK, HOLDLOCK)`) and re-counts. Throws when the change would leave fewer than
    * one active superadmin. Mirrors the Drizzle `FOR UPDATE` guard.
    */
-  async updateGuardingLastActiveSuperadmin(id: string, patch: Partial<UserInsert>) {
+  updateGuardingLastActiveSuperadmin(id: string, patch: Partial<UserInsert>) {
     return this.db.transaction().execute(async (tx) => {
       // MSSQL row lock: WITH (UPDLOCK, HOLDLOCK) — the MSSQL equivalent of Postgres FOR UPDATE.
       // Kysely's forUpdate() emits `FOR UPDATE` which MSSQL rejects ( DECLARE CURSOR only).
