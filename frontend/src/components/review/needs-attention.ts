@@ -455,7 +455,7 @@ function lineFromReason(raw: string, humanized: string): LineHit | null {
     if (party) {
       return {
         lineId: `m-party:${party[2]}`,
-        text: `${partyFieldLabel(party[1]!)} "${party[2]}" not in master — left unlinked`,
+        text: `"${party[2]}" not found in Mesh Database — advise add in Mesh, then rematch`,
         category: 'master_miss',
       }
     }
@@ -468,10 +468,26 @@ function lineFromReason(raw: string, humanized: string): LineHit | null {
     }
   }
   if (/did not exact-match a master/i.test(raw)) {
+    const quoted = extractQuotedParty(raw)
     return {
-      lineId: 'm-party',
-      text: 'Party not in master — left unlinked',
+      lineId: quoted ? `m-party:${quoted}` : 'm-party',
+      text: quoted
+        ? `"${quoted}" not found in Mesh Database — advise add in Mesh, then rematch`
+        : 'Party not found in Mesh Database — advise add in Mesh, then rematch',
       category: 'master_miss',
+    }
+  }
+  // "Cannot match "X" in the forwarder|customer|vendor|consignee list..."
+  {
+    const listHit = raw.match(
+      /Cannot match "([^"]+)" in the (forwarder|customer|vendor|consignee) list/i,
+    )
+    if (listHit) {
+      return {
+        lineId: `m-party:${listHit[1]}`,
+        text: `"${listHit[1]}" not found in Mesh Database — advise add in Mesh, then rematch`,
+        category: 'master_miss',
+      }
     }
   }
   if (
@@ -581,19 +597,21 @@ function lineFromReason(raw: string, humanized: string): LineHit | null {
   }
 
   if (
-    /Cannot match .+ Cobalt Fashion Data Mesh|Party name not in master list/i.test(raw)
+    /Cannot match .+ Cobalt Fashion Data Mesh|Party name not in master list|not found in Mesh Database/i.test(
+      raw,
+    )
   ) {
     const quoted = extractQuotedParty(raw)
     if (quoted) {
       return {
         lineId: `m-party:${quoted}`,
-        text: `Party "${quoted}" not in Mesh — Ops: add alias, then rematch`,
+        text: `"${quoted}" not found in Mesh Database — advise add in Mesh, then rematch`,
         category: 'master_miss',
       }
     }
     return {
       lineId: 'm-mesh',
-      text: 'Ops · Mesh: add missing party/port, then rematch',
+      text: 'Party not found in Mesh Database — advise add in Mesh, then rematch',
       category: 'master_miss',
     }
   }
