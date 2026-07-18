@@ -53,6 +53,37 @@ describe('categorizeReason (#133 filter chips)', () => {
     expect(cats.has('portal')).toBe(true)
     expect(cats.has('conflict')).toBe(true)
   })
+
+  // Collapse synonym spam (needs-attention Phase A) — chips must still bucket correctly.
+  it('categorizes customer-code spam as master_miss', () => {
+    expect(categorizeReason('No 4-char customer code in subject or body; brand/party not resolvable')).toBe(
+      'master_miss',
+    )
+    expect(
+      categorizeReason(
+        'No customer code resolvable; invoice party is FENIX FASHION LIMITED (sourcing house, not a customer master code)',
+      ),
+    ).toBe('master_miss')
+  })
+
+  it('categorizes vendor/consignee missing as extraction', () => {
+    expect(categorizeReason('No vendor code in subject or body; factory not identified.')).toBe('extraction')
+    expect(categorizeReason('Consignee not stated in email; only POD Ho Chi Minh City mentioned.')).toBe(
+      'extraction',
+    )
+  })
+
+  it('categorizes city raw-value-kept as master_miss', () => {
+    expect(categorizeReason('Ho Chi Minh City not in master data; raw value kept')).toBe('master_miss')
+  })
+
+  it('categorizes humanized conflict prose as conflict', () => {
+    expect(
+      categorizeReason(
+        '1 field(s) received different values from different emails — see the conflict table for which fields and values',
+      ),
+    ).toBe('conflict')
+  })
 })
 
 // Restored 2026-07-14: this coverage predates #133 and was dropped when the #133 filter-chip tests
