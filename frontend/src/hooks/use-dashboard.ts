@@ -33,6 +33,9 @@ interface DashboardData {
     riskLevel: string
     route: string | null
     updatedAt: string
+    bookingNo?: string | null
+    etd?: string | null
+    actualDeparture?: string | null
     customer: { name: string } | null
     forwarder: { name: string } | null
   }>

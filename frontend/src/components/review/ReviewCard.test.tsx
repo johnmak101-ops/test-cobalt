@@ -112,7 +112,9 @@ describe('ReviewCard', () => {
 
     await user.click(screen.getByRole('button', { name: /expand|details|show/i }))
 
-    expect(screen.getByText('Low · Two strong IDs in one email')).toBeInTheDocument()
+    // AI comment strip removed (repeated Low band + Needs attention / conflict table)
+    expect(screen.queryByTestId('ai-comment-line')).toBeNull()
+    expect(screen.queryByText('Low · Two strong IDs in one email')).toBeNull()
 
     const table = screen.getByRole('table')
     expect(within(table).getByText('ETA')).toBeInTheDocument()
@@ -122,10 +124,11 @@ describe('ReviewCard', () => {
     expect(within(table).getByText('SE26061400005')).toBeInTheDocument()
     expect(within(table).getByText('SE26061400006')).toBeInTheDocument()
     expect(within(table).getByTestId('multi-candidate-proposed')).toBeInTheDocument()
-    // Column headers — the proposal is the agent's, and is the editable cell; Resolution is gone.
+    // Column headers — default view shows agent proposals; Resolution/Edited only after Edit / changes.
     expect(within(table).getByText('Existing')).toBeInTheDocument()
-    expect(within(table).getByText('AI Proposed')).toBeInTheDocument()
+    expect(within(table).getByTestId('proposed-column-header')).toHaveTextContent('AI Proposed')
     expect(within(table).queryByText('Resolution')).toBeNull()
+    expect(within(table).queryByText('Edited')).toBeNull()
     expect(within(table).queryByText('Recommended')).toBeNull()
 
     // proposedChanges field must not become a row
@@ -415,22 +418,18 @@ describe('ReviewCard', () => {
     expect(screen.queryByTestId('source-emails')).toBeNull()
   })
 
-  it('renders an Open full shipment link when fullShipmentPath is set', () => {
+  it('does not repeat Open full shipment inside the card (page chrome owns that)', () => {
     render(
       <MemoryRouter>
         <ReviewCard
           shipment={baseShipment()}
           criticReview={baseReview()}
           compact={compact}
-          fullShipmentPath="/shipments/leg-1"
           defaultExpanded={true}
         />
       </MemoryRouter>,
     )
-    // Header link + #181 scope-hint link
-    const links = screen.getAllByRole('link', { name: /open full shipment/i })
-    expect(links.length).toBeGreaterThanOrEqual(1)
-    expect(links.every((a) => a.getAttribute('href') === '/shipments/leg-1')).toBe(true)
+    expect(screen.queryByRole('link', { name: /open full shipment/i })).toBeNull()
   })
 
   it('readOnly: shows resolved values, hides inputs and primary Save button', () => {
@@ -548,7 +547,9 @@ describe('conflict table — read-only by default, Edit to change values', () =>
         />
       </MemoryRouter>,
     )
+    expect(screen.getByTestId('proposed-column-header')).toHaveTextContent('AI Proposed')
     await user.click(screen.getByRole('button', { name: /^edit$/i }))
+    expect(screen.getByTestId('proposed-column-header')).toHaveTextContent('Resolution')
     expect((screen.getByLabelText(/proposed value for eta/i) as HTMLInputElement).value).toBe('2026-07-23')
     // hbl has NO system candidate and two proposals → first pre-fills, both are visible (not buried in a datalist)
     expect((screen.getByLabelText(/proposed value for hbl/i) as HTMLInputElement).value).toBe('SE26061400005')
@@ -557,6 +558,74 @@ describe('conflict table — read-only by default, Edit to change values', () =>
     expect(within(multi).getByText('SE26061400006')).toBeInTheDocument()
     expect(screen.getByRole('radio', { name: /SE26061400005/i })).toBeChecked()
     expect(screen.getByRole('radio', { name: /SE26061400006/i })).not.toBeChecked()
+  })
+
+  it('Item / Style No. edits as one field per style, not a comma string', async () => {
+    const user = userEvent.setup()
+    const onSave = vi.fn().mockResolvedValue(undefined)
+    const conflictStyles: CriticConflict = {
+      field: 'item_style_no',
+      label: 'Item / Style No.',
+      candidates: [
+        {
+          value: '26-HMIGHLE-0293-1,26-HMIGHLE-0281-1,26-HMIGHLE-0280-1',
+          source: 'System',
+        },
+        { value: '26-HMIGHLE-0281-1', source: 'SO' },
+      ],
+      rationale: 'SO lists one style; system has a broadcast list.',
+    }
+    render(
+      <MemoryRouter>
+        <ReviewCard
+          shipment={baseShipment()}
+          criticReview={baseReview({ conflicts: [conflictStyles] })}
+          compact={compact}
+          defaultExpanded
+          onSaveAndApprove={onSave}
+        />
+      </MemoryRouter>,
+    )
+    // Existing: one row per style (not one mid-wrapped comma blob)
+    const existingList = screen.getAllByTestId('style-list-display')[0]!
+    expect(within(existingList).getByText('26-HMIGHLE-0293-1')).toBeInTheDocument()
+    expect(within(existingList).getByText('26-HMIGHLE-0280-1')).toBeInTheDocument()
+
+    // Copy all works from Existing without a prior Edit click (enters edit + fills Resolution)
+    await user.click(screen.getByTestId('style-copy-all-existing'))
+    const editor = screen.getByTestId('style-list-editor')
+    expect(within(editor).getByDisplayValue('26-HMIGHLE-0293-1')).toBeInTheDocument()
+    expect(within(editor).getByDisplayValue('26-HMIGHLE-0280-1')).toBeInTheDocument()
+    // Paste multi-line Excel-style list replaces all
+    const firstInput = within(editor).getAllByPlaceholderText(/Style \/ item no/)[0]!
+    await user.click(firstInput)
+    await user.paste('STYLE-A\nSTYLE-B\nSTYLE-C')
+    expect(within(editor).getByDisplayValue('STYLE-A')).toBeInTheDocument()
+    expect(within(editor).getByDisplayValue('STYLE-C')).toBeInTheDocument()
+    await user.type(screen.getByRole('textbox', { name: /note/i }), 'Pasted full style list')
+    await user.click(screen.getByRole('button', { name: /approve 1 change/i }))
+    expect(onSave.mock.calls[0][0].fields.itemStyleNo).toBe('STYLE-A, STYLE-B, STYLE-C')
+  })
+
+  it('column header becomes Edited after a value is changed from the AI proposal', async () => {
+    const user = userEvent.setup()
+    render(
+      <MemoryRouter>
+        <ReviewCard
+          shipment={baseShipment()}
+          criticReview={baseReview({ conflicts: [conflictEta] })}
+          compact={compact}
+          defaultExpanded
+          onSaveAndApprove={vi.fn().mockResolvedValue(undefined)}
+        />
+      </MemoryRouter>,
+    )
+    await user.click(screen.getByRole('button', { name: /^edit$/i }))
+    const eta = screen.getByLabelText(/proposed value for eta/i)
+    await user.clear(eta)
+    await user.type(eta, '2026-07-25')
+    await user.click(screen.getByRole('button', { name: /done editing/i }))
+    expect(screen.getByTestId('proposed-column-header')).toHaveTextContent('Edited')
   })
 
   it('the approve button names how many stored values it will overwrite', async () => {
@@ -653,6 +722,31 @@ describe('embedded in the queue table — the row above already states identity'
     expect(screen.getByRole('table')).toBeInTheDocument()
     expect(screen.getByTestId('why-review')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /approve 2 changes/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /keep existing/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /not shipment/i })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^dismiss$/i })).toBeNull()
+  })
+
+  it('Keep Existing confirms without applying AI Proposed field changes', async () => {
+    const user = userEvent.setup()
+    const onApprove = vi.fn().mockResolvedValue(undefined)
+    const onSave = vi.fn().mockResolvedValue(undefined)
+    render(
+      <MemoryRouter>
+        <ReviewCard
+          shipment={baseShipment()}
+          criticReview={baseReview({ conflicts: [conflictEta] })}
+          compact={compact}
+          defaultExpanded
+          embedded
+          onApprove={onApprove}
+          onSaveAndApprove={onSave}
+        />
+      </MemoryRouter>,
+    )
+    await user.click(screen.getByRole('button', { name: /keep existing/i }))
+    expect(onApprove).toHaveBeenCalledTimes(1)
+    expect(onSave).not.toHaveBeenCalled()
   })
 
   it('still shows identity when NOT embedded (standalone use)', () => {

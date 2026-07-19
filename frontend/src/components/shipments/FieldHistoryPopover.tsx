@@ -116,11 +116,11 @@ export function FieldHistoryPopover({
               {entries.map((e) => (
                 <div key={e.id} className="py-2 first:pt-0 last:pb-0">
                   <div className="flex flex-wrap items-center gap-1.5 text-xs">
-                    <span className="min-w-0 break-words text-text-muted line-through">
+                    <span className="field-value text-text-muted line-through">
                       {formatFieldValue(e.field, e.oldValue)}
                     </span>
                     <ArrowRight size={10} className="shrink-0 text-text-muted" />
-                    <span className="min-w-0 break-words font-medium text-text-secondary">
+                    <span className="field-value font-medium text-text-secondary">
                       {formatFieldValue(e.field, e.newValue)}
                     </span>
                   </div>
@@ -144,7 +144,7 @@ export function FieldHistoryPopover({
         onMouseEnter={openPopover}
         onMouseLeave={scheduleClose}
       >
-        <span>{children}</span>
+        <span className="field-value">{children}</span>
         <Clock
           size={11}
           aria-hidden="true"

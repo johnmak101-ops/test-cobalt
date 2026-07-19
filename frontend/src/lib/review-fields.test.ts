@@ -284,6 +284,18 @@ describe('style entries table — parse/serialize round trip', () => {
     expect(parseStyleEntries(null)).toEqual([])
     expect(serializeStyleEntries([])).toBe('')
   })
+
+  it('accepts Excel paste (newlines / tabs) as separate styles', () => {
+    expect(parseStyleEntries('26-A\n26-B\n26-C')).toEqual([
+      { po: '', style: '26-A' },
+      { po: '', style: '26-B' },
+      { po: '', style: '26-C' },
+    ])
+    expect(parseStyleEntries('26-A\t26-B')).toEqual([
+      { po: '', style: '26-A' },
+      { po: '', style: '26-B' },
+    ])
+  })
 })
 
 describe('reviewGroupOf — demo field grouping', () => {

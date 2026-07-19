@@ -136,7 +136,8 @@ function AppRoutes() {
         {/* Vendors settings removed (#127) — Mesh mirror only; redirect bookmarks. */}
         <Route path="/settings/vendors" element={<Navigate to="/settings" replace />} />
         <Route path="/settings/users" element={<SuperadminRoute><SettingsPage /></SuperadminRoute>} />
-        <Route path="/settings/resolution" element={<PageAccessRoute page="resolution_rules"><SettingsPage /></PageAccessRoute>} />
+        {/* Resolution Rules settings UI removed — backend facts still drive matching; redirect bookmarks. */}
+        <Route path="/settings/resolution" element={<Navigate to="/settings" replace />} />
         {/* Review Policy settings removed (#124) — redirect bookmarks. */}
         <Route path="/settings/review-policy" element={<Navigate to="/settings" replace />} />
         <Route path="/settings/access" element={<SuperadminRoute><SettingsPage /></SuperadminRoute>} />

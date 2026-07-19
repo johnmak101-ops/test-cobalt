@@ -1,10 +1,14 @@
-import { Type } from 'class-transformer'
 import { ArrayNotEmpty, IsArray, IsIn, IsObject, IsOptional, IsString, Length } from 'class-validator'
 
-/** A human's correction of a provisional shipment: edited fields (camelCase columns) + a reason. */
+/**
+ * A human's correction of a provisional shipment: edited fields (camelCase columns) + a reason.
+ *
+ * IMPORTANT: do NOT put `@Type(() => Object)` on `fields`. With global `ValidationPipe({ transform,
+ * whitelist })`, that transformer replaces the payload with `new Object()` and the nested keys are
+ * wiped — `/correct` then confirms the leg with `corrected: []` while the client thinks it saved.
+ */
 export class CorrectDto {
   @IsObject()
-  @Type(() => Object)
   fields!: Record<string, unknown>
   @IsOptional() @IsString() reason?: string
   /** ISO timestamp from the client load; rejects with 409 when the leg has since been updated. */

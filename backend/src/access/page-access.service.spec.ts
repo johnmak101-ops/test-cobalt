@@ -15,14 +15,16 @@ function fakeRepo(): SettingsRepository {
 describe('PageAccessService', () => {
   it('falls back to the registry default when nothing is stored', async () => {
     const s = new PageAccessService(fakeRepo())
-    expect(await s.levelFor('resolution_rules', 'ADMIN')).toBe('edit')
-    expect(await s.levelFor('resolution_rules', 'EDITOR')).toBe('none')
     expect(await s.levelFor('alert_rules', 'VIEWER')).toBe('view')
+    expect(await s.levelFor('alert_rules', 'ADMIN')).toBe('edit')
+    // Retired page is unknown → none for configurable roles
+    expect(await s.levelFor('resolution_rules', 'ADMIN')).toBe('none')
   })
 
-  it('SUPERADMIN is always edit, even against an override', async () => {
+  it('SUPERADMIN is always edit, even for a retired/unknown page', async () => {
     const s = new PageAccessService(fakeRepo())
-    await s.setMatrix({ resolution_rules: { ADMIN: 'none' } }, null)
+    await s.setMatrix({ alert_rules: { ADMIN: 'none' } }, null)
+    expect(await s.levelFor('alert_rules', 'SUPERADMIN')).toBe('edit')
     expect(await s.levelFor('resolution_rules', 'SUPERADMIN')).toBe('edit')
   })
 
@@ -40,7 +42,7 @@ describe('PageAccessService', () => {
       {
         alert_rules: { SUPERADMIN: 'none', ADMIN: 'view' },
         ghost_page: { ADMIN: 'edit' },
-        resolution_rules: { ADMIN: 'banana' },
+        resolution_rules: { ADMIN: 'edit' },
       } as never,
       null,
     )
@@ -49,20 +51,20 @@ describe('PageAccessService', () => {
     expect(alert.levels.ADMIN).toBe('view')
     expect((alert.levels as Record<string, unknown>).SUPERADMIN).toBeUndefined()
     expect(pages.find((p) => p.id === 'ghost_page')).toBeUndefined()
-    expect(pages.find((p) => p.id === 'resolution_rules')!.levels.ADMIN).toBe('edit') // junk dropped → default
+    expect(pages.find((p) => p.id === 'resolution_rules')).toBeUndefined() // retired — not in matrix
   })
 
   it('forUser returns a level for every governed page', async () => {
     const s = new PageAccessService(fakeRepo())
     const levels = await s.forUser('ADMIN')
-    expect(Object.keys(levels).sort()).toEqual(['alert_rules', 'resolution_rules'])
+    expect(Object.keys(levels).sort()).toEqual(['alert_rules'])
     expect(levels.alert_rules).toBe('edit')
   })
 
   it('matrix lists every page × configurable role', async () => {
     const s = new PageAccessService(fakeRepo())
     const { pages } = await s.matrix()
-    expect(pages.map((p) => p.id)).toEqual(['alert_rules', 'resolution_rules'])
+    expect(pages.map((p) => p.id)).toEqual(['alert_rules'])
     expect(Object.keys(pages[0].levels).sort()).toEqual(['ADMIN', 'EDITOR', 'VIEWER'])
   })
 })

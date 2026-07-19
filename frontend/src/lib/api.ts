@@ -112,19 +112,6 @@ export interface DocumentDetail {
   emailId: string | null
 }
 
-/** A curated master_resolution fact (alias/group/canonical/role). App-owned, ADMIN-managed. */
-export interface ResolutionFact {
-  id: string
-  kind: string
-  lhs: string
-  rhs: string | null
-  status: string
-  source: string
-  reason: string | null
-  active: boolean
-  createdAt: string
-}
-
 export const api = {
   get: <T>(path: string) => request<T>(path),
   post: <T>(path: string, body: unknown) => request<T>(path, { method: 'POST', body: JSON.stringify(body) }),
@@ -143,22 +130,4 @@ export const api = {
     }),
   dismissDocument: (id: string) =>
     request<{ ok: true }>(`/documents/${id}/dismiss`, { method: 'POST' }),
-
-  // --- master_resolution (curated facts) ---
-  getUnmatchedMasters: () =>
-    request<Array<{ field: string; value: string; legsAffected: number }>>('/masters/unmatched'),
-  getResolutionManage: () => request<ResolutionFact[]>('/masters/resolution/manage'),
-  getProposals: () => request<ResolutionFact[]>('/masters/proposals'),
-  createFact: (body: { kind: string; lhs: string; rhs?: string; reason?: string }) =>
-    request<ResolutionFact>('/masters/resolution', { method: 'POST', body: JSON.stringify(body) }),
-  patchFact: (id: string, body: { reason?: string }) =>
-    request<ResolutionFact>(`/masters/resolution/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
-  deactivateFact: (id: string) =>
-    request<ResolutionFact>(`/masters/resolution/${id}/deactivate`, { method: 'POST' }),
-  reactivateFact: (id: string) =>
-    request<ResolutionFact>(`/masters/resolution/${id}/reactivate`, { method: 'POST' }),
-  approveProposal: (id: string) =>
-    request<ResolutionFact>(`/masters/proposals/${id}/approve`, { method: 'POST' }),
-  rejectProposal: (id: string) =>
-    request<ResolutionFact>(`/masters/proposals/${id}/reject`, { method: 'POST' }),
 }

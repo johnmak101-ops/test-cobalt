@@ -55,7 +55,7 @@ export default function PurchaseOrderDetailPage() {
         </button>
         <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0">
-            <h1 className="break-words font-mono text-xl font-semibold text-text-primary">
+            <h1 className="field-value font-mono text-xl font-semibold text-text-primary">
               {po.poNumber}
             </h1>
             <p className="mt-1 text-sm text-text-secondary">

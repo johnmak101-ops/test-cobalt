@@ -132,6 +132,19 @@ body {
   font-family: var(--font-mono);
 }
 
+/* Field values (Order Details, conflict table, history, contested locks, …).
+   Prefer wrapping at spaces so addresses/names stay readable. Never use
+   word-break:break-all — that mid-splits words (SPREITENBAC|H) and looks like
+   separate tokens. A single overlong token may still wrap as a last resort
+   so the layout does not blow out. */
+.field-value {
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: break-word;
+  word-break: normal;
+  hyphens: none;
+}
+
 /* Gentle "breathing" pulse for the in-progress milestone node (a shipment that has departed but
    not yet arrived). Scale + fade in/out — reads as "live / in transit", unlike a spinner which
    reads as "loading". Respects reduced-motion. */

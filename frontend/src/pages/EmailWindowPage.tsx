@@ -43,7 +43,7 @@ export default function EmailWindowPage() {
     <div className="flex h-screen w-screen flex-col overflow-hidden bg-surface-800">
       {/* Subject bar */}
       <div className="flex items-start justify-between gap-3 border-b border-border px-4 py-4 sm:px-6">
-        <h2 className="min-w-0 break-words text-lg font-semibold leading-snug text-text-primary">
+        <h2 className="field-value text-lg font-semibold leading-snug text-text-primary">
           {body?.subject || (isLoading ? 'Loading…' : '(no subject)')}
         </h2>
       </div>

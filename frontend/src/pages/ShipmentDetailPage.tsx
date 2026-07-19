@@ -269,7 +269,7 @@ export default function ShipmentDetailPage() {
         </button>
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <h1 className="font-mono text-xl font-semibold text-text-primary break-words">
+            <h1 className="field-value font-mono text-xl font-semibold text-text-primary">
               {titleIds.length > 0 ? (
                 titleIds.map((x, i) => (
                   <span key={x.label + x.value}>
@@ -584,7 +584,18 @@ export default function ShipmentDetailPage() {
           {/* Section 1: Order Info */}
           <DetailSection title="Order Info" icon={<ClipboardList size={14} className="text-text-muted" />}>
             <DetailRow label="Customer Code" value={shipment.customer?.code ?? null} />
+            <DetailRow
+              historyKey="customerRaw"
+              label={fieldLabel('customerRaw')}
+              // Prefer free-text raw (review corrections write here) over Mesh master name.
+              value={(shipment.customerRaw?.trim() || shipment.customer?.name) ?? null}
+            />
             <DetailRow label="Vendor Code" value={shipment.vendor?.code ?? null} />
+            <DetailRow
+              historyKey="vendorRaw"
+              label={fieldLabel('vendorRaw')}
+              value={(shipment.vendorRaw?.trim() || shipment.vendor?.name) ?? null}
+            />
             <DetailRow
               historyKey="bookingNo"
               label={fieldLabel('bookingNo')}
@@ -608,6 +619,11 @@ export default function ShipmentDetailPage() {
                     ? 'cancelled before an SO was issued'
                     : 'assigned once the booking is confirmed'
               }
+            />
+            <DetailRow
+              historyKey="itemStyleNo"
+              label={fieldLabel('itemStyleNo')}
+              value={shipment.itemStyleNo?.replace(/,/g, ', ') ?? null}
             />
             <DetailRow
               label="Last Email"
@@ -845,7 +861,7 @@ function DetailRow({
   return (
     <div className="grid grid-cols-[7rem_1fr] sm:grid-cols-[9rem_1fr] gap-x-2 items-baseline">
       <span className="text-xs text-text-muted truncate">{label}</span>
-      <span className="font-mono text-sm text-text-primary break-words min-w-0">
+      <span className="field-value font-mono text-sm text-text-primary">
         {value != null ? (
           entries.length > 0 ? (
             <FieldHistoryPopover label={label} entries={entries}>

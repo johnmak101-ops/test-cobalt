@@ -156,12 +156,12 @@ export function CandidateLegsPanel({
                       <span className="text-[10px] text-text-muted">(this provisional)</span>
                     )}
                   </div>
-                  <div className="font-mono text-[11px] text-text-secondary">
+                  <div className="field-value font-mono text-[11px] text-text-secondary">
                     BK {dash(c.booking_no)} · SO {dash(c.so_no)} · HBL {dash(c.hbl_awb_fcr_no)} · CTR{' '}
                     {dash(c.container_no)}
                   </div>
                   {(c.etd || c.vesselOrFlight || (c.pos && c.pos.length > 0)) && (
-                    <div className="text-[11px] text-text-muted">
+                    <div className="field-value text-[11px] text-text-muted">
                       {c.vesselOrFlight && <span>{c.vesselOrFlight} · </span>}
                       {c.etd && <span>ETD {c.etd}</span>}
                       {c.pos && c.pos.length > 0 && (

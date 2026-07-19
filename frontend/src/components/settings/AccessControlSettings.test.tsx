@@ -9,7 +9,6 @@ vi.mock('../../lib/api', () => ({
     get: vi.fn().mockResolvedValue({
       pages: [
         { id: 'alert_rules', label: 'Alert Rules', levels: { VIEWER: 'view', EDITOR: 'view', ADMIN: 'edit' } },
-        { id: 'resolution_rules', label: 'Resolution Rules', levels: { VIEWER: 'none', EDITOR: 'none', ADMIN: 'edit' } },
       ],
     }),
     put: vi.fn().mockResolvedValue({ pages: [] }),
@@ -22,13 +21,11 @@ function renderWithClient(ui: ReactElement) {
 }
 
 describe('AccessControlSettings', () => {
-  it('renders a row per governed page with a level select per role', async () => {
+  it('renders a row per governed page with a level select per role (no Resolution Rules)', async () => {
     renderWithClient(<AccessControlSettings />)
     expect(await screen.findByText('Alert Rules')).toBeInTheDocument()
-    expect(screen.getByText('Resolution Rules')).toBeInTheDocument()
+    expect(screen.queryByText('Resolution Rules')).not.toBeInTheDocument()
     const coordinatorAlert = screen.getByLabelText('Alert Rules — Coordinator') as HTMLSelectElement
     expect(coordinatorAlert.value).toBe('view')
-    const managerResolution = screen.getByLabelText('Resolution Rules — Manager') as HTMLSelectElement
-    expect(managerResolution.value).toBe('none')
   })
 })

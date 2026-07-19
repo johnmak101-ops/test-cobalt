@@ -181,10 +181,19 @@ export interface StyleEntry {
   style: string
 }
 
-/** '4483262/LKN18360L15, LKN1794' → [{po:'4483262', style:'LKN18360L15'}, {po:'', style:'LKN1794'}] */
+/**
+ * Parse a styles list from storage or clipboard.
+ * Accepts commas / semicolons, Excel rows (newlines), Excel columns (tabs), and CJK commas.
+ * '4483262/LKN18360L15, LKN1794' → [{po:'4483262', style:'LKN18360L15'}, {po:'', style:'LKN1794'}]
+ */
 export function parseStyleEntries(value: string | null | undefined): StyleEntry[] {
   if (!value) return []
-  return String(value)
+  // Excel paste: cells are tab-separated, rows newline-separated → treat both as separators.
+  const normalized = String(value)
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n')
+    .replace(/[\t\n]+/g, ',')
+  return normalized
     .split(/[,;，]+/)
     .map((e) => e.trim())
     .filter(Boolean)
@@ -195,6 +204,11 @@ export function parseStyleEntries(value: string | null | undefined): StyleEntry[
       }
       return { po: '', style: entry }
     })
+}
+
+/** True when clipboard text looks like a multi-style paste (Excel / comma list), not one token. */
+export function isMultiStylePaste(text: string): boolean {
+  return /[,\n\r\t;，]/.test(text)
 }
 
 /** Inverse of parseStyleEntries — empty rows dropped, 'po/style' or bare style, comma-joined. */
@@ -231,6 +245,9 @@ const CRITIC_EXTRA_COLUMNS: Record<string, string> = {
   mode: 'mode',
   flight_no: 'flightNo',
   mawb: 'mawb',
+  // Voyage aliases (history + some critic payloads use voyage_number / voyageNumber)
+  voyage_number: 'voyageNo',
+  voyageNumber: 'voyageNo',
   // already camel
   polRaw: 'polRaw',
   podRaw: 'podRaw',

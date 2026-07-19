@@ -4,7 +4,6 @@ import { useAuth } from '../hooks/use-auth'
 import { usePageAccess } from '../hooks/use-page-access'
 import { AlertRulesSettings } from '../components/settings/AlertRulesSettings'
 import { UsersSettings } from '../components/settings/UsersSettings'
-import { ResolutionRulesSettings } from '../components/settings/ResolutionRulesSettings'
 import { AccessControlSettings } from '../components/settings/AccessControlSettings'
 
 export default function SettingsPage() {
@@ -14,15 +13,13 @@ export default function SettingsPage() {
   const isSuper = user?.role === 'SUPERADMIN'
   const isAlertsSettings = location.pathname.includes('/settings/alerts')
   const isUsersSettings = location.pathname.includes('/settings/users')
-  const isResolution = location.pathname.includes('/settings/resolution')
   const isAccess = location.pathname.includes('/settings/access')
 
   // No empty "General" tab — only real config panels. Superadmin-only vs access-matrix tabs.
-  // Vendors (#127) and Review Policy (#124) settings UIs removed.
+  // Vendors (#127), Review Policy (#124), and Resolution Rules settings UIs removed.
   const navItems = [
     { to: '/settings/alerts', label: 'Alert Rules', end: false, show: canView('alert_rules') },
     { to: '/settings/users', label: 'Users', end: false, show: isSuper },
-    { to: '/settings/resolution', label: 'Resolution Rules', end: false, show: canView('resolution_rules') },
     { to: '/settings/access', label: 'Access Control', end: false, show: isSuper },
   ].filter((i) => i.show)
 
@@ -62,8 +59,6 @@ export default function SettingsPage() {
       <div className="flex-1">
         {isAccess ? (
           <AccessControlSettings />
-        ) : isResolution ? (
-          <ResolutionRulesSettings />
         ) : isUsersSettings ? (
           <UsersSettings />
         ) : isAlertsSettings ? (

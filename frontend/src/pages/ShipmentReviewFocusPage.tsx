@@ -22,7 +22,7 @@ import { toast } from '../components/ui/Toast'
  *
  * The shipment detail page's "see conflict table" and "Review & approve" CTAs land here instead of
  * dumping the operator on the queue's landing page (where the row was often paginated out or below
- * the fold). It reuses the queue's presentational ReviewCard — the conflict table + Approve/Dismiss/
+ * the fold). It reuses the queue's presentational ReviewCard — the conflict table + Keep Existing / Approve / Not shipment /
  * Save — so there is still ONE conflict UI. The approve/correct/dismiss wiring mirrors the queue's
  * ExpandedReviewPanel + saveAndApproveFor in ReviewQueuePage.tsx; keep the two in step.
  */
@@ -107,7 +107,7 @@ export default function ShipmentReviewFocusPage() {
     setStaleBanner(null)
     try {
       await dismissMutation.mutateAsync({ shipmentIds: [shipment.id] })
-      toast('Dismissed — not a trackable shipment')
+      toast('Marked Not shipment — document/noise, not trackable')
       navigate('/review-queue')
     } catch (err) {
       await handleStale(err)
@@ -127,23 +127,35 @@ export default function ShipmentReviewFocusPage() {
         return
       }
       if (hasMappable) {
-        await correctMutation.mutateAsync({
+        const res = await correctMutation.mutateAsync({
           shipmentId: shipment.id,
           fields: mapped,
           reason: payload.note,
           expectedUpdatedAt: payload.expectedUpdatedAt ?? shipment.updatedAt,
         })
+        const corrected = (res as { corrected?: string[] } | undefined)?.corrected
+        const n = Array.isArray(corrected) ? corrected.length : Object.keys(mapped).length
+        if (n === 0) {
+          toast('Approved, but no fields were written — reload and try Approve again')
+        } else {
+          toast(`Saved ${n} field${n === 1 ? '' : 's'} and approved`)
+        }
       } else {
         await confirmMutation.mutateAsync({
           shipmentId: shipment.id,
           note: payload.note || undefined,
           expectedUpdatedAt: payload.expectedUpdatedAt ?? shipment.updatedAt,
         })
+        toast('Shipment approved (no field changes)')
       }
-      toast('Shipment approved')
       navigate(backToShipment)
     } catch (err) {
-      await handleStale(err)
+      try {
+        await handleStale(err)
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : 'Save failed'
+        toast(msg.replace(/^API error \d+:\s*/i, '') || 'Save failed — try again')
+      }
     }
   }
 
@@ -167,7 +179,7 @@ export default function ShipmentReviewFocusPage() {
             <Badge variant="status" value={shipment.status} />
             <Link
               to={backToShipment}
-              className="rounded-lg bg-surface-700 px-3 py-1.5 text-xs font-medium text-text-secondary hover:bg-surface-600 hover:text-text-primary"
+              className="inline-flex items-center rounded-lg border border-border bg-surface-700 px-3 py-1.5 text-xs font-medium text-text-secondary hover:bg-surface-600 hover:text-text-primary"
             >
               Open full shipment
             </Link>
@@ -193,7 +205,6 @@ export default function ShipmentReviewFocusPage() {
           shipment={shipment}
           criticReview={shipment.criticReview ?? null}
           emails={shipment.emails ?? []}
-          fullShipmentPath={backToShipment}
           defaultExpanded
           embedded
           readOnly={readOnly}
