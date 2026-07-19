@@ -19,7 +19,7 @@ import { formatFieldValue, sourceLabels } from './ShipmentHistoryTimeline'
 export const FieldHistoryContext = createContext<Map<string, HistoryEntry[]>>(new Map())
 
 /**
- * Wrap a field VALUE so a changed field shows a dotted underline + clock marker, and hovering opens a
+ * Wrap a field VALUE so a changed field shows a clock marker, and hovering opens a
  * portaled popover with just that field's change timeline. Portaled to body (like the PO chip, #118)
  * so the surrounding card's overflow can't clip it. Renders `children` unchanged when `entries` is
  * empty — the caller decides which fields have history.
@@ -144,9 +144,7 @@ export function FieldHistoryPopover({
         onMouseEnter={openPopover}
         onMouseLeave={scheduleClose}
       >
-        <span className="underline decoration-dashed decoration-1 decoration-text-muted/60 underline-offset-4">
-          {children}
-        </span>
+        <span>{children}</span>
         <Clock
           size={11}
           aria-hidden="true"

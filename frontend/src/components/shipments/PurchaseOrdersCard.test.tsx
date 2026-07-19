@@ -46,12 +46,33 @@ function renderCard(linkedPOs: LinkedPO[] = [po()], customerId: string | null = 
 
 beforeEach(() => vi.clearAllMocks())
 
+/** Expand the card and enter CRUD mode (Edit). */
+async function enterCrudMode(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(screen.getByTestId('pos-card-toggle'))
+  await user.click(screen.getByTestId('po-crud-edit'))
+}
+
 describe('PurchaseOrdersCard — full CRUD', () => {
-  it('Add PO is hidden until expanded, then creates a PO with the customer attached', async () => {
+  it('is view-only until Edit enters CRUD mode', async () => {
+    const user = userEvent.setup()
+    renderCard()
+    expect(screen.queryByTestId('po-add')).toBeNull()
+    expect(screen.queryByTestId('po-crud-edit')).toBeNull() // hidden while collapsed
+    await user.click(screen.getByTestId('pos-card-toggle'))
+    expect(screen.getByTestId('po-crud-edit')).toBeInTheDocument()
+    expect(screen.queryByTestId('po-add')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Edit PO' })).toBeNull()
+    await user.click(screen.getByTestId('po-crud-edit'))
+    expect(screen.getByTestId('po-add')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Edit PO' })).toBeInTheDocument()
+    expect(screen.getByTestId('po-crud-done')).toBeInTheDocument()
+  })
+
+  it('Add PO is hidden until expanded + CRUD mode, then creates a PO with the customer attached', async () => {
     const user = userEvent.setup()
     renderCard()
     expect(screen.queryByTestId('po-add')).toBeNull() // hidden while collapsed
-    await user.click(screen.getByTestId('pos-card-toggle')) // expand to reveal Add
+    await enterCrudMode(user)
     await user.click(screen.getByTestId('po-add'))
     const row = screen.getByTestId('po-add-row')
     await user.type(within(row).getByPlaceholderText('PO number'), '99999')
@@ -64,7 +85,7 @@ describe('PurchaseOrdersCard — full CRUD', () => {
   it('Edit updates the PO fields', async () => {
     const user = userEvent.setup()
     renderCard()
-    await user.click(screen.getByTestId('pos-card-toggle'))
+    await enterCrudMode(user)
     await user.click(screen.getByRole('button', { name: 'Edit PO' }))
     const row = screen.getByTestId('po-edit-po1')
     await user.type(within(row).getByPlaceholderText('Item / style'), 'STYLE-1')
@@ -75,7 +96,7 @@ describe('PurchaseOrdersCard — full CRUD', () => {
   it('Unlink removes the PO from this shipment (after confirm)', async () => {
     const user = userEvent.setup()
     renderCard()
-    await user.click(screen.getByTestId('pos-card-toggle'))
+    await enterCrudMode(user)
     await user.click(screen.getByRole('button', { name: 'Remove from this shipment' }))
     await user.click(screen.getByTestId('po-confirm-yes'))
     expect(unlinkMutate).toHaveBeenCalledWith({ poId: 'po1', linkId: 'link1' }, expect.anything())
@@ -85,7 +106,7 @@ describe('PurchaseOrdersCard — full CRUD', () => {
   it('Delete removes the PO everywhere (after confirm)', async () => {
     const user = userEvent.setup()
     renderCard()
-    await user.click(screen.getByTestId('pos-card-toggle'))
+    await enterCrudMode(user)
     await user.click(screen.getByRole('button', { name: 'Delete PO everywhere' }))
     await user.click(screen.getByTestId('po-confirm-yes'))
     expect(delMutate).toHaveBeenCalledWith('po1', expect.anything())
@@ -94,8 +115,19 @@ describe('PurchaseOrdersCard — full CRUD', () => {
   it('hides Unlink when a PO has no shipment link id', async () => {
     const user = userEvent.setup()
     renderCard([po({ linkId: null })])
-    await user.click(screen.getByTestId('pos-card-toggle'))
+    await enterCrudMode(user)
     expect(screen.queryByRole('button', { name: 'Remove from this shipment' })).toBeNull()
     expect(screen.getByRole('button', { name: 'Delete PO everywhere' })).toBeInTheDocument()
+  })
+
+  it('Done exits CRUD mode and hides row actions', async () => {
+    const user = userEvent.setup()
+    renderCard()
+    await enterCrudMode(user)
+    expect(screen.getByRole('button', { name: 'Edit PO' })).toBeInTheDocument()
+    await user.click(screen.getByTestId('po-crud-done'))
+    expect(screen.queryByRole('button', { name: 'Edit PO' })).toBeNull()
+    expect(screen.queryByTestId('po-add')).toBeNull()
+    expect(screen.getByTestId('po-crud-edit')).toBeInTheDocument()
   })
 })

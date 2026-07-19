@@ -23,10 +23,10 @@ interface RowForm {
 }
 
 /**
- * Customer Purchase Orders on the shipment detail page — now full CRUD (the backend endpoints + hooks
- * existed but were unwired). Add creates a PO and links it to this shipment; Edit updates the PO#/style;
- * Unlink removes the PO from THIS shipment; Delete removes the PO everywhere (both confirmed inline).
- * No per-PO qty/unit here — that comes from the packing list, which a shipment may not have yet.
+ * Customer Purchase Orders on the shipment detail page. Read-only by default; Edit enters CRUD mode
+ * (add / edit / unlink / delete). Add creates a PO and links it to this shipment; inline Edit updates
+ * PO#/style; Unlink removes the PO from THIS shipment; Delete removes the PO everywhere (both confirmed
+ * inline). No per-PO qty/unit here — that comes from the packing list, which a shipment may not have yet.
  */
 export function PurchaseOrdersCard({
   shipmentId,
@@ -43,6 +43,8 @@ export function PurchaseOrdersCard({
 }) {
   const navigate = useNavigate()
   const [expanded, setExpanded] = useState(false)
+  /** When false, table is view-only (no Add / row actions). Edit button turns this on. */
+  const [crudMode, setCrudMode] = useState(false)
   const [adding, setAdding] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [confirm, setConfirm] = useState<{ id: string; kind: 'delete' | 'unlink' } | null>(null)
@@ -60,6 +62,13 @@ export function PurchaseOrdersCard({
   )
   const total = linkedPOs[0]?.sharedBroadcastTotal ?? shipmentQty
   const totalUnit = linkedPOs[0]?.sharedBroadcastUnit ?? shipmentQtyUnit
+
+  const exitCrudMode = () => {
+    setCrudMode(false)
+    setAdding(false)
+    setEditingId(null)
+    setConfirm(null)
+  }
 
   const startAdd = () => {
     setAdding(true)
@@ -168,15 +177,39 @@ export function PurchaseOrdersCard({
           </h4>
         </button>
         {expanded && (
-          <button
-            type="button"
-            onClick={startAdd}
-            disabled={busy}
-            className="inline-flex shrink-0 items-center gap-1 rounded-md border border-border px-2.5 py-1 text-xs font-medium text-text-secondary transition-colors hover:bg-surface-700 hover:text-text-primary disabled:opacity-50"
-            data-testid="po-add"
-          >
-            <Plus size={13} /> Add PO
-          </button>
+          <div className="flex shrink-0 items-center gap-1.5">
+            {crudMode ? (
+              <>
+                <button
+                  type="button"
+                  onClick={startAdd}
+                  disabled={busy}
+                  className="inline-flex items-center gap-1 rounded-md border border-border px-2.5 py-1 text-xs font-medium text-text-secondary transition-colors hover:bg-surface-700 hover:text-text-primary disabled:opacity-50"
+                  data-testid="po-add"
+                >
+                  <Plus size={13} /> Add PO
+                </button>
+                <button
+                  type="button"
+                  onClick={exitCrudMode}
+                  disabled={busy}
+                  className="inline-flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-medium text-text-secondary hover:bg-surface-700 hover:text-text-primary disabled:opacity-50"
+                  data-testid="po-crud-done"
+                >
+                  <X size={13} /> Done
+                </button>
+              </>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setCrudMode(true)}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-surface-700 px-3 py-1.5 text-xs font-medium text-text-secondary hover:bg-surface-600 hover:text-text-primary"
+                data-testid="po-crud-edit"
+              >
+                <Pencil size={13} /> Edit
+              </button>
+            )}
+          </div>
         )}
       </div>
 
@@ -187,13 +220,15 @@ export function PurchaseOrdersCard({
               <tr className="border-b border-border bg-surface-900/50">
                 <th className="px-3 py-2 text-left text-[11px] font-medium text-text-muted">Customer PO#</th>
                 <th className="px-3 py-2 text-left text-[11px] font-medium text-text-muted">Item / Style</th>
-                <th className="w-px px-3 py-2"></th>
+                {crudMode && <th className="w-px px-3 py-2"></th>}
               </tr>
             </thead>
             <tbody>
-              {adding && <EditableRow busy={busy} onCancel={() => setAdding(false)} onSave={handleAdd} />}
+              {crudMode && adding && (
+                <EditableRow busy={busy} onCancel={() => setAdding(false)} onSave={handleAdd} />
+              )}
               {sorted.map((po) =>
-                editingId === po.id ? (
+                crudMode && editingId === po.id ? (
                   <EditableRow
                     key={po.id}
                     po={po}
@@ -201,7 +236,7 @@ export function PurchaseOrdersCard({
                     onCancel={() => setEditingId(null)}
                     onSave={(f) => handleEdit(po.id, f)}
                   />
-                ) : confirm?.id === po.id ? (
+                ) : crudMode && confirm?.id === po.id ? (
                   <ConfirmRow
                     key={po.id}
                     kind={confirm.kind}
@@ -229,44 +264,46 @@ export function PurchaseOrdersCard({
                     <td className="px-3 py-2 font-mono text-sm text-text-secondary">
                       {po.itemStyleNo?.trim() ? po.itemStyleNo : '—'}
                     </td>
-                    <td className="px-2 py-2">
-                      <div className="flex items-center justify-end gap-0.5">
-                        <IconBtn
-                          title="Edit PO"
-                          disabled={busy}
-                          onClick={() => {
-                            setEditingId(po.id)
-                            setConfirm(null)
-                            setAdding(false)
-                          }}
-                        >
-                          <Pencil size={14} />
-                        </IconBtn>
-                        {po.linkId && (
+                    {crudMode && (
+                      <td className="px-2 py-2">
+                        <div className="flex items-center justify-end gap-0.5">
                           <IconBtn
-                            title="Remove from this shipment"
+                            title="Edit PO"
                             disabled={busy}
-                            onClick={() => setConfirm({ id: po.id, kind: 'unlink' })}
+                            onClick={() => {
+                              setEditingId(po.id)
+                              setConfirm(null)
+                              setAdding(false)
+                            }}
                           >
-                            <Link2Off size={14} />
+                            <Pencil size={14} />
                           </IconBtn>
-                        )}
-                        <IconBtn
-                          title="Delete PO everywhere"
-                          danger
-                          disabled={busy}
-                          onClick={() => setConfirm({ id: po.id, kind: 'delete' })}
-                        >
-                          <Trash2 size={14} />
-                        </IconBtn>
-                      </div>
-                    </td>
+                          {po.linkId && (
+                            <IconBtn
+                              title="Remove from this shipment"
+                              disabled={busy}
+                              onClick={() => setConfirm({ id: po.id, kind: 'unlink' })}
+                            >
+                              <Link2Off size={14} />
+                            </IconBtn>
+                          )}
+                          <IconBtn
+                            title="Delete PO everywhere"
+                            danger
+                            disabled={busy}
+                            onClick={() => setConfirm({ id: po.id, kind: 'delete' })}
+                          >
+                            <Trash2 size={14} />
+                          </IconBtn>
+                        </div>
+                      </td>
+                    )}
                   </tr>
                 ),
               )}
-              {sorted.length === 0 && !adding && (
+              {sorted.length === 0 && !(crudMode && adding) && (
                 <tr>
-                  <td colSpan={3} className="px-3 py-4 text-center text-xs text-text-muted">
+                  <td colSpan={crudMode ? 3 : 2} className="px-3 py-4 text-center text-xs text-text-muted">
                     No POs on this shipment yet.
                   </td>
                 </tr>
