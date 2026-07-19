@@ -6,10 +6,12 @@ const make = () => {
     lookupByMatchKey: vi.fn().mockReturnValue('matcher-result'),
     listForTracker: vi.fn(),
     getOne: vi.fn(),
+    contestedLocks: vi.fn().mockResolvedValue([]),
   }
   const ui = {
     shipments: vi.fn().mockResolvedValue('ui-list'),
     shipment: vi.fn().mockResolvedValue('ui-detail'),
+    searchShipments: vi.fn().mockReturnValue('ui-search'),
   }
   return { shipments, ui, c: new ShipmentsController(shipments as any, ui as any) }
 }
@@ -20,6 +22,7 @@ describe('ShipmentsController.index — matcher vs UI list', () => {
     const out = c.index({ booking_no: 'BK1' })
     expect(shipments.lookupByMatchKey).toHaveBeenCalledWith({ booking_no: 'BK1' })
     expect(ui.shipments).not.toHaveBeenCalled()
+    expect(ui.searchShipments).not.toHaveBeenCalled()
     expect(out).toBe('matcher-result')
   })
 
@@ -28,6 +31,7 @@ describe('ShipmentsController.index — matcher vs UI list', () => {
     c.index({ status: 'SAILED', customerId: 'c1', forwarderId: 'f1' })
     expect(shipments.lookupByMatchKey).not.toHaveBeenCalled()
     expect(ui.shipments).toHaveBeenCalledWith({ status: 'SAILED', customerId: 'c1', forwarderId: 'f1' })
+    expect(ui.searchShipments).not.toHaveBeenCalled()
   })
 
   it('does not treat customerId/forwarderId as match keys', () => {
@@ -35,6 +39,22 @@ describe('ShipmentsController.index — matcher vs UI list', () => {
     c.index({ customerId: 'c1' })
     expect(shipments.lookupByMatchKey).not.toHaveBeenCalled()
     expect(ui.shipments).toHaveBeenCalled()
+  })
+
+  it('routes free-text q to searchShipments when no strong keys', () => {
+    const { shipments, ui, c } = make()
+    const out = c.index({ q: 'SSL-318', limit: '20' })
+    expect(shipments.lookupByMatchKey).not.toHaveBeenCalled()
+    expect(ui.shipments).not.toHaveBeenCalled()
+    expect(ui.searchShipments).toHaveBeenCalledWith({ q: 'SSL-318', limit: 20 })
+    expect(out).toBe('ui-search')
+  })
+
+  it('prefers strong-key matcher over free-text q', () => {
+    const { shipments, ui, c } = make()
+    c.index({ booking_no: 'BK1', q: 'SSL-318' })
+    expect(shipments.lookupByMatchKey).toHaveBeenCalled()
+    expect(ui.searchShipments).not.toHaveBeenCalled()
   })
 })
 

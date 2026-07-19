@@ -122,6 +122,119 @@ describe('PresentationService.shipments — list', () => {
   })
 })
 
+describe('PresentationService.searchShipments', () => {
+  const searchBuild = () => {
+    const searchLegs = [
+      {
+        id: 'leg-ssl',
+        bookingId: 'b1',
+        legStatus: 'ACTIVE',
+        state: 'SAILED',
+        forwarderId: 'f1',
+        polId: 'p1',
+        podId: 'p2',
+        riskLevel: 'ON_TRACK',
+        bookingNo: 'SSL-318-2026',
+        soNo: 'SO-26-07-13401',
+        hblAwbFcrNo: 'HBL-SSL-1',
+        containerNo: 'MSCU1234567',
+        reviewStatus: 'confirmed',
+        updatedAt: D('2026-02-10T00:00:00.000Z'),
+      },
+      {
+        id: 'leg-other',
+        bookingId: 'b1',
+        legStatus: 'ACTIVE',
+        state: 'BOOKED',
+        forwarderId: 'f1',
+        polId: 'p1',
+        podId: 'p2',
+        riskLevel: 'ON_TRACK',
+        bookingNo: 'OTHER-999',
+        soNo: 'SO-OTHER',
+        reviewStatus: 'provisional',
+        updatedAt: D('2026-02-09T00:00:00.000Z'),
+      },
+    ]
+    const shipmentRepo = {
+      activeLegs: async () => searchLegs,
+      findById: async () => null,
+      findByIds: async () => new Map(),
+      milestonesFor: async () => [],
+      posFor: async () => [],
+      poNumbersByShipment: async () =>
+        new Map<string, string[]>([
+          ['leg-ssl', ['PO-SSL-100']],
+          ['leg-other', ['PO-OTHER']],
+        ]),
+      linkedPosForBooking: async () => [],
+      linkedPosForShipment: async () => [],
+      legsForBooking: async () => [],
+      identifiersFor: async () => [],
+    }
+    const bookingRepo = {
+      listOrdered: async () => bookings,
+      findById: async () => null,
+      findByIds: async () => new Map(),
+      poNumbersFor: async () => [],
+      poNumbersByBooking: async () => new Map(),
+    }
+    const mastersRepo = {
+      listCustomers: async () => customers,
+      listVendors: async () => vendors,
+      listForwarders: async () => forwarders,
+      listPorts: async () => ports,
+      listConsignees: async () => [],
+    }
+    return new PresentationService(
+      shipmentRepo as any,
+      bookingRepo as any,
+      mastersRepo as any,
+      { list: async () => [], allRules: async () => [] } as any,
+      { listForEntity: async () => [] } as any,
+      { unreadCount: async () => 0, ingestionStatus: async () => ({ count: 0, lastAt: null }), ingestState: async () => null, emailsForShipment: async () => [] } as any,
+      { forMessages: async () => [], allWithMessage: async () => [] } as any,
+      { lookupByMatchKey: async () => ({ query: {}, candidates: [] }) } as any,
+    )
+  }
+
+  it('searchShipments matches booking substring and returns compact rows', async () => {
+    // arrange legs with bookingNo SSL-318-2026 and SO-26-07-13401
+    const res = await searchBuild().searchShipments({ q: 'SSL-318', limit: 20 })
+    expect(res.shipments.some((s) => s.bookingNo?.includes('SSL-318'))).toBe(true)
+    expect(res.shipments[0]).toMatchObject({
+      id: expect.any(String),
+      bookingNo: expect.anything(),
+    })
+  })
+
+  it('returns empty for blank q', async () => {
+    const res = await searchBuild().searchShipments({ q: '   ', limit: 20 })
+    expect(res.shipments).toEqual([])
+  })
+
+  it('matches linked PO numbers and shapes compact DTO fields', async () => {
+    const res = await searchBuild().searchShipments({ q: 'PO-SSL', limit: 20 })
+    expect(res.shipments).toHaveLength(1)
+    expect(res.shipments[0]).toEqual({
+      id: 'leg-ssl',
+      bookingNo: 'SSL-318-2026',
+      soNumber: 'SO-26-07-13401',
+      customerName: 'Cole Haan',
+      route: 'CNYTN→GBFXT',
+      status: 'SAILED',
+      reviewStatus: 'confirmed',
+    })
+  })
+
+  it('caps limit at 50', async () => {
+    const res = await searchBuild().searchShipments({ q: 'SO-', limit: 100 })
+    // both legs match SO- prefix but only via soNo; ensure we don't throw on large limit
+    expect(res.shipments.length).toBeLessThanOrEqual(50)
+    expect(res.shipments.length).toBe(2)
+  })
+})
+
 describe('PresentationService.shipment — detail', () => {
   it('returns the flat detail with milestones/alerts/linkedPOs attached', async () => {
     const d = await build().shipment('leg1')

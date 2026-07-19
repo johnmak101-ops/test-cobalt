@@ -16,12 +16,14 @@ export class ShipmentsController {
   /**
    * GET /api/shipments
    *  - with a match key (a strong key OR customer_po) → Matcher candidate lookup (Agent VM), unchanged.
+   *  - with free-text `q` (and no strong keys) → compact search for Review "Move PO" target picker.
    *  - otherwise → the UI Shipment Tracker list (flat projection), with optional status/customerId/forwarderId filters.
    */
   @Get() index(@Query() q: Record<string, string>) {
     const present = (k: string) => q[k] != null && q[k] !== ''
     const hasKeys = STRONG_KEYS.some(present) || present('customer_po')
     if (hasKeys) return this.shipments.lookupByMatchKey(q)
+    if (present('q')) return this.ui.searchShipments({ q: q.q, limit: Number(q.limit) || 20 })
     return this.ui.shipments({ status: q.status, customerId: q.customerId, forwarderId: q.forwarderId })
   }
 
