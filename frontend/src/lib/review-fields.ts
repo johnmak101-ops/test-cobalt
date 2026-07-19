@@ -38,6 +38,12 @@ export interface EditableField {
    * columns: UOM, Mode). Values mirror `backend/src/db/enums.ts`.
    */
   options?: readonly string[]
+  /**
+   * When set, the edit form and the review conflict row render a master picker instead of free text.
+   * 'port' → a searchable UN/LOCODE dropdown (ports are a seeded, complete master), with a free-text
+   * fallback for a port not yet in the catalog. The chosen value is written to the raw column.
+   */
+  picker?: 'port'
 }
 
 export const EDITABLE_FIELDS: EditableField[] = [
@@ -54,12 +60,16 @@ export const EDITABLE_FIELDS: EditableField[] = [
   { section: 'Cargo & Logistics', label: 'MBL', uiKey: 'mblNumber', column: 'mbl', type: 'text' },
   { section: 'Cargo & Logistics', label: 'MAWB', uiKey: 'mawb', column: 'mawb', type: 'text' },
   { section: 'Cargo & Logistics', label: 'SCAC Code', uiKey: 'scacCode', column: 'scacCode', type: 'text' },
-  // Mode + port/forwarder *raw* free text — also on PATCH detail edit / review correct. Master
-  // customer/vendor stay out (need pickers). #183: operators could see Route/Forwarder read-only
-  // but not fix mode/POL/POD after bad extraction. Mode is enum-gated (dropdown).
+  // Mode + party/port *raw* free text — also on PATCH detail edit / review correct. #183: operators
+  // could see Route/Forwarder read-only but not fix them after bad extraction. Mode is enum-gated.
+  // POL/POD pick from the seeded ports master (picker:'port'); Customer/Vendor/Forwarder are free text
+  // because their masters are the Mesh ERP mirror (synced ~every 2 months) — the raw column is the only
+  // place to record the correct party until the master arrives, at which point the master wins display.
   { section: 'Shipping', label: 'Mode', uiKey: 'mode', column: 'mode', type: 'text', options: MODE_OPTIONS },
-  { section: 'Shipping', label: 'POL', uiKey: 'polRaw', column: 'polRaw', type: 'text' },
-  { section: 'Shipping', label: 'POD', uiKey: 'podRaw', column: 'podRaw', type: 'text' },
+  { section: 'Shipping', label: 'POL', uiKey: 'polRaw', column: 'polRaw', type: 'text', picker: 'port' },
+  { section: 'Shipping', label: 'POD', uiKey: 'podRaw', column: 'podRaw', type: 'text', picker: 'port' },
+  { section: 'Shipping', label: 'Customer', uiKey: 'customerRaw', column: 'customerRaw', type: 'text' },
+  { section: 'Shipping', label: 'Vendor', uiKey: 'vendorRaw', column: 'vendorRaw', type: 'text' },
   { section: 'Shipping', label: 'Forwarder', uiKey: 'forwarderRaw', column: 'forwarderRaw', type: 'text' },
   { section: 'Shipping', label: 'Consignee Name', uiKey: 'consigneeName', column: 'consigneeName', type: 'text' },
   { section: 'Shipping', label: 'Consignee Address', uiKey: 'consigneeAddress', column: 'consigneeAddress', type: 'text' },
@@ -210,7 +220,14 @@ const CRITIC_EXTRA_COLUMNS: Record<string, string> = {
   pol: 'polRaw',
   pod: 'podRaw',
   forwarder_name: 'forwarderRaw',
+  // Customer / vendor conflicts → the free-text raw column (no Mesh write; master wins once it resolves).
+  // The critic may name the party a few ways — code, name, or bare — so accept all of them.
+  customer: 'customerRaw',
+  customer_code: 'customerRaw',
+  customer_name: 'customerRaw',
+  vendor: 'vendorRaw',
   vendor_code: 'vendorRaw',
+  vendor_name: 'vendorRaw',
   mode: 'mode',
   flight_no: 'flightNo',
   mawb: 'mawb',
@@ -218,6 +235,7 @@ const CRITIC_EXTRA_COLUMNS: Record<string, string> = {
   polRaw: 'polRaw',
   podRaw: 'podRaw',
   forwarderRaw: 'forwarderRaw',
+  customerRaw: 'customerRaw',
   vendorRaw: 'vendorRaw',
   flightNo: 'flightNo',
 }
@@ -240,6 +258,13 @@ export function mapCriticFieldToColumn(field: string): string | null {
 /** True when /correct will accept this camelCase leg column (frontend + backend allowlists must match). */
 export function isWritableLegColumn(column: string): boolean {
   return WRITABLE_COLUMN_SET.has(column)
+}
+
+const PORT_PICKER_COLUMNS = new Set(EDITABLE_FIELDS.filter((f) => f.picker === 'port').map((f) => f.column))
+
+/** True when this leg column (POL/POD) should be edited via the seeded ports-master picker, not free text. */
+export function isPortColumn(column: string | null | undefined): boolean {
+  return !!column && PORT_PICKER_COLUMNS.has(column)
 }
 
 /**
@@ -281,7 +306,9 @@ export const REVIEW_GROUP_ORDER: ReviewGroup[] = [
  * beats silently-gone.
  */
 export function reviewGroupOf(field: string): ReviewGroup {
-  // Ports / mode / parties from critic → Shipping (not a lonely "Other" bin)
+  // Ports / mode / parties from critic → Shipping (not a lonely "Other" bin). NOTE: not `customer` —
+  // that would swallow `customer_po` (a PO number, genuinely Other). `customer`/`customer_code` route
+  // to Shipping via the customerRaw column mapping below; only the bare-PO field falls through to Other.
   if (/^(pol|pod|mode|forwarder|vendor)/i.test(field)) return 'Shipping'
   const column = mapCriticFieldToColumn(field)
   const meta = column ? EDITABLE_FIELDS.find((f) => f.column === column) : null

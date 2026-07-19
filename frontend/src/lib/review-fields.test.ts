@@ -10,6 +10,8 @@ import {
   reviewFieldLabel,
   mapCriticFieldToColumn,
   mapCriticFieldsToColumns,
+  isPortColumn,
+  isWritableLegColumn,
   reviewGroupOf,
   toInputValue,
   parseStyleEntries,
@@ -46,6 +48,36 @@ describe('EDITABLE_FIELDS', () => {
   it('wires UOM and Mode as enum dropdown option lists (mirrors backend enums)', () => {
     expect(EDITABLE_FIELDS.find((f) => f.column === 'qtyUnit')?.options).toEqual([...UOM_OPTIONS])
     expect(EDITABLE_FIELDS.find((f) => f.column === 'mode')?.options).toEqual([...MODE_OPTIONS])
+  })
+
+  it('makes Customer / Vendor editable free-text (Mesh-lag stand-in) under Shipping', () => {
+    expect(EDITABLE_FIELDS.find((f) => f.column === 'customerRaw')).toMatchObject({
+      section: 'Shipping',
+      label: 'Customer',
+      uiKey: 'customerRaw',
+      type: 'text',
+    })
+    expect(EDITABLE_FIELDS.find((f) => f.column === 'vendorRaw')).toMatchObject({
+      section: 'Shipping',
+      label: 'Vendor',
+      uiKey: 'vendorRaw',
+    })
+    // parties route to Shipping via the column mapping (no dedicated regex that would swallow customer_po)
+    expect(reviewGroupOf('customer')).toBe('Shipping')
+    expect(reviewGroupOf('vendor_code')).toBe('Shipping')
+  })
+
+  it('marks POL / POD as a port picker (seeded ports master); other columns are not', () => {
+    expect(EDITABLE_FIELDS.find((f) => f.column === 'polRaw')?.picker).toBe('port')
+    expect(EDITABLE_FIELDS.find((f) => f.column === 'podRaw')?.picker).toBe('port')
+    expect(isPortColumn('polRaw')).toBe(true)
+    expect(isPortColumn('podRaw')).toBe(true)
+    expect(isPortColumn('forwarderRaw')).toBe(false)
+    expect(isPortColumn('customerRaw')).toBe(false)
+    expect(isPortColumn(null)).toBe(false)
+    // free-text parties keep NO picker — their masters are Mesh-lagged, so there is no list to pick from
+    expect(EDITABLE_FIELDS.find((f) => f.column === 'customerRaw')?.picker).toBeUndefined()
+    expect(EDITABLE_FIELDS.find((f) => f.column === 'forwarderRaw')?.picker).toBeUndefined()
   })
 })
 
@@ -171,6 +203,22 @@ describe('mapCriticFieldToColumn / mapCriticFieldsToColumns', () => {
     expect(
       mapCriticFieldsToColumns({ pol: 'CNSHK', forwarder_name: 'SEH', eta: '2026-08-01' }),
     ).toEqual({ polRaw: 'CNSHK', forwarderRaw: 'SEH', eta: '2026-08-01' })
+  })
+
+  it('maps a customer/vendor conflict to the free-text raw column (Mesh-lag stand-in, no ERP write)', () => {
+    // Masters are the read-only Mesh mirror (synced ~every 2 months); when none resolves, the reviewer
+    // records the correct party in the raw column. The critic may name it a few ways — accept all.
+    expect(mapCriticFieldToColumn('customer')).toBe('customerRaw')
+    expect(mapCriticFieldToColumn('customer_code')).toBe('customerRaw')
+    expect(mapCriticFieldToColumn('customer_name')).toBe('customerRaw')
+    expect(mapCriticFieldToColumn('vendor')).toBe('vendorRaw')
+    expect(mapCriticFieldToColumn('vendor_code')).toBe('vendorRaw')
+    expect(mapCriticFieldToColumn('vendor_name')).toBe('vendorRaw')
+    // and both raw columns are genuinely writable by /correct
+    expect(isWritableLegColumn('customerRaw')).toBe(true)
+    expect(isWritableLegColumn('vendorRaw')).toBe(true)
+    // but a customer PO NUMBER is not a party — it must stay unmapped, not become customerRaw
+    expect(mapCriticFieldToColumn('customer_po')).toBeNull()
   })
 
   it('rewrites a fields bag for CorrectDto (idempotent on camelCase)', () => {

@@ -98,6 +98,9 @@ describe('ReviewService.confirm/correct — provisional-only + optimistic concur
           soNo: 'SO-NEW',
           polRaw: 'CNSHK',
           forwarderRaw: 'SEH',
+          // customerRaw/vendorRaw are the Mesh-lag party stand-ins — correctable when no master resolves.
+          customerRaw: 'OTCX',
+          vendorRaw: 'SOUOCE',
           mode: 'SEA',
         },
         reason: 'resolve all conflicts',
@@ -105,9 +108,11 @@ describe('ReviewService.confirm/correct — provisional-only + optimistic concur
       'user-1',
     )
     expect(res.reviewStatus).toBe('confirmed')
-    expect(res.corrected).toEqual(expect.arrayContaining(['eta', 'soNo', 'polRaw', 'forwarderRaw', 'mode']))
+    expect(res.corrected).toEqual(
+      expect.arrayContaining(['eta', 'soNo', 'polRaw', 'forwarderRaw', 'customerRaw', 'vendorRaw', 'mode']),
+    )
     expect(shipments.updateLeg).toHaveBeenCalled()
-    expect(locks.lock.mock.calls.length).toBe(5)
+    expect(locks.lock.mock.calls.length).toBe(7)
   })
 
   it('confirm rejects stale expectedUpdatedAt with 409', async () => {

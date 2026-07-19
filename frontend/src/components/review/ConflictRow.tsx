@@ -1,5 +1,6 @@
 import type { CriticConflict } from '../../lib/critic-review'
-import { reviewFieldLabel } from '../../lib/review-fields'
+import { reviewFieldLabel, mapCriticFieldToColumn, isPortColumn } from '../../lib/review-fields'
+import { PortPicker } from '../shipments/PortPicker'
 
 export interface ConflictRowProps {
   conflict: CriticConflict
@@ -69,6 +70,8 @@ export function ConflictRow({
   const listId = `candidates-${conflict.field}`
   const changed = changesStoredValue(conflict, value)
   const label = reviewFieldLabel(conflict.field, conflict.label)
+  // POL/POD edit from the seeded ports master (searchable, free-text fallback) instead of a bare input.
+  const isPort = isPortColumn(mapCriticFieldToColumn(conflict.field))
 
   return (
     <tr className="border-b border-border last:border-0 align-top">
@@ -95,26 +98,36 @@ export function ConflictRow({
       </td>
       <td className="px-3 py-2.5">
         {editing ? (
-          <span className="inline-flex w-full items-center">
-            <input
-              aria-label={`Proposed value for ${label}`}
+          isPort ? (
+            <PortPicker
               value={value}
-              // Only offer a picker when there is genuinely a choice — a one-option dropdown is noise.
-              list={proposed.length > 1 ? listId : undefined}
-              onChange={(e) => onChange(e.target.value)}
+              onChange={onChange}
+              ariaLabel={`Proposed value for ${label}`}
               placeholder="—"
               className="h-8 w-full rounded-lg border border-border bg-surface-900 px-2.5 font-mono text-sm text-text-primary placeholder:text-text-muted"
             />
-            {/* The unit is NOT part of the editable text — the operator types a number, not '87 KGS'. */}
-            <Unit unit={proposedUnit} />
-            {proposed.length > 1 && (
-              <datalist id={listId}>
-                {proposed.map((c) => (
-                  <option key={`${c.source}-${c.value}`} value={c.value} />
-                ))}
-              </datalist>
-            )}
-          </span>
+          ) : (
+            <span className="inline-flex w-full items-center">
+              <input
+                aria-label={`Proposed value for ${label}`}
+                value={value}
+                // Only offer a picker when there is genuinely a choice — a one-option dropdown is noise.
+                list={proposed.length > 1 ? listId : undefined}
+                onChange={(e) => onChange(e.target.value)}
+                placeholder="—"
+                className="h-8 w-full rounded-lg border border-border bg-surface-900 px-2.5 font-mono text-sm text-text-primary placeholder:text-text-muted"
+              />
+              {/* The unit is NOT part of the editable text — the operator types a number, not '87 KGS'. */}
+              <Unit unit={proposedUnit} />
+              {proposed.length > 1 && (
+                <datalist id={listId}>
+                  {proposed.map((c) => (
+                    <option key={`${c.source}-${c.value}`} value={c.value} />
+                  ))}
+                </datalist>
+              )}
+            </span>
+          )
         ) : value ? (
           <span className="inline-flex flex-wrap items-center gap-x-1.5">
             {/* Colour alone carries "this differs from stored" — the arrow said the same thing twice. */}

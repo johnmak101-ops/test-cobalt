@@ -65,14 +65,15 @@ const PARSER_TO_LEG: Record<string, string> = Object.fromEntries(
   CREATE_FIELD_MAP.filter((m) => m.leg).map((m) => [m.parser, m.leg as string]),
 )
 
-// Human-editable leg columns (DB names). Customer/vendor master FKs stay out (need pickers).
-// mode + polRaw/podRaw/forwarderRaw are free-text leg columns (same as review /correct extras) so
-// operators can fix extraction without a master picker (#183). Resolved polId/podId/forwarderId
-// are not written here — raw text still drives route display via deriveRoute fallbacks.
+// Human-editable leg columns (DB names). The master FK columns (customerId/vendorId/forwarderId/portId)
+// stay out — those are set by resolution, never a direct write. But the *raw* twins are editable free
+// text: mode + polRaw/podRaw/forwarderRaw/customerRaw/vendorRaw let operators fix extraction without a
+// Mesh write (#183). customer/vendorRaw are the stand-in when no master resolves — Mesh syncs ~every 2
+// months, so the raw column holds the correct party until then (a resolved master still wins display).
 const EDITABLE_FIELDS = new Set([
   'bookingNo', 'soNo', 'hblAwbFcrNo', 'mbl', 'containerNo', 'scacCode',
   'qty', 'qtyUnit', 'grossWeight', 'measurement', 'itemStyleNo', 'htsCode',
-  'mode', 'polRaw', 'podRaw', 'forwarderRaw',
+  'mode', 'polRaw', 'podRaw', 'forwarderRaw', 'customerRaw', 'vendorRaw',
   'consigneeName', 'consigneeAddress', 'vesselName', 'voyageNo', 'flightNo', 'mawb',
   ...DATE_FIELDS,
 ])
