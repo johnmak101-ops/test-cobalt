@@ -20,8 +20,9 @@ import {
   type CriticReviewCompact,
 } from '../../lib/critic-review'
 import { CandidateLegsPanel } from './CandidateLegsPanel'
+import { ReviewPoStylesSection } from './ReviewPoStylesSection'
 import type { ReviewShipment } from '../../hooks/use-review-queue'
-import type { ShipmentDetail } from '../../hooks/use-shipments'
+import type { LinkedPO, ShipmentDetail } from '../../hooks/use-shipments'
 import { cn, formatDateTime } from '../../lib/utils'
 import { buildNeedsAttentionGroups, portsLinkedFromRoute } from './needs-attention'
 
@@ -187,9 +188,30 @@ export function ReviewCard({
   const [identResult, setIdentResult] = useState<IdentifyResult | null>(null)
   const [identBusy, setIdentBusy] = useState(false)
 
-  const conflicts = useMemo(
+  /** Detail DTO carries membership; queue list rows do not. */
+  const linkedPOs: LinkedPO[] = useMemo(() => {
+    if ('linkedPOs' in shipment && Array.isArray(shipment.linkedPOs)) {
+      return shipment.linkedPOs
+    }
+    return []
+  }, [shipment])
+  const reviewReasons =
+    (shipment as { reviewReasons?: string[] | null }).reviewReasons ?? []
+
+  const rawConflicts = useMemo(
     () => criticReview?.conflicts ?? [],
     [criticReview],
+  )
+  /**
+   * When per-PO styles are available, drop the bag-level item/style conflict — membership + style
+   * live on ReviewPoStylesSection, not the leg-level conflict table.
+   */
+  const conflicts = useMemo(
+    () =>
+      linkedPOs.length > 0
+        ? rawConflicts.filter((c) => mapCriticFieldToColumn(c.field) !== 'itemStyleNo')
+        : rawConflicts,
+    [rawConflicts, linkedPOs.length],
   )
   /** Newest first: "which statement is the latest?" is the question a reviewer actually has, and a
    *  date they must compare by hand only half-answers it. Undated mail sorts last, not first. */
@@ -205,11 +227,11 @@ export function ReviewCard({
     () =>
       buildNeedsAttentionGroups({
         riskFlags: criticReview?.riskFlags,
-        reviewReasons: (shipment as { reviewReasons?: string[] | null }).reviewReasons,
+        reviewReasons,
         conflictsCount: conflicts.length,
         portsLinked: portsLinkedFromRoute((shipment as { route?: string | null }).route),
       }),
-    [criticReview, shipment, conflicts.length],
+    [criticReview, reviewReasons, shipment, conflicts.length],
   )
   const [resolutions, setResolutions] = useState<Record<string, string>>(() =>
     initialResolutions(conflicts),
@@ -576,6 +598,15 @@ export function ReviewCard({
                 </div>
               )}
             </div>
+          )}
+
+          {(linkedPOs.length > 0 || !readOnly) && (
+            <ReviewPoStylesSection
+              shipmentId={shipment.id}
+              linkedPOs={linkedPOs}
+              reviewReasons={reviewReasons}
+              readOnly={readOnly}
+            />
           )}
 
           {conflicts.length > 0 && (

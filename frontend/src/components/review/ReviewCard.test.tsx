@@ -5,6 +5,21 @@ import { MemoryRouter } from 'react-router-dom'
 import { ReviewCard } from './ReviewCard'
 import type { CriticConflict, CriticReview, CriticReviewCompact } from '../../lib/critic-review'
 import type { ReviewShipment } from '../../hooks/use-review-queue'
+import type { LinkedPO } from '../../hooks/use-shipments'
+
+vi.mock('../../hooks/use-purchase-orders', () => ({
+  useUpdatePurchaseOrder: () => ({ mutate: vi.fn(), isPending: false }),
+  useUnlinkShipmentFromPO: () => ({
+    mutate: vi.fn(),
+    mutateAsync: vi.fn(),
+    isPending: false,
+  }),
+  useLinkShipmentToPO: () => ({
+    mutate: vi.fn(),
+    mutateAsync: vi.fn(),
+    isPending: false,
+  }),
+}))
 
 const conflictEta: CriticConflict = {
   field: 'eta',
@@ -866,5 +881,70 @@ describe('source emails — identify WHICH email, and which is newer', () => {
     const rows = within(screen.getByTestId('source-emails-list')).getAllByRole('button')
     expect(rows[0]!.textContent).toMatch(/KOHL'S/)
     expect(rows[1]!.textContent).toMatch(/ACNS/)
+  })
+
+  it('shows POs & styles section from linkedPOs', () => {
+    render(
+      <MemoryRouter>
+        <ReviewCard
+          shipment={
+            baseShipment({
+              linkedPOs: [{ id: 'po1', linkId: 'l1', poNumber: '1', itemStyleNo: 'A' }],
+            } as never)
+          }
+          criticReview={baseReview()}
+          defaultExpanded
+        />
+      </MemoryRouter>,
+    )
+    expect(screen.getByText(/POs & styles/i)).toBeInTheDocument()
+  })
+
+  it('hides Item/Style bag conflict when linked POs exist', () => {
+    const conflicts: CriticConflict[] = [
+      {
+        field: 'item_style_no',
+        label: 'Item / Style No.',
+        candidates: [
+          { value: 'A,B,C', source: 'System' },
+          { value: 'A,B,C', source: 'SO' },
+        ],
+        rationale: 'x',
+      },
+      {
+        field: 'qty',
+        label: 'Total Quantity',
+        candidates: [
+          { value: '10', source: 'System' },
+          { value: '20', source: 'SO' },
+        ],
+        rationale: 'y',
+      },
+    ]
+    const detailWithPos = {
+      ...baseShipment(),
+      linkedPOs: [
+        {
+          id: 'po1',
+          linkId: 'l1',
+          poNumber: '1',
+          itemStyleNo: 'A',
+          quantity: null,
+          totalQuantity: null,
+          quantityUnit: null,
+        } satisfies LinkedPO,
+      ],
+    }
+    render(
+      <MemoryRouter>
+        <ReviewCard
+          shipment={detailWithPos as never}
+          criticReview={baseReview({ conflicts })}
+          defaultExpanded
+        />
+      </MemoryRouter>,
+    )
+    expect(screen.queryByText('Item / Style No.')).toBeNull()
+    expect(screen.getByText('Total Quantity')).toBeInTheDocument()
   })
 })
