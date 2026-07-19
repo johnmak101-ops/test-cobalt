@@ -17,6 +17,7 @@ import {
 import {
   criticalConflicts,
   criticalMissing,
+  isCriticalColumn,
   type CriticalColumn,
 } from '../../lib/review-critical'
 import {
@@ -753,6 +754,7 @@ export function ReviewCard({
                           proposedUnit={units.proposed}
                           notWritable={!writable}
                           canEdit={!readOnly && writable}
+                          critical={isCriticalColumn(mapCriticFieldToColumn(c.field))}
                           onRequestEdit={() => {
                             if (!readOnly) startEditing()
                           }}
