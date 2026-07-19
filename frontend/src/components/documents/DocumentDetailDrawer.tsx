@@ -183,7 +183,7 @@ export function DocumentDetailDrawer({
             ) : (
               <Ban size={14} />
             )}
-            Dismiss (not a shipment)
+            Not shipment
           </button>
         </div>
       </div>

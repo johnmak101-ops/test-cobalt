@@ -20,7 +20,9 @@ export interface ConfigPage {
 
 export const CONFIG_PAGES: ConfigPage[] = [
   { id: 'alert_rules', label: 'Alert Rules', defaults: { VIEWER: 'view', EDITOR: 'view', ADMIN: 'edit' } },
-  { id: 'resolution_rules', label: 'Resolution Rules', defaults: { VIEWER: 'none', EDITOR: 'none', ADMIN: 'edit' } },
+  // resolution_rules retired from the Access Control matrix + Settings UI (page hidden).
+  // Masters endpoints still tag @PageRead/@PageWrite('resolution_rules'); unknown pages resolve
+  // to `none` (SUPERADMIN always edit; @AgentPageRead keeps EDITOR+ service-account carve-out).
 ]
 
 export const CONFIG_PAGE_IDS = CONFIG_PAGES.map((p) => p.id)

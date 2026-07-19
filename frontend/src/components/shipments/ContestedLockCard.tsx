@@ -43,11 +43,11 @@ export function ContestedLockCard({ shipmentId, locks }: { shipmentId: string; l
               <p className="text-sm font-medium text-text-primary">{label}</p>
               <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
                 <span className="text-text-muted">your edit</span>
-                <span className="font-medium text-text-secondary line-through">
+                <span className="field-value font-medium text-text-secondary line-through">
                   {formatFieldValue(c.field, c.yourValue)}
                 </span>
                 <span className="text-text-muted">new email</span>
-                <span className="font-medium text-cobalt-primary-light">
+                <span className="field-value font-medium text-cobalt-primary-light">
                   {formatFieldValue(c.field, c.newValue)}
                 </span>
               </div>

@@ -169,6 +169,24 @@ describe('PresentationService.alerts + alertRules', () => {
   })
 })
 
+describe('legsSailedToday', () => {
+  // imported via re-export from the same module under test
+  it('keeps legs with ATD today and sailed legs with ETD today', async () => {
+    const { legsSailedToday } = await import('./presentation.service')
+    const now = new Date('2026-07-19T12:00:00.000Z')
+    const out = legsSailedToday(
+      [
+        { id: 'a', atd: new Date('2026-07-19T08:00:00.000Z'), etd: null, state: 'BOOKED' },
+        { id: 'b', atd: null, etd: new Date('2026-07-19T00:00:00.000Z'), state: 'SAILED' },
+        { id: 'c', atd: null, etd: new Date('2026-07-19T00:00:00.000Z'), state: 'BOOKED' }, // not sailed yet
+        { id: 'd', atd: new Date('2026-07-18T08:00:00.000Z'), etd: null, state: 'SAILED' },
+      ],
+      now,
+    )
+    expect(out.map((l) => l.id)).toEqual(['a', 'b'])
+  })
+})
+
 describe('PresentationService.dashboard', () => {
   it('computes the KPI stats from legs + alerts', async () => {
     const d = await build().dashboard()

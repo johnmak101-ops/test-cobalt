@@ -1,5 +1,15 @@
+import { useState } from 'react'
+import { Copy, Plus, X } from 'lucide-react'
 import type { CriticConflict } from '../../lib/critic-review'
-import { reviewFieldLabel, mapCriticFieldToColumn, isPortColumn } from '../../lib/review-fields'
+import {
+  reviewFieldLabel,
+  mapCriticFieldToColumn,
+  isPortColumn,
+  parseStyleEntries,
+  serializeStyleEntries,
+  isMultiStylePaste,
+  type StyleEntry,
+} from '../../lib/review-fields'
 import { PortPicker } from '../shipments/PortPicker'
 import { cn } from '../../lib/utils'
 
@@ -16,6 +26,13 @@ export interface ConflictRowProps {
   proposedUnit?: string | null
   /** Critic field has no leg column — show hint; Edit cannot commit it from Review Queue. */
   notWritable?: boolean
+  /**
+   * When true, operator may change Resolution (Active queue). False on Approved/Rejected —
+   * Copy all / paste / Edit inputs are hidden so the panel is view-only.
+   */
+  canEdit?: boolean
+  /** Enter card-level edit mode (used by Copy all when the multi-field editor is not yet open). */
+  onRequestEdit?: () => void
 }
 
 /** A number is meaningless without its unit ('14' vs '14 cartons'), so render them together. */
@@ -54,12 +71,19 @@ export function changesStoredValue(conflict: CriticConflict, value: string): boo
   return v !== '' && v !== existingValueOf(conflict)
 }
 
+/** Item / Style No. is a multi-token list, not one free-text blob. */
+function isItemStyleField(field: string): boolean {
+  const col = mapCriticFieldToColumn(field)
+  return col === 'itemStyleNo' || /item.?style/i.test(field)
+}
+
 /**
  * One contested field: Existing · Proposed.
  * Only renders structured `CriticConflict` data — never invents from proposedChanges.
  *
  * Multi-candidate fields (e.g. two co-current forwarders / HBLs) list every proposal in the
  * AI Proposed column — never bury the 2nd+ option in a browser datalist the operator can't see.
+ * Item/Style lists use one input per style (not a comma-joined mega-string).
  */
 export function ConflictRow({
   conflict,
@@ -69,13 +93,25 @@ export function ConflictRow({
   existingUnit,
   proposedUnit,
   notWritable = false,
+  canEdit = false,
+  onRequestEdit,
 }: ConflictRowProps) {
   const { existing, proposed } = splitCandidates(conflict)
   const changed = changesStoredValue(conflict, value)
   const label = reviewFieldLabel(conflict.field, conflict.label)
+  const column = mapCriticFieldToColumn(conflict.field)
   // POL/POD edit from the seeded ports master (searchable, free-text fallback) instead of a bare input.
-  const isPort = isPortColumn(mapCriticFieldToColumn(conflict.field))
+  const isPort = isPortColumn(column)
+  const isStyles = isItemStyleField(conflict.field)
   const multi = proposed.length > 1
+  const existingStyles = existing?.value ?? ''
+  const canCopyAll = canEdit && parseStyleEntries(existingStyles).length > 0
+
+  const copyAllFromExisting = () => {
+    if (!canCopyAll) return
+    onRequestEdit?.()
+    onChange(existingStyles)
+  }
 
   return (
     <tr className="border-b border-border last:border-0 align-top">
@@ -87,21 +123,81 @@ export function ConflictRow({
           </p>
         )}
       </td>
-      <td className="px-3 py-2.5">
+      <td className="min-w-0 max-w-0 overflow-hidden px-3 py-2.5">
         {existing?.value ? (
-          <span className="inline-flex flex-wrap items-baseline gap-x-1.5">
-            <span className="break-all font-mono text-sm text-text-primary">
-              {existing.value}
-              <Unit unit={existingUnit} />
+          isStyles ? (
+            <div className="min-w-0 space-y-1">
+              <StyleListDisplay value={existing.value} />
+              <span className="text-[11px] text-text-muted">(system)</span>
+              {canCopyAll && (
+                <button
+                  type="button"
+                  onClick={copyAllFromExisting}
+                  data-testid="style-copy-all-existing"
+                  title="Copy all Existing styles into Resolution"
+                  className="mt-1 inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[11px] font-medium text-cobalt-primary-light hover:bg-cobalt-primary/10"
+                >
+                  <Copy size={12} /> Copy all →
+                </button>
+              )}
+            </div>
+          ) : (
+            <span className="inline-flex max-w-full flex-wrap items-baseline gap-x-1.5">
+              <span className="field-value font-mono text-sm text-text-primary">
+                {existing.value}
+                <Unit unit={existingUnit} />
+              </span>
+              <span className="text-[11px] text-text-muted">(system)</span>
             </span>
-            <span className="text-[11px] text-text-muted">(system)</span>
-          </span>
+          )
         ) : (
           <span className="text-text-muted">—</span>
         )}
       </td>
-      <td className="px-3 py-2.5">
-        {multi && !isPort ? (
+      <td className="min-w-0 max-w-0 overflow-hidden px-3 py-2.5">
+        {isStyles ? (
+          editing && canEdit ? (
+            <StyleListEditor
+              label={label}
+              value={value}
+              onChange={onChange}
+              existingValue={existingStyles}
+            />
+          ) : value ? (
+            <div className="min-w-0 space-y-1">
+              <StyleListDisplay
+                value={value}
+                className={changed ? 'text-ai-proposed font-medium' : 'text-text-primary'}
+              />
+              {canCopyAll && (
+                <button
+                  type="button"
+                  onClick={copyAllFromExisting}
+                  data-testid="style-copy-all"
+                  title="Copy all Existing styles into Resolution"
+                  className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[11px] font-medium text-cobalt-primary-light hover:bg-cobalt-primary/10"
+                >
+                  <Copy size={12} /> Copy all
+                </button>
+              )}
+            </div>
+          ) : (
+            <div className="min-w-0 space-y-1">
+              <span className="text-text-muted">—</span>
+              {canCopyAll && (
+                <button
+                  type="button"
+                  onClick={copyAllFromExisting}
+                  data-testid="style-copy-all"
+                  title="Copy all Existing styles into Resolution"
+                  className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[11px] font-medium text-cobalt-primary-light hover:bg-cobalt-primary/10"
+                >
+                  <Copy size={12} /> Copy all
+                </button>
+              )}
+            </div>
+          )
+        ) : multi && !isPort ? (
           <MultiCandidateProposed
             label={label}
             proposed={proposed}
@@ -134,14 +230,13 @@ export function ConflictRow({
             </span>
           )
         ) : value ? (
-          <span className="inline-flex flex-wrap items-center gap-x-1.5">
+          <span className="inline-flex max-w-full flex-wrap items-center gap-x-1.5">
             {/* Colour alone carries "this differs from stored" — the arrow said the same thing twice. */}
             <span
-              className={
-                changed
-                  ? 'break-all font-mono text-sm font-medium text-ai-proposed'
-                  : 'break-all font-mono text-sm text-text-primary'
-              }
+              className={cn(
+                'field-value font-mono text-sm',
+                changed ? 'font-medium text-ai-proposed' : 'text-text-primary',
+              )}
             >
               {value}
               <Unit unit={proposedUnit} />
@@ -152,6 +247,178 @@ export function ConflictRow({
         )}
       </td>
     </tr>
+  )
+}
+
+/** Read-only: one style (or PO/style) per line — never a mid-wrap comma blob.
+ *  Long lists scroll inside a max-height box so they cannot blow out the review card. */
+function StyleListDisplay({ value, className }: { value: string; className?: string }) {
+  const rows = parseStyleEntries(value)
+  if (rows.length === 0) return <span className="text-text-muted">—</span>
+  return (
+    <div className="min-w-0 max-w-full" data-testid="style-list-display">
+      <div className="max-h-40 overflow-y-auto overscroll-contain pr-1">
+        <ul className="space-y-0.5">
+          {rows.map((r, i) => (
+            <li
+              key={`${r.po}-${r.style}-${i}`}
+              className={cn(
+                'field-value font-mono text-sm',
+                className ?? 'text-text-primary',
+              )}
+            >
+              {r.po ? (
+                <>
+                  <span className="text-text-muted">{r.po}/</span>
+                  {r.style}
+                </>
+              ) : (
+                r.style
+              )}
+            </li>
+          ))}
+        </ul>
+      </div>
+      {rows.length > 6 && (
+        <p className="mt-1 text-[10px] text-text-muted">{rows.length} styles · scroll for all</p>
+      )}
+    </div>
+  )
+}
+
+/**
+ * Multi-row Item/Style editor. Each style is its own input; optional PO when the token is PO/STYLE.
+ * Serializes back to the comma-joined leg string the API already stores.
+ *
+ * Bulk UX: **Copy all** fills from Existing; paste a comma list or Excel column/row into any field
+ * and the whole list is parsed (tabs + newlines count as separators).
+ */
+function StyleListEditor({
+  label,
+  value,
+  onChange,
+  existingValue,
+}: {
+  label: string
+  value: string
+  onChange: (v: string) => void
+  /** System Existing list — used by Copy all (left → right). */
+  existingValue?: string
+}) {
+  const [rows, setRows] = useState<StyleEntry[]>(() => {
+    const parsed = parseStyleEntries(value)
+    return parsed.length > 0 ? parsed : [{ po: '', style: '' }]
+  })
+  // Re-seed when the parent value is replaced from outside (e.g. conflict reseed, multi-candidate pick).
+  const [seed, setSeed] = useState(value)
+  if (seed !== value && serializeStyleEntries(rows) !== value) {
+    setSeed(value)
+    const parsed = parseStyleEntries(value)
+    setRows(parsed.length > 0 ? parsed : [{ po: '', style: '' }])
+  }
+
+  const commit = (next: StyleEntry[]) => {
+    setRows(next)
+    onChange(serializeStyleEntries(next))
+  }
+
+  const update = (i: number, patch: Partial<StyleEntry>) => {
+    commit(rows.map((r, j) => (j === i ? { ...r, ...patch } : r)))
+  }
+
+  const remove = (i: number) => {
+    const next = rows.filter((_, j) => j !== i)
+    commit(next.length > 0 ? next : [{ po: '', style: '' }])
+  }
+
+  const add = () => commit([...rows, { po: '', style: '' }])
+
+  const copyAllFromExisting = () => {
+    const parsed = parseStyleEntries(existingValue)
+    if (parsed.length === 0) return
+    commit(parsed)
+  }
+
+  /** Bulk paste from Excel / comma list replaces the whole Resolution list. */
+  const handlePaste = (e: React.ClipboardEvent) => {
+    const text = e.clipboardData.getData('text')
+    if (!text || !isMultiStylePaste(text)) return // single token → default paste into the focused input
+    const parsed = parseStyleEntries(text)
+    if (parsed.length === 0) return
+    e.preventDefault()
+    commit(parsed)
+  }
+
+  const showPo = rows.some((r) => r.po.trim())
+  const canCopyAll = parseStyleEntries(existingValue).length > 0
+
+  return (
+    <div
+      className="min-w-0 max-w-full space-y-1.5"
+      data-testid="style-list-editor"
+      onPaste={handlePaste}
+    >
+      <div className="max-h-48 space-y-1.5 overflow-y-auto overscroll-contain pr-1">
+        {rows.map((r, i) => (
+          <div key={i} className="flex min-w-0 items-center gap-1.5">
+            {showPo && (
+              <input
+                aria-label={`${label} PO ${i + 1}`}
+                value={r.po}
+                onChange={(e) => update(i, { po: e.target.value })}
+                placeholder="PO#"
+                className="h-8 w-[30%] min-w-[5rem] shrink-0 rounded-lg border border-border bg-surface-900 px-2 font-mono text-sm text-text-primary placeholder:text-text-muted"
+              />
+            )}
+            <input
+              aria-label={
+                rows.length === 1 ? `Proposed value for ${label}` : `${label} style ${i + 1}`
+              }
+              value={r.style}
+              onChange={(e) => update(i, { style: e.target.value })}
+              placeholder="Style / item no. — or paste a list"
+              className="h-8 min-w-0 flex-1 rounded-lg border border-border bg-surface-900 px-2.5 font-mono text-sm text-text-primary placeholder:text-text-muted"
+            />
+            <button
+              type="button"
+              title="Remove style"
+              aria-label={`Remove style ${i + 1}`}
+              onClick={() => remove(i)}
+              disabled={rows.length <= 1 && !r.style && !r.po}
+              className="shrink-0 rounded p-1 text-text-muted transition-colors hover:bg-surface-700 hover:text-status-critical disabled:opacity-30"
+            >
+              <X size={14} />
+            </button>
+          </div>
+        ))}
+      </div>
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+        {canCopyAll && (
+          <button
+            type="button"
+            onClick={copyAllFromExisting}
+            data-testid="style-copy-all"
+            title="Copy all Existing styles into Resolution"
+            className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[11px] font-medium text-cobalt-primary-light hover:bg-cobalt-primary/10"
+          >
+            <Copy size={12} /> Copy all
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={add}
+          className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[11px] font-medium text-cobalt-primary-light hover:bg-cobalt-primary/10"
+        >
+          <Plus size={12} /> Add style
+        </button>
+        {rows.length > 6 && (
+          <span className="text-[10px] text-text-muted">{rows.length} styles · scroll for all</span>
+        )}
+      </div>
+      <p className="text-[10px] text-text-muted">
+        Paste a comma list or Excel column to replace all styles
+      </p>
+    </div>
   )
 }
 
@@ -207,7 +474,7 @@ function MultiCandidateProposed({
                     onChange={() => onChange(c.value)}
                     aria-label={`Select proposed candidate: ${c.value}`}
                   />
-                  <span className="min-w-0 break-all font-mono text-sm text-text-primary">
+                  <span className="field-value font-mono text-sm text-text-primary">
                     {c.value}
                     <Unit unit={proposedUnit} />
                   </span>
@@ -225,7 +492,7 @@ function MultiCandidateProposed({
                 >
                   <span
                     className={cn(
-                      'break-all font-mono text-sm',
+                      'field-value font-mono text-sm',
                       selected && changed
                         ? 'font-medium text-ai-proposed'
                         : selected

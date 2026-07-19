@@ -85,9 +85,6 @@ export default function UnlinkedDocumentsPage() {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0">
           <h1 className="text-lg font-semibold text-text-primary">Unlinked Documents</h1>
-          <p className="mt-0.5 text-xs text-text-muted">
-            Orphan invoice &amp; misc emails with no shipment identity — link each to a shipment.
-          </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <PageSizeSelect value={perPage} onChange={handlePageSizeChange} />

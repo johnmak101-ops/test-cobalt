@@ -86,8 +86,9 @@ export function Badge({ variant = 'severity', value, className }: BadgeProps) {
 
   return (
     <span
+      title={displayLabel}
       className={cn(
-        'inline-flex items-center rounded-md border px-2 py-0.5 text-[11px] font-semibold tracking-wide',
+        'inline-flex max-w-full items-center truncate rounded-md border px-2 py-0.5 text-[11px] font-semibold tracking-wide whitespace-nowrap',
         styles[value] ?? 'bg-surface-700 text-text-muted border-border',
         className
       )}

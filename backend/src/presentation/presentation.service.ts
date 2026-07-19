@@ -573,9 +573,9 @@ export class PresentationService {
     )
 
     const bookingsById = new Map<string, BookingRow>(bookingRows.map((b: BookingRow) => [b.id, b]))
-    const recentLegs = [...legs]
-      .sort((a, b) => new Date(b.updatedAt as Date).getTime() - new Date(a.updatedAt as Date).getTime())
-      .slice(0, 8)
+    // Dashboard "Today's Cargo Set Sail" — ATD (or ETD once sailed) on today's calendar day.
+    // Not "most recently updated legs", which mixed booking-request noise into the table.
+    const recentLegs = legsSailedToday(legs).slice(0, 12)
     const recentActivity: ReturnType<typeof toUiShipment>[] = []
     for (const leg of recentLegs) {
       const booking = bookingsById.get(leg.bookingId) ?? null
@@ -587,4 +587,39 @@ export class PresentationService {
 
     return { stats, recentAlerts, recentActivity }
   }
+}
+
+/** States that mean cargo has already left the origin terminal / vessel has sailed. */
+const SAILED_OR_BEYOND = new Set(['SAILED', 'RELEASED', 'DELIVERED'])
+
+/** Calendar-day equality in UTC (date columns are stored as midnight UTC date-only). */
+export function isSameUtcDay(a: Date | string | null | undefined, b: Date): boolean {
+  if (a == null || a === '') return false
+  const d = a instanceof Date ? a : new Date(a)
+  if (Number.isNaN(d.getTime())) return false
+  return (
+    d.getUTCFullYear() === b.getUTCFullYear() &&
+    d.getUTCMonth() === b.getUTCMonth() &&
+    d.getUTCDate() === b.getUTCDate()
+  )
+}
+
+/**
+ * Legs whose cargo set sail today: ATD falls on today, or (ATD missing) ETD is today and the
+ * leg is already past the sailed gate. Sorted latest sail first.
+ */
+export function legsSailedToday<T extends { atd?: Date | string | null; etd?: Date | string | null; state?: string | null }>(
+  legs: T[],
+  now: Date = new Date(),
+): T[] {
+  const match = legs.filter((leg) => {
+    if (isSameUtcDay(leg.atd ?? null, now)) return true
+    if (isSameUtcDay(leg.etd ?? null, now) && SAILED_OR_BEYOND.has(leg.state ?? '')) return true
+    return false
+  })
+  return match.sort((a, b) => {
+    const ta = new Date((a.atd ?? a.etd) as Date | string).getTime()
+    const tb = new Date((b.atd ?? b.etd) as Date | string).getTime()
+    return (Number.isNaN(tb) ? 0 : tb) - (Number.isNaN(ta) ? 0 : ta)
+  })
 }

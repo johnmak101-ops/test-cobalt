@@ -53,7 +53,7 @@ export function fullDate(iso: string | null): string {
 export function emailSrcDoc(html: string): string {
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><base target="_blank"><style>
     html,body{margin:0;padding:0}
-    body{padding:20px;background:#fff;color:#201f1e;font-family:'Segoe UI',-apple-system,'Helvetica Neue',Arial,sans-serif;font-size:14px;line-height:1.5;word-wrap:break-word;overflow-wrap:anywhere}
+    body{padding:20px;background:#fff;color:#201f1e;font-family:'Segoe UI',-apple-system,'Helvetica Neue',Arial,sans-serif;font-size:14px;line-height:1.5;overflow-wrap:break-word;word-break:normal}
     img{max-width:100%;height:auto}table{max-width:100%}
     a{color:#0f6cbd}
     blockquote{margin:0 0 0 12px;padding-left:12px;border-left:2px solid #e1dfdd;color:#605e5c}
@@ -125,7 +125,7 @@ export function EmailBodyPane({
           srcDoc={emailSrcDoc(html)}
         />
       ) : text ? (
-        <pre className="flex-1 overflow-auto whitespace-pre-wrap break-words p-6 font-sans text-sm leading-relaxed text-[#201f1e]">
+        <pre className="field-value flex-1 overflow-auto whitespace-pre-wrap p-6 font-sans text-sm leading-relaxed text-[#201f1e]">
           {text}
         </pre>
       ) : (

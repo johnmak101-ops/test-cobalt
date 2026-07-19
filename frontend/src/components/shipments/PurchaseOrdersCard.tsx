@@ -251,17 +251,17 @@ export function PurchaseOrdersCard({
                     data-testid={`po-row-${po.id}`}
                     className="border-b border-border last:border-0 transition-colors hover:bg-surface-700/50"
                   >
-                    <td className="px-3 py-2 font-mono text-sm text-cobalt-primary-light">
+                    <td className="min-w-0 px-3 py-2 font-mono text-sm text-cobalt-primary-light">
                       <span
                         {...interactiveProps(() =>
                           navigate(`/purchase-orders/${po.id}`, { state: { fromShipment: shipmentId } }),
                         )}
-                        className="cursor-pointer hover:underline"
+                        className="field-value cursor-pointer hover:underline"
                       >
                         {po.poNumber}
                       </span>
                     </td>
-                    <td className="px-3 py-2 font-mono text-sm text-text-secondary">
+                    <td className="field-value min-w-0 px-3 py-2 font-mono text-sm text-text-secondary">
                       {po.itemStyleNo?.trim() ? po.itemStyleNo : '—'}
                     </td>
                     {crudMode && (

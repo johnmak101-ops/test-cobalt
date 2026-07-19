@@ -256,9 +256,6 @@ export default function PurchaseOrdersPage() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="min-w-0">
           <h1 className="text-xl font-semibold text-text-primary">Customer Purchase Orders</h1>
-          <p className="mt-1 text-sm text-text-secondary">
-            Track customer POs across multiple partial shipments
-          </p>
         </div>
         <div className="flex items-center gap-2">
           <PageSizeSelect value={perPage} onChange={handlePageSizeChange} />

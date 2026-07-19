@@ -1,5 +1,4 @@
 import { useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
 import { CheckCircle, ChevronDown, ChevronRight, ExternalLink, Loader2, Mail, NotebookPen, Pencil, Save, XCircle } from 'lucide-react'
 import { Badge } from '../ui/Badge'
 import {
@@ -8,9 +7,14 @@ import {
   existingValueOf,
   proposedValueOf,
 } from './ConflictRow'
-import { fieldUnit, groupConflictFields, mapCriticFieldToColumn } from '../../lib/review-fields'
 import {
-  aiCommentLine,
+  fieldUnit,
+  groupConflictFields,
+  mapCriticFieldToColumn,
+  parseStyleEntries,
+  serializeStyleEntries,
+} from '../../lib/review-fields'
+import {
   type CriticConflict,
   type CriticReview,
   type CriticReviewCompact,
@@ -84,8 +88,6 @@ export interface ReviewCardProps {
   /** Source emails behind this leg — rendered as chips that open the email pop-up window.
    *  Resolving a conflict means reading what the email actually said, so keep it one click away. */
   emails?: ReviewEmail[]
-  /** Route to the full shipment editor — rendered as an "Open full shipment" link when set. */
-  fullShipmentPath?: string
   defaultExpanded?: boolean
   /**
    * Rendered inside a queue table row that ALREADY states band/customer/booking/route/status and
@@ -126,20 +128,6 @@ function identityOf(s: ReviewShipment | ShipmentDetail) {
   }
 }
 
-function compactFromReview(cr: CriticReview): CriticReviewCompact {
-  // Defensive: ShipTrack trusts-and-stores the payload loosely, so a partial/malformed
-  // criticReview must not throw when the card expands.
-  return {
-    band: cr.confidence?.band ?? 'low',
-    summary: cr.summary ?? '',
-    topConflictType:
-      cr.riskFlags?.[0]?.message
-      ?? cr.reasons?.[0]
-      ?? cr.summary
-      ?? 'Needs review',
-  }
-}
-
 function initialResolutions(conflicts: CriticConflict[]): Record<string, string> {
   const out: Record<string, string> = {}
   // Seeded with the agent's proposal: the table reads as a diff, and approving accepts it. A queued
@@ -154,7 +142,7 @@ function existingValue(c: CriticConflict): string {
 }
 
 /**
- * Collapsible critic review card — band + identity when collapsed; AI comment,
+ * Collapsible critic review card — band + identity when collapsed; needs-attention +
  * conflict-only table, notes, and Save&Approve when expanded.
  */
 /** Open the source email in the chrome-less reading-pane pop-up (same window target + geometry as
@@ -175,7 +163,6 @@ export function ReviewCard({
   criticReview,
   compact = null,
   emails = EMPTY_EMAILS,
-  fullShipmentPath,
   defaultExpanded = false,
   embedded = false,
   readOnly = false,
@@ -270,7 +257,6 @@ export function ReviewCard({
 
   const id = identityOf(shipment)
   const band = compact?.band ?? criticReview?.confidence?.band ?? null
-  const lineCompact = compact ?? (criticReview ? compactFromReview(criticReview) : null)
 
   /**
    * Leg columns to POST on Save & Approve. Keys are camelCase correct-DTO columns so every
@@ -283,9 +269,17 @@ export function ReviewCard({
       const col = mapCriticFieldToColumn(c.field)
       if (!col) continue
       const v = (resolutions[c.field] ?? '').trim()
-      const existing = existingValue(c)
+      const existing = existingValue(c).trim()
       // Apply when operator set a value that differs from what's already stored.
-      if (v !== '' && v !== existing) fields[col] = v
+      // Style lists: compare normalized token lists so "A,B" vs "A, B" is not a false delta.
+      if (v === '') continue
+      if (col === 'itemStyleNo') {
+        const normalized = serializeStyleEntries(parseStyleEntries(v))
+        if (normalized === serializeStyleEntries(parseStyleEntries(existing))) continue
+        fields[col] = normalized
+        continue
+      }
+      if (v !== existing) fields[col] = v
     }
     return fields
   }, [conflicts, resolutions])
@@ -326,6 +320,14 @@ export function ReviewCard({
     [conflicts, resolutions],
   )
   const noteRequired = overrides.length > 0 && !note.trim()
+  /** Any cell diverged from the agent's proposal (operator applied a different value). */
+  const hasHumanEdits = useMemo(
+    () =>
+      conflicts.some((c) => (resolutions[c.field] ?? '').trim() !== proposedValueOf(c).trim()),
+    [conflicts, resolutions],
+  )
+  // Column 3 label tracks state: agent default → edit mode → human-applied values.
+  const proposedColumnLabel = editing ? 'Resolution' : hasHumanEdits ? 'Edited' : 'AI Proposed'
   /**
    * How many stored values Approve would overwrite. This is the count the primary button NAMES —
    * one informed click beats a row-by-row confirm ritual, but a bare "Approve" would hide what is
@@ -347,7 +349,12 @@ export function ReviewCard({
   }
 
   const handleSaveAndApprove = () => {
-    if (noteRequired || busy) return
+    if (busy) return
+    if (noteRequired) {
+      // Button is usually disabled; still guard so a race cannot skip the note.
+      return
+    }
+    setEditing(false)
     const hasFieldEdits = Object.keys(fieldsToApply).length > 0
     if (hasFieldEdits && onSaveAndApprove) {
       void run(() =>
@@ -387,7 +394,7 @@ export function ReviewCard({
   }
 
   return (
-    <div className={embedded ? undefined : 'rounded-xl border border-border bg-surface-800'}>
+    <div className={cn('min-w-0 max-w-full', embedded ? undefined : 'rounded-xl border border-border bg-surface-800')}>
       {/* Collapsed identity row (§2.1) — suppressed when embedded: the queue row states it already. */}
       {!embedded && (
       <div className="flex flex-wrap items-center gap-2 px-3 py-2.5 sm:gap-3">
@@ -434,10 +441,11 @@ export function ReviewCard({
                 type="button"
                 onClick={handleApproveCollapsed}
                 disabled={busy}
+                title="Confirm without applying AI Proposed values"
                 className={cn(ACTION_BTN, ACTION_VARIANT.success)}
               >
                 {busy ? <Loader2 size={13} className="animate-spin" /> : <CheckCircle size={13} />}
-                Approve
+                Keep Existing
               </button>
             )}
             {onDismiss && (
@@ -445,10 +453,11 @@ export function ReviewCard({
                 type="button"
                 onClick={handleDismiss}
                 disabled={busy}
+                title="Not a trackable shipment — document / noise only"
                 className={cn(ACTION_BTN, ACTION_VARIANT.danger)}
               >
                 {busy ? <Loader2 size={13} className="animate-spin" /> : <XCircle size={13} />}
-                Dismiss
+                Not shipment
               </button>
             )}
           </div>
@@ -456,30 +465,11 @@ export function ReviewCard({
       </div>
       )}
 
-      {/* Expanded: AI comment + conflicts-only + notes + Save&Approve (§2.2) */}
+      {/* Expanded: needs-attention + conflicts-only + notes + Save&Approve (§2.2).
+          AI comment + "Open full shipment" are NOT repeated here — band is on the row/header,
+          full-shipment is the page chrome (focus) or queue row (queue). */}
       {(expanded || embedded) && (
-        <div className="space-y-3 border-t border-border px-3 pb-3 pt-3">
-          {(lineCompact || fullShipmentPath) && (
-            <div className="flex items-start justify-between gap-2">
-              {lineCompact ? (
-                <p className="text-sm font-medium text-text-primary" data-testid="ai-comment-line">
-                  {aiCommentLine(lineCompact)}
-                </p>
-              ) : (
-                <span />
-              )}
-              {fullShipmentPath && (
-                <Link
-                  to={fullShipmentPath}
-                  className="inline-flex shrink-0 items-center gap-1 text-[11px] font-medium text-cobalt-primary-light hover:underline"
-                >
-                  Open full shipment
-                  <ExternalLink size={10} />
-                </Link>
-              )}
-            </div>
-          )}
-
+        <div className={cn('space-y-3 px-3 pb-3 pt-3', !embedded && 'border-t border-border')}>
           {needsAttentionGroups.length > 0 && (
             <div
               className={cn(
@@ -608,16 +598,18 @@ export function ReviewCard({
           )}
 
           {conflicts.length > 0 && (
-            <div className="overflow-x-auto rounded-lg border border-border">
+            <div className="max-w-full overflow-x-auto rounded-lg border border-border">
               {/* table-fixed: auto layout re-measures when the Proposed cell swaps text for an
                   input, so the columns visibly jumped every time Edit was toggled. Fixed widths
-                  make the two modes the same table. */}
+                  make the two modes the same table. min-w-0 on cells contains long style lists. */}
               <table className="w-full min-w-[36rem] table-fixed">
                 <thead>
                   <tr className="border-b border-border bg-surface-900/50 text-left text-[11px] font-medium text-text-muted">
                     <th className="w-[22%] px-3 py-2">Field</th>
                     <th className="w-[33%] px-3 py-2">Existing</th>
-                    <th className="w-[45%] px-3 py-2">AI Proposed</th>
+                    <th className="w-[45%] px-3 py-2" data-testid="proposed-column-header">
+                      {proposedColumnLabel}
+                    </th>
                   </tr>
                 </thead>
                 {/* Only contested rows render — a field both sides agree on is not a decision. Group
@@ -648,6 +640,10 @@ export function ReviewCard({
                           existingUnit={units.existing}
                           proposedUnit={units.proposed}
                           notWritable={!writable}
+                          canEdit={!readOnly && writable}
+                          onRequestEdit={() => {
+                            if (!readOnly) setEditing(true)
+                          }}
                         />
                       )
                     })}
@@ -774,10 +770,26 @@ export function ReviewCard({
                     type="button"
                     onClick={handleDismiss}
                     disabled={busy}
+                    title="Not a trackable shipment — document / noise only"
                     className={cn(ACTION_BTN, ACTION_VARIANT.danger)}
                   >
                     {busy ? <Loader2 size={13} className="animate-spin" /> : <XCircle size={13} />}
-                    Dismiss
+                    Not shipment
+                  </button>
+                )}
+                {onApprove && changeCount > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (busy || readOnly) return
+                      void run(() => onApprove())
+                    }}
+                    disabled={busy}
+                    title="Confirm shipment and keep Existing values — do not apply AI Proposed"
+                    className={cn(ACTION_BTN, ACTION_VARIANT.success)}
+                  >
+                    {busy ? <Loader2 size={13} className="animate-spin" /> : <CheckCircle size={13} />}
+                    Keep Existing
                   </button>
                 )}
                 {(onSaveAndApprove || onApprove) && (
@@ -785,12 +797,19 @@ export function ReviewCard({
                     type="button"
                     onClick={handleSaveAndApprove}
                     disabled={!canSave}
+                    title={
+                      changeCount > 0
+                        ? 'Apply Resolution / AI Proposed values and confirm'
+                        : 'Confirm shipment'
+                    }
                     className={cn(ACTION_BTN, ACTION_VARIANT.primary)}
                   >
                     {busy ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />}
                     {changeCount > 0
                       ? `Approve ${changeCount} change${changeCount === 1 ? '' : 's'}`
-                      : 'Approve'}
+                      : onApprove
+                        ? 'Keep Existing'
+                        : 'Approve'}
                   </button>
                 )}
               </div>

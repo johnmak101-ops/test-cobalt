@@ -76,10 +76,8 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* Recent Activity */}
-      {data?.recentActivity && data.recentActivity.length > 0 && (
-        <RecentActivityTable shipments={data.recentActivity} />
-      )}
+      {/* Today's cargo that set sail (empty state is handled inside the table). */}
+      <RecentActivityTable shipments={data?.recentActivity ?? []} />
     </div>
   )
 }

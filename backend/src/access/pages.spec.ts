@@ -2,11 +2,12 @@ import { describe, it, expect } from 'vitest'
 import { CONFIG_PAGE_IDS, LEVEL_RANK, registryDefault, isLevel, isConfigRole } from './pages'
 
 describe('access page registry', () => {
-  it('governs alert_rules and resolution_rules with per-role defaults', () => {
-    expect(CONFIG_PAGE_IDS).toEqual(['alert_rules', 'resolution_rules'])
-    expect(registryDefault('resolution_rules', 'ADMIN')).toBe('edit')
-    expect(registryDefault('resolution_rules', 'EDITOR')).toBe('none')
+  it('governs alert_rules with per-role defaults; resolution_rules is retired from the matrix', () => {
+    expect(CONFIG_PAGE_IDS).toEqual(['alert_rules'])
     expect(registryDefault('alert_rules', 'VIEWER')).toBe('view')
+    expect(registryDefault('alert_rules', 'ADMIN')).toBe('edit')
+    // Unknown / retired page → none (SUPERADMIN always edit in PageAccessService, not here)
+    expect(registryDefault('resolution_rules', 'ADMIN')).toBe('none')
   })
 
   it('registryDefault is none for an unknown page or a non-configurable role', () => {

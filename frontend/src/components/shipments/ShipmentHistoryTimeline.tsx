@@ -78,17 +78,14 @@ export function ShipmentHistoryTimeline({ history }: ShipmentHistoryTimelineProp
                 )}
               </div>
 
-              {/* Old → New value */}
-              {/* Values can be long comma-joined lists with no spaces (an item/style set), which
-                  is one unbreakable word to the layout — min-w-0 lets these flex items shrink and
-                  break-words lets the token wrap instead of overflowing. flex-wrap is what keeps a
+              {/* Old → New value — field-value wraps at spaces (not mid-word). flex-wrap keeps a
                   long value from crushing a short sibling ("(empty)") into a 1-char-per-line column. */}
               <div className="mt-1 flex flex-wrap items-center gap-1.5 text-xs">
-                <span className="min-w-0 break-words text-text-muted line-through">
+                <span className="field-value text-text-muted line-through">
                   {formatFieldValue(entry.field, entry.oldValue)}
                 </span>
                 <ArrowRight size={10} className="shrink-0 text-text-muted" />
-                <span className="min-w-0 break-words font-medium text-text-secondary">
+                <span className="field-value font-medium text-text-secondary">
                   {formatFieldValue(entry.field, entry.newValue)}
                 </span>
               </div>

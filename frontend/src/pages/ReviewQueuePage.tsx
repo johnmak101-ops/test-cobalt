@@ -28,12 +28,7 @@ import {
 } from '../lib/review-reasons'
 import { mapCriticFieldsToColumns } from '../lib/review-fields'
 
-const VIEW_COPY: Record<ReviewQueueView, string> = {
-  active:
-    'Provisional shipments awaiting confirmation — resolve contested (AI conflict) fields, then approve. Other field edits: open full shipment. Dismiss what is not a real shipment.',
-  rejected: 'Dismissed items — ruled "not a trackable shipment". Restore anything dismissed by mistake.',
-  approved: 'Recently confirmed legs that carried an AI critic review — read-only history.',
-}
+
 
 /** Filter / selection state that often transitions together (view switch clears category, page, selection). */
 type QueueUiState = {
@@ -138,13 +133,12 @@ function ExpandedReviewPanel({
   }
 
   return (
-    <div className="border-t border-border bg-surface-900/40 px-3 py-3">
+    <div className="min-w-0 max-w-full border-t border-border bg-surface-900/40 px-3 py-3">
       <ReviewCard
         shipment={data}
         criticReview={data.criticReview ?? null}
         compact={row.criticReviewCompact}
         emails={data.emails ?? []}
-        fullShipmentPath={`/shipments/${row.id}`}
         defaultExpanded
         embedded
         readOnly={readOnly}
@@ -240,6 +234,7 @@ export default function ReviewQueuePage() {
     setStaleBanner(null)
     try {
       const fields = payload.fields
+      // fields are already camelCase leg columns from ReviewCard; map is idempotent + renames any snake leftovers.
       const mapped = mapCriticFieldsToColumns(fields)
       const hasFields = Object.keys(fields).length > 0
       const hasMappable = Object.keys(mapped).length > 0
@@ -249,12 +244,19 @@ export default function ReviewQueuePage() {
         return
       }
       if (hasMappable) {
-        await correctMutation.mutateAsync({
+        const res = await correctMutation.mutateAsync({
           shipmentId: s.id,
           fields: mapped,
           reason: payload.note,
           expectedUpdatedAt: payload.expectedUpdatedAt ?? s.updatedAt,
         })
+        const corrected = (res as { corrected?: string[] } | undefined)?.corrected
+        const n = Array.isArray(corrected) ? corrected.length : Object.keys(mapped).length
+        if (n === 0) {
+          toast('Approved, but no fields were written — reload and try Approve again')
+        } else {
+          toast(`Saved ${n} field${n === 1 ? '' : 's'} and approved`)
+        }
       } else {
         // #181: Approve with no contested-field deltas is confirm-only — operators often think
         // other edits stuck. Be explicit so this never looks like a silent no-op.
@@ -269,7 +271,13 @@ export default function ReviewQueuePage() {
       }
       setExpandedId(null)
     } catch (err) {
-      await handleStale(err)
+      try {
+        await handleStale(err)
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : 'Save failed'
+        toast(msg.replace(/^API error \d+:\s*/i, '') || 'Save failed — try again')
+        throw e
+      }
     }
   }
 
@@ -286,19 +294,18 @@ export default function ReviewQueuePage() {
         ? 'No shipments awaiting review.'
         : `No active items in “${CATEGORY_LABEL[category as ReasonCategory]}”.`
     }
-    if (isRejectedView) return 'Nothing has been dismissed.'
+    if (isRejectedView) return 'Nothing marked “Not shipment” yet.'
     return 'No approved critic-reviewed shipments yet.'
   }
 
   return (
-    <div className="space-y-5">
-      {/* Header */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="min-w-0">
+    <div className="min-w-0 max-w-full space-y-5">
+      {/* Header — title/help wrap left; tabs stay shrink-0 so large text does not shove them off-row */}
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <div className="min-w-0 flex-1">
           <h1 className="text-lg font-semibold text-text-primary">Review Queue</h1>
-          <p className="mt-0.5 text-xs text-text-muted">{VIEW_COPY[view]}</p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex shrink-0 flex-wrap items-center gap-2">
           {/* View tabs — Active | Rejected | Approved */}
           <div className="flex overflow-hidden rounded-lg border border-border">
             {(
@@ -313,7 +320,7 @@ export default function ReviewQueuePage() {
                 key={t.key}
                 onClick={() => switchView(t.key)}
                 className={cn(
-                  'px-3 py-1.5 text-xs font-medium transition-colors',
+                  'whitespace-nowrap px-3 py-1.5 text-xs font-medium transition-colors',
                   view === t.key
                     ? 'bg-cobalt-primary text-white'
                     : 'bg-surface-800 text-text-secondary hover:bg-surface-700 hover:text-text-primary',
@@ -385,7 +392,7 @@ export default function ReviewQueuePage() {
             className="inline-flex items-center gap-1.5 rounded-lg bg-status-critical/15 px-3 py-1.5 text-xs font-medium text-status-critical transition-colors hover:bg-status-critical/25 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {dismissMutation.isPending ? <Loader2 size={13} className="animate-spin" /> : <XCircle size={13} />}
-            Dismiss {selected.size} — not shipments
+            Not shipment · {selected.size}
           </button>
           <button
             type="button"
@@ -407,13 +414,14 @@ export default function ReviewQueuePage() {
         </div>
       ) : (
         <>
-          <div className="overflow-hidden rounded-xl border border-border bg-surface-800">
+          <div className="max-w-full overflow-hidden rounded-xl border border-border bg-surface-800">
             <div className="overflow-x-auto">
-              <table className="w-full">
+              {/* table-fixed + col % keeps large-text / long names from blowing column widths */}
+              <table className="w-full min-w-[40rem] table-fixed">
                 <thead>
                   <tr className="border-b border-border bg-surface-900/50">
                     {isActiveView && (
-                      <th className="w-10 px-4 py-3">
+                      <th className="w-10 px-3 py-3 sm:px-4">
                         <input
                           type="checkbox"
                           checked={allFilteredSelected}
@@ -427,16 +435,28 @@ export default function ReviewQueuePage() {
                         IS criticReview.confidence.band, and Badge already calls the variant
                         'confidence' — only this header still leaked the jargon. The wire/domain name
                         stays `band` (the queue emits it); this is a label, not a rename. */}
-                    <th className="px-4 py-3 text-left text-xs font-medium text-text-muted">AI Confidence</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-text-muted">Customer</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-text-muted">Booking</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-text-muted">Route</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-text-muted">Status</th>
+                    <th className="w-[7.5rem] px-3 py-3 text-left text-xs font-medium text-text-muted sm:px-4">
+                      AI Confidence
+                    </th>
+                    <th className="w-[28%] min-w-0 px-3 py-3 text-left text-xs font-medium text-text-muted sm:px-4">
+                      Customer
+                    </th>
+                    <th className="w-[22%] min-w-0 px-3 py-3 text-left text-xs font-medium text-text-muted sm:px-4">
+                      Booking
+                    </th>
+                    <th className="w-[16%] min-w-0 px-3 py-3 text-left text-xs font-medium text-text-muted sm:px-4">
+                      Route
+                    </th>
+                    <th className="w-[8.5rem] px-3 py-3 text-left text-xs font-medium text-text-muted sm:px-4">
+                      Status
+                    </th>
                     {/* Active rows carry no Action column: the row expands on click and the panel
-                        below owns Approve/Dismiss. Rejected/Approved keep one — Restore and Open
+                        below owns Keep Existing / Approve / Not shipment. Rejected/Approved keep one — Restore and Open
                         have no equivalent inside the read-only panel. */}
                     {!isActiveView && (
-                      <th className="px-4 py-3 text-right text-xs font-medium text-text-muted">Action</th>
+                      <th className="w-[6.5rem] px-3 py-3 text-right text-xs font-medium text-text-muted sm:px-4">
+                        Action
+                      </th>
                     )}
                   </tr>
                 </thead>
@@ -445,6 +465,7 @@ export default function ReviewQueuePage() {
                     const rowBusy = busyId === s.id
                     const expanded = expandedId === s.id
                     const band = s.criticReviewCompact?.band
+                    const bookingLabel = s.bookingNo ?? s.soNo ?? '—'
                     return (
                       <Fragment key={s.id}>
                         {/* The whole row is the expand control — a dedicated chevron column was a
@@ -464,7 +485,7 @@ export default function ReviewQueuePage() {
                           className="cursor-pointer border-b border-border last:border-0 transition-colors hover:bg-surface-700/50"
                         >
                           {isActiveView && (
-                            <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                            <td className="px-3 py-3 sm:px-4" onClick={(e) => e.stopPropagation()}>
                               <input
                                 type="checkbox"
                                 aria-label={`Select ${s.bookingNo ?? s.soNo ?? 'shipment'}`}
@@ -475,7 +496,7 @@ export default function ReviewQueuePage() {
                             </td>
                           )}
 
-                          <td className="px-4 py-3">
+                          <td className="px-3 py-3 sm:px-4">
                             {band ? (
                               <Badge variant="confidence" value={band} />
                             ) : (
@@ -483,34 +504,43 @@ export default function ReviewQueuePage() {
                             )}
                           </td>
 
-                          <td className="px-4 py-3 text-sm text-text-secondary">
-                            {s.customer ?? '—'}
+                          <td className="min-w-0 max-w-0 px-3 py-3 text-sm text-text-secondary sm:px-4">
+                            <span className="block truncate" title={s.customer ?? undefined}>
+                              {s.customer ?? '—'}
+                            </span>
                             {s.forwarder && (
-                              <span className="mt-0.5 block text-[11px] text-text-muted">{s.forwarder}</span>
+                              <span className="mt-0.5 block truncate text-[11px] text-text-muted" title={s.forwarder}>
+                                {s.forwarder}
+                              </span>
                             )}
                             <span className="mt-1 block text-[10px] text-text-muted">
                               {formatRelativeTime(s.createdAt)}
                             </span>
                           </td>
 
-                          <td className="px-4 py-3">
-                            <span className="inline-flex items-center gap-1.5 font-mono text-sm font-medium text-cobalt-primary-light">
+                          <td className="min-w-0 max-w-0 px-3 py-3 sm:px-4">
+                            <span
+                              className="inline-flex max-w-full items-center gap-1.5 font-mono text-sm font-medium text-cobalt-primary-light"
+                              title={bookingLabel !== '—' ? bookingLabel : undefined}
+                            >
                               <Ship size={13} className="shrink-0 text-text-muted" />
-                              {s.bookingNo ?? s.soNo ?? '—'}
+                              <span className="min-w-0 truncate">{bookingLabel}</span>
                             </span>
                             {s.poCount > 0 && (
                               <span className="mt-0.5 flex items-center gap-1 text-[11px] text-text-muted">
-                                <Package size={10} />
+                                <Package size={10} className="shrink-0" />
                                 {s.poCount} PO{s.poCount !== 1 ? 's' : ''}
                               </span>
                             )}
                           </td>
 
-                          <td className="px-4 py-3 text-sm text-text-secondary">
-                            {s.route ?? '—'}
+                          <td className="min-w-0 max-w-0 px-3 py-3 text-sm text-text-secondary sm:px-4">
+                            <span className="block truncate" title={s.route ?? undefined}>
+                              {s.route ?? '—'}
+                            </span>
                           </td>
 
-                          <td className="px-4 py-3">
+                          <td className="px-3 py-3 sm:px-4">
                             <Badge variant="status" value={s.status} />
                           </td>
 
@@ -547,7 +577,8 @@ export default function ReviewQueuePage() {
                         </tr>
                         {expanded && (
                           <tr className="border-b border-border bg-surface-900/20">
-                            <td colSpan={colSpan} className="p-0">
+                            <td colSpan={colSpan} className="max-w-0 p-0">
+                              <div className="min-w-0 max-w-full overflow-x-auto">
                               <ExpandedReviewPanel
                                 row={s}
                                 readOnly={!isActiveView}
@@ -579,6 +610,7 @@ export default function ReviewQueuePage() {
                                 }
                                 onSaveAndApprove={isActiveView ? saveAndApproveFor(s) : undefined}
                               />
+                              </div>
                             </td>
                           </tr>
                         )}
