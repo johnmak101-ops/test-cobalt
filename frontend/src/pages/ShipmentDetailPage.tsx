@@ -13,7 +13,12 @@ import { FieldHistoryContext, FieldHistoryPopover } from '../components/shipment
 import { indexHistoryByField, historyForField } from '../lib/history-grouping'
 import { AlertCard } from '../components/alerts/AlertCard'
 import { formatDate, formatDateTime, formatDateMaybeTime, cn } from '../lib/utils'
-import { buildNeedsAttentionGroups, looksLikeLocode } from '../components/review/needs-attention'
+import {
+  buildNeedsAttentionGroups,
+  isMeshPartyCollapsed,
+  looksLikeLocode,
+} from '../components/review/needs-attention'
+import { NeedsAttentionMeshMiss } from '../components/review/NeedsAttentionMeshMiss'
 import { EDITABLE_FIELDS, fieldLabel, numericFieldWarn, dateOrderWarn, type EditableField } from '../lib/review-fields'
 import { toast } from '../components/ui/Toast'
 import { interactiveProps } from '../lib/interactive'
@@ -343,14 +348,22 @@ export default function ShipmentDetailPage() {
               <div key={g.groupId}>
                 <p className="text-sm font-semibold text-text-secondary">{g.title}</p>
                 <ul className="mt-1 list-disc space-y-1.5 pl-5 text-sm leading-snug text-text-secondary">
-                  {g.items.map((it) => (
-                    <li
-                      key={it.lineId}
-                      title={[it.key, ...(it.evidence ?? [])].filter(Boolean).join('\n')}
-                    >
-                      <AttentionTextWithConflictLink text={it.text} shipmentId={shipment.id} />
-                    </li>
-                  ))}
+                  {g.items.map((it) =>
+                    isMeshPartyCollapsed(it) ? (
+                      <NeedsAttentionMeshMiss
+                        key={it.lineId}
+                        item={it}
+                        className="-ml-5 list-none"
+                      />
+                    ) : (
+                      <li
+                        key={it.lineId}
+                        title={[it.key, ...(it.evidence ?? [])].filter(Boolean).join('\n')}
+                      >
+                        <AttentionTextWithConflictLink text={it.text} shipmentId={shipment.id} />
+                      </li>
+                    ),
+                  )}
                 </ul>
               </div>
             ))}

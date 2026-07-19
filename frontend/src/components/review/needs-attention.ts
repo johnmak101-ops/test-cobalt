@@ -87,6 +87,18 @@ export type NeedsAttentionItem = {
   groupId: NeedsAttentionGroupId
   /** Diagnostics folded into this line (tooltip); not separate bullets. */
   evidence?: string[]
+  /**
+   * When set, UI shows text as summary and can expand to list these names
+   * (e.g. Mesh party misses collapsed for cleaner Needs attention).
+   */
+  details?: string[]
+}
+
+/** Collapsed multi-party Mesh miss — expand in UI to list each name. */
+export const MESH_PARTY_COLLAPSED_LINE_ID = 'm-party:collapsed'
+
+export function isMeshPartyCollapsed(item: NeedsAttentionItem): boolean {
+  return item.lineId === MESH_PARTY_COLLAPSED_LINE_ID && (item.details?.length ?? 0) > 0
 }
 
 export type NeedsAttentionGroup = {
@@ -149,6 +161,40 @@ type LineHit = {
 /** Quoted party name from matcher/ops prose, if any. */
 function extractQuotedParty(raw: string): string | null {
   return raw.match(/"([^"]+)"/)?.[1]?.trim() || null
+}
+
+/**
+ * Case/space/punct-insensitive key so "SOUTH OCEAN" and "South Ocean" share one lineId.
+ * Does not merge different legal names (LOGISTICS vs LOG MANAGEMENT stay distinct).
+ */
+export function normalizeMeshPartyKey(name: string): string {
+  return name
+    .trim()
+    .toUpperCase()
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function meshPartyLineId(name: string): string {
+  return `m-party:${normalizeMeshPartyKey(name)}`
+}
+
+/** Prefer mixed/title case over shouting ALL CAPS for display. */
+function preferMeshDisplayName(a: string, b: string): string {
+  const aShout = a === a.toUpperCase() && /[A-Z]/.test(a)
+  const bShout = b === b.toUpperCase() && /[A-Z]/.test(b)
+  if (aShout && !bShout) return b
+  if (bShout && !aShout) return a
+  return a.length >= b.length ? a : b
+}
+
+function meshPartyMissText(name: string): string {
+  return `"${name}" not found in Mesh Database — advise add in Mesh.`
+}
+
+function extractMeshDisplayName(item: NeedsAttentionItem): string | null {
+  return item.text.match(/"([^"]+)"/)?.[1]?.trim() || null
 }
 
 /** Port/city name from "X not in master data" style prose. */
@@ -262,9 +308,14 @@ function lineFromFlag(code: string, message: string): LineHit | null {
       if (hit && !hit.lineId.startsWith('reason:')) return hit
       // Fallback: still surface the raw message rather than a useless generic
       const snippet = message.trim()
+      const quoted = extractQuotedParty(message)
       return {
-        lineId: `m-party:${snippet.slice(0, 48)}`,
-        text: snippet.length > 140 ? `${snippet.slice(0, 137)}…` : snippet || 'Party not linked to master — left unlinked',
+        lineId: quoted ? meshPartyLineId(quoted) : `m-party:${normalizeMeshPartyKey(snippet.slice(0, 48))}`,
+        text: quoted
+          ? meshPartyMissText(quoted)
+          : snippet.length > 140
+            ? `${snippet.slice(0, 137)}…`
+            : snippet || 'Party not linked to master — left unlinked',
         category: 'master_miss',
       }
     }
@@ -451,8 +502,8 @@ function lineFromReason(raw: string, humanized: string): LineHit | null {
     const party = raw.match(/^(\w+)\s+"([^"]+)"\s+did not exact-match a master/i)
     if (party) {
       return {
-        lineId: `m-party:${party[2]}`,
-        text: `"${party[2]}" not found in Mesh Database — advise add in Mesh.`,
+        lineId: meshPartyLineId(party[2]!),
+        text: meshPartyMissText(party[2]!),
         category: 'master_miss',
       }
     }
@@ -467,10 +518,8 @@ function lineFromReason(raw: string, humanized: string): LineHit | null {
   if (/did not exact-match a master/i.test(raw)) {
     const quoted = extractQuotedParty(raw)
     return {
-      lineId: quoted ? `m-party:${quoted}` : 'm-party',
-      text: quoted
-        ? `"${quoted}" not found in Mesh Database — advise add in Mesh.`
-        : 'Party not found in Mesh Database — advise add in Mesh.',
+      lineId: quoted ? meshPartyLineId(quoted) : 'm-party',
+      text: quoted ? meshPartyMissText(quoted) : 'Party not found in Mesh Database — advise add in Mesh.',
       category: 'master_miss',
     }
   }
@@ -481,8 +530,8 @@ function lineFromReason(raw: string, humanized: string): LineHit | null {
     )
     if (listHit) {
       return {
-        lineId: `m-party:${listHit[1]}`,
-        text: `"${listHit[1]}" not found in Mesh Database — advise add in Mesh.`,
+        lineId: meshPartyLineId(listHit[1]!),
+        text: meshPartyMissText(listHit[1]!),
         category: 'master_miss',
       }
     }
@@ -615,8 +664,8 @@ function lineFromReason(raw: string, humanized: string): LineHit | null {
     const quoted = extractQuotedParty(raw)
     if (quoted) {
       return {
-        lineId: `m-party:${quoted}`,
-        text: `"${quoted}" not found in Mesh Database — advise add in Mesh.`,
+        lineId: meshPartyLineId(quoted),
+        text: meshPartyMissText(quoted),
         category: 'master_miss',
       }
     }
@@ -763,6 +812,79 @@ function collapseGenericPort(byLine: Map<string, NeedsAttentionItem>): void {
         : preferred.severity,
   })
   byLine.delete('m-port')
+}
+
+/**
+ * Collapse many Mesh party-miss bullets into one cleaner line.
+ * Case variants already share lineId via normalizeMeshPartyKey; this folds distinct parties.
+ */
+function collapseMeshParties(byLine: Map<string, NeedsAttentionItem>): void {
+  const partyKeys = [...byLine.keys()].filter((k) => k.startsWith('m-party:'))
+  const hasGenericMesh = byLine.has('m-mesh') || byLine.has('m-party')
+
+  // Prefer mixed-case display when case-variants already merged via lineId
+  for (const k of partyKeys) {
+    const item = byLine.get(k)!
+    const quoted = extractMeshDisplayName(item)
+    if (!quoted) continue
+    // evidence may hold alternate casings from pushUnique
+    let best = quoted
+    for (const e of item.evidence ?? []) {
+      const n = e.match(/"([^"]+)"/)?.[1]?.trim()
+      if (n && normalizeMeshPartyKey(n) === normalizeMeshPartyKey(best)) {
+        best = preferMeshDisplayName(best, n)
+      }
+    }
+    if (best !== quoted) {
+      byLine.set(k, { ...item, text: meshPartyMissText(best) })
+    }
+  }
+
+  if (partyKeys.length === 0) {
+    // only generic mesh lines
+    if (byLine.has('m-mesh') && byLine.has('m-party')) byLine.delete('m-party')
+    return
+  }
+
+  // Fold generic mesh into parties
+  if (hasGenericMesh) {
+    byLine.delete('m-mesh')
+    byLine.delete('m-party')
+  }
+
+  const refreshedKeys = [...byLine.keys()].filter((k) => k.startsWith('m-party:'))
+  if (refreshedKeys.length <= 1) return
+
+  const names: string[] = []
+  let maxSev: NeedsAttentionItem['severity'] = 'low'
+  const evidence: string[] = []
+
+  for (const k of refreshedKeys) {
+    const item = byLine.get(k)!
+    const name = extractMeshDisplayName(item) ?? k.slice('m-party:'.length)
+    names.push(name)
+    evidence.push(item.text, ...(item.evidence ?? []))
+    if ((SEV_RANK[item.severity] ?? 0) > (SEV_RANK[maxSev] ?? 0)) maxSev = item.severity
+    byLine.delete(k)
+  }
+
+  // Stable alpha order for ops scanning
+  names.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
+  const uniqEvidence = [...new Set(evidence.filter(Boolean))]
+
+  // Summary stays short; full list lives in `details` for expand/collapse UI.
+  const text = `${names.length} parties not found in Mesh Database — advise add in Mesh.`
+
+  byLine.set(MESH_PARTY_COLLAPSED_LINE_ID, {
+    key: 'm-party-collapsed',
+    lineId: MESH_PARTY_COLLAPSED_LINE_ID,
+    severity: maxSev,
+    text,
+    category: 'master_miss',
+    groupId: 'master_miss',
+    evidence: uniqEvidence.length ? uniqEvidence : names,
+    details: names,
+  })
 }
 
 /** UN/LOCODE (5-char) — used to detect that a port slot already auto-matched. */
@@ -958,6 +1080,7 @@ export function buildNeedsAttention(opts: {
   }
 
   collapseGenericPort(byLine)
+  collapseMeshParties(byLine)
 
   let items = [...byLine.values()]
   items.sort((a, b) => (SEV_RANK[b.severity] ?? 0) - (SEV_RANK[a.severity] ?? 0))

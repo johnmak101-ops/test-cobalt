@@ -25,7 +25,8 @@ import { ReviewPoStylesSection } from './ReviewPoStylesSection'
 import type { ReviewShipment } from '../../hooks/use-review-queue'
 import type { LinkedPO, ShipmentDetail } from '../../hooks/use-shipments'
 import { cn, formatDateTime } from '../../lib/utils'
-import { buildNeedsAttentionGroups, portsLinkedFromRoute } from './needs-attention'
+import { buildNeedsAttentionGroups, isMeshPartyCollapsed, portsLinkedFromRoute } from './needs-attention'
+import { NeedsAttentionMeshMiss } from './NeedsAttentionMeshMiss'
 import {
   REVIEW_COL,
   REVIEW_FS,
@@ -522,25 +523,29 @@ export function ReviewCard({
                         {g.title}
                       </p>
                       <ul className={REVIEW_PANEL_LIST}>
-                        {g.items.map((r) => (
-                          <li
-                            key={r.key}
-                            className={REVIEW_PANEL_ITEM}
-                            title={r.evidence?.join(' · ') || undefined}
-                          >
-                            <span
-                              className={cn(
-                                REVIEW_PANEL_DOT,
-                                r.severity === 'high'
-                                  ? 'bg-status-critical'
-                                  : r.severity === 'medium'
-                                    ? 'bg-status-warning'
-                                    : 'bg-surface-600',
-                              )}
-                            />
-                            <span className="min-w-0">{r.text}</span>
-                          </li>
-                        ))}
+                        {g.items.map((r) =>
+                          isMeshPartyCollapsed(r) ? (
+                            <NeedsAttentionMeshMiss key={r.key} item={r} />
+                          ) : (
+                            <li
+                              key={r.key}
+                              className={REVIEW_PANEL_ITEM}
+                              title={r.evidence?.join(' · ') || undefined}
+                            >
+                              <span
+                                className={cn(
+                                  REVIEW_PANEL_DOT,
+                                  r.severity === 'high'
+                                    ? 'bg-status-critical'
+                                    : r.severity === 'medium'
+                                      ? 'bg-status-warning'
+                                      : 'bg-surface-600',
+                                )}
+                              />
+                              <span className="min-w-0">{r.text}</span>
+                            </li>
+                          ),
+                        )}
                       </ul>
                     </div>
                   ))}

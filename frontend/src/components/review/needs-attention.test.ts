@@ -325,6 +325,57 @@ describe('buildNeedsAttention / groups', () => {
   })
 })
 
+describe('Mesh party collapse', () => {
+  it('merges case variants of the same party into one line', () => {
+    const items = buildNeedsAttention({
+      conflictsCount: 0,
+      riskFlags: [],
+      reviewReasons: [
+        '"SOUTH OCEAN" not found in Mesh Database — advise add in Mesh.',
+        '"South Ocean" not found in Mesh Database — advise add in Mesh.',
+        'Cannot match "south ocean" in the forwarder list. Please add it in Cobalt Fashion Data Mesh System, then rematch.',
+      ],
+    })
+    const mesh = items.filter(
+      (i) => i.lineId.startsWith('m-party') || i.lineId === 'm-mesh',
+    )
+    expect(mesh.length).toBe(1)
+    expect(mesh[0]!.text).toMatch(/South Ocean|SOUTH OCEAN|south ocean/i)
+    expect(mesh[0]!.text).not.toMatch(/^\d+ parties not found/)
+  })
+
+  it('collapses many distinct Mesh misses into one expandable summary', () => {
+    const names = [
+      'SOUTH OCEAN',
+      'BRO GROUP LOGISTICS',
+      'Wiseknit',
+      'BRO Group Logistics',
+      'MONDIAL TRANSPORTS MARCHANDISES',
+      'HUIYI',
+      'BRO GROUP LOG MANAGEMENT CO LTD',
+      'Bro Group Logistics',
+      'WISEKNIT',
+      'South Ocean',
+    ]
+    const items = buildNeedsAttention({
+      conflictsCount: 0,
+      riskFlags: [],
+      reviewReasons: names.map(
+        (n) => `"${n}" not found in Mesh Database — advise add in Mesh.`,
+      ),
+    })
+    const mesh = items.filter((i) => i.lineId.startsWith('m-party') || i.lineId === 'm-mesh')
+    expect(mesh.length).toBe(1)
+    expect(mesh[0]!.lineId).toBe('m-party:collapsed')
+    expect(mesh[0]!.text).toMatch(/parties not found in Mesh Database/i)
+    expect(mesh[0]!.text).toMatch(/advise add in Mesh/i)
+    // Expandable list of unique parties (case-merged)
+    expect(mesh[0]!.details?.length).toBeGreaterThanOrEqual(4)
+    expect(mesh[0]!.details?.length).toBeLessThanOrEqual(6)
+    expect(mesh[0]!.details!.some((n) => /south ocean/i.test(n))).toBe(true)
+  })
+})
+
 describe('weakIdentityText', () => {
   it('splits by PO presence', () => {
     expect(weakIdentityText(true)).toBe(
