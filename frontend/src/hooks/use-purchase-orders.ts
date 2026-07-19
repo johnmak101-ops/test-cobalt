@@ -102,6 +102,7 @@ export function useUpdatePurchaseOrder() {
       queryClient.invalidateQueries({ queryKey: ['purchase-orders'] })
       queryClient.invalidateQueries({ queryKey: ['shipment'] }) // refetch the open shipment detail (PO card)
       queryClient.invalidateQueries({ queryKey: ['purchase-order'] })
+      queryClient.invalidateQueries({ queryKey: ['review-queue'] })
     },
   })
 }
@@ -136,6 +137,7 @@ export function useLinkShipmentToPO() {
       queryClient.invalidateQueries({ queryKey: ['shipment'] }) // refetch the open shipment detail (PO card)
       queryClient.invalidateQueries({ queryKey: ['purchase-order'] })
       queryClient.invalidateQueries({ queryKey: ['shipments'] })
+      queryClient.invalidateQueries({ queryKey: ['review-queue'] })
     },
   })
 }
@@ -151,6 +153,7 @@ export function useUnlinkShipmentFromPO() {
       queryClient.invalidateQueries({ queryKey: ['shipment'] }) // refetch the open shipment detail (PO card)
       queryClient.invalidateQueries({ queryKey: ['purchase-order'] })
       queryClient.invalidateQueries({ queryKey: ['shipments'] })
+      queryClient.invalidateQueries({ queryKey: ['review-queue'] })
     },
   })
 }

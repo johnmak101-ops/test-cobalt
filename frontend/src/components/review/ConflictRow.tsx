@@ -252,7 +252,7 @@ export function ConflictRow({
 
 /** Read-only: one style (or PO/style) per line — never a mid-wrap comma blob.
  *  Long lists scroll inside a max-height box so they cannot blow out the review card. */
-function StyleListDisplay({ value, className }: { value: string; className?: string }) {
+export function StyleListDisplay({ value, className }: { value: string; className?: string }) {
   const rows = parseStyleEntries(value)
   if (rows.length === 0) return <span className="text-text-muted">—</span>
   return (
@@ -293,7 +293,7 @@ function StyleListDisplay({ value, className }: { value: string; className?: str
  * Bulk UX: **Copy all** fills from Existing; paste a comma list or Excel column/row into any field
  * and the whole list is parsed (tabs + newlines count as separators).
  */
-function StyleListEditor({
+export function StyleListEditor({
   label,
   value,
   onChange,

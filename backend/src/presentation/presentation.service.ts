@@ -54,6 +54,17 @@ type LinkedPoRow = {
   linkId?: string | null
 }
 
+/** Compact row for Review "Move PO" free-text shipment search (`GET /api/shipments?q=`). */
+export type CompactShipmentSearchRow = {
+  id: string
+  bookingNo: string | null
+  soNumber: string | null
+  customerName: string | null
+  route: string | null
+  status: string
+  reviewStatus: string | null
+}
+
 interface MasterMaps {
   customers: Map<string, Ref>
   vendors: Map<string, Ref>
@@ -229,6 +240,61 @@ export class PresentationService {
   }
 
   // ---- shipments ----
+
+  /**
+   * Free-text shipment search for Review "Move PO to another shipment".
+   * Compact rows only — booking / SO / HBL / container / linked PO# substring match.
+   * Strong-key matcher path stays on GET /shipments?booking_no=… etc.; this is only for `?q=`.
+   */
+  async searchShipments(opts: { q: string; limit?: number }) {
+    const q = (opts.q ?? '').trim()
+    if (!q) return { shipments: [] as CompactShipmentSearchRow[] }
+    const rawLimit = Number(opts.limit)
+    const limit = Math.min(Number.isFinite(rawLimit) && rawLimit > 0 ? Math.floor(rawLimit) : 20, 50)
+    const needle = q.toLowerCase()
+
+    const [legs, bookingRows, maps] = await Promise.all([
+      this.shipmentRepo.activeLegs(),
+      this.bookingRepo.listOrdered(),
+      this.masterMaps(),
+    ])
+    const bookingsById = new Map<string, BookingRow>(bookingRows.map((b: BookingRow) => [b.id, b]))
+    const realLegs = legs.filter((leg) => (leg as { kind?: string | null }).kind !== 'DOCUMENT')
+    const posByShipment = await this.shipmentRepo.poNumbersByShipment(realLegs.map((l) => l.id))
+
+    const contains = (v: string | null | undefined) =>
+      v != null && String(v).toLowerCase().includes(needle)
+
+    const out: CompactShipmentSearchRow[] = []
+    for (const leg of realLegs) {
+      const poHit = (posByShipment.get(leg.id) ?? []).some((p) => contains(p))
+      const fieldHit =
+        contains(leg.bookingNo) ||
+        contains(leg.soNo) ||
+        contains(leg.hblAwbFcrNo) ||
+        contains(leg.containerNo)
+      if (!fieldHit && !poHit) continue
+
+      const booking = bookingsById.get(leg.bookingId) ?? null
+      const customer = booking?.customerId ? maps.customers.get(booking.customerId) : undefined
+      const pol = leg.polId ? maps.ports.get(leg.polId) : undefined
+      const pod = leg.podId ? maps.ports.get(leg.podId) : undefined
+      out.push({
+        id: leg.id,
+        bookingNo: leg.bookingNo ?? null,
+        soNumber: leg.soNo ?? null,
+        customerName: customer?.name ?? (leg as { customerRaw?: string | null }).customerRaw ?? null,
+        route: deriveRoute(
+          portLabel(leg.mode, pol?.unlocode, pol?.iata) ?? leg.polRaw,
+          portLabel(leg.mode, pod?.unlocode, pod?.iata) ?? leg.podRaw,
+        ),
+        status: stateToUiStatus(leg.state, leg.legStatus),
+        reviewStatus: leg.reviewStatus ?? null,
+      })
+      if (out.length >= limit) break
+    }
+    return { shipments: out }
+  }
 
   async shipments(filter?: { status?: string; customerId?: string; forwarderId?: string }) {
     const [legs, bookingRows, maps] = await Promise.all([

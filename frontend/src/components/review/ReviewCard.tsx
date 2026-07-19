@@ -20,10 +20,17 @@ import {
   type CriticReviewCompact,
 } from '../../lib/critic-review'
 import { CandidateLegsPanel } from './CandidateLegsPanel'
+import { ReviewPoStylesSection } from './ReviewPoStylesSection'
 import type { ReviewShipment } from '../../hooks/use-review-queue'
-import type { ShipmentDetail } from '../../hooks/use-shipments'
+import type { LinkedPO, ShipmentDetail } from '../../hooks/use-shipments'
 import { cn, formatDateTime } from '../../lib/utils'
 import { buildNeedsAttentionGroups, portsLinkedFromRoute } from './needs-attention'
+import {
+  REVIEW_COL,
+  REVIEW_GROUP_HEADER,
+  REVIEW_TABLE_CLASS,
+  REVIEW_TH,
+} from './review-table-layout'
 
 /**
  * ONE geometry for every button in the card's action bar; variants change COLOUR only, never size,
@@ -187,9 +194,30 @@ export function ReviewCard({
   const [identResult, setIdentResult] = useState<IdentifyResult | null>(null)
   const [identBusy, setIdentBusy] = useState(false)
 
-  const conflicts = useMemo(
+  /** Detail DTO carries membership; queue list rows do not. */
+  const linkedPOs: LinkedPO[] = useMemo(() => {
+    if ('linkedPOs' in shipment && Array.isArray(shipment.linkedPOs)) {
+      return shipment.linkedPOs
+    }
+    return []
+  }, [shipment])
+  const reviewReasons =
+    (shipment as { reviewReasons?: string[] | null }).reviewReasons ?? []
+
+  const rawConflicts = useMemo(
     () => criticReview?.conflicts ?? [],
     [criticReview],
+  )
+  /**
+   * When per-PO styles are available, drop the bag-level item/style conflict — membership + style
+   * live on ReviewPoStylesSection, not the leg-level conflict table.
+   */
+  const conflicts = useMemo(
+    () =>
+      linkedPOs.length > 0
+        ? rawConflicts.filter((c) => mapCriticFieldToColumn(c.field) !== 'itemStyleNo')
+        : rawConflicts,
+    [rawConflicts, linkedPOs.length],
   )
   /** Newest first: "which statement is the latest?" is the question a reviewer actually has, and a
    *  date they must compare by hand only half-answers it. Undated mail sorts last, not first. */
@@ -205,11 +233,11 @@ export function ReviewCard({
     () =>
       buildNeedsAttentionGroups({
         riskFlags: criticReview?.riskFlags,
-        reviewReasons: (shipment as { reviewReasons?: string[] | null }).reviewReasons,
+        reviewReasons,
         conflictsCount: conflicts.length,
         portsLinked: portsLinkedFromRoute((shipment as { route?: string | null }).route),
       }),
-    [criticReview, shipment, conflicts.length],
+    [criticReview, reviewReasons, shipment, conflicts.length],
   )
   const [resolutions, setResolutions] = useState<Record<string, string>>(() =>
     initialResolutions(conflicts),
@@ -578,17 +606,36 @@ export function ReviewCard({
             </div>
           )}
 
+          {/* Only mount when there are POs to review — empty strip was a second empty table competing
+              with the conflict grid. Detail with zero POs still has the full shipment PO card. */}
+          {/* Always show when we have POs, or while editing so Add PO is reachable with zero POs */}
+          {(linkedPOs.length > 0 || (editing && !readOnly)) && (
+            <ReviewPoStylesSection
+              shipmentId={shipment.id}
+              linkedPOs={linkedPOs}
+              customerId={
+                (shipment as { customerId?: string | null }).customerId ??
+                (shipment as { customer?: { id?: string } | null }).customer?.id ??
+                null
+              }
+              reviewReasons={reviewReasons}
+              readOnly={readOnly}
+              editing={editing && !readOnly}
+            />
+          )}
+
           {conflicts.length > 0 && (
             <div className="max-w-full overflow-x-auto rounded-lg border border-border">
-              {/* table-fixed: auto layout re-measures when the Proposed cell swaps text for an
-                  input, so the columns visibly jumped every time Edit was toggled. Fixed widths
-                  make the two modes the same table. min-w-0 on cells contains long style lists. */}
-              <table className="w-full min-w-[36rem] table-fixed">
+              {/* Shared REVIEW_COL % with POs & styles so stacked tables share one vertical grid. */}
+              <table className={REVIEW_TABLE_CLASS}>
                 <thead>
-                  <tr className="border-b border-border bg-surface-900/50 text-left text-[11px] font-medium text-text-muted">
-                    <th className="w-[22%] px-3 py-2">Field</th>
-                    <th className="w-[33%] px-3 py-2">Existing</th>
-                    <th className="w-[45%] px-3 py-2" data-testid="proposed-column-header">
+                  <tr className="border-b border-border bg-surface-900/50">
+                    <th className={`${REVIEW_COL.label} ${REVIEW_TH}`}>Field</th>
+                    <th className={`${REVIEW_COL.existing} ${REVIEW_TH}`}>Existing</th>
+                    <th
+                      className={`${REVIEW_COL.proposed} ${REVIEW_TH}`}
+                      data-testid="proposed-column-header"
+                    >
                       {proposedColumnLabel}
                     </th>
                   </tr>
@@ -598,10 +645,7 @@ export function ReviewCard({
                 {groupConflictFields(conflicts).map(({ group, conflicts: rows }) => (
                   <tbody key={group}>
                     <tr className="border-b border-border bg-surface-900/30">
-                      <td
-                        colSpan={3}
-                        className="px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-text-muted"
-                      >
+                      <td colSpan={3} className={REVIEW_GROUP_HEADER}>
                         {group}
                         <span className="ml-2 font-normal normal-case tracking-normal">
                           ({rows.length} {rows.length === 1 ? 'change' : 'changes'})
