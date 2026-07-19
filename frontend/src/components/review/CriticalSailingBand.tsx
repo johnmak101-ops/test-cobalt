@@ -63,10 +63,12 @@ export function CriticalSailingBand({
 
   return (
     <div data-testid="critical-sailing" className={REVIEW_PANEL_CRITICAL}>
-      {/* Same header stack as Needs attention: kicker → group/title → list */}
-      <p className={`${REVIEW_FS.meta} font-medium text-status-warning`}>
+      {/* Topic 16px — same weight class as Needs attention title */}
+      <p className={`${REVIEW_FS.topic} font-semibold text-status-warning`}>
         Critical for sailing
-        <span className="ml-1.5 font-medium tabular-nums text-text-muted">({items.length})</span>
+        <span className={`ml-1.5 ${REVIEW_FS.meta} font-medium tabular-nums text-text-muted`}>
+          ({items.length})
+        </span>
       </p>
       <p className={`mt-0.5 ${REVIEW_FS.meta} text-text-muted`}>
         {openShort}

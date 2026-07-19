@@ -34,6 +34,7 @@ import { cn, formatDateTime } from '../../lib/utils'
 import { buildNeedsAttentionGroups, portsLinkedFromRoute } from './needs-attention'
 import {
   REVIEW_COL,
+  REVIEW_FS,
   REVIEW_GROUP_HEADER,
   REVIEW_HEAD,
   REVIEW_PANEL,
@@ -562,11 +563,13 @@ export function ReviewCard({
             >
               {/* data-testid why-review kept for legacy tests — same shell as Critical band */}
               <div data-testid="why-review">
-                <p className="text-xs font-medium leading-tight text-text-muted">Needs attention</p>
+                <p className={`${REVIEW_FS.topic} font-semibold text-text-primary`}>
+                  Needs attention
+                </p>
                 <div className="mt-1.5 space-y-2">
                   {needsAttentionGroups.map((g) => (
                     <div key={g.groupId} data-testid={`needs-group-${g.groupId}`}>
-                      <p className="text-xs font-semibold leading-tight text-text-secondary">
+                      <p className={`${REVIEW_FS.meta} font-semibold text-text-secondary`}>
                         {g.title}
                       </p>
                       <ul className={REVIEW_PANEL_LIST}>

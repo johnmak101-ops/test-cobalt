@@ -22,13 +22,16 @@ export const REVIEW_TABLE_CLASS = 'w-full min-w-[36rem] table-fixed border-colla
  *
  * | Role    | Size | Use |
  * |---------|------|-----|
- * | title   | 16px | Critical for sailing |
+ * | topic   | 16px | Panel titles: Needs attention, Critical for sailing |
  * | value   | 14px | PO#, styles, AI, existing (mono) |
  * | body    | 14px | Field labels, critical rows, needs-attention lines |
- * | meta    | 12px | Section kickers, table headers, group titles |
+ * | meta    | 12px | Subtitles, table headers, group titles, counts |
  * | caption | 11px | Hints under values |
  */
 export const REVIEW_FS = {
+  /** Section topic titles (Needs attention, Critical for sailing) */
+  topic: 'text-base leading-snug',
+  /** @deprecated use topic — kept as alias */
   title: 'text-base leading-snug',
   value: 'text-sm leading-snug',
   body: 'text-sm leading-snug',
