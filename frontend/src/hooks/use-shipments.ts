@@ -117,6 +117,9 @@ export interface ShipmentDetail extends Shipment {
     triggeredAt: string
   }>
   linkedPOs: LinkedPO[]
+  /** Fields where a newer email overrode a human edit (the leg column now differs from the locked
+   *  value). Surfaced as a prompt to keep the new value or restore the edit. */
+  contestedLocks?: Array<{ field: string; yourValue: string | null; newValue: string | null }>
 }
 
 interface ShipmentsResponse {
@@ -179,6 +182,21 @@ export function useUpdateShipment(id: string) {
   return useMutation({
     mutationFn: ({ fields, note }: { fields: Record<string, unknown>; note: string }) =>
       api.patch(`/shipments/${id}`, { fields, note }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['shipment', id] })
+      qc.invalidateQueries({ queryKey: ['shipment-history', id] })
+      qc.invalidateQueries({ queryKey: ['shipments'] })
+    },
+  })
+}
+
+/** Resolve a contested field (a newer email overrode a human edit): 'keep-new' accepts the email value,
+ *  'restore' puts the human edit back. Refetches the detail + history + list on success. */
+export function useResolveContestedLock(id: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ field, action }: { field: string; action: 'keep-new' | 'restore' }) =>
+      api.post(`/shipments/${id}/locks/${encodeURIComponent(field)}/${action}`, {}),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['shipment', id] })
       qc.invalidateQueries({ queryKey: ['shipment-history', id] })

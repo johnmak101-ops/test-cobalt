@@ -177,7 +177,7 @@ describe('DecisionsService (integration)', () => {
     expect(legs[0].hblAwbFcrNo).toBe('HBL-9')
   })
 
-  it('never overwrites a human-locked field', async () => {
+  it('a newer email overrides a human-locked field and flags it contested', async () => {
     const first = await decisions.ingest(decision({ confidence: 90 }))
     await db.updateTable('shipments').set({ bookingNo: 'BK-LOCKED' }).where('id', '=', first.shipmentId).execute()
     await db
@@ -186,9 +186,11 @@ describe('DecisionsService (integration)', () => {
       .execute()
 
     const res = await decisions.ingest(decision({ confidence: 90, fields: { so_no: 'SO-1', booking_no: 'BK-NEW' } }))
-    expect(res.skippedLockedFields).toContain('bookingNo')
+    expect(res.supersededLockedFields).toContain('bookingNo')
     const [leg] = await db.selectFrom('shipments').selectAll().execute()
-    expect(leg.bookingNo).toBe('BK-LOCKED') // human edit survives the agent
+    expect(leg.bookingNo).toBe('BK-NEW') // newer email wins so tracking stays current
+    const [lock] = await db.selectFrom('fieldLocks').where('field', '=', 'bookingNo').selectAll().execute()
+    expect(lock.lockedValue).toBe('BK-LOCKED') // lock unchanged → column != lock → CONTESTED
   })
 
   it('stamps the milestone with the source graph id (for view-original)', async () => {

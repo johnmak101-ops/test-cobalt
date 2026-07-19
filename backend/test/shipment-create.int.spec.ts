@@ -49,7 +49,7 @@ describe('ShipmentsService.createManual — human-created shipments (integration
     expect(locked.has('qty')).toBe(true)
   })
 
-  it('the agent later UPDATES the human-created shipment (upsert by booking_no, no duplicate) and cannot overwrite a locked value', async () => {
+  it('the agent later UPDATES the human-created shipment (upsert by booking_no, no duplicate); a newer email overrides a locked value but flags it contested', async () => {
     const created = await svc.createManual({ bookingNo: 'MAN-2', qty: 100, qtyUnit: 'cartons' }, null)
     // a real SO email arrives later carrying the same booking_no + a new ETD and a DIFFERENT qty
     const res = await committer.apply(
@@ -57,10 +57,10 @@ describe('ShipmentsService.createManual — human-created shipments (integration
     )
     expect(res.shipmentId).toBe(created.id) // found the human leg by strong key → amended, not duplicated
     expect(res.action).toBe('amend_fields')
-    expect(res.skippedLockedFields).toContain('qty')
+    expect(res.supersededLockedFields).toContain('qty')
     const [leg] = await db.selectFrom('shipments').where('id', '=', created.id).selectAll().execute()
     expect(leg.etd).not.toBeNull() // agent FILLED the gap
-    expect(leg.qty).toBe(100) // human value PRESERVED — never overwritten to 999
+    expect(leg.qty).toBe(999) // newer email wins — flagged CONTESTED, not silently dropped
     expect(await db.selectFrom('shipments').selectAll().execute()).toHaveLength(1) // no duplicate leg
   })
 

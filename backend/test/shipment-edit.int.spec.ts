@@ -82,6 +82,47 @@ describe('ShipmentsService.editFields — the human note feeds agent-soul iterat
   })
 })
 
+describe('ShipmentsService — contested locks (a newer email overrode a human edit)', () => {
+  async function seedContested() {
+    const leg = await seedLeg()
+    await service.editFields(leg.id, { soNo: 'HUMAN-SO' }, actorId) // locks soNo = HUMAN-SO
+    // a newer email applies a different value to the column (what the committer now does over a lock)
+    await db.updateTable('shipments').set({ soNo: 'EMAIL-SO' }).where('id', '=', leg.id).execute()
+    return leg
+  }
+
+  it('detects a field whose column now differs from its human lock', async () => {
+    const leg = await seedContested()
+    expect(await service.contestedLocks(leg.id)).toEqual([
+      { field: 'soNo', yourValue: 'HUMAN-SO', newValue: 'EMAIL-SO' },
+    ])
+  })
+
+  it('keep-new relocks to the email value and clears the contest', async () => {
+    const leg = await seedContested()
+    await service.keepNewLockValue(leg.id, 'soNo', actorId)
+    expect(await service.contestedLocks(leg.id)).toEqual([])
+    const lock = await db
+      .selectFrom('fieldLocks').where('entityId', '=', leg.id).where('field', '=', 'soNo')
+      .selectAll().executeTakeFirstOrThrow()
+    expect(lock.lockedValue).toBe('EMAIL-SO') // relocked to the accepted value
+    const after = await db.selectFrom('shipments').where('id', '=', leg.id).selectAll().executeTakeFirstOrThrow()
+    expect(after.soNo).toBe('EMAIL-SO') // column keeps the email value
+  })
+
+  it('restore puts the human edit back in the column and clears the contest', async () => {
+    const leg = await seedContested()
+    await service.restoreLockValue(leg.id, 'soNo', actorId)
+    expect(await service.contestedLocks(leg.id)).toEqual([])
+    const after = await db.selectFrom('shipments').where('id', '=', leg.id).selectAll().executeTakeFirstOrThrow()
+    expect(after.soNo).toBe('HUMAN-SO') // human edit restored
+    const lock = await db
+      .selectFrom('fieldLocks').where('entityId', '=', leg.id).where('field', '=', 'soNo')
+      .selectAll().executeTakeFirstOrThrow()
+    expect(lock.lockedValue).toBe('HUMAN-SO') // lock unchanged
+  })
+})
+
 describe('ShipmentsService.applyExtractionCorrection — review-queue apply-back', () => {
   it('maps parser fields → leg columns, writes + locks (human-wins) + audits with the note', async () => {
     const leg = await seedLeg()
@@ -98,7 +139,8 @@ describe('ShipmentsService.applyExtractionCorrection — review-queue apply-back
     expect(updated.bookingNo).toBe('CORRECTED-BK')
     expect(updated.soNo).toBe('CORRECTED-SO')
 
-    // human-wins: each corrected field is locked so the agent can't overwrite it later
+    // each corrected field is locked (human edit); a newer email that disagrees wins but is flagged
+    // CONTESTED (column != lockedValue), never silently dropped
     const locks = await db.selectFrom('fieldLocks').where('entityId', '=', leg.id).selectAll().execute()
     expect(locks.map((l) => l.field).sort()).toEqual(['bookingNo', 'soNo'])
 
