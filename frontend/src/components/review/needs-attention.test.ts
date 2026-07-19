@@ -3,6 +3,8 @@ import {
   buildNeedsAttention,
   buildNeedsAttentionGroups,
   GROUP_TITLE,
+  looksLikeCountryToken,
+  countryOnlyPortMissText,
 } from './needs-attention'
 
 describe('buildNeedsAttention / groups', () => {
@@ -318,5 +320,94 @@ describe('buildNeedsAttention / groups', () => {
       reviewReasons: spam,
     })
     expect(groups.some((g) => g.groupId === 'master_miss')).toBe(true)
+  })
+})
+
+describe('looksLikeCountryToken', () => {
+  it('detects common country names and ISO codes', () => {
+    expect(looksLikeCountryToken('USA')).toBe(true)
+    expect(looksLikeCountryToken('usa')).toBe(true)
+    expect(looksLikeCountryToken('United States')).toBe(true)
+    expect(looksLikeCountryToken('US')).toBe(true)
+    expect(looksLikeCountryToken('Vietnam')).toBe(true)
+    expect(looksLikeCountryToken('VIETNAM')).toBe(true)
+    expect(looksLikeCountryToken('CN')).toBe(true)
+    expect(looksLikeCountryToken('CHN')).toBe(true)
+  })
+
+  it('rejects cities, LOCODEs, and unknown free text', () => {
+    expect(looksLikeCountryToken('Ho Chi Minh City')).toBe(false)
+    expect(looksLikeCountryToken('CNYTN')).toBe(false)
+    expect(looksLikeCountryToken('Yantian')).toBe(false)
+    expect(looksLikeCountryToken('')).toBe(false)
+    expect(looksLikeCountryToken(null)).toBe(false)
+  })
+})
+
+describe('countryOnlyPortMissText', () => {
+  it('names field when known', () => {
+    expect(countryOnlyPortMissText('USA', 'pod')).toBe(
+      'Email only named country "USA" for POD — pick a real port',
+    )
+    expect(countryOnlyPortMissText('USA', 'pol')).toBe(
+      'Email only named country "USA" for POL — pick a real port',
+    )
+  })
+
+  it('uses POL/POD when field unknown', () => {
+    expect(countryOnlyPortMissText('USA')).toBe(
+      'Email only named country "USA" — pick a real port (POL/POD)',
+    )
+  })
+})
+
+describe('buildNeedsAttention country-only port miss', () => {
+  it('rewrites Cannot match "USA" as a port to country copy', () => {
+    const items = buildNeedsAttention({
+      conflictsCount: 0,
+      portsLinked: { pol: false, pod: false },
+      riskFlags: [
+        {
+          code: 'PARTY_OPS',
+          severity: 'low',
+          message:
+            'Cannot match "USA" as a port UN/LOCODE. Add or alias the port in ShipTrack port masters (UN/LOCODE), then rematch.',
+        },
+      ],
+      reviewReasons: [],
+    })
+    expect(items.some((i) => /Email only named country "USA"/i.test(i.text))).toBe(true)
+    expect(items.every((i) => !/UN\/LOCODE masters|add or alias/i.test(i.text))).toBe(true)
+  })
+
+  it('rewrites pod "USA" did not exact/curated-match with POD field', () => {
+    const items = buildNeedsAttention({
+      conflictsCount: 0,
+      portsLinked: { pol: false, pod: false },
+      riskFlags: [],
+      reviewReasons: ['pod "USA" did not exact/curated-match a port master — left unlinked'],
+    })
+    const hit = items.find((i) => i.lineId === 'm-port:USA' || i.lineId.startsWith('m-port'))
+    expect(hit?.text).toMatch(/Email only named country "USA" for POD/i)
+    expect(hit?.text).not.toMatch(/not in master/i)
+  })
+
+  it('keeps LOCODE miss copy for real city names', () => {
+    const items = buildNeedsAttention({
+      conflictsCount: 0,
+      portsLinked: { pol: false, pod: false },
+      riskFlags: [
+        {
+          code: 'PARTY_OPS',
+          severity: 'low',
+          message: 'Cannot match "Ho Chi Minh City" as a port UN/LOCODE. Add alias, then rematch.',
+        },
+      ],
+      reviewReasons: [],
+    })
+    expect(items.some((i) => /Ho Chi Minh/i.test(i.text))).toBe(true)
+    expect(items.some((i) => /UN\/LOCODE|not in master|add or alias|left unlinked/i.test(i.text))).toBe(
+      true,
+    )
   })
 })

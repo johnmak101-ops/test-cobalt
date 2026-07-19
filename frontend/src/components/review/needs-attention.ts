@@ -430,9 +430,19 @@ function lineFromReason(raw: string, humanized: string): LineHit | null {
   {
     const port = raw.match(/^(\w+)\s+"([^"]+)"\s+did not exact(?:\/curated)?-match a port master/i)
     if (port) {
+      const fieldRaw = port[1]!.toLowerCase()
+      const field = fieldRaw === 'pol' || fieldRaw === 'pod' ? (fieldRaw as 'pol' | 'pod') : null
+      const name = port[2]!
+      if (looksLikeCountryToken(name)) {
+        return {
+          lineId: `m-port:${name}`,
+          text: countryOnlyPortMissText(name, field),
+          category: 'master_miss',
+        }
+      }
       return {
-        lineId: `m-port:${port[2]}`,
-        text: `${partyFieldLabel(port[1]!)} "${port[2]}" not in master — left unlinked`,
+        lineId: `m-port:${name}`,
+        text: `${partyFieldLabel(port[1]!)} "${name}" not in master — left unlinked`,
         category: 'master_miss',
       }
     }
@@ -547,6 +557,13 @@ function lineFromReason(raw: string, humanized: string): LineHit | null {
     const city = extractPortName(raw)
     if (city || (/not in master data/i.test(raw) && /raw value kept/i.test(raw))) {
       const name = (city ?? 'Port').trim()
+      if (looksLikeCountryToken(name)) {
+        return {
+          lineId: `m-port:${name}`,
+          text: countryOnlyPortMissText(name, null),
+          category: 'master_miss',
+        }
+      }
       return {
         lineId: `m-port:${name}`,
         text: `Port "${name}" not in UN/LOCODE masters — add or alias, then rematch`,
@@ -569,6 +586,13 @@ function lineFromReason(raw: string, humanized: string): LineHit | null {
 
   if (/Cannot match .+ as a port/i.test(raw)) {
     const quoted = extractQuotedParty(raw)
+    if (quoted && looksLikeCountryToken(quoted)) {
+      return {
+        lineId: `m-port:${quoted}`,
+        text: countryOnlyPortMissText(quoted, null),
+        category: 'master_miss',
+      }
+    }
     if (quoted) {
       return {
         lineId: `m-port:${quoted}`,
@@ -743,6 +767,84 @@ function collapseGenericPort(byLine: Map<string, NeedsAttentionItem>): void {
 
 /** UN/LOCODE (5-char) — used to detect that a port slot already auto-matched. */
 const LOCODE_RE = /^[A-Z]{2}[A-Z0-9]{3}$/i
+
+/** ISO-3166 alpha-2 codes commonly seen as pol/pod blobs (not exhaustive of world). */
+const ISO2_COUNTRY = new Set(
+  [
+    'US', 'CN', 'HK', 'VN', 'BD', 'KH', 'JP', 'KR', 'TW', 'IN', 'ID', 'TH', 'MY', 'SG', 'PH',
+    'AU', 'CA', 'MX', 'GB', 'UK', 'DE', 'FR', 'IT', 'ES', 'NL', 'BE', 'TR', 'AE', 'SA', 'PK',
+  ].map((s) => s.toUpperCase()),
+)
+
+/** ISO-3166 alpha-3 commonly seen as email tokens. */
+const ISO3_COUNTRY = new Set(
+  ['USA', 'CHN', 'HKG', 'VNM', 'BGD', 'KHM', 'JPN', 'KOR', 'TWN', 'IND', 'IDN', 'THA', 'MYS', 'SGP', 'PHL', 'AUS', 'CAN', 'MEX', 'GBR', 'DEU', 'FRA', 'ITA', 'ESP', 'NLD', 'BEL', 'TUR'].map(
+    (s) => s.toUpperCase(),
+  ),
+)
+
+/** Lowercase country names / aliases (match after normalize). */
+const COUNTRY_NAMES = new Set(
+  [
+    'usa',
+    'united states',
+    'united states of america',
+    'vietnam',
+    'viet nam',
+    'china',
+    'uk',
+    'united kingdom',
+    'great britain',
+    'hong kong',
+    'bangladesh',
+    'cambodia',
+    'japan',
+    'korea',
+    'south korea',
+    'taiwan',
+    'india',
+    'indonesia',
+    'thailand',
+    'malaysia',
+    'singapore',
+    'philippines',
+    'australia',
+    'canada',
+    'mexico',
+    'germany',
+    'france',
+    'italy',
+    'spain',
+    'netherlands',
+    'belgium',
+    'turkey',
+  ].map((s) => s.toLowerCase()),
+)
+
+/** True when free-text looks like a country name or ISO-2/3 (not a 5-char UN/LOCODE). */
+export function looksLikeCountryToken(value: string | null | undefined): boolean {
+  if (value == null) return false
+  const raw = String(value).trim()
+  if (!raw) return false
+  // Never treat a resolved LOCODE as a country.
+  if (LOCODE_RE.test(raw)) return false
+  const upper = raw.toUpperCase()
+  if (upper.length === 2 && ISO2_COUNTRY.has(upper)) return true
+  if (upper.length === 3 && ISO3_COUNTRY.has(upper)) return true
+  const nameKey = raw.replace(/\s+/g, ' ').trim().toLowerCase()
+  return COUNTRY_NAMES.has(nameKey)
+}
+
+/** Ops-facing line when port raw is country-only. field: 'pol' | 'pod' | null */
+export function countryOnlyPortMissText(
+  token: string,
+  field?: 'pol' | 'pod' | null,
+): string {
+  const t = token.trim()
+  if (field === 'pol') return `Email only named country "${t}" for POL — pick a real port`
+  if (field === 'pod') return `Email only named country "${t}" for POD — pick a real port`
+  return `Email only named country "${t}" — pick a real port (POL/POD)`
+}
 
 /** True when a free-text looks like a resolved LOCODE (e.g. CNYTN, VNSGN). */
 export function looksLikeLocode(value: string | null | undefined): boolean {
