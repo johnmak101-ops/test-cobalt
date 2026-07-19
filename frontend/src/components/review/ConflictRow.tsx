@@ -33,6 +33,8 @@ export interface ConflictRowProps {
   canEdit?: boolean
   /** Enter card-level edit mode (used by Copy all when the multi-field editor is not yet open). */
   onRequestEdit?: () => void
+  /** When true, field is a critical sailing column — light badge next to label. */
+  critical?: boolean
 }
 
 /** A number is meaningless without its unit ('14' vs '14 cartons'), so render them together. */
@@ -95,6 +97,7 @@ export function ConflictRow({
   notWritable = false,
   canEdit = false,
   onRequestEdit,
+  critical = false,
 }: ConflictRowProps) {
   const { existing, proposed } = splitCandidates(conflict)
   const changed = changesStoredValue(conflict, value)
@@ -116,7 +119,17 @@ export function ConflictRow({
   return (
     <tr className="border-b border-border last:border-0 align-top">
       <td className="px-3 py-2.5 text-xs font-medium text-text-primary">
-        <span title={conflict.rationale}>{label}</span>
+        <span className="inline-flex flex-wrap items-center gap-1.5">
+          <span title={conflict.rationale}>{label}</span>
+          {critical && (
+            <span
+              className="text-[10px] font-medium text-status-warning"
+              data-testid="conflict-critical-badge"
+            >
+              Critical
+            </span>
+          )}
+        </span>
         {notWritable && (
           <p className="mt-0.5 text-[10px] font-normal text-status-warning" data-testid="conflict-not-writable">
             Not savable here — open full shipment
