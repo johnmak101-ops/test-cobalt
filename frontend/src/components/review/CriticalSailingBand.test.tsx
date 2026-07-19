@@ -32,6 +32,9 @@ describe('CriticalSailingBand', () => {
     expect(screen.getByText(/Cargo Ready Date/i)).toBeInTheDocument()
     expect(screen.getByText(/not set/i)).toBeInTheDocument()
     expect(screen.getByText(/2026-07-01 vs 2026-07-05/)).toBeInTheDocument()
+    // Subtitle lists only open fields (not the full Booking/SO/CRD/ETD/ATD legend)
+    expect(screen.getByText(/CRD · ETD/i)).toBeInTheDocument()
+    expect(screen.queryByText(/Booking, SO, CRD, ETD, ATD/i)).not.toBeInTheDocument()
   })
 
   it('shows input for missing rows when editing', () => {

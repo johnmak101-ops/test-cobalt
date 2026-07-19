@@ -556,21 +556,24 @@ export function ReviewCard({
             >
               {/* data-testid why-review kept for legacy tests */}
               <div data-testid="why-review">
-                <p className="text-[11px] font-medium text-text-muted">Needs attention</p>
+                {/* meta (11) kicker · body (13) lines — quieter than Critical band title (14) */}
+                <p className="text-[11px] font-medium leading-tight text-text-muted">Needs attention</p>
                 <div className="mt-1.5 space-y-2">
                   {needsAttentionGroups.map((g) => (
                     <div key={g.groupId} data-testid={`needs-group-${g.groupId}`}>
-                      <p className="text-[11px] font-medium text-text-secondary">{g.title}</p>
+                      <p className="text-[11px] font-semibold leading-tight text-text-secondary">
+                        {g.title}
+                      </p>
                       <ul className="mt-0.5 space-y-1">
                         {g.items.map((r) => (
                           <li
                             key={r.key}
-                            className="flex items-start gap-1.5 text-sm text-text-secondary"
+                            className="flex items-start gap-1.5 text-[13px] leading-snug text-text-secondary"
                             title={r.evidence?.join(' · ') || undefined}
                           >
                             <span
                               className={cn(
-                                'mt-1 inline-block h-1.5 w-1.5 shrink-0 rounded-full',
+                                'mt-1.5 inline-block h-1.5 w-1.5 shrink-0 rounded-full',
                                 r.severity === 'high'
                                   ? 'bg-status-critical'
                                   : r.severity === 'medium'
