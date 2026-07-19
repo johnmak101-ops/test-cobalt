@@ -195,17 +195,20 @@ describe('buildNeedsAttention / groups', () => {
     expect(groups.map((g) => g.title)).toContain(GROUP_TITLE.incomplete_data)
   })
 
-  it('splits mode vs brand under fields disagree when no table', () => {
+  it('keeps mode change but suppresses brand conflict (ops do not re-verify brand)', () => {
     const items = buildNeedsAttention({
       conflictsCount: 0,
       riskFlags: [],
       reviewReasons: [
         'mode change SEA → AIR',
         'PO 2605358: brand conflict KOHLS vs SONOMA (kept KOHLS)',
+        'PO S13789032: brand conflict Primark vs PRMT (kept PRMT) — verify',
       ],
     })
     expect(items.some((i) => /Transport mode changed \(SEA → AIR\)/.test(i.text))).toBe(true)
-    expect(items.some((i) => /brand differs/.test(i.text) && /please verify/.test(i.text))).toBe(true)
+    expect(items.some((i) => /brand differs|brand conflict|please verify.*brand|brand.*please verify/i.test(i.text))).toBe(
+      false,
+    )
   })
 
   it('PO-only and multi-destination copy', () => {

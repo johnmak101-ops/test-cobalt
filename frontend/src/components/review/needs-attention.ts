@@ -307,6 +307,11 @@ function lineFromFlag(code: string, message: string): LineHit | null {
 /** Map a review reason (raw) to a canonical short line; null = suppress. */
 function lineFromReason(raw: string, humanized: string): LineHit | null {
   if (isBroadcast(raw) || isBroadcast(humanized)) return null
+  // Brand code vs full name (e.g. Primark vs PRMT) is kept by enrichment; ops do not need to
+  // re-verify brand on the decision desk — suppress entirely.
+  if (/brand conflict/i.test(raw) || /brand differs/i.test(humanized) || /brand conflict/i.test(humanized)) {
+    return null
+  }
 
   // Which shipment?
   if (/matched multiple backend legs/i.test(raw)) {
@@ -421,24 +426,6 @@ function lineFromReason(raw: string, humanized: string): LineHit | null {
       category: 'conflict',
     }
   }
-  {
-    const brand = raw.match(/^PO\s+(\S+):\s*brand conflict\s+(.+?)\s+\(kept\s+(.+?)\)/i)
-    if (brand) {
-      return {
-        lineId: `f-brand:${brand[1]}`,
-        text: `PO ${brand[1]}: brand differs (${brand[2]}, kept ${brand[3]}) — please verify`,
-        category: 'conflict',
-      }
-    }
-  }
-  if (/brand conflict/i.test(raw)) {
-    return {
-      lineId: 'f-brand',
-      text: 'Brand differs — please verify',
-      category: 'conflict',
-    }
-  }
-
   // Master miss
   {
     const port = raw.match(/^(\w+)\s+"([^"]+)"\s+did not exact(?:\/curated)?-match a port master/i)
