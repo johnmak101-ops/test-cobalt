@@ -235,7 +235,6 @@ export function ReviewPoStylesSection({
                     >
                       {po.poNumber}
                     </a>
-                    <p className="mt-0.5 text-[11px] text-text-muted">On this shipment</p>
                   </td>
 
                   <td className="min-w-0 px-3 py-2.5">
