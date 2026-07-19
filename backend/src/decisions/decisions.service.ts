@@ -25,7 +25,7 @@ const SKIP_RESULT = {
   shipmentId: '',
   state: '',
   conflicts: [] as string[],
-  skippedLockedFields: [] as string[],
+  supersededLockedFields: [] as string[],
 }
 
 /**

@@ -187,6 +187,66 @@ export class ShipmentsService {
   }
 
   /**
+   * Fields where a NEWER email overrode a human edit: the lock still holds the human value but the leg
+   * column now differs (the committer applied the fresher value). Surfaced on the detail page so the user
+   * can keep the new value or restore theirs. Derived from persisted state — no transient signal needed.
+   */
+  async contestedLocks(
+    id: string,
+  ): Promise<{ field: string; yourValue: string | null; newValue: string | null }[]> {
+    const leg = await this.shipments.findById(id)
+    if (!leg) return []
+    const row = leg as Record<string, unknown>
+    const locks = await this.fieldLocks.forEntity(id)
+    return locks
+      .filter((l) => l.entityType === 'shipment')
+      .map((l) => ({ field: l.field, yourValue: l.lockedValue, newValue: asStr(row[l.field]) }))
+      .filter((c) => c.newValue !== c.yourValue)
+  }
+
+  /**
+   * Resolve a contested lock by KEEPING the newer email value: relock the field to the current column
+   * value so `column === lock` again (no longer contested), and audit the acceptance.
+   */
+  async keepNewLockValue(id: string, field: string, actorId: string | null) {
+    if (!EDITABLE_FIELDS.has(field)) throw new BadRequestException(`field ${field} is not editable`)
+    const leg = await this.shipments.findById(id)
+    if (!leg) throw new NotFoundException(`shipment ${id} not found`)
+    const locks = await this.fieldLocks.forEntity(id)
+    const lock = locks.find((l) => l.entityType === 'shipment' && l.field === field)
+    if (!lock) throw new NotFoundException(`no lock on field ${field}`)
+    const current = asStr((leg as Record<string, unknown>)[field])
+    await this.fieldLocks.lock('shipment', id, field, current, actorId)
+    await this.audit.write({
+      entityType: 'shipment', entityId: id, field,
+      oldValue: lock.lockedValue, newValue: current, changeType: 'update',
+      sourceType: 'manual', actorUserId: actorId, note: 'accepted the newer email value over your edit',
+    })
+    return { id, field, resolved: 'keep-new' as const }
+  }
+
+  /**
+   * Resolve a contested lock by RESTORING the human edit: write the locked value back to the column so
+   * `column === lock` again (no longer contested), and audit the restore. The lock row is unchanged.
+   */
+  async restoreLockValue(id: string, field: string, actorId: string | null) {
+    if (!EDITABLE_FIELDS.has(field)) throw new BadRequestException(`field ${field} is not editable`)
+    const leg = await this.shipments.findById(id)
+    if (!leg) throw new NotFoundException(`shipment ${id} not found`)
+    const locks = await this.fieldLocks.forEntity(id)
+    const lock = locks.find((l) => l.entityType === 'shipment' && l.field === field)
+    if (!lock) throw new NotFoundException(`no lock on field ${field}`)
+    const current = asStr((leg as Record<string, unknown>)[field])
+    await this.shipments.updateLeg(id, { [field]: coerceLegField(field, lock.lockedValue) })
+    await this.audit.write({
+      entityType: 'shipment', entityId: id, field,
+      oldValue: current, newValue: lock.lockedValue, changeType: 'update',
+      sourceType: 'manual', actorUserId: actorId, note: 'restored your edit over a newer email value',
+    })
+    return { id, field, resolved: 'restore' as const }
+  }
+
+  /**
    * Apply a reviewer's CORRECTED email extraction back onto its shipment. The review queue stored the
    * correction but never reached tracking — this closes that loop. Parser-vocabulary fields (`booking_no`)
    * are mapped to leg columns (`bookingNo`) and routed through editFields, so the correction is written,

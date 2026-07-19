@@ -73,7 +73,7 @@ describe('CommitterService (integration, real SQL Server)', () => {
     expect(await idRows()).toHaveLength(rows1.length)
   })
 
-  it('human-wins: a locked field is never overwritten by the agent', async () => {
+  it('latest-email-wins: a newer email overrides a human-locked field and flags it CONTESTED', async () => {
     const a = await committer.apply(group({ fields: { so_no: 'AGENT-SO' } }))
     await db.updateTable('shipments').set({ soNo: 'HUMAN-SO' }).where('id', '=', a.shipmentId).execute()
     await db
@@ -81,9 +81,18 @@ describe('CommitterService (integration, real SQL Server)', () => {
       .values({ entityType: 'shipment', entityId: a.shipmentId, field: 'soNo', lockedValue: 'HUMAN-SO' })
       .execute()
     const b = await committer.apply(group({ fields: { so_no: 'AGENT-SO-2' } }))
-    expect(b.skippedLockedFields).toContain('soNo')
+    // the newer email value is APPLIED so tracking stays current (no silent staleness)...
+    expect(b.supersededLockedFields).toContain('soNo')
     const leg = await db.selectFrom('shipments').where('id', '=', a.shipmentId).selectAll().executeTakeFirstOrThrow()
-    expect(leg.soNo).toBe('HUMAN-SO')
+    expect(leg.soNo).toBe('AGENT-SO-2')
+    // ...but the lock still holds the human value → column != lockedValue → CONTESTED (surfaced for review)
+    const lock = await db
+      .selectFrom('fieldLocks')
+      .where('entityId', '=', a.shipmentId)
+      .where('field', '=', 'soNo')
+      .selectAll()
+      .executeTakeFirstOrThrow()
+    expect(lock.lockedValue).toBe('HUMAN-SO')
   })
 
   it('PO-guard: a shared strong key but a different PO does NOT merge bookings', async () => {

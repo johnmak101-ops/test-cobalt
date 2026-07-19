@@ -6,6 +6,7 @@ import { Badge } from '../components/ui/Badge'
 import { Card } from '../components/ui/Card'
 import { MilestoneTimeline } from '../components/shipments/MilestoneTimeline'
 import { CategorizedShipmentHistory } from '../components/shipments/CategorizedShipmentHistory'
+import { ContestedLockCard } from '../components/shipments/ContestedLockCard'
 import { FieldHistoryContext, FieldHistoryPopover } from '../components/shipments/FieldHistoryPopover'
 import { indexHistoryByField, historyForField } from '../lib/history-grouping'
 import { AlertCard } from '../components/alerts/AlertCard'
@@ -482,7 +483,12 @@ export default function ShipmentDetailPage() {
         </Card>
       )}
 
-      {/* Order Details (full width) — read-only by default; Edit opens an inline form (human edits win) */}
+      {/* A newer email overrode a human edit — prompt to keep the new value or restore the edit. */}
+      {(shipment.contestedLocks?.length ?? 0) > 0 && (
+        <ContestedLockCard shipmentId={id!} locks={shipment.contestedLocks!} />
+      )}
+
+      {/* Order Details (full width) — read-only by default; Edit opens an inline form. */}
       <Card>
         <div className="mb-4 flex items-center justify-between gap-3">
           <h4 className="text-sm font-semibold text-text-primary">Order Details</h4>
@@ -527,8 +533,9 @@ export default function ShipmentDetailPage() {
         {editing ? (
           <>
             <p className="mb-3 text-xs text-text-muted">
-              Fill anything the AI missed. Your edits are kept and will not be overwritten by future emails;
-              every change is logged in Change History.
+              Fill anything the AI missed. Your edit takes priority — but if a later email brings a
+              different value, we apply the newer value and flag it above, so you can keep it or restore
+              your edit. Every change is logged in Change History.
             </p>
             <div
               className="mb-4 rounded-lg border border-border bg-surface-900/50 px-3 py-2.5 text-xs text-text-muted"

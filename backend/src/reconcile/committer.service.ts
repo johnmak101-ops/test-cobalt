@@ -100,14 +100,15 @@ export interface CommitResult {
   shipmentId: string
   state: string
   conflicts: string[]
-  skippedLockedFields: string[]
+  supersededLockedFields: string[]
 }
 
 /**
  * Deterministic committer: applies a reconciled group to the tracking truth.
- * Safety invariants live HERE (tested code), not in the LLM: field-locks (human-wins),
- * audit on every change, idempotency (find-or-update a leg by its match_keys + PO consistency).
- * All DB access is delegated to repositories.
+ * Safety invariants live HERE (tested code), not in the LLM: latest-email-wins field updates (a newer
+ * email that disagrees with a human-locked field is applied and the field flagged CONTESTED for review,
+ * not silently dropped), audit on every change, idempotency (find-or-update a leg by its match_keys + PO
+ * consistency). All DB access is delegated to repositories.
  */
 @Injectable()
 export class CommitterService {
@@ -308,7 +309,7 @@ export class CommitterService {
     let shipmentId: string
     let jobNo: string
     let action: CommitResult['action']
-    const skippedLockedFields: string[] = []
+    const supersededLockedFields: string[] = []
 
     if (existing) {
       bookingId = existing.bookingId
@@ -316,7 +317,7 @@ export class CommitterService {
       action = 'amend_fields'
       const bk = await this.bookings.findById(bookingId)
       jobNo = bk?.jobNo ?? '(unknown)'
-      await this.applyFields(shipmentId, existing as Record<string, unknown>, legValues, skippedLockedFields, g)
+      await this.applyFields(shipmentId, existing as Record<string, unknown>, legValues, supersededLockedFields, g)
       if (adoptedZeroId) {
         await this.audit.write({
           entityType: 'shipment', entityId: shipmentId, field: 'match_keys',
@@ -524,15 +525,21 @@ export class CommitterService {
       evidenceIds: g.evidenceIds,
     })
     await this.milestones.sync(shipmentId, sourceEvents, g.fields, state)
-    return { action, jobNo, bookingId, shipmentId, state, conflicts: g.conflicts, skippedLockedFields }
+    return { action, jobNo, bookingId, shipmentId, state, conflicts: g.conflicts, supersededLockedFields }
   }
 
-  /** Update a leg field-by-field, skipping human-locked fields and auditing each change. */
+  /**
+   * Update a leg field-by-field, auditing each change. Latest-email-wins, INCLUDING over a human lock:
+   * a newer email that disagrees with a human-locked field is applied so tracking stays current, and the
+   * field is recorded in `superseded`. The lock ROW is left untouched (it still holds the human value), so
+   * `column !== lockedValue` now marks the field CONTESTED — surfaced on the detail page for the user to
+   * keep the new value or restore their edit.
+   */
   private async applyFields(
     shipmentId: string,
     current: Record<string, unknown>,
     next: Record<string, unknown>,
-    skipped: string[],
+    superseded: string[],
     g: ReconGroup,
   ) {
     const locks = await this.fieldLocks.forEntity(shipmentId)
@@ -540,14 +547,10 @@ export class CommitterService {
     const patch: Record<string, unknown> = {}
     for (const [k, v] of Object.entries(next)) {
       if (v == null) continue
-      if (locked.has(k)) {
-        if (!same(current[k], v)) skipped.push(k)
-        continue
-      }
-      if (!same(current[k], v)) {
-        patch[k] = v
-        await this.writeAudit('shipment', shipmentId, 'update', toStr(current[k]), toStr(v), g, k)
-      }
+      if (same(current[k], v)) continue
+      patch[k] = v
+      await this.writeAudit('shipment', shipmentId, 'update', toStr(current[k]), toStr(v), g, k)
+      if (locked.has(k)) superseded.push(k)
     }
     if (Object.keys(patch).length) await this.shipments.updateLeg(shipmentId, patch)
   }

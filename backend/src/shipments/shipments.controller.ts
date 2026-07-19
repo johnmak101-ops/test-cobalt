@@ -39,8 +39,12 @@ export class ShipmentsController {
     return this.ui.reviewQueueCounts()
   }
 
-  @Get(':id') getOne(@Param('id') id: string) {
-    return this.ui.shipment(id)
+  @Get(':id') async getOne(@Param('id') id: string) {
+    const [dto, contestedLocks] = await Promise.all([
+      this.ui.shipment(id),
+      this.shipments.contestedLocks(id),
+    ])
+    return { ...dto, contestedLocks }
   }
 
   /**
@@ -69,5 +73,26 @@ export class ShipmentsController {
     @CurrentUser() actor: AuthUser,
   ) {
     return this.shipments.editFields(id, body?.fields ?? {}, actor?.id ?? null, body?.note ?? null)
+  }
+
+  /**
+   * Resolve a CONTESTED field — one where a newer email overrode a human edit. No @Roles (same as edit).
+   *  - keep-new: accept the newer email value (relock the field to it).
+   *  - restore: put the human edit back (the email value is discarded).
+   */
+  @Post(':id/locks/:field/keep-new') keepNewLock(
+    @Param('id') id: string,
+    @Param('field') field: string,
+    @CurrentUser() actor: AuthUser,
+  ) {
+    return this.shipments.keepNewLockValue(id, field, actor?.id ?? null)
+  }
+
+  @Post(':id/locks/:field/restore') restoreLock(
+    @Param('id') id: string,
+    @Param('field') field: string,
+    @CurrentUser() actor: AuthUser,
+  ) {
+    return this.shipments.restoreLockValue(id, field, actor?.id ?? null)
   }
 }
