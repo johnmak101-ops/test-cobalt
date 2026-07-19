@@ -160,9 +160,9 @@ export function PurchaseOrdersCard({
             <ChevronRight size={14} className="shrink-0 text-text-muted" />
           )}
           <Package size={14} className="shrink-0 text-text-muted" />
-          <h4 className="text-sm font-semibold text-text-primary">
+          <h4 className="text-base font-semibold text-text-primary">
             Customer Purchase Orders
-            <span className="ml-2 text-xs font-normal text-text-muted">
+            <span className="ml-2 text-sm font-normal text-text-muted">
               · {linkedPOs.length} PO{linkedPOs.length !== 1 ? 's' : ''}
               {total != null && (
                 <>
@@ -218,8 +218,8 @@ export function PurchaseOrdersCard({
           <table className="w-full min-w-[22rem]">
             <thead>
               <tr className="border-b border-border bg-surface-900/50">
-                <th className="px-3 py-2 text-left text-[11px] font-medium text-text-muted">Customer PO#</th>
-                <th className="px-3 py-2 text-left text-[11px] font-medium text-text-muted">Item / Style</th>
+                <th className="px-3 py-2.5 text-left text-xs font-medium text-text-muted">Customer PO#</th>
+                <th className="px-3 py-2.5 text-left text-xs font-medium text-text-muted">Item / Style</th>
                 {crudMode && <th className="w-px px-3 py-2"></th>}
               </tr>
             </thead>
@@ -251,7 +251,7 @@ export function PurchaseOrdersCard({
                     data-testid={`po-row-${po.id}`}
                     className="border-b border-border last:border-0 transition-colors hover:bg-surface-700/50"
                   >
-                    <td className="min-w-0 px-3 py-2 font-mono text-sm text-cobalt-primary-light">
+                    <td className="min-w-0 px-3 py-2.5 font-mono text-base text-cobalt-primary-light">
                       <span
                         {...interactiveProps(() =>
                           navigate(`/purchase-orders/${po.id}`, { state: { fromShipment: shipmentId } }),
@@ -261,7 +261,7 @@ export function PurchaseOrdersCard({
                         {po.poNumber}
                       </span>
                     </td>
-                    <td className="field-value min-w-0 px-3 py-2 font-mono text-sm text-text-secondary">
+                    <td className="field-value min-w-0 px-3 py-2.5 font-mono text-base text-text-secondary">
                       {po.itemStyleNo?.trim() ? po.itemStyleNo : '—'}
                     </td>
                     {crudMode && (

@@ -178,13 +178,13 @@ export function MilestoneTimeline({
           <div className="pb-6 pt-0.5">
             <p
               className={cn(
-                'text-sm font-medium',
+                'text-base font-medium',
                 s.isCurrent ? 'text-status-warning' : s.done ? 'text-text-primary' : 'text-text-muted',
               )}
             >
               {s.label}
             </p>
-            {dateLine(s, 'text-xs')}
+            {dateLine(s, 'text-sm')}
           </div>
         </div>
       ))}
@@ -215,13 +215,13 @@ export function MilestoneTimeline({
             <div className="mt-1.5 text-center">
               <p
                 className={cn(
-                  'text-xs font-medium leading-tight',
+                  'text-sm font-medium leading-tight',
                   s.isCurrent ? 'text-status-warning' : s.done ? 'text-text-primary' : 'text-text-muted',
                 )}
               >
                 {s.label}
               </p>
-              {dateLine(s, 'text-[11px]')}
+              {dateLine(s, 'text-xs')}
             </div>
           </div>
           {!s.isLast && (

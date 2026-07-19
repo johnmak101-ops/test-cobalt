@@ -271,12 +271,12 @@ export default function ShipmentDetailPage() {
         </button>
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <h1 className="field-value font-mono text-xl font-semibold text-text-primary">
+            <h1 className="field-value font-mono text-2xl font-semibold leading-snug text-text-primary">
               {titleIds.length > 0 ? (
                 titleIds.map((x, i) => (
                   <span key={x.label + x.value}>
                     {i > 0 && <span className="mx-2 text-text-muted">·</span>}
-                    <span className="text-sm font-normal text-text-muted">{x.label} </span>
+                    <span className="text-base font-normal text-text-muted">{x.label} </span>
                     {x.value}
                   </span>
                 ))
@@ -284,7 +284,7 @@ export default function ShipmentDetailPage() {
                 <span className="text-text-muted">{shipment.id.slice(0, 8)}</span>
               )}
             </h1>
-            <p className="mt-1 text-sm text-text-secondary">
+            <p className="mt-1.5 text-base text-text-secondary">
               {shipment.customer?.name ?? 'Unknown Customer'}
               {shipment.forwarder && ` · ${shipment.forwarder.name}`}
               {shipment.route && ` · ${shipment.route}`}
@@ -299,14 +299,14 @@ export default function ShipmentDetailPage() {
         <div className="flex flex-wrap items-start gap-3 rounded-xl border border-status-warning/40 bg-status-warning/10 px-4 py-3">
           <AlertTriangle size={16} className="mt-0.5 shrink-0 text-status-warning" />
           <div className="min-w-0 flex-1">
-            <p className="text-sm font-medium text-status-warning">Awaiting Review</p>
-            <p className="mt-0.5 text-xs text-text-secondary">
+            <p className="text-base font-semibold text-status-warning">Awaiting Review</p>
+            <p className="mt-0.5 text-sm text-text-secondary">
               This shipment is committed but unconfirmed. Resolve issues below, then approve in the review queue.
             </p>
           </div>
           <Link
             to={`/review-queue/${shipment.id}`}
-            className="shrink-0 rounded-lg bg-status-warning/20 px-3 py-1.5 text-xs font-medium text-status-warning hover:bg-status-warning/30"
+            className="shrink-0 rounded-lg bg-status-warning/20 px-3 py-1.5 text-sm font-medium text-status-warning hover:bg-status-warning/30"
           >
             Review & approve →
           </Link>
@@ -320,12 +320,12 @@ export default function ShipmentDetailPage() {
           className="rounded-xl border border-border bg-surface-900/40 px-4 py-3"
           data-testid="needs-attention-detail"
         >
-          <p className="text-sm font-medium text-text-primary">Needs attention</p>
+          <p className="text-base font-semibold text-text-primary">Needs attention</p>
           <div className="mt-2 space-y-3">
             {showConflictTableCta && (
               <div data-testid="needs-group-fields_disagree-cta">
-                <p className="text-xs font-semibold uppercase tracking-wide text-text-muted">Fields disagree</p>
-                <ul className="mt-1 list-disc space-y-1 pl-4 text-xs text-text-secondary">
+                <p className="text-sm font-semibold text-text-secondary">Fields disagree</p>
+                <ul className="mt-1 list-disc space-y-1.5 pl-5 text-sm leading-snug text-text-secondary">
                   <li>
                     {fieldConflictCount} field(s) disagree —{' '}
                     <Link
@@ -341,8 +341,8 @@ export default function ShipmentDetailPage() {
             )}
             {attentionGroups.map((g) => (
               <div key={g.groupId}>
-                <p className="text-xs font-semibold uppercase tracking-wide text-text-muted">{g.title}</p>
-                <ul className="mt-1 list-disc space-y-1 pl-4 text-xs text-text-secondary">
+                <p className="text-sm font-semibold text-text-secondary">{g.title}</p>
+                <ul className="mt-1 list-disc space-y-1.5 pl-5 text-sm leading-snug text-text-secondary">
                   {g.items.map((it) => (
                     <li
                       key={it.lineId}
@@ -400,7 +400,7 @@ export default function ShipmentDetailPage() {
 
       {/* Horizontal Milestone Timeline (full width) */}
       <Card>
-        <h4 className="mb-4 text-sm font-semibold text-text-primary">Milestone Timeline</h4>
+        <h4 className="mb-4 text-base font-semibold text-text-primary">Milestone Timeline</h4>
         <MilestoneTimeline
           milestones={shipment.milestones ?? []}
           currentStatus={shipment.status}
@@ -432,7 +432,7 @@ export default function ShipmentDetailPage() {
       {/* Order Details (full width) — read-only by default; Edit opens an inline form. */}
       <Card>
         <div className="mb-4 flex items-center justify-between gap-3">
-          <h4 className="text-sm font-semibold text-text-primary">Order Details</h4>
+          <h4 className="text-base font-semibold text-text-primary">Order Details</h4>
           {editing ? (
             <div className="flex items-center gap-2">
               <button
@@ -743,7 +743,7 @@ export default function ShipmentDetailPage() {
           {/* Active Alerts */}
           {shipment.alerts && shipment.alerts.some((a) => a.status === 'ACTIVE') && (
             <div className="space-y-2">
-              <h4 className="text-sm font-semibold text-text-primary">Active Alerts</h4>
+              <h4 className="text-base font-semibold text-text-primary">Active Alerts</h4>
               {shipment.alerts.flatMap((alert) =>
                 alert.status !== 'ACTIVE'
                   ? []
@@ -770,7 +770,7 @@ export default function ShipmentDetailPage() {
 
           {/* Related Emails — always shown so orphan links (body wiped) are not invisible */}
           <Card>
-            <h4 className="mb-4 text-sm font-semibold text-text-primary">Related Emails</h4>
+            <h4 className="mb-4 text-base font-semibold text-text-primary">Related Emails</h4>
             {(shipment.emails ?? []).length === 0 ? (
               <p className="text-sm text-text-muted">No related emails linked to this shipment.</p>
             ) : (
@@ -824,7 +824,7 @@ export default function ShipmentDetailPage() {
       ) : (
         /* History tab */
         <Card>
-          <h4 className="mb-4 text-sm font-semibold text-text-primary">Change History</h4>
+          <h4 className="mb-4 text-base font-semibold text-text-primary">Change History</h4>
           <CategorizedShipmentHistory history={historyData?.history ?? []} />
         </Card>
       )}
@@ -837,9 +837,9 @@ function DetailSection({ title, icon, children }: { title: string; icon: React.R
     <div>
       <div className="mb-3 flex items-center gap-1.5">
         {icon}
-        <span className="text-[11px] font-semibold uppercase tracking-wider text-text-muted">{title}</span>
+        <span className="text-xs font-semibold uppercase tracking-wider text-text-muted">{title}</span>
       </div>
-      <div className="space-y-2.5">{children}</div>
+      <div className="space-y-3">{children}</div>
     </div>
   )
 }
@@ -861,9 +861,9 @@ function DetailRow({
   const historyIndex = useContext(FieldHistoryContext)
   const entries = historyKey ? historyForField(historyKey, historyIndex) : []
   return (
-    <div className="grid grid-cols-[7rem_1fr] sm:grid-cols-[9rem_1fr] gap-x-2 items-baseline">
-      <span className="text-xs text-text-muted truncate">{label}</span>
-      <span className="field-value font-mono text-sm text-text-primary">
+    <div className="grid grid-cols-[8rem_1fr] items-baseline gap-x-3 sm:grid-cols-[10rem_1fr]">
+      <span className="truncate text-sm text-text-muted">{label}</span>
+      <span className="field-value font-mono text-base leading-snug text-text-primary">
         {value != null ? (
           entries.length > 0 ? (
             <FieldHistoryPopover label={label} entries={entries}>
@@ -875,7 +875,9 @@ function DetailRow({
         ) : (
           <span className="italic text-text-muted">
             (pending)
-            {hint && <span className="ml-1.5 font-sans text-xs not-italic text-text-muted/70">· {hint}</span>}
+            {hint && (
+              <span className="ml-1.5 font-sans text-sm not-italic text-text-muted/70">· {hint}</span>
+            )}
           </span>
         )}
       </span>

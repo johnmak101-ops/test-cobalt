@@ -38,16 +38,16 @@ export function KeyDatesCard({
 
   return (
     <Card>
-      <h4 className="mb-4 text-sm font-semibold text-text-primary">Key Dates</h4>
+      <h4 className="mb-4 text-base font-semibold text-text-primary">Key Dates</h4>
       <div className="space-y-3">
         {dates.map((d) => (
-          <div key={d.label} className="flex items-center justify-between">
-            <span className="text-xs text-text-muted">{d.label}</span>
-            <span className="font-mono text-sm text-text-primary">{formatDate(d.value)}</span>
+          <div key={d.label} className="flex items-center justify-between gap-3">
+            <span className="text-sm text-text-muted">{d.label}</span>
+            <span className="font-mono text-base text-text-primary">{formatDate(d.value)}</span>
           </div>
         ))}
         {dates.length === 0 && (
-          <p className="text-sm text-text-muted italic">No dates available</p>
+          <p className="text-sm italic text-text-muted">No dates available</p>
         )}
       </div>
     </Card>
