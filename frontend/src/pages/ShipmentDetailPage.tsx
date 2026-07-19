@@ -150,6 +150,10 @@ export default function ShipmentDetailPage() {
   }
 
   const linkedPOs = shipment.linkedPOs ?? []
+  // PO table below is shown in ascending PO# order (numeric-aware); [0] reads keep source order.
+  const sortedLinkedPOs = [...linkedPOs].sort((a, b) =>
+    a.poNumber.localeCompare(b.poNumber, undefined, { numeric: true }),
+  )
   // Date of the most recent related email — the old "Email Date" showed the DB row's createdAt,
   // which is ingest time (e.g. a reparse date), not when any email actually arrived.
   const lastEmailAt =
@@ -455,7 +459,7 @@ export default function ShipmentDetailPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {linkedPOs.map((po) => (
+                  {sortedLinkedPOs.map((po) => (
                     <tr
                       key={po.id}
                       {...interactiveProps(() => navigate(`/purchase-orders/${po.id}`, { state: { fromShipment: id } }))}
