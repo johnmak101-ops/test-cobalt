@@ -3,7 +3,7 @@
  * Not wired into ReviewCard here — Task 4 mounts it.
  */
 import { useState } from 'react'
-import { Loader2, Package } from 'lucide-react'
+import { Loader2 } from 'lucide-react'
 import type { LinkedPO } from '../../hooks/use-shipments'
 import {
   useUpdatePurchaseOrder,
@@ -30,7 +30,7 @@ const ACTION_VARIANT = {
 } as const
 
 const inputCls =
-  'w-full min-w-[8rem] rounded-md border border-border bg-surface-700 px-2 py-1 text-sm text-text-primary placeholder:text-text-muted focus:border-cobalt-primary focus:outline-none'
+  'w-full min-w-0 rounded-md border border-border bg-surface-700 px-2 py-1 font-mono text-sm text-text-primary placeholder:text-text-muted focus:border-cobalt-primary focus:outline-none'
 
 function escapeRegExp(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -165,34 +165,38 @@ export function ReviewPoStylesSection({
   const mutationBusy =
     update.isPending || unlink.isPending || link.isPending || busyPoId != null
 
+  // Column geometry mirrors the field conflict table (Field 22% | Existing 33% | AI Proposed 45%).
+  // With actions: first two columns keep that alignment; the 45% proposed span splits into AI + Actions.
+  const colPo = 'w-[22%]'
+  const colCurrent = 'w-[33%]'
+  const colProposed = readOnly ? 'w-[45%]' : 'w-[25%]'
+  const colActions = 'w-[20%]'
+
   return (
     <section
       className="max-w-full overflow-x-auto rounded-lg border border-border"
       data-testid="review-po-styles-section"
       aria-label="POs and styles"
     >
-      {/* Same shell as the field conflict table: fixed columns so Actions never collapses off-screen. */}
-      <table className="w-full min-w-[44rem] table-fixed">
+      {/* Same min-width + table-fixed shell as ReviewCard conflict table so stacked grids line up. */}
+      <table className="w-full min-w-[36rem] table-fixed">
         <thead>
           <tr className="border-b border-border bg-surface-900/30">
             <th
               colSpan={readOnly ? 3 : 4}
               className="px-3 py-1.5 text-left text-[11px] font-semibold uppercase tracking-wide text-text-muted"
             >
-              <span className="inline-flex items-center gap-1.5 normal-case tracking-normal">
-                <Package size={13} className="shrink-0 text-text-muted" aria-hidden />
-                <span className="font-semibold uppercase tracking-wide">POs & styles</span>
-              </span>
-              <span className="ml-2 font-normal normal-case tracking-normal text-text-muted">
-                ({sorted.length} {sorted.length === 1 ? 'PO' : 'POs'}) — confirm membership, then style per PO
+              POs & styles
+              <span className="ml-2 font-normal normal-case tracking-normal">
+                ({sorted.length} {sorted.length === 1 ? 'PO' : 'POs'})
               </span>
             </th>
           </tr>
           <tr className="border-b border-border bg-surface-900/50 text-left text-[11px] font-medium text-text-muted">
-            <th className="w-[16%] px-3 py-2">PO#</th>
-            <th className="w-[26%] px-3 py-2">Current style</th>
-            <th className="w-[26%] px-3 py-2">From email / AI</th>
-            {!readOnly && <th className="w-[32%] px-3 py-2">Actions</th>}
+            <th className={cn(colPo, 'px-3 py-2')}>PO#</th>
+            <th className={cn(colCurrent, 'px-3 py-2')}>Current style</th>
+            <th className={cn(colProposed, 'px-3 py-2')}>From email / AI</th>
+            {!readOnly && <th className={cn(colActions, 'px-3 py-2')}>Actions</th>}
           </tr>
         </thead>
         <tbody>
@@ -228,16 +232,18 @@ export function ReviewPoStylesSection({
                   data-testid={`review-po-row-${po.id}`}
                   className="border-b border-border last:border-0 align-top"
                 >
-                  <td className="min-w-0 px-3 py-2.5">
+                  {/* Match ConflictRow field label: text-xs medium */}
+                  <td className="min-w-0 max-w-0 overflow-hidden px-3 py-2.5 text-xs font-medium text-text-primary">
                     <a
                       href={`/purchase-orders/${po.id}`}
-                      className="font-mono text-sm font-medium text-cobalt-primary-light hover:underline"
+                      className="font-mono text-xs font-medium text-cobalt-primary-light hover:underline"
                     >
                       {po.poNumber}
                     </a>
                   </td>
 
-                  <td className="min-w-0 px-3 py-2.5">
+                  {/* Match Existing value: field-value font-mono text-sm */}
+                  <td className="min-w-0 max-w-0 overflow-hidden px-3 py-2.5">
                     {isEditing ? (
                       <input
                         className={inputCls}
@@ -249,7 +255,7 @@ export function ReviewPoStylesSection({
                     ) : (
                       <span
                         className={cn(
-                          'field-value block font-mono text-sm',
+                          'field-value font-mono text-sm',
                           current ? 'text-text-primary' : 'text-text-muted',
                           styleDone && 'text-status-success',
                         )}
@@ -260,11 +266,11 @@ export function ReviewPoStylesSection({
                     )}
                   </td>
 
-                  <td className="min-w-0 px-3 py-2.5">
+                  <td className="min-w-0 max-w-0 overflow-hidden px-3 py-2.5">
                     <span
                       className={cn(
-                        'field-value block font-mono text-sm',
-                        proposed ? 'text-ai-proposed font-medium' : 'text-text-muted',
+                        'field-value font-mono text-sm',
+                        proposed ? 'font-medium text-ai-proposed' : 'text-text-muted',
                       )}
                       title={proposed ?? undefined}
                     >
@@ -273,7 +279,7 @@ export function ReviewPoStylesSection({
                   </td>
 
                   {!readOnly && (
-                    <td className="px-3 py-2.5">
+                    <td className="min-w-0 px-3 py-2.5">
                       <div className="flex flex-wrap items-center gap-1">
                         {isBusy && (
                           <Loader2
