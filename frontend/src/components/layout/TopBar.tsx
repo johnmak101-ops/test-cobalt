@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Bell, Sun, Moon, LogOut, ChevronDown, AlertTriangle, Mail, ClipboardCheck, ChevronRight, Menu } from 'lucide-react'
+import { Bell, Sun, Moon, Type, LogOut, ChevronDown, AlertTriangle, Mail, ClipboardCheck, ChevronRight, Menu } from 'lucide-react'
 import { useAlerts, useMarkAlertRead } from '../../hooks/use-alerts'
 import { useReviewQueue, useReviewCounts } from '../../hooks/use-review-queue'
 import { useEmails } from '../../hooks/use-emails'
@@ -32,7 +32,7 @@ export function TopBar() {
   const { data: reviewCounts } = useReviewCounts()
   const { data: emailsData } = useEmails()
   const { user, logout } = useAuth()
-  const { theme, toggleTheme, openMobileNav, mobileNavOpen } = useUIStore()
+  const { theme, toggleTheme, fontScale, toggleFontScale, openMobileNav, mobileNavOpen } = useUIStore()
   const [menuOpen, setMenuOpen] = useState(false)
   const [notiOpen, setNotiOpen] = useState(false)
   const [notiTab, setNotiTab] = useState<NotiTab>('alerts')
@@ -91,6 +91,20 @@ export function TopBar() {
 
       {/* Theme / alerts / user — always right-aligned (hamburger is only on small screens). */}
       <div className="ml-auto flex items-center gap-2">
+        {/* Text size toggle — larger base text for readability (users are mainly 40–60) */}
+        <button
+          type="button"
+          onClick={toggleFontScale}
+          aria-pressed={fontScale === 'large'}
+          className={cn(
+            'rounded-lg p-2 text-text-secondary hover:bg-surface-700 hover:text-text-primary',
+            fontScale === 'large' && 'bg-surface-700 text-cobalt-primary-light',
+          )}
+          title={fontScale === 'large' ? 'Switch to normal text size' : 'Switch to larger text size'}
+        >
+          <Type size={18} />
+        </button>
+
         {/* Theme toggle */}
         <button
           type="button"
