@@ -106,7 +106,7 @@ describe('PresentationService.shipments — list', () => {
     expect(s.forwarder).toEqual({ id: 'f1', name: 'Fairate', code: 'FAIR' })
     // linkedPOs carry the real PO id (drill-down), vendor, and qty/unit — not the old {poNumber} stub
     expect(s.linkedPOs).toEqual([
-      { id: 'po1', poNumber: 'PO-1', totalQuantity: 5000, quantityUnit: 'pieces', quantity: null, itemStyleNo: null, brand: null, qtyIssue: null, qtyIssueDetail: null, vendor: { name: 'Rose Knit' }, sharedBroadcastTotal: null, sharedBroadcastUnit: null },
+      { id: 'po1', poNumber: 'PO-1', linkId: null, totalQuantity: 5000, quantityUnit: 'pieces', quantity: null, itemStyleNo: null, brand: null, qtyIssue: null, qtyIssueDetail: null, vendor: { name: 'Rose Knit' }, sharedBroadcastTotal: null, sharedBroadcastUnit: null },
     ])
   })
 

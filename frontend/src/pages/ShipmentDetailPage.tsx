@@ -8,6 +8,7 @@ import { MilestoneTimeline } from '../components/shipments/MilestoneTimeline'
 import { CategorizedShipmentHistory } from '../components/shipments/CategorizedShipmentHistory'
 import { ContestedLockCard } from '../components/shipments/ContestedLockCard'
 import { PurchaseOrdersCard } from '../components/shipments/PurchaseOrdersCard'
+import { PortPicker } from '../components/shipments/PortPicker'
 import { FieldHistoryContext, FieldHistoryPopover } from '../components/shipments/FieldHistoryPopover'
 import { indexHistoryByField, historyForField } from '../lib/history-grouping'
 import { AlertCard } from '../components/alerts/AlertCard'
@@ -20,14 +21,17 @@ import { ArrowLeft, Mail, Clock, ClipboardList, Package, Ship, Calendar, AlertTr
 
 // The human-editable leg fields, grouped like the read-only card. `db` = the backend column the PATCH writes
 // (+ locks + audits); `get` reads the current value off the loaded shipment (whose UI names differ from db).
-// Customer / vendor codes are NOT free-text (master links). Mode / POL / POD / forwarderRaw ARE editable
-// free-text (#183). PO# / Item·Style stay on the Customer Purchase Orders card, not this form.
+// Mode / POL / POD / forwarder / customer / vendor are all editable free-text raw columns (#183 + the
+// Mesh-lag stand-in): masters are read-only ERP, so the raw twin holds the correct party/port until the
+// master resolves. POL/POD pick from the seeded ports master. PO# / Item·Style stay on the Customer
+// Purchase Orders card, not this form.
 type EditType = 'text' | 'number' | 'date'
 interface EditField {
   db: string
   label: string
   type: EditType
   options?: readonly string[]
+  picker?: 'port'
   get: (s: ShipmentDetail) => unknown
 }
 /**
@@ -46,11 +50,12 @@ const EDIT_SECTIONS: { title: string; fields: EditField[] }[] = (() => {
         label: f.label,
         type: f.type,
         options: f.options,
+        picker: f.picker,
         get: (s: ShipmentDetail) => {
           // Prefer free-text raw; fall back to resolved master name so edit is not blank when only FK is set.
-          if (f.column === 'forwarderRaw') {
-            return s.forwarderRaw ?? s.forwarder?.name ?? null
-          }
+          if (f.column === 'forwarderRaw') return s.forwarderRaw ?? s.forwarder?.name ?? null
+          if (f.column === 'customerRaw') return s.customerRaw ?? s.customer?.name ?? null
+          if (f.column === 'vendorRaw') return s.vendorRaw ?? s.vendor?.name ?? null
           return (s as unknown as Record<string, unknown>)[f.uiKey]
         },
       })
@@ -99,18 +104,17 @@ function htsLooksOff(value: string | undefined): boolean {
 }
 
 /**
- * Turn the "see conflict table" clause into a Review Queue deep-link.
- * Conflict comparison UI lives on ReviewCard, not shipment detail.
+ * Turn the "see conflict table" clause into a deep-link to this shipment's focused review view.
+ * The conflict comparison UI lives on ReviewCard (rendered by that view), not shipment detail.
  */
-function AttentionTextWithConflictLink({ text, expandId }: { text: string; expandId: string }) {
+function AttentionTextWithConflictLink({ text, shipmentId }: { text: string; shipmentId: string }) {
   const m = text.match(/^(.*?)(see conflict table)(.*)$/i)
   if (!m) return <>{text}</>
   return (
     <>
       {m[1]}
       <Link
-        to="/review-queue"
-        state={{ expandId }}
+        to={`/review-queue/${shipmentId}`}
         className="font-medium text-cobalt-primary underline-offset-2 hover:underline"
         data-testid="conflict-table-link"
       >
@@ -234,8 +238,8 @@ export default function ShipmentDetailPage() {
   const saveBlocked = (editedCount > 0 && !note.trim()) || hasNumericErrors || dateError != null
 
   // Collapsed Needs attention groups (same builder as ReviewCard) — show for any shipment with items.
-  // Conflict table lives on Review Queue (ReviewCard), not here — so we pass conflictsCount for
-  // suppress-on-card semantics, then re-surface a linked CTA when fieldConflicts exist.
+  // Conflict table lives on ReviewCard (the focused review view at /review-queue/:id), not here — so
+  // we pass conflictsCount for suppress-on-card semantics, then re-surface a linked CTA below.
   const fieldConflictCount = shipment.fieldConflicts?.length ?? 0
   const attentionGroups = buildNeedsAttentionGroups({
     reviewReasons: shipment.reviewReasons ?? [],
@@ -247,7 +251,6 @@ export default function ShipmentDetailPage() {
       pod: looksLikeLocode(shipment.podRaw),
     },
   })
-  const reviewQueueState = { expandId: shipment.id }
   const showConflictTableCta = fieldConflictCount > 0
   const showNeedsAttention = attentionGroups.length > 0 || showConflictTableCta
 
@@ -300,8 +303,7 @@ export default function ShipmentDetailPage() {
             </p>
           </div>
           <Link
-            to="/review-queue"
-            state={{ expandId: shipment.id }}
+            to={`/review-queue/${shipment.id}`}
             className="shrink-0 rounded-lg bg-status-warning/20 px-3 py-1.5 text-xs font-medium text-status-warning hover:bg-status-warning/30"
           >
             Review & approve →
@@ -310,7 +312,7 @@ export default function ShipmentDetailPage() {
       )}
 
       {/* Needs attention — grouped/collapsed (same as ReviewCard); not limited to provisional.
-          "see conflict table" links to Review Queue with expandId (table is on the review card). */}
+          "see conflict table" deep-links to this shipment's focused review view (/review-queue/:id). */}
       {showNeedsAttention && (
         <div
           className="rounded-xl border border-border bg-surface-900/40 px-4 py-3"
@@ -325,8 +327,7 @@ export default function ShipmentDetailPage() {
                   <li>
                     {fieldConflictCount} field(s) disagree —{' '}
                     <Link
-                      to="/review-queue"
-                      state={reviewQueueState}
+                      to={`/review-queue/${shipment.id}`}
                       className="font-medium text-cobalt-primary underline-offset-2 hover:underline"
                       data-testid="conflict-table-link"
                     >
@@ -345,7 +346,7 @@ export default function ShipmentDetailPage() {
                       key={it.lineId}
                       title={[it.key, ...(it.evidence ?? [])].filter(Boolean).join('\n')}
                     >
-                      <AttentionTextWithConflictLink text={it.text} expandId={shipment.id} />
+                      <AttentionTextWithConflictLink text={it.text} shipmentId={shipment.id} />
                     </li>
                   ))}
                 </ul>
@@ -482,7 +483,15 @@ export default function ShipmentDetailPage() {
                       return [(
                     <div key={f.db} className="grid grid-cols-[7rem_1fr] sm:grid-cols-[9rem_1fr] items-center gap-x-2">
                       <label htmlFor={`${fieldId}-${f.db}`} className="truncate text-xs text-text-muted">{f.label}</label>
-                      {f.options ? (
+                      {f.picker === 'port' ? (
+                        <PortPicker
+                          id={`${fieldId}-${f.db}`}
+                          value={cur}
+                          onChange={(v) => setDraft((d) => ({ ...d, [f.db]: v }))}
+                          placeholder="Search ports — UN/LOCODE or name"
+                          className={controlClass}
+                        />
+                      ) : f.options ? (
                         <select
                           id={`${fieldId}-${f.db}`}
                           data-testid={`edit-select-${f.db}`}

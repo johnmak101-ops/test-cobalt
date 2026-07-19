@@ -248,6 +248,8 @@ describe('toUiShipment — flat active-leg projection', () => {
   it('falls back to vendorRaw when the vendor never resolved to a master (the SOUOCE case)', () => {
     const s = toUiShipment({ leg: leg({ vendorRaw: 'SOUOCE' }), booking: { customerId: null, vendorId: null }, vendor: null })
     expect(s.vendor).toEqual({ id: '', name: 'SOUOCE', code: 'SOUOCE' })
+    // …and the raw twin is exposed so the detail edit form can read + correct it (Mesh-lag stand-in).
+    expect(s.vendorRaw).toBe('SOUOCE')
   })
 
   it('falls back to customerRaw/forwarderRaw when the code never resolved to a master', () => {
@@ -259,6 +261,8 @@ describe('toUiShipment — flat active-leg projection', () => {
     })
     expect(s.customer).toEqual({ id: '', name: 'OTCX', code: 'OTCX' })
     expect(s.forwarder).toEqual({ id: '', name: 'A.P. Moller – Maersk' })
+    // raw twins exposed on the DTO so the edit form / review correct can read + write them
+    expect(s.customerRaw).toBe('OTCX')
   })
 
   it('prefers the resolved master over the raw fallback when both are present', () => {

@@ -36,6 +36,9 @@ export interface Shipment {
   polRaw?: string | null
   podRaw?: string | null
   forwarderRaw?: string | null
+  /** Free-text customer / vendor stand-in when no Mesh master resolves — editable until Mesh syncs. */
+  customerRaw?: string | null
+  vendorRaw?: string | null
   originCountry: string | null
   status: string
   riskLevel: string

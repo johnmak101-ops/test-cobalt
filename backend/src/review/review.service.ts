@@ -31,8 +31,10 @@ const CORRECTABLE_COLUMNS = new Set([
   'containerNo', 'hblAwbFcrNo', 'mbl', 'scacCode', 'consigneeName', 'consigneeAddress',
   'vesselName', 'voyageNo', 'cargoReadyDate', 'cfsCutoff', 'etd', 'atd', 'eta', 'ata',
   'warehouseStartDate', 'warehouseEndDate', 'inDcDate',
-  // critic extras (not all on Order Details form)
-  'mode', 'polRaw', 'podRaw', 'forwarderRaw', 'vendorRaw', 'flightNo', 'mawb',
+  // critic extras (not all on Order Details form). customerRaw/vendorRaw are the free-text stand-ins a
+  // reviewer sets when no Mesh master resolves — masters are read-only (synced ~every 2 months), so the
+  // raw column is the only place to record the correct party until the master arrives (it then wins display).
+  'mode', 'polRaw', 'podRaw', 'forwarderRaw', 'customerRaw', 'vendorRaw', 'flightNo', 'mawb',
 ])
 
 const toStr = (v: unknown): string | null => (v == null ? null : v instanceof Date ? v.toISOString() : String(v))

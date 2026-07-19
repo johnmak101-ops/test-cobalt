@@ -133,6 +133,10 @@ export interface UiShipment {
   podRaw: string | null
   /** Free-text forwarder when no master link; edit form writes this column. */
   forwarderRaw: string | null
+  /** Free-text customer/vendor when no Mesh master resolves — editable stand-in until the ~2-month
+   *  Mesh sync catches up (masters are read-only ERP). Master link, when it exists, still wins display. */
+  customerRaw: string | null
+  vendorRaw: string | null
   originCountry: string | null
   status: string
   cancelled: boolean
@@ -201,6 +205,8 @@ export function toUiShipment(
     polRaw: leg.polRaw ?? null,
     podRaw: leg.podRaw ?? null,
     forwarderRaw: leg.forwarderRaw ?? null,
+    customerRaw: leg.customerRaw ?? null,
+    vendorRaw: leg.vendorRaw ?? null,
     originCountry: leg.originCountry ?? deriveOriginCountry(input.polPort),
     status: stateToUiStatus(leg.state, leg.legStatus),
     cancelled: leg.legStatus === 'CANCELLED',
