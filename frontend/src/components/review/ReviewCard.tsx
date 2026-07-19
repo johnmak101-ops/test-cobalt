@@ -15,11 +15,17 @@ import {
   serializeStyleEntries,
 } from '../../lib/review-fields'
 import {
+  criticalConflicts,
+  criticalMissing,
+  type CriticalColumn,
+} from '../../lib/review-critical'
+import {
   type CriticConflict,
   type CriticReview,
   type CriticReviewCompact,
 } from '../../lib/critic-review'
 import { CandidateLegsPanel } from './CandidateLegsPanel'
+import { CriticalSailingBand } from './CriticalSailingBand'
 import { ReviewPoStylesSection } from './ReviewPoStylesSection'
 import type { ReviewShipment } from '../../hooks/use-review-queue'
 import type { LinkedPO, ShipmentDetail } from '../../hooks/use-shipments'
@@ -239,11 +245,23 @@ export function ReviewCard({
       }),
     [criticReview, reviewReasons, shipment, conflicts.length],
   )
+
+  const missing = useMemo(() => criticalMissing(shipment), [shipment])
+  const critConflicts = useMemo(() => criticalConflicts(conflicts), [conflicts])
+  const criticalItems = useMemo(
+    () => [...missing, ...critConflicts],
+    [missing, critConflicts],
+  )
+
   const [resolutions, setResolutions] = useState<Record<string, string>>(() =>
     initialResolutions(conflicts),
   )
   /** Card-level edit mode. The table reads as a clean diff until the operator asks to change it. */
   const [editing, setEditing] = useState(false)
+  /** Draft fills for critical blanks — merged into fieldsToApply on Save & Approve. */
+  const [criticalDrafts, setCriticalDrafts] = useState<
+    Partial<Record<CriticalColumn, string>>
+  >({})
 
   // Re-seed when the conflict set identity changes (new payload / leg).
   const conflictKey = useMemo(
@@ -255,10 +273,28 @@ export function ReviewCard({
     setSeededKey(conflictKey)
     setResolutions(initialResolutions(conflicts))
     setEditing(false)
+    setCriticalDrafts({})
   }
 
   const setResolution = (field: string, v: string) => {
     setResolutions((prev) => ({ ...prev, [field]: v }))
+  }
+
+  /** Enter edit mode and seed empty drafts for each still-missing critical column. */
+  const startEditing = () => {
+    setCriticalDrafts((prev) => {
+      const next = { ...prev }
+      for (const m of missing) {
+        if (next[m.column] === undefined) next[m.column] = ''
+      }
+      return next
+    })
+    setEditing(true)
+  }
+
+  const toggleEditing = () => {
+    if (editing) setEditing(false)
+    else startEditing()
   }
 
   /**
@@ -307,8 +343,17 @@ export function ReviewCard({
       }
       if (v !== existing) fields[col] = v
     }
+    // Critical blanks filled while editing (bookingNo / soNo / cargoReadyDate / etd / atd).
+    const missingCols = new Set(missing.map((m) => m.column))
+    for (const [col, raw] of Object.entries(criticalDrafts) as Array<
+      [CriticalColumn, string | undefined]
+    >) {
+      const v = raw?.trim()
+      if (!v || !missingCols.has(col)) continue
+      fields[col] = v
+    }
     return fields
-  }, [conflicts, resolutions])
+  }, [conflicts, resolutions, criticalDrafts, missing])
 
   /**
    * The learning signal (ADR-0002). `aiProposed` is what the agent suggested, `humanFinal` is what
@@ -363,6 +408,24 @@ export function ReviewCard({
     () => conflicts.filter((c) => changesStoredValue(c, resolutions[c.field] ?? '')).length,
     [conflicts, resolutions],
   )
+  /** Edit when field fights, critical blanks to fill, or POs to manage. */
+  const showEdit =
+    !readOnly &&
+    (conflicts.length > 0 ||
+      criticalItems.some((i) => i.kind === 'missing') ||
+      linkedPOs.length > 0)
+  const deskEmpty =
+    needsAttentionGroups.length === 0 &&
+    criticalItems.length === 0 &&
+    conflicts.length === 0
+  const judgmentOnly =
+    needsAttentionGroups.length > 0 &&
+    criticalItems.length === 0 &&
+    conflicts.length === 0
+  /** Critical blanks still empty after considering drafts — soft warn near Approve. */
+  const remainingCriticalMissing = missing.filter(
+    (m) => !(criticalDrafts[m.column] ?? '').trim(),
+  ).length
   const canSave = !readOnly && !noteRequired && !busy && (onSaveAndApprove || onApprove)
 
   const run = async (fn: () => Promise<void>) => {
@@ -523,6 +586,30 @@ export function ReviewCard({
             </div>
           )}
 
+          {deskEmpty && !readOnly && (
+            <div
+              data-testid="review-ready-state"
+              className="rounded-lg bg-surface-900/50 px-3 py-2 text-xs text-text-muted"
+            >
+              Ready to confirm — no open decisions
+            </div>
+          )}
+
+          {judgmentOnly && !readOnly && (
+            <p className="text-xs text-text-muted" data-testid="review-judgment-only">
+              No field changes · confirm when verified
+            </p>
+          )}
+
+          <CriticalSailingBand
+            items={criticalItems}
+            editing={editing && !readOnly}
+            drafts={criticalDrafts}
+            onDraftChange={(column, value) =>
+              setCriticalDrafts((prev) => ({ ...prev, [column]: value }))
+            }
+          />
+
           {criticReview == null && (
             <p className="text-[11px] text-text-muted" data-testid="no-critic-note">
               No agent analysis on this leg (committed before the critic payload, or created manually) — open the full shipment to compare values.
@@ -667,7 +754,7 @@ export function ReviewCard({
                           notWritable={!writable}
                           canEdit={!readOnly && writable}
                           onRequestEdit={() => {
-                            if (!readOnly) setEditing(true)
+                            if (!readOnly) startEditing()
                           }}
                         />
                       )
@@ -778,11 +865,21 @@ export function ReviewCard({
                 )}
               </div>
 
+              {remainingCriticalMissing > 0 && (
+                <p
+                  data-testid="critical-approve-soft-warn"
+                  className="text-xs text-status-warning"
+                >
+                  {remainingCriticalMissing} critical blank
+                  {remainingCriticalMissing === 1 ? '' : 's'} remain — you can still confirm
+                </p>
+              )}
+
               <div className="flex flex-wrap items-center justify-end gap-2">
-                {conflicts.length > 0 && (
+                {showEdit && (
                   <button
                     type="button"
-                    onClick={() => setEditing((v) => !v)}
+                    onClick={toggleEditing}
                     disabled={busy}
                     className={cn(ACTION_BTN, ACTION_VARIANT.secondary)}
                   >

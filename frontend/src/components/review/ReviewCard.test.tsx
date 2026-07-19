@@ -949,3 +949,143 @@ describe('source emails — identify WHICH email, and which is newer', () => {
     expect(screen.getByText('Total Quantity')).toBeInTheDocument()
   })
 })
+
+/** Detail-shaped keys for critical sailing fields (crd / etd / actualDeparture). */
+function shipmentWithCriticals(over: Record<string, unknown> = {}): ReviewShipment {
+  return {
+    ...baseShipment({
+      bookingNo: 'BY058417',
+      soNo: 'SO-99',
+      reviewReasons: [],
+    }),
+    crd: '2026-08-01',
+    etd: '2026-08-10',
+    actualDeparture: '2026-08-11',
+    ...over,
+  } as ReviewShipment
+}
+
+describe('decision desk — critical sailing band + ready state', () => {
+  it('shows Critical for sailing when booking blank on detail shipment', () => {
+    render(
+      <MemoryRouter>
+        <ReviewCard
+          shipment={shipmentWithCriticals({ bookingNo: null })}
+          criticReview={baseReview({ conflicts: [], riskFlags: [], reasons: [] })}
+          compact={null}
+          defaultExpanded
+          onApprove={vi.fn()}
+        />
+      </MemoryRouter>,
+    )
+    expect(screen.getByTestId('critical-sailing')).toBeInTheDocument()
+    expect(screen.getByText(/Booking No/i)).toBeInTheDocument()
+  })
+
+  it('shows Edit when critical missing even with zero conflicts', () => {
+    render(
+      <MemoryRouter>
+        <ReviewCard
+          shipment={shipmentWithCriticals({ etd: null })}
+          criticReview={baseReview({ conflicts: [], riskFlags: [], reasons: [] })}
+          compact={null}
+          defaultExpanded
+          onApprove={vi.fn()}
+        />
+      </MemoryRouter>,
+    )
+    // etd null → critical missing; no field conflicts → Edit still available
+    expect(screen.getByTestId('critical-sailing')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /^edit$/i })).toBeInTheDocument()
+  })
+
+  it('shows ready banner when no needs-attention, no critical, no conflicts', () => {
+    render(
+      <MemoryRouter>
+        <ReviewCard
+          shipment={shipmentWithCriticals()}
+          criticReview={baseReview({ conflicts: [], riskFlags: [], reasons: [] })}
+          compact={null}
+          defaultExpanded
+          onApprove={vi.fn()}
+        />
+      </MemoryRouter>,
+    )
+    expect(screen.queryByTestId('critical-sailing')).toBeNull()
+    expect(screen.queryByTestId('needs-attention')).toBeNull()
+    expect(screen.getByTestId('review-ready-state')).toHaveTextContent(
+      /ready to confirm|no open decisions/i,
+    )
+  })
+
+  it('shows judgment-only line when only needs-attention (no critical, no conflicts)', () => {
+    render(
+      <MemoryRouter>
+        <ReviewCard
+          shipment={shipmentWithCriticals()}
+          criticReview={baseReview({
+            conflicts: [],
+            riskFlags: [
+              {
+                code: 'WEAK_IDENTITY',
+                severity: 'medium',
+                message:
+                  'No strong booking/SO/B/L identity and no PO — hard to place this email on a shipment.',
+              },
+            ],
+            reasons: [],
+          })}
+          compact={null}
+          defaultExpanded
+          onApprove={vi.fn()}
+        />
+      </MemoryRouter>,
+    )
+    expect(screen.getByTestId('needs-attention')).toBeInTheDocument()
+    expect(screen.queryByTestId('critical-sailing')).toBeNull()
+    expect(screen.getByTestId('review-judgment-only')).toHaveTextContent(
+      /No field changes|confirm when verified/i,
+    )
+  })
+
+  it('soft-warns when critical blanks still empty', () => {
+    render(
+      <MemoryRouter>
+        <ReviewCard
+          shipment={shipmentWithCriticals({ bookingNo: null })}
+          criticReview={baseReview({ conflicts: [], riskFlags: [], reasons: [] })}
+          compact={null}
+          defaultExpanded
+          onApprove={vi.fn()}
+        />
+      </MemoryRouter>,
+    )
+    expect(screen.getByTestId('critical-approve-soft-warn')).toBeInTheDocument()
+    expect(screen.getByTestId('critical-approve-soft-warn')).toHaveTextContent(
+      /critical blank/i,
+    )
+  })
+
+  it('merges filled critical drafts into Save & Approve fields', async () => {
+    const user = userEvent.setup()
+    const onSave = vi.fn().mockResolvedValue(undefined)
+    render(
+      <MemoryRouter>
+        <ReviewCard
+          shipment={shipmentWithCriticals({ bookingNo: null })}
+          criticReview={baseReview({ conflicts: [], riskFlags: [], reasons: [] })}
+          compact={null}
+          defaultExpanded
+          onSaveAndApprove={onSave}
+        />
+      </MemoryRouter>,
+    )
+    await user.click(screen.getByRole('button', { name: /^edit$/i }))
+    const bookingInput = screen.getByLabelText(/Booking No/i)
+    await user.clear(bookingInput)
+    await user.type(bookingInput, 'BK-NEW-99')
+    await user.click(screen.getByRole('button', { name: /approve/i }))
+    expect(onSave).toHaveBeenCalledTimes(1)
+    expect(onSave.mock.calls[0][0].fields).toMatchObject({ bookingNo: 'BK-NEW-99' })
+  })
+})
