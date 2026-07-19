@@ -1,11 +1,13 @@
-import { useId, useState } from 'react'
+import { useId, useMemo, useState, useContext } from 'react'
 import { useParams, useNavigate, useLocation, Link } from 'react-router-dom'
 import { useShipment, useUpdateShipment, type ShipmentDetail } from '../hooks/use-shipments'
 import { useShipmentHistory } from '../hooks/use-shipment-history'
 import { Badge } from '../components/ui/Badge'
 import { Card } from '../components/ui/Card'
 import { MilestoneTimeline } from '../components/shipments/MilestoneTimeline'
-import { ShipmentHistoryTimeline } from '../components/shipments/ShipmentHistoryTimeline'
+import { CategorizedShipmentHistory } from '../components/shipments/CategorizedShipmentHistory'
+import { FieldHistoryContext, FieldHistoryPopover } from '../components/shipments/FieldHistoryPopover'
+import { indexHistoryByField, historyForField } from '../lib/history-grouping'
 import { AlertCard } from '../components/alerts/AlertCard'
 import { formatDate, formatDateTime, formatDateMaybeTime, cn } from '../lib/utils'
 import { buildNeedsAttentionGroups, looksLikeLocode } from '../components/review/needs-attention'
@@ -125,6 +127,8 @@ export default function ShipmentDetailPage() {
   const fromAlerts = (location.state as { fromAlerts?: boolean })?.fromAlerts
   const { data: shipment, isLoading } = useShipment(id!)
   const { data: historyData } = useShipmentHistory(id!)
+  // Index once; DetailRows read their field's history from context, the History tab groups it.
+  const historyIndex = useMemo(() => indexHistoryByField(historyData?.history ?? []), [historyData])
   const [activeTab, setActiveTab] = useState<'details' | 'history'>('details')
   const update = useUpdateShipment(id!)
   const [editing, setEditing] = useState(false)
@@ -647,12 +651,14 @@ export default function ShipmentDetailPage() {
             </div>
           </>
         ) : (
+        <FieldHistoryContext.Provider value={historyIndex}>
         <div className="grid grid-cols-1 gap-x-8 gap-y-6 md:grid-cols-2">
           {/* Section 1: Order Info */}
           <DetailSection title="Order Info" icon={<ClipboardList size={14} className="text-text-muted" />}>
             <DetailRow label="Customer Code" value={shipment.customer?.code ?? null} />
             <DetailRow label="Vendor Code" value={shipment.vendor?.code ?? null} />
             <DetailRow
+              historyKey="bookingNo"
               label={fieldLabel('bookingNo')}
               value={shipment.bookingNo}
               hint={
@@ -664,6 +670,7 @@ export default function ShipmentDetailPage() {
               }
             />
             <DetailRow
+              historyKey="soNo"
               label={fieldLabel('soNo')}
               value={shipment.soNumber}
               hint={
@@ -683,67 +690,71 @@ export default function ShipmentDetailPage() {
 
           {/* Section 2: Cargo & Logistics */}
           <DetailSection title="Cargo & Logistics" icon={<Package size={14} className="text-text-muted" />}>
-            <DetailRow label={fieldLabel('qty')} value={shipment.quantityShipped != null ? String(shipment.quantityShipped) : null} />
-            <DetailRow label={fieldLabel('qtyUnit')} value={shipment.quantityUnit ?? null} />
-            <DetailRow label={fieldLabel('grossWeight')} value={shipment.grossWeight != null ? `${shipment.grossWeight} KGS` : null} />
-            <DetailRow label={fieldLabel('measurement')} value={shipment.measurement != null ? `${shipment.measurement} CBM` : null} />
-            <DetailRow label={fieldLabel('htsCode')} value={shipment.htsCode?.replace(/,/g, ', ') ?? null} />
+            <DetailRow historyKey="qty" label={fieldLabel('qty')} value={shipment.quantityShipped != null ? String(shipment.quantityShipped) : null} />
+            <DetailRow historyKey="qtyUnit" label={fieldLabel('qtyUnit')} value={shipment.quantityUnit ?? null} />
+            <DetailRow historyKey="grossWeight" label={fieldLabel('grossWeight')} value={shipment.grossWeight != null ? `${shipment.grossWeight} KGS` : null} />
+            <DetailRow historyKey="measurement" label={fieldLabel('measurement')} value={shipment.measurement != null ? `${shipment.measurement} CBM` : null} />
+            <DetailRow historyKey="htsCode" label={fieldLabel('htsCode')} value={shipment.htsCode?.replace(/,/g, ', ') ?? null} />
             <DetailRow
+              historyKey="containerNo"
               label={fieldLabel('containerNo')}
               value={shipment.containerNo}
               hint={shipment.containerNo ? undefined : 'assigned at loading (Draft/Final B/L stage)'}
             />
-            <DetailRow label={houseBillLabel(shipment.mode)} value={shipment.hblNumber} />
+            <DetailRow historyKey="hblAwbFcrNo" label={houseBillLabel(shipment.mode)} value={shipment.hblNumber} />
             {shippingFieldVisible('mbl', shipment.mode) && (
               <DetailRow
+                historyKey="mbl"
                 label={fieldLabel('mbl')}
                 value={shipment.mblNumber}
                 hint={!shipment.mblNumber && shipment.hblNumber ? 'house B/L — carrier master B/L not shared' : undefined}
               />
             )}
             {shippingFieldVisible('mawb', shipment.mode) && (
-              <DetailRow label={fieldLabel('mawb')} value={shipment.mawb ?? null} />
+              <DetailRow historyKey="mawb" label={fieldLabel('mawb')} value={shipment.mawb ?? null} />
             )}
-            <DetailRow label={fieldLabel('scacCode')} value={shipment.scacCode} />
+            <DetailRow historyKey="scacCode" label={fieldLabel('scacCode')} value={shipment.scacCode} />
           </DetailSection>
 
           {/* Section 3: Shipping */}
           <DetailSection title="Shipping" icon={<Ship size={14} className="text-text-muted" />}>
-            <DetailRow label={fieldLabel('mode')} value={shipment.mode} />
+            <DetailRow historyKey="mode" label={fieldLabel('mode')} value={shipment.mode} />
             <DetailRow
+              historyKey="forwarderRaw"
               label={fieldLabel('forwarderRaw')}
               value={shipment.forwarder?.name ?? shipment.forwarderRaw ?? null}
             />
-            <DetailRow label={fieldLabel('consigneeName')} value={shipment.consigneeName} />
-            <DetailRow label={fieldLabel('consigneeAddress')} value={shipment.consigneeAddress} />
+            <DetailRow historyKey="consigneeName" label={fieldLabel('consigneeName')} value={shipment.consigneeName} />
+            <DetailRow historyKey="consigneeAddress" label={fieldLabel('consigneeAddress')} value={shipment.consigneeAddress} />
             {shippingFieldVisible('vesselName', shipment.mode) && (
-              <DetailRow label={fieldLabel('vesselName')} value={shipment.vesselName} />
+              <DetailRow historyKey="vesselName" label={fieldLabel('vesselName')} value={shipment.vesselName} />
             )}
             {shippingFieldVisible('voyageNo', shipment.mode) && (
-              <DetailRow label={fieldLabel('voyageNo')} value={shipment.voyageNumber} />
+              <DetailRow historyKey="voyageNo" label={fieldLabel('voyageNo')} value={shipment.voyageNumber} />
             )}
             {shippingFieldVisible('flightNo', shipment.mode) && (
-              <DetailRow label={fieldLabel('flightNo')} value={shipment.flightNo ?? null} />
+              <DetailRow historyKey="flightNo" label={fieldLabel('flightNo')} value={shipment.flightNo ?? null} />
             )}
-            <DetailRow label={fieldLabel('polRaw')} value={shipment.polRaw ?? null} />
-            <DetailRow label={fieldLabel('podRaw')} value={shipment.podRaw ?? null} />
-            <DetailRow label="Route" value={shipment.route} />
-            <DetailRow label="Origin Country" value={shipment.originCountry ?? '—'} />
+            <DetailRow historyKey="polRaw" label={fieldLabel('polRaw')} value={shipment.polRaw ?? null} />
+            <DetailRow historyKey="podRaw" label={fieldLabel('podRaw')} value={shipment.podRaw ?? null} />
+            <DetailRow historyKey="route" label="Route" value={shipment.route} />
+            <DetailRow historyKey="originCountry" label="Origin Country" value={shipment.originCountry ?? '—'} />
           </DetailSection>
 
           {/* Section 4: Key Dates */}
           <DetailSection title="Key Dates" icon={<Calendar size={14} className="text-text-muted" />}>
-            <DetailRow label={fieldLabel('cargoReadyDate')} value={formatDateMaybeTime(shipment.crd)} />
-            <DetailRow label={fieldLabel('warehouseStartDate')} value={formatDateMaybeTime(shipment.warehouseStartDate)} />
-            <DetailRow label={fieldLabel('warehouseEndDate')} value={formatDateMaybeTime(shipment.warehouseEndDate)} />
-            <DetailRow label={fieldLabel('cfsCutoff')} value={formatDateMaybeTime(shipment.cfsCutoff)} />
-            <DetailRow label={fieldLabel('etd')} value={formatDateMaybeTime(shipment.etd)} />
-            <DetailRow label={fieldLabel('atd')} value={formatDateMaybeTime(shipment.actualDeparture)} />
-            <DetailRow label={fieldLabel('eta')} value={formatDateMaybeTime(shipment.eta)} />
-            <DetailRow label={fieldLabel('ata')} value={formatDateMaybeTime(shipment.actualArrival)} />
-            <DetailRow label={fieldLabel('inDcDate')} value={formatDateMaybeTime(shipment.inDcDate)} />
+            <DetailRow historyKey="cargoReadyDate" label={fieldLabel('cargoReadyDate')} value={formatDateMaybeTime(shipment.crd)} />
+            <DetailRow historyKey="warehouseStartDate" label={fieldLabel('warehouseStartDate')} value={formatDateMaybeTime(shipment.warehouseStartDate)} />
+            <DetailRow historyKey="warehouseEndDate" label={fieldLabel('warehouseEndDate')} value={formatDateMaybeTime(shipment.warehouseEndDate)} />
+            <DetailRow historyKey="cfsCutoff" label={fieldLabel('cfsCutoff')} value={formatDateMaybeTime(shipment.cfsCutoff)} />
+            <DetailRow historyKey="etd" label={fieldLabel('etd')} value={formatDateMaybeTime(shipment.etd)} />
+            <DetailRow historyKey="atd" label={fieldLabel('atd')} value={formatDateMaybeTime(shipment.actualDeparture)} />
+            <DetailRow historyKey="eta" label={fieldLabel('eta')} value={formatDateMaybeTime(shipment.eta)} />
+            <DetailRow historyKey="ata" label={fieldLabel('ata')} value={formatDateMaybeTime(shipment.actualArrival)} />
+            <DetailRow historyKey="inDcDate" label={fieldLabel('inDcDate')} value={formatDateMaybeTime(shipment.inDcDate)} />
           </DetailSection>
         </div>
+        </FieldHistoryContext.Provider>
         )}
       </Card>
 
@@ -868,7 +879,7 @@ export default function ShipmentDetailPage() {
         /* History tab */
         <Card>
           <h4 className="mb-4 text-sm font-semibold text-text-primary">Change History</h4>
-          <ShipmentHistoryTimeline history={historyData?.history ?? []} />
+          <CategorizedShipmentHistory history={historyData?.history ?? []} />
         </Card>
       )}
     </div>
@@ -891,17 +902,31 @@ function DetailRow({
   label,
   value,
   hint,
+  historyKey,
 }: {
   label: string
   value: string | null | undefined
   /** shown next to "(pending)" to explain WHY a value is blank (so a gap reads as expected, not broken) */
   hint?: string
+  /** Leg column for this field (e.g. 'qty', 'polRaw'). When it has change history the value shows a
+   *  dotted-underline + clock marker and a hover timeline popover. Omit for untracked rows. */
+  historyKey?: string
 }) {
+  const historyIndex = useContext(FieldHistoryContext)
+  const entries = historyKey ? historyForField(historyKey, historyIndex) : []
   return (
     <div className="grid grid-cols-[7rem_1fr] sm:grid-cols-[9rem_1fr] gap-x-2 items-baseline">
       <span className="text-xs text-text-muted truncate">{label}</span>
       <span className="font-mono text-sm text-text-primary break-words min-w-0">
-        {value ?? (
+        {value != null ? (
+          entries.length > 0 ? (
+            <FieldHistoryPopover label={label} entries={entries}>
+              {value}
+            </FieldHistoryPopover>
+          ) : (
+            value
+          )
+        ) : (
           <span className="italic text-text-muted">
             (pending)
             {hint && <span className="ml-1.5 font-sans text-xs not-italic text-text-muted/70">· {hint}</span>}
