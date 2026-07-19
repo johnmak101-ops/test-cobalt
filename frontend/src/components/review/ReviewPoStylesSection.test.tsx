@@ -130,9 +130,10 @@ describe('ReviewPoStylesSection', () => {
 
   it('hides actions when readOnly', () => {
     renderSection({ readOnly: true })
-    expect(screen.queryByRole('button', { name: /^take$/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^use$/i })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /^remove$/i })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /^move/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^edit$/i })).not.toBeInTheDocument()
   })
 
   it('uses the same 3-column shell as the field conflict table', () => {
@@ -142,25 +143,29 @@ describe('ReviewPoStylesSection', () => {
     expect(within(section).getByRole('columnheader', { name: /^PO#$/i })).toBeInTheDocument()
     expect(within(section).getByRole('columnheader', { name: /current style/i })).toBeInTheDocument()
     expect(within(section).getByRole('columnheader', { name: /from email/i })).toBeInTheDocument()
-    // No 4th Actions column — buttons live under Current / From email so widths match Field|Existing|AI
     expect(within(section).queryByRole('columnheader', { name: /actions/i })).toBeNull()
   })
 
-  it('Take proposed PATCHes itemStyleNo', async () => {
+  it('does not show Keep on every row (keep is implicit)', () => {
+    renderSection()
+    expect(screen.queryByRole('button', { name: /^keep$/i })).not.toBeInTheDocument()
+  })
+
+  it('Use (when AI differs) PATCHes itemStyleNo', async () => {
     const user = userEvent.setup()
     renderSection({
       reviewReasons: ['PO 6495962: item/style "OLD" vs "NEW" (kept NEW-STYLE)'],
     })
-    await user.click(screen.getByRole('button', { name: /^take$/i }))
+    await user.click(screen.getByRole('button', { name: /^use$/i }))
     expect(updateMutate).toHaveBeenCalledWith(
       expect.objectContaining({ id: 'po1', itemStyleNo: 'NEW-STYLE' }),
       expect.anything(),
     )
   })
 
-  it('hides Take when no proposed style', () => {
+  it('hides Use when no proposed style or same as current', () => {
     renderSection({ reviewReasons: [] })
-    expect(screen.queryByRole('button', { name: /^take$/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^use$/i })).not.toBeInTheDocument()
   })
 
   it('Edit + Save PATCHes free-text style', async () => {

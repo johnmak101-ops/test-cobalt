@@ -22,19 +22,14 @@ import {
 } from './review-table-layout'
 import { cn } from '../../lib/utils'
 
-/** Compact row actions — same weight as conflict table chrome, short labels so the Actions col fits. */
-const ACTION_BTN =
-  'inline-flex shrink-0 items-center gap-1 rounded-md border px-2 py-1 text-[11px] font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50'
-const ACTION_VARIANT = {
-  primary:
-    'border-cobalt-primary bg-cobalt-primary text-white hover:border-cobalt-primary-light hover:bg-cobalt-primary-light',
-  secondary:
-    'border-cobalt-primary/30 bg-cobalt-primary/15 text-cobalt-primary-light hover:bg-cobalt-primary/25',
-  danger:
-    'border-status-critical/30 bg-status-critical/15 text-status-critical hover:bg-status-critical/25',
-  muted:
-    'border-border bg-surface-800 text-text-secondary hover:bg-surface-700 hover:text-text-primary',
-} as const
+/** Quiet text actions — no pill buttons on every row (keeps the strip scannable). */
+const LINK_ACT =
+  'text-[11px] font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50'
+const LINK_MUTED = 'text-text-muted hover:text-text-primary'
+const LINK_PRIMARY = 'text-cobalt-primary-light hover:underline'
+const LINK_DANGER = 'text-status-critical/90 hover:text-status-critical'
+const LINK_SAVE =
+  'rounded-md border border-cobalt-primary bg-cobalt-primary px-2 py-0.5 text-[11px] font-medium text-white hover:bg-cobalt-primary-light disabled:opacity-50'
 
 const inputCls =
   'w-full min-w-0 rounded-md border border-border bg-surface-700 px-2 py-1 font-mono text-sm text-text-primary placeholder:text-text-muted focus:border-cobalt-primary focus:outline-none'
@@ -82,7 +77,6 @@ export function ReviewPoStylesSection({
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editValue, setEditValue] = useState('')
   const [movingPoId, setMovingPoId] = useState<string | null>(null)
-  const [styleKeptIds, setStyleKeptIds] = useState<Set<string>>(() => new Set())
   const [busyPoId, setBusyPoId] = useState<string | null>(null)
 
   const sorted = [...linkedPOs].sort((a, b) =>
@@ -94,14 +88,7 @@ export function ReviewPoStylesSection({
     update.mutate(
       { id: po.id, itemStyleNo: proposed },
       {
-        onSuccess: () => {
-          toast(`Style updated on PO ${po.poNumber}`)
-          setStyleKeptIds((s) => {
-            const next = new Set(s)
-            next.add(po.id)
-            return next
-          })
-        },
+        onSuccess: () => toast(`Style updated on PO ${po.poNumber}`),
         onError: () => toast.error(`Couldn't update style on PO ${po.poNumber}`),
         onSettled: () => setBusyPoId(null),
       },
@@ -110,19 +97,16 @@ export function ReviewPoStylesSection({
 
   const saveEdit = (po: LinkedPO) => {
     const next = editValue.trim() || null
+    setBusyPoId(po.id)
     update.mutate(
       { id: po.id, itemStyleNo: next },
       {
         onSuccess: () => {
           toast(`Style updated on PO ${po.poNumber}`)
           setEditingId(null)
-          setStyleKeptIds((s) => {
-            const n = new Set(s)
-            n.add(po.id)
-            return n
-          })
         },
         onError: () => toast.error(`Couldn't update style on PO ${po.poNumber}`),
+        onSettled: () => setBusyPoId(null),
       },
     )
   }
@@ -215,7 +199,7 @@ export function ReviewPoStylesSection({
                 busyPoId === po.id ||
                 (update.isPending && editingId === po.id) ||
                 (mutationBusy && busyPoId === po.id)
-              const styleDone = styleKeptIds.has(po.id)
+              // Only offer Take when AI differs — Keep is implicit (do nothing).
               const showTake =
                 !!proposed && proposed.trim() !== '' && proposed.trim() !== (current ?? '')
 
@@ -223,7 +207,7 @@ export function ReviewPoStylesSection({
                 <tr
                   key={po.id}
                   data-testid={`review-po-row-${po.id}`}
-                  className="border-b border-border last:border-0 align-top"
+                  className="group border-b border-border last:border-0 align-top"
                 >
                   <td className={cn(REVIEW_TD, 'text-xs font-medium text-text-primary')}>
                     <a
@@ -232,6 +216,54 @@ export function ReviewPoStylesSection({
                     >
                       {po.poNumber}
                     </a>
+                    {/* Membership: quiet text under PO# — not a second button bar */}
+                    {!readOnly && (
+                      <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                        {isBusy && (
+                          <Loader2
+                            size={12}
+                            className="animate-spin text-text-muted"
+                            aria-label="Working"
+                          />
+                        )}
+                        <button
+                          type="button"
+                          className={cn(LINK_ACT, LINK_DANGER)}
+                          onClick={() => removeFromShipment(po)}
+                          disabled={isBusy}
+                          title="Unlink this PO from the current shipment"
+                        >
+                          Remove
+                        </button>
+                        <button
+                          type="button"
+                          className={cn(LINK_ACT, LINK_MUTED)}
+                          onClick={() => {
+                            if (!po.linkId) {
+                              toast('Open full shipment to manage this PO link')
+                              return
+                            }
+                            setMovingPoId((id) => (id === po.id ? null : po.id))
+                            setEditingId(null)
+                          }}
+                          disabled={isBusy}
+                          title="Search any shipment and move this PO there"
+                        >
+                          Move…
+                        </button>
+                      </div>
+                    )}
+                    {!readOnly && isMoving && (
+                      <div className="mt-2">
+                        <ShipmentSearchPicker
+                          excludeId={shipmentId}
+                          onSelect={(id, hit) => {
+                            void movePo(po, id, hit)
+                          }}
+                          onCancel={() => setMovingPoId(null)}
+                        />
+                      </div>
+                    )}
                   </td>
 
                   <td className={REVIEW_TD}>
@@ -245,10 +277,10 @@ export function ReviewPoStylesSection({
                           autoFocus
                         />
                         {!readOnly && (
-                          <div className="flex flex-wrap gap-1">
+                          <div className="flex flex-wrap items-center gap-2">
                             <button
                               type="button"
-                              className={cn(ACTION_BTN, ACTION_VARIANT.primary)}
+                              className={LINK_SAVE}
                               onClick={() => saveEdit(po)}
                               disabled={isBusy}
                             >
@@ -256,7 +288,7 @@ export function ReviewPoStylesSection({
                             </button>
                             <button
                               type="button"
-                              className={cn(ACTION_BTN, ACTION_VARIANT.muted)}
+                              className={cn(LINK_ACT, LINK_MUTED)}
                               onClick={() => setEditingId(null)}
                               disabled={isBusy}
                             >
@@ -266,61 +298,36 @@ export function ReviewPoStylesSection({
                         )}
                       </div>
                     ) : (
-                      <div className="space-y-1.5">
+                      <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5">
                         <span
                           className={cn(
                             'field-value font-mono text-sm',
                             current ? 'text-text-primary' : 'text-text-muted',
-                            styleDone && 'text-status-success',
                           )}
                           title={current ?? undefined}
                         >
                           {current ?? '—'}
                         </span>
                         {!readOnly && (
-                          <div className="flex flex-wrap gap-1">
-                            {isBusy && (
-                              <Loader2
-                                size={13}
-                                className="animate-spin text-text-muted"
-                                aria-label="Working"
-                              />
-                            )}
-                            <button
-                              type="button"
-                              className={cn(ACTION_BTN, ACTION_VARIANT.muted)}
-                              onClick={() => {
-                                setStyleKeptIds((s) => {
-                                  const n = new Set(s)
-                                  n.add(po.id)
-                                  return n
-                                })
-                              }}
-                              disabled={isBusy}
-                              title="Keep current style (no write)"
-                            >
-                              Keep
-                            </button>
-                            <button
-                              type="button"
-                              className={cn(ACTION_BTN, ACTION_VARIANT.muted)}
-                              onClick={() => {
-                                setEditingId(po.id)
-                                setEditValue(current ?? '')
-                                setMovingPoId(null)
-                              }}
-                              disabled={isBusy}
-                            >
-                              Edit
-                            </button>
-                          </div>
+                          <button
+                            type="button"
+                            className={cn(LINK_ACT, LINK_MUTED, 'opacity-0 group-hover:opacity-100 focus:opacity-100')}
+                            onClick={() => {
+                              setEditingId(po.id)
+                              setEditValue(current ?? '')
+                              setMovingPoId(null)
+                            }}
+                            disabled={isBusy}
+                          >
+                            Edit
+                          </button>
                         )}
                       </div>
                     )}
                   </td>
 
                   <td className={REVIEW_TD}>
-                    <div className="space-y-1.5">
+                    <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5">
                       <span
                         className={cn(
                           'field-value font-mono text-sm',
@@ -330,53 +337,16 @@ export function ReviewPoStylesSection({
                       >
                         {proposed ?? '—'}
                       </span>
-                      {!readOnly && !isEditing && (
-                        <div className="flex flex-wrap gap-1">
-                          {showTake && (
-                            <button
-                              type="button"
-                              className={cn(ACTION_BTN, ACTION_VARIANT.secondary)}
-                              onClick={() => takeProposed(po, proposed!)}
-                              disabled={isBusy}
-                            >
-                              Take
-                            </button>
-                          )}
-                          <button
-                            type="button"
-                            className={cn(ACTION_BTN, ACTION_VARIANT.danger)}
-                            onClick={() => removeFromShipment(po)}
-                            disabled={isBusy}
-                            title="Unlink this PO from the current shipment"
-                          >
-                            Remove
-                          </button>
-                          <button
-                            type="button"
-                            className={cn(ACTION_BTN, ACTION_VARIANT.secondary)}
-                            onClick={() => {
-                              if (!po.linkId) {
-                                toast('Open full shipment to manage this PO link')
-                                return
-                              }
-                              setMovingPoId((id) => (id === po.id ? null : po.id))
-                              setEditingId(null)
-                            }}
-                            disabled={isBusy}
-                            title="Search any shipment and move this PO there"
-                          >
-                            Move…
-                          </button>
-                        </div>
-                      )}
-                      {!readOnly && isMoving && (
-                        <ShipmentSearchPicker
-                          excludeId={shipmentId}
-                          onSelect={(id, hit) => {
-                            void movePo(po, id, hit)
-                          }}
-                          onCancel={() => setMovingPoId(null)}
-                        />
+                      {!readOnly && !isEditing && showTake && (
+                        <button
+                          type="button"
+                          className={cn(LINK_ACT, LINK_PRIMARY)}
+                          onClick={() => takeProposed(po, proposed!)}
+                          disabled={isBusy}
+                          title="Apply this style to the PO"
+                        >
+                          Use
+                        </button>
                       )}
                     </div>
                   </td>
