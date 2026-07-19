@@ -241,6 +241,7 @@ export default function ShipmentDetailPage() {
   // Conflict table lives on ReviewCard (the focused review view at /review-queue/:id), not here — so
   // we pass conflictsCount for suppress-on-card semantics, then re-surface a linked CTA below.
   const fieldConflictCount = shipment.fieldConflicts?.length ?? 0
+  const hasPo = linkedPOs.some((p) => String(p.poNumber ?? '').trim().length > 0)
   const attentionGroups = buildNeedsAttentionGroups({
     reviewReasons: shipment.reviewReasons ?? [],
     riskFlags: shipment.criticReview?.riskFlags ?? [],
@@ -250,6 +251,7 @@ export default function ShipmentDetailPage() {
       pol: looksLikeLocode(shipment.polRaw),
       pod: looksLikeLocode(shipment.podRaw),
     },
+    hasPo,
   })
   const showConflictTableCta = fieldConflictCount > 0
   const showNeedsAttention = attentionGroups.length > 0 || showConflictTableCta

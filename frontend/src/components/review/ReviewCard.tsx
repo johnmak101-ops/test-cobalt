@@ -236,6 +236,7 @@ export function ReviewCard({
     [emails],
   )
   // Needs attention — layman groups (design 2026-07-17). Field diffs live in the table when present.
+  const hasPo = linkedPOs.some((p) => String(p.poNumber ?? '').trim().length > 0)
   const needsAttentionGroups = useMemo(
     () =>
       buildNeedsAttentionGroups({
@@ -243,8 +244,9 @@ export function ReviewCard({
         reviewReasons,
         conflictsCount: conflicts.length,
         portsLinked: portsLinkedFromRoute((shipment as { route?: string | null }).route),
+        hasPo,
       }),
-    [criticReview, reviewReasons, shipment, conflicts.length],
+    [criticReview, reviewReasons, shipment, conflicts.length, hasPo, linkedPOs],
   )
 
   const missing = useMemo(() => criticalMissing(shipment), [shipment])

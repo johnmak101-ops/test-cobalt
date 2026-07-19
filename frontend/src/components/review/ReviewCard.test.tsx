@@ -179,6 +179,44 @@ describe('ReviewCard', () => {
     expect(screen.queryByText('2026-08-01')).toBeNull()
   })
 
+  it('WEAK_IDENTITY with linkedPOs shows only-PO Needs attention copy', () => {
+    render(
+      <ReviewCard
+        shipment={
+          baseShipment({
+            linkedPOs: [
+              {
+                id: 'po1',
+                linkId: 'l1',
+                poNumber: 'PO-123',
+                quantity: null,
+                totalQuantity: null,
+                quantityUnit: null,
+              } satisfies LinkedPO,
+            ],
+          } as never)
+        }
+        criticReview={baseReview({
+          conflicts: [],
+          riskFlags: [
+            {
+              code: 'WEAK_IDENTITY',
+              severity: 'medium',
+              message:
+                'No strong booking/SO/B/L identity and no PO — hard to place this email on a shipment.',
+            },
+          ],
+        })}
+        compact={compact}
+        defaultExpanded={true}
+      />,
+    )
+
+    const why = screen.getByTestId('why-review')
+    expect(within(why).getByText(/Only PO known — add booking, SO, or B\/L/)).toBeInTheDocument()
+    expect(within(why).queryByText(/or PO — cannot place/)).not.toBeInTheDocument()
+  })
+
   it('why-review renders alongside the conflict table when both exist', async () => {
     render(
       <ReviewCard
