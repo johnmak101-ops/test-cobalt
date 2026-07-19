@@ -85,7 +85,21 @@ describe('ReviewPoStylesSection — page-level Edit', () => {
     expect(screen.getByText('6495962')).toBeInTheDocument()
     expect(screen.getByText('263121585')).toBeInTheDocument()
     expect(screen.queryByTestId('review-po-crud-edit')).not.toBeInTheDocument()
-    expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
+  })
+
+  it('view: multi-style value is one line per style, not a comma blob', () => {
+    renderSection({
+      linkedPOs: [
+        po({
+          itemStyleNo: 'AW26-XS-L, AW26-S-XL, AW26-M-XXL',
+        }),
+      ],
+    })
+    const list = screen.getByTestId('style-list-display')
+    expect(within(list).getByText('AW26-XS-L')).toBeInTheDocument()
+    expect(within(list).getByText('AW26-S-XL')).toBeInTheDocument()
+    expect(within(list).getByText('AW26-M-XXL')).toBeInTheDocument()
+    expect(screen.queryByText(/AW26-XS-L, AW26-S-XL/)).not.toBeInTheDocument()
   })
 
   it('card Edit: all rows become inputs at once', () => {
@@ -97,7 +111,8 @@ describe('ReviewPoStylesSection — page-level Edit', () => {
       ],
     })
     expect(screen.getAllByRole('textbox', { name: /po number/i })).toHaveLength(2)
-    expect(screen.getAllByRole('textbox', { name: /style for po/i })).toHaveLength(2)
+    // Style list editor uses one field per style (+ optional empty row UX)
+    expect(screen.getAllByTestId('style-list-editor')).toHaveLength(2)
     expect(screen.getByTestId('review-po-add')).toBeInTheDocument()
   })
 
@@ -106,8 +121,9 @@ describe('ReviewPoStylesSection — page-level Edit', () => {
     const { rerender } = renderSection({ editing: true })
     await user.clear(screen.getByRole('textbox', { name: /po number/i }))
     await user.type(screen.getByRole('textbox', { name: /po number/i }), '99999')
-    await user.clear(screen.getByRole('textbox', { name: /style for po/i }))
-    await user.type(screen.getByRole('textbox', { name: /style for po/i }), 'STY')
+    const styleField = screen.getByPlaceholderText(/style \/ item no/i)
+    await user.clear(styleField)
+    await user.type(styleField, 'STY')
 
     rerender(
       <ReviewPoStylesSection

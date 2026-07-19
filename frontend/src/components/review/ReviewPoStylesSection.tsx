@@ -20,6 +20,7 @@ import {
   REVIEW_TD,
   REVIEW_TH,
 } from './review-table-layout'
+import { StyleListDisplay, StyleListEditor } from './ConflictRow'
 import { cn } from '../../lib/utils'
 
 const inputCls =
@@ -256,7 +257,7 @@ export function ReviewPoStylesSection({
           <thead>
             <tr className="border-b border-border bg-surface-900/50">
               <th className={cn(REVIEW_COL.label, REVIEW_TH)}>PO#</th>
-              <th className={cn(REVIEW_COL.existing, REVIEW_TH)}>Current style</th>
+              <th className={cn(REVIEW_COL.existing, REVIEW_TH)}>Item / Style</th>
               <th className={cn(REVIEW_COL.proposed, REVIEW_TH)}>From email / AI</th>
               {canEdit && <th className="w-px px-2 py-2" />}
             </tr>
@@ -331,33 +332,23 @@ export function ReviewPoStylesSection({
                   </td>
                   <td className={REVIEW_TD}>
                     {canEdit ? (
-                      <input
-                        className={inputCls}
+                      <StyleListEditor
+                        label={`Style for PO ${po.poNumber}`}
                         value={draft.itemStyleNo}
-                        onChange={(e) => setDraft(po.id, { itemStyleNo: e.target.value })}
-                        aria-label={`Style for PO ${po.poNumber}`}
-                        placeholder="Item / style"
+                        onChange={(v) => setDraft(po.id, { itemStyleNo: v })}
                       />
                     ) : (
-                      <span
-                        className={cn(
-                          'field-value font-mono text-sm',
-                          current ? 'text-text-primary' : 'text-text-muted',
-                        )}
-                      >
-                        {current ?? '—'}
-                      </span>
+                      <StyleListDisplay
+                        value={current ?? ''}
+                        className={current ? 'text-text-primary' : undefined}
+                      />
                     )}
                   </td>
                   <td className={REVIEW_TD}>
-                    <span
-                      className={cn(
-                        'field-value font-mono text-sm',
-                        proposed ? 'font-medium text-ai-proposed' : 'text-text-muted',
-                      )}
-                    >
-                      {proposed ?? '—'}
-                    </span>
+                    <StyleListDisplay
+                      value={proposed ?? ''}
+                      className={proposed ? 'font-medium text-ai-proposed' : undefined}
+                    />
                   </td>
                   {canEdit && (
                     <td className="px-2 py-2">
