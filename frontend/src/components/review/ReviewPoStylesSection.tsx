@@ -1,9 +1,10 @@
 /**
- * Review POs & styles — same CRUD pattern as Shipment Detail PurchaseOrdersCard
- * so operators already know the flow: Edit → pencil / Add → inline Save/Cancel.
+ * Review POs & styles.
+ * Edit mode is the same card-level blue Edit / Done editing as the conflict table —
+ * one click edits fields and every PO row together (no second Edit on this strip).
  */
-import { useState, type ReactNode } from 'react'
-import { Check, Link2Off, Loader2, Pencil, Plus, X } from 'lucide-react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { Check, Link2Off, Loader2, Plus, X } from 'lucide-react'
 import type { LinkedPO } from '../../hooks/use-shipments'
 import {
   useCreatePurchaseOrder,
@@ -25,17 +26,12 @@ const inputCls =
   'w-full min-w-0 rounded-md border border-border bg-surface-700 px-2 py-1 font-mono text-sm text-text-primary placeholder:text-text-muted focus:border-cobalt-primary focus:outline-none'
 
 const HEADER_BTN =
-  'inline-flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors disabled:opacity-50'
-const HEADER_BTN_SOLID =
-  'bg-surface-700 text-text-secondary hover:bg-surface-600 hover:text-text-primary'
-const HEADER_BTN_BORDER =
-  'border border-border text-text-secondary hover:bg-surface-700 hover:text-text-primary'
+  'inline-flex items-center gap-1 rounded-lg border border-border px-2.5 py-1 text-xs font-medium text-text-secondary transition-colors hover:bg-surface-700 hover:text-text-primary disabled:opacity-50'
 
 function escapeRegExp(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
-/** Proposed style from review reasons — display-only reference column. */
 export function proposedStyleForPo(
   poNumber: string,
   reviewReasons: string[],
@@ -51,6 +47,19 @@ export function proposedStyleForPo(
   return null
 }
 
+type Draft = { poNumber: string; itemStyleNo: string }
+
+function draftsFromPos(pos: LinkedPO[]): Record<string, Draft> {
+  const out: Record<string, Draft> = {}
+  for (const p of pos) {
+    out[p.id] = {
+      poNumber: p.poNumber,
+      itemStyleNo: p.itemStyleNo?.trim() ?? '',
+    }
+  }
+  return out
+}
+
 interface RowForm {
   poNumber: string
   itemStyleNo: string
@@ -59,12 +68,11 @@ interface RowForm {
 export interface ReviewPoStylesSectionProps {
   shipmentId: string
   linkedPOs: LinkedPO[]
-  /** Customer on the shipment — used when adding a PO (same as detail card). */
   customerId?: string | null
   readOnly?: boolean
-  reviewReasons?: string[]
-  /** @deprecated Card-level edit no longer drives this strip; kept for call-site compatibility. */
+  /** Card-level Edit / Done editing — drives this whole strip. */
   editing?: boolean
+  reviewReasons?: string[]
 }
 
 export function ReviewPoStylesSection({
@@ -72,6 +80,7 @@ export function ReviewPoStylesSection({
   linkedPOs,
   customerId = null,
   readOnly = false,
+  editing = false,
   reviewReasons = [],
 }: ReviewPoStylesSectionProps) {
   const create = useCreatePurchaseOrder()
@@ -79,29 +88,85 @@ export function ReviewPoStylesSection({
   const unlink = useUnlinkShipmentFromPO()
   const link = useLinkShipmentToPO()
 
-  const [crudMode, setCrudMode] = useState(false)
+  const canEdit = editing && !readOnly
+  const [drafts, setDrafts] = useState<Record<string, Draft>>(() => draftsFromPos(linkedPOs))
   const [adding, setAdding] = useState(false)
-  const [editingId, setEditingId] = useState<string | null>(null)
   const [confirmUnlinkId, setConfirmUnlinkId] = useState<string | null>(null)
+
+  const prevEditing = useRef(false)
+  const draftsRef = useRef(drafts)
+  const linkedRef = useRef(linkedPOs)
+  draftsRef.current = drafts
+  linkedRef.current = linkedPOs
 
   const busy =
     create.isPending || update.isPending || unlink.isPending || link.isPending
 
-  const sorted = [...linkedPOs].sort((a, b) =>
-    a.poNumber.localeCompare(b.poNumber, undefined, { numeric: true }),
-  )
+  // View mode: stay synced with server. Edit mode: local drafts only.
+  useEffect(() => {
+    if (!canEdit) {
+      setDrafts(draftsFromPos(linkedPOs))
+      setAdding(false)
+      setConfirmUnlinkId(null)
+    }
+  }, [linkedPOs, canEdit])
 
-  const exitCrud = () => {
-    setCrudMode(false)
-    setAdding(false)
-    setEditingId(null)
-    setConfirmUnlinkId(null)
-  }
+  // Enter edit → seed drafts. Leave (Done editing) → save dirty POs.
+  useEffect(() => {
+    const was = prevEditing.current
+    prevEditing.current = canEdit
 
-  const startAdd = () => {
-    setAdding(true)
-    setEditingId(null)
-    setConfirmUnlinkId(null)
+    if (canEdit && !was) {
+      setDrafts(draftsFromPos(linkedRef.current))
+      setAdding(false)
+      setConfirmUnlinkId(null)
+      return
+    }
+
+    if (!canEdit && was) {
+      setAdding(false)
+      setConfirmUnlinkId(null)
+      const d = draftsRef.current
+      const pos = linkedRef.current
+      const saves: Promise<unknown>[] = []
+      for (const po of pos) {
+        const draft = d[po.id]
+        if (!draft) continue
+        const poNumber = draft.poNumber.trim()
+        if (!poNumber) {
+          toast.error(`PO# required (${po.poNumber})`)
+          continue
+        }
+        const itemStyleNo = draft.itemStyleNo.trim() || null
+        const patch: { id: string; poNumber?: string; itemStyleNo?: string | null } = {
+          id: po.id,
+        }
+        if (poNumber !== po.poNumber) patch.poNumber = poNumber
+        if ((itemStyleNo ?? '') !== (po.itemStyleNo?.trim() ?? '')) {
+          patch.itemStyleNo = itemStyleNo
+        }
+        if (patch.poNumber == null && !('itemStyleNo' in patch)) continue
+        saves.push(
+          update.mutateAsync(patch).catch(() => {
+            toast.error(`Couldn't save PO ${poNumber}`)
+          }),
+        )
+      }
+      if (saves.length > 0) {
+        void Promise.all(saves).then((results) => {
+          const ok = results.filter((r) => r !== undefined).length
+          if (ok > 0) toast(`Saved ${ok} PO${ok === 1 ? '' : 's'}`)
+        })
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canEdit])
+
+  const setDraft = (id: string, patch: Partial<Draft>) => {
+    setDrafts((prev) => ({
+      ...prev,
+      [id]: { ...(prev[id] ?? { poNumber: '', itemStyleNo: '' }), ...patch },
+    }))
   }
 
   const handleAdd = (f: RowForm) => {
@@ -133,23 +198,6 @@ export function ReviewPoStylesSection({
     )
   }
 
-  const handleEdit = (id: string, f: RowForm) => {
-    update.mutate(
-      {
-        id,
-        poNumber: f.poNumber.trim(),
-        itemStyleNo: f.itemStyleNo.trim() || null,
-      },
-      {
-        onSuccess: () => {
-          toast(`Updated PO ${f.poNumber.trim()}`)
-          setEditingId(null)
-        },
-        onError: () => toast.error('Update failed — please retry'),
-      },
-    )
-  }
-
   const handleUnlink = (po: LinkedPO) => {
     if (!po.linkId) {
       setConfirmUnlinkId(null)
@@ -167,7 +215,10 @@ export function ReviewPoStylesSection({
     )
   }
 
-  const colSpan = crudMode ? 4 : 3
+  const sorted = [...linkedPOs].sort((a, b) =>
+    a.poNumber.localeCompare(b.poNumber, undefined, { numeric: true }),
+  )
+  const colSpan = canEdit ? 4 : 3
 
   return (
     <section
@@ -175,48 +226,28 @@ export function ReviewPoStylesSection({
       data-testid="review-po-styles-section"
       aria-label="POs and styles"
     >
-      {/* Header row — same idea as PurchaseOrdersCard: title left, Edit / Done right */}
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border bg-surface-900/30 px-3 py-1.5">
         <h4 className={cn(REVIEW_GROUP_HEADER, 'px-0 py-0')}>
           POs & styles
           <span className="ml-2 font-normal normal-case tracking-normal">
             ({sorted.length} {sorted.length === 1 ? 'PO' : 'POs'})
+            {canEdit ? ' — editing' : ''}
           </span>
         </h4>
-        {!readOnly && (
-          <div className="flex shrink-0 items-center gap-1.5">
-            {crudMode ? (
-              <>
-                <button
-                  type="button"
-                  onClick={startAdd}
-                  disabled={busy}
-                  className={cn(HEADER_BTN, HEADER_BTN_BORDER)}
-                  data-testid="review-po-add"
-                >
-                  <Plus size={13} /> Add PO
-                </button>
-                <button
-                  type="button"
-                  onClick={exitCrud}
-                  disabled={busy}
-                  className={cn(HEADER_BTN, HEADER_BTN_SOLID)}
-                  data-testid="review-po-crud-done"
-                >
-                  <X size={13} /> Done
-                </button>
-              </>
-            ) : (
-              <button
-                type="button"
-                onClick={() => setCrudMode(true)}
-                className={cn(HEADER_BTN, HEADER_BTN_SOLID)}
-                data-testid="review-po-crud-edit"
-              >
-                <Pencil size={13} /> Edit
-              </button>
-            )}
-          </div>
+        {/* Only Add while page is already in Edit — no second Edit button */}
+        {canEdit && (
+          <button
+            type="button"
+            onClick={() => {
+              setAdding(true)
+              setConfirmUnlinkId(null)
+            }}
+            disabled={busy}
+            className={HEADER_BTN}
+            data-testid="review-po-add"
+          >
+            <Plus size={13} /> Add PO
+          </button>
         )}
       </div>
 
@@ -227,34 +258,22 @@ export function ReviewPoStylesSection({
               <th className={cn(REVIEW_COL.label, REVIEW_TH)}>PO#</th>
               <th className={cn(REVIEW_COL.existing, REVIEW_TH)}>Current style</th>
               <th className={cn(REVIEW_COL.proposed, REVIEW_TH)}>From email / AI</th>
-              {crudMode && <th className="w-px px-2 py-2" />}
+              {canEdit && <th className="w-px px-2 py-2" />}
             </tr>
           </thead>
           <tbody>
-            {crudMode && adding && (
-              <EditableRow
-                busy={busy}
-                onCancel={() => setAdding(false)}
-                onSave={handleAdd}
-              />
+            {canEdit && adding && (
+              <AddRow busy={busy} onCancel={() => setAdding(false)} onSave={handleAdd} />
             )}
             {sorted.map((po) => {
               const proposed = proposedStyleForPo(po.poNumber, reviewReasons)
+              const draft = drafts[po.id] ?? {
+                poNumber: po.poNumber,
+                itemStyleNo: po.itemStyleNo?.trim() ?? '',
+              }
               const current = po.itemStyleNo?.trim() || null
 
-              if (crudMode && editingId === po.id) {
-                return (
-                  <EditableRow
-                    key={po.id}
-                    po={po}
-                    busy={busy}
-                    onCancel={() => setEditingId(null)}
-                    onSave={(f) => handleEdit(po.id, f)}
-                  />
-                )
-              }
-
-              if (crudMode && confirmUnlinkId === po.id) {
+              if (canEdit && confirmUnlinkId === po.id) {
                 return (
                   <tr
                     key={po.id}
@@ -291,18 +310,44 @@ export function ReviewPoStylesSection({
                 <tr
                   key={po.id}
                   data-testid={`review-po-row-${po.id}`}
-                  className="border-b border-border last:border-0 transition-colors hover:bg-surface-700/50"
+                  className="border-b border-border last:border-0 align-top"
                 >
-                  <td className={cn(REVIEW_TD, 'font-mono text-sm text-cobalt-primary-light')}>
-                    <a
-                      href={`/purchase-orders/${po.id}`}
-                      className="field-value hover:underline"
-                    >
-                      {po.poNumber}
-                    </a>
+                  <td className={cn(REVIEW_TD, 'text-xs font-medium text-text-primary')}>
+                    {canEdit ? (
+                      <input
+                        className={inputCls}
+                        value={draft.poNumber}
+                        onChange={(e) => setDraft(po.id, { poNumber: e.target.value })}
+                        aria-label={`PO number for ${po.poNumber}`}
+                      />
+                    ) : (
+                      <a
+                        href={`/purchase-orders/${po.id}`}
+                        className="font-mono text-xs font-medium text-cobalt-primary-light hover:underline"
+                      >
+                        {po.poNumber}
+                      </a>
+                    )}
                   </td>
-                  <td className={cn(REVIEW_TD, 'font-mono text-sm text-text-secondary')}>
-                    <span className="field-value">{current ?? '—'}</span>
+                  <td className={REVIEW_TD}>
+                    {canEdit ? (
+                      <input
+                        className={inputCls}
+                        value={draft.itemStyleNo}
+                        onChange={(e) => setDraft(po.id, { itemStyleNo: e.target.value })}
+                        aria-label={`Style for PO ${po.poNumber}`}
+                        placeholder="Item / style"
+                      />
+                    ) : (
+                      <span
+                        className={cn(
+                          'field-value font-mono text-sm',
+                          current ? 'text-text-primary' : 'text-text-muted',
+                        )}
+                      >
+                        {current ?? '—'}
+                      </span>
+                    )}
                   </td>
                   <td className={REVIEW_TD}>
                     <span
@@ -314,46 +359,29 @@ export function ReviewPoStylesSection({
                       {proposed ?? '—'}
                     </span>
                   </td>
-                  {crudMode && (
+                  {canEdit && (
                     <td className="px-2 py-2">
-                      <div className="flex items-center justify-end gap-0.5">
-                        <IconBtn
-                          title="Edit PO"
-                          disabled={busy}
-                          onClick={() => {
-                            setEditingId(po.id)
-                            setAdding(false)
-                            setConfirmUnlinkId(null)
-                          }}
-                        >
-                          <Pencil size={14} />
-                        </IconBtn>
-                        {po.linkId && (
+                      {po.linkId && (
+                        <div className="flex justify-end">
                           <IconBtn
                             title="Remove from this shipment"
                             disabled={busy}
-                            onClick={() => {
-                              setConfirmUnlinkId(po.id)
-                              setEditingId(null)
-                              setAdding(false)
-                            }}
+                            onClick={() => setConfirmUnlinkId(po.id)}
                           >
                             <Link2Off size={14} />
                           </IconBtn>
-                        )}
-                      </div>
+                        </div>
+                      )}
                     </td>
                   )}
                 </tr>
               )
             })}
-            {sorted.length === 0 && !(crudMode && adding) && (
+            {sorted.length === 0 && !(canEdit && adding) && (
               <tr>
-                <td
-                  colSpan={colSpan}
-                  className="px-3 py-4 text-center text-xs text-text-muted"
-                >
+                <td colSpan={colSpan} className="px-3 py-4 text-center text-xs text-text-muted">
                   No POs on this shipment yet.
+                  {canEdit ? ' Use Add PO above.' : ' Click Edit to add POs.'}
                 </td>
               </tr>
             )}
@@ -389,31 +417,22 @@ function IconBtn({
   )
 }
 
-/** Same inline add/edit row as PurchaseOrdersCard — PO# + Item/Style + Save/Cancel. */
-function EditableRow({
-  po,
+function AddRow({
   onSave,
   onCancel,
   busy,
 }: {
-  po?: LinkedPO
   onSave: (f: RowForm) => void
   onCancel: () => void
   busy: boolean
 }) {
-  const [f, setF] = useState<RowForm>({
-    poNumber: po?.poNumber ?? '',
-    itemStyleNo: po?.itemStyleNo ?? '',
-  })
+  const [f, setF] = useState<RowForm>({ poNumber: '', itemStyleNo: '' })
   const canSave = f.poNumber.trim().length > 0 && !busy
   const set = (k: keyof RowForm) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setF({ ...f, [k]: e.target.value })
 
   return (
-    <tr
-      className="border-b border-border bg-surface-900/40"
-      data-testid={po ? `review-po-edit-${po.id}` : 'review-po-add-row'}
-    >
+    <tr className="border-b border-border bg-surface-900/40" data-testid="review-po-add-row">
       <td className="px-3 py-2">
         <input
           autoFocus
@@ -421,7 +440,7 @@ function EditableRow({
           placeholder="PO number"
           value={f.poNumber}
           onChange={set('poNumber')}
-          aria-label={po ? `PO number for ${po.poNumber}` : 'New PO number'}
+          aria-label="New PO number"
         />
       </td>
       <td className="px-3 py-2">
@@ -430,7 +449,7 @@ function EditableRow({
           placeholder="Item / style"
           value={f.itemStyleNo}
           onChange={set('itemStyleNo')}
-          aria-label={po ? `Style for PO ${po.poNumber}` : 'New item / style'}
+          aria-label="New item / style"
         />
       </td>
       <td className="px-3 py-2 text-xs text-text-muted">—</td>

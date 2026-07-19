@@ -8,23 +8,25 @@ import {
 import type { LinkedPO } from '../../hooks/use-shipments'
 
 const createMutate = vi.fn()
-const updateMutate = vi.fn()
+const updateMutateAsync = vi.fn()
 const unlinkMutate = vi.fn()
 const linkMutate = vi.fn()
 const toastMock = vi.fn()
 toastMock.error = vi.fn()
-toastMock.success = vi.fn()
 
 vi.mock('../../hooks/use-purchase-orders', () => ({
   useCreatePurchaseOrder: () => ({ mutate: createMutate, isPending: false }),
-  useUpdatePurchaseOrder: () => ({ mutate: updateMutate, isPending: false }),
+  useUpdatePurchaseOrder: () => ({
+    mutate: vi.fn(),
+    mutateAsync: updateMutateAsync,
+    isPending: false,
+  }),
   useUnlinkShipmentFromPO: () => ({ mutate: unlinkMutate, isPending: false }),
   useLinkShipmentToPO: () => ({ mutate: linkMutate, isPending: false }),
 }))
 
 vi.mock('../ui/Toast', () => ({
   toast: Object.assign((msg: string) => toastMock(msg), {
-    success: (msg: string) => toastMock.success(msg),
     error: (msg: string) => toastMock.error(msg),
   }),
 }))
@@ -47,7 +49,7 @@ function renderSection(
     linkedPOs?: LinkedPO[]
     reviewReasons?: string[]
     readOnly?: boolean
-    customerId?: string | null
+    editing?: boolean
   } = {},
 ) {
   return render(
@@ -56,17 +58,19 @@ function renderSection(
       linkedPOs={over.linkedPOs ?? [po()]}
       reviewReasons={over.reviewReasons}
       readOnly={over.readOnly}
-      customerId={over.customerId ?? 'c1'}
+      editing={over.editing}
+      customerId="c1"
     />,
   )
 }
 
 beforeEach(() => {
   vi.clearAllMocks()
+  updateMutateAsync.mockResolvedValue({})
 })
 
 describe('proposedStyleForPo', () => {
-  it('extracts kept style from a PO-scoped item/style reason', () => {
+  it('extracts kept style', () => {
     expect(
       proposedStyleForPo('6495962', [
         'PO 6495962: item/style "OLD" vs "NEW" (kept NEW-STYLE)',
@@ -75,80 +79,76 @@ describe('proposedStyleForPo', () => {
   })
 })
 
-describe('ReviewPoStylesSection — detail-like CRUD', () => {
-  it('view mode: PO + style, no action icons until Edit', () => {
+describe('ReviewPoStylesSection — page-level Edit', () => {
+  it('view: values only, no section Edit button', () => {
     renderSection()
     expect(screen.getByText('6495962')).toBeInTheDocument()
     expect(screen.getByText('263121585')).toBeInTheDocument()
-    expect(screen.getByTestId('review-po-crud-edit')).toBeInTheDocument()
-    expect(screen.queryByTitle('Edit PO')).not.toBeInTheDocument()
-  })
-
-  it('hides CRUD when readOnly', () => {
-    renderSection({ readOnly: true })
     expect(screen.queryByTestId('review-po-crud-edit')).not.toBeInTheDocument()
+    expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
   })
 
-  it('Edit enters CRUD mode with pencil and unlink icons', async () => {
-    const user = userEvent.setup()
-    renderSection()
-    await user.click(screen.getByTestId('review-po-crud-edit'))
-    expect(screen.getByTestId('review-po-crud-done')).toBeInTheDocument()
+  it('card Edit: all rows become inputs at once', () => {
+    renderSection({
+      editing: true,
+      linkedPOs: [
+        po({ id: 'po1', poNumber: 'A', itemStyleNo: '1' }),
+        po({ id: 'po2', poNumber: 'B', itemStyleNo: '2' }),
+      ],
+    })
+    expect(screen.getAllByRole('textbox', { name: /po number/i })).toHaveLength(2)
+    expect(screen.getAllByRole('textbox', { name: /style for po/i })).toHaveLength(2)
     expect(screen.getByTestId('review-po-add')).toBeInTheDocument()
-    expect(screen.getByTitle('Edit PO')).toBeInTheDocument()
-    expect(screen.getByTitle('Remove from this shipment')).toBeInTheDocument()
   })
 
-  it('pencil opens inline edit; Save patches PO# and style', async () => {
+  it('Done editing flushes dirty PO drafts', async () => {
     const user = userEvent.setup()
-    renderSection()
-    await user.click(screen.getByTestId('review-po-crud-edit'))
-    await user.click(screen.getByTitle('Edit PO'))
-    const row = screen.getByTestId('review-po-edit-po1')
-    const poInput = within(row).getByRole('textbox', { name: /po number/i })
-    const styleInput = within(row).getByRole('textbox', { name: /style for po/i })
-    await user.clear(poInput)
-    await user.type(poInput, '99999')
-    await user.clear(styleInput)
-    await user.type(styleInput, 'STYLE-X')
-    await user.click(within(row).getByTitle('Save'))
-    expect(updateMutate).toHaveBeenCalledWith(
-      expect.objectContaining({ id: 'po1', poNumber: '99999', itemStyleNo: 'STYLE-X' }),
-      expect.anything(),
+    const { rerender } = renderSection({ editing: true })
+    await user.clear(screen.getByRole('textbox', { name: /po number/i }))
+    await user.type(screen.getByRole('textbox', { name: /po number/i }), '99999')
+    await user.clear(screen.getByRole('textbox', { name: /style for po/i }))
+    await user.type(screen.getByRole('textbox', { name: /style for po/i }), 'STY')
+
+    rerender(
+      <ReviewPoStylesSection
+        shipmentId="ship-1"
+        linkedPOs={[po()]}
+        editing={false}
+        customerId="c1"
+      />,
     )
+
+    await vi.waitFor(() => {
+      expect(updateMutateAsync).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 'po1', poNumber: '99999', itemStyleNo: 'STY' }),
+      )
+    })
   })
 
-  it('Add PO creates and links', async () => {
+  it('Add PO while editing', async () => {
     const user = userEvent.setup()
-    createMutate.mockImplementation((_body: unknown, opts: { onSuccess?: (v: unknown) => void }) => {
-      opts.onSuccess?.({ id: 'po-new' })
+    createMutate.mockImplementation((_b: unknown, o: { onSuccess?: (v: unknown) => void }) => {
+      o.onSuccess?.({ id: 'po-new' })
     })
-    linkMutate.mockImplementation((_body: unknown, opts: { onSuccess?: () => void }) => {
-      opts.onSuccess?.()
+    linkMutate.mockImplementation((_b: unknown, o: { onSuccess?: () => void }) => {
+      o.onSuccess?.()
     })
-    renderSection()
-    await user.click(screen.getByTestId('review-po-crud-edit'))
+    renderSection({ editing: true })
     await user.click(screen.getByTestId('review-po-add'))
-    const addRow = screen.getByTestId('review-po-add-row')
-    await user.type(within(addRow).getByPlaceholderText('PO number'), '88888')
-    await user.type(within(addRow).getByPlaceholderText('Item / style'), 'STY-8')
-    await user.click(within(addRow).getByTitle('Save'))
+    const add = screen.getByTestId('review-po-add-row')
+    await user.type(within(add).getByLabelText(/new po number/i), '888')
+    await user.type(within(add).getByLabelText(/new item/i), 'S8')
+    await user.click(within(add).getByTitle('Save'))
     expect(createMutate).toHaveBeenCalledWith(
-      expect.objectContaining({ poNumber: '88888', itemStyleNo: 'STY-8', customerId: 'c1' }),
-      expect.anything(),
-    )
-    expect(linkMutate).toHaveBeenCalledWith(
-      expect.objectContaining({ poId: 'po-new', shipmentId: 'ship-1' }),
+      expect.objectContaining({ poNumber: '888', itemStyleNo: 'S8' }),
       expect.anything(),
     )
   })
 
-  it('unlink confirms then unlinks', async () => {
+  it('unlink while editing', async () => {
     const user = userEvent.setup()
-    renderSection()
-    await user.click(screen.getByTestId('review-po-crud-edit'))
+    renderSection({ editing: true })
     await user.click(screen.getByTitle('Remove from this shipment'))
-    expect(screen.getByTestId('review-po-unlink-confirm-po1')).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: /^confirm$/i }))
     expect(unlinkMutate).toHaveBeenCalledWith(
       { poId: 'po1', linkId: 'l1' },
@@ -156,10 +156,8 @@ describe('ReviewPoStylesSection — detail-like CRUD', () => {
     )
   })
 
-  it('shows proposed style as read-only reference', () => {
-    renderSection({
-      reviewReasons: ['PO 6495962: item/style "OLD" vs "NEW" (kept NEW-STYLE)'],
-    })
-    expect(screen.getByText('NEW-STYLE')).toBeInTheDocument()
+  it('readOnly ignores editing', () => {
+    renderSection({ editing: true, readOnly: true })
+    expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
   })
 })

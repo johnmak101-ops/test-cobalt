@@ -608,7 +608,8 @@ export function ReviewCard({
 
           {/* Only mount when there are POs to review — empty strip was a second empty table competing
               with the conflict grid. Detail with zero POs still has the full shipment PO card. */}
-          {linkedPOs.length > 0 && (
+          {/* Always show when we have POs, or while editing so Add PO is reachable with zero POs */}
+          {(linkedPOs.length > 0 || (editing && !readOnly)) && (
             <ReviewPoStylesSection
               shipmentId={shipment.id}
               linkedPOs={linkedPOs}
@@ -619,6 +620,7 @@ export function ReviewCard({
               }
               reviewReasons={reviewReasons}
               readOnly={readOnly}
+              editing={editing && !readOnly}
             />
           )}
 
