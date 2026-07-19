@@ -8,6 +8,7 @@ export interface CreatePoInput {
   poNumber: string
   customerId?: string | null
   vendorId?: string | null
+  itemStyleNo?: string | null
   totalQuantity?: number | null
   quantityUnit?: string | null
   notes?: string | null
@@ -50,6 +51,7 @@ export class PurchaseOrdersService {
       poNumber,
       customerId: input.customerId ?? null,
       vendorId: input.vendorId ?? null,
+      itemStyleNo: input.itemStyleNo ?? null,
       totalQuantity: input.totalQuantity ?? null,
       quantityUnit: quantityUnit as never,
       notes: input.notes ?? null,

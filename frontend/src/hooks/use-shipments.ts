@@ -4,6 +4,8 @@ import type { CriticReview } from '../lib/critic-review'
 
 export interface LinkedPO {
   id: string
+  /** shipment_pos.id — present for shipment-linked POs; used to unlink from this shipment. */
+  linkId?: string | null
   poNumber: string
   quantity: number | null
   totalQuantity: number | null

@@ -358,7 +358,7 @@ export class ShipmentRepository {
         'purchaseOrders.totalQuantity as totalQuantity', 'purchaseOrders.quantityUnit as quantityUnit',
         'purchaseOrders.itemStyleNo as itemStyleNo', 'purchaseOrders.brand as brand',
         'vendors.name as vendorName',
-        'shipmentPos.quantity as legQty', 'shipmentPos.quantityUnit as legQtyUnit',
+        'shipmentPos.id as linkId', 'shipmentPos.quantity as legQty', 'shipmentPos.quantityUnit as legQtyUnit',
       ])
       .execute()
   }

@@ -7,6 +7,7 @@ import { Card } from '../components/ui/Card'
 import { MilestoneTimeline } from '../components/shipments/MilestoneTimeline'
 import { CategorizedShipmentHistory } from '../components/shipments/CategorizedShipmentHistory'
 import { ContestedLockCard } from '../components/shipments/ContestedLockCard'
+import { PurchaseOrdersCard } from '../components/shipments/PurchaseOrdersCard'
 import { FieldHistoryContext, FieldHistoryPopover } from '../components/shipments/FieldHistoryPopover'
 import { indexHistoryByField, historyForField } from '../lib/history-grouping'
 import { AlertCard } from '../components/alerts/AlertCard'
@@ -15,7 +16,7 @@ import { buildNeedsAttentionGroups, looksLikeLocode } from '../components/review
 import { EDITABLE_FIELDS, fieldLabel, numericFieldWarn, dateOrderWarn, type EditableField } from '../lib/review-fields'
 import { toast } from '../components/ui/Toast'
 import { interactiveProps } from '../lib/interactive'
-import { ArrowLeft, Mail, Clock, ClipboardList, Package, Ship, Calendar, AlertTriangle, AlertCircle, Info, Pencil, Check, X, NotebookPen, ChevronDown, ChevronRight } from 'lucide-react'
+import { ArrowLeft, Mail, Clock, ClipboardList, Package, Ship, Calendar, AlertTriangle, AlertCircle, Info, Pencil, Check, X, NotebookPen } from 'lucide-react'
 
 // The human-editable leg fields, grouped like the read-only card. `db` = the backend column the PATCH writes
 // (+ locks + audits); `get` reads the current value off the loaded shipment (whose UI names differ from db).
@@ -135,8 +136,6 @@ export default function ShipmentDetailPage() {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState<Record<string, string>>({})
   const [note, setNote] = useState('')
-  // P5 table-truth: PO table collapsed by default (header still shows count + shipment total)
-  const [posExpanded, setPosExpanded] = useState(false)
 
   if (isLoading) {
     return (
@@ -155,10 +154,6 @@ export default function ShipmentDetailPage() {
   }
 
   const linkedPOs = shipment.linkedPOs ?? []
-  // PO table below is shown in ascending PO# order (numeric-aware); [0] reads keep source order.
-  const sortedLinkedPOs = [...linkedPOs].sort((a, b) =>
-    a.poNumber.localeCompare(b.poNumber, undefined, { numeric: true }),
-  )
   // Date of the most recent related email — the old "Email Date" showed the DB row's createdAt,
   // which is ingest time (e.g. a reparse date), not when any email actually arrived.
   const lastEmailAt =
@@ -417,71 +412,14 @@ export default function ShipmentDetailPage() {
         />
       </Card>
 
-      {/* Linked POs card — collapsed by default (P5); expand to browse PO# + style. */}
-      {linkedPOs.length > 0 && (
-        <Card>
-          <button
-            type="button"
-            onClick={() => setPosExpanded((v) => !v)}
-            className="mb-0 flex w-full flex-wrap items-center justify-between gap-2 text-left"
-            data-testid="pos-card-toggle"
-            aria-expanded={posExpanded}
-          >
-            <div className="flex items-center gap-2">
-              {posExpanded ? (
-                <ChevronDown size={14} className="text-text-muted" />
-              ) : (
-                <ChevronRight size={14} className="text-text-muted" />
-              )}
-              <Package size={14} className="text-text-muted" />
-              <h4 className="text-sm font-semibold text-text-primary">
-                Customer Purchase Orders
-                <span className="ml-2 text-xs font-normal text-text-muted">
-                  · {linkedPOs.length} PO{linkedPOs.length !== 1 ? 's' : ''}
-                  {(linkedPOs[0]?.sharedBroadcastTotal != null || shipment.quantityShipped != null) && (
-                    <>
-                      {' '}
-                      · shipment total{' '}
-                      <span className="font-medium text-text-secondary">
-                        {linkedPOs[0]?.sharedBroadcastTotal ?? shipment.quantityShipped}
-                        {(linkedPOs[0]?.sharedBroadcastUnit ?? shipment.quantityUnit)
-                          ? ` ${linkedPOs[0]?.sharedBroadcastUnit ?? shipment.quantityUnit}`
-                          : ''}
-                      </span>
-                    </>
-                  )}
-                </span>
-              </h4>
-            </div>
-          </button>
-          {posExpanded && (
-            <div className="mt-3 overflow-x-auto overflow-y-hidden rounded-lg border border-border" data-testid="pos-card-table">
-              <table className="w-full min-w-[20rem]">
-                <thead>
-                  <tr className="border-b border-border bg-surface-900/50">
-                    <th className="px-3 py-2 text-left text-[11px] font-medium text-text-muted">Customer PO#</th>
-                    <th className="px-3 py-2 text-left text-[11px] font-medium text-text-muted">Item / Style</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {sortedLinkedPOs.map((po) => (
-                    <tr
-                      key={po.id}
-                      {...interactiveProps(() => navigate(`/purchase-orders/${po.id}`, { state: { fromShipment: id } }))}
-                      className="cursor-pointer border-b border-border last:border-0 transition-colors hover:bg-surface-700"
-                    >
-                      <td className="px-3 py-2 font-mono text-sm text-cobalt-primary-light">{po.poNumber}</td>
-                      <td className="px-3 py-2 font-mono text-sm text-text-secondary">
-                        {po.itemStyleNo?.trim() ? po.itemStyleNo : '—'}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </Card>
-      )}
+      {/* Customer Purchase Orders — full CRUD (add / edit / unlink / delete). */}
+      <PurchaseOrdersCard
+        shipmentId={id!}
+        customerId={shipment.customer?.id ?? null}
+        linkedPOs={linkedPOs}
+        shipmentQty={shipment.quantityShipped ?? null}
+        shipmentQtyUnit={shipment.quantityUnit ?? null}
+      />
 
       {/* A newer email overrode a human edit — prompt to keep the new value or restore the edit. */}
       {(shipment.contestedLocks?.length ?? 0) > 0 && (
@@ -532,32 +470,6 @@ export default function ShipmentDetailPage() {
         </div>
         {editing ? (
           <>
-            <p className="mb-3 text-xs text-text-muted">
-              Fill anything the AI missed. Your edit takes priority — but if a later email brings a
-              different value, we apply the newer value and flag it above, so you can keep it or restore
-              your edit. Every change is logged in Change History.
-            </p>
-            <div
-              className="mb-4 rounded-lg border border-border bg-surface-900/50 px-3 py-2.5 text-xs text-text-muted"
-              data-testid="edit-scope-note"
-            >
-              <p className="font-medium text-text-secondary">What this form covers</p>
-              <ul className="mt-1.5 list-disc space-y-0.5 pl-4">
-                <li>
-                  <span className="text-text-secondary">Here:</span> booking/SO, cargo,{' '}
-                  <span className="text-text-secondary">mode / POL / POD / forwarder</span> (free text),
-                  consignee, vessel/voyage, key dates.
-                </li>
-                <li>
-                  <span className="text-text-secondary">Not free-text here:</span> customer and vendor codes
-                  (master links — shown read-only above).
-                </li>
-                <li>
-                  <span className="text-text-secondary">POs and item/style:</span> edit on the{' '}
-                  <span className="text-text-secondary">Customer Purchase Orders</span> card above this section.
-                </li>
-              </ul>
-            </div>
             <div className="grid grid-cols-1 gap-x-8 gap-y-6 md:grid-cols-2">
               {EDIT_SECTIONS.map((sec) => (
                 <DetailSection key={sec.title} title={sec.title} icon={<ClipboardList size={14} className="text-text-muted" />}>

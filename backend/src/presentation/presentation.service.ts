@@ -49,6 +49,9 @@ type LinkedPoRow = {
   itemStyleNo?: string | null
   brand?: string | null
   vendorName: string | null
+  /** shipment_pos.id — present only for shipment-linked POs (absent on the booking fallback); the UI
+   *  unlinks a PO from this shipment by this id. */
+  linkId?: string | null
 }
 
 interface MasterMaps {
@@ -187,6 +190,7 @@ export class PresentationService {
           const issue = poQtyIssue(ctx)
           return {
             id: p.id,
+            linkId: p.linkId ?? null,
             poNumber: p.poNumber,
             totalQuantity: poTotal,
             quantityUnit: p.quantityUnit ?? p.legUnit ?? leg.qtyUnit ?? null,

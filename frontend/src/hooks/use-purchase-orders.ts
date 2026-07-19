@@ -80,12 +80,14 @@ export function useCreatePurchaseOrder() {
       poNumber: string
       customerId?: string
       vendorId?: string
+      itemStyleNo?: string | null
       totalQuantity?: number
       quantityUnit?: string
       notes?: string
     }) => api.post('/purchase-orders', data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['purchase-orders'] })
+      queryClient.invalidateQueries({ queryKey: ['shipment'] }) // refetch the open shipment detail (PO card)
     },
   })
 }
@@ -98,6 +100,7 @@ export function useUpdatePurchaseOrder() {
       api.patch(`/purchase-orders/${id}`, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['purchase-orders'] })
+      queryClient.invalidateQueries({ queryKey: ['shipment'] }) // refetch the open shipment detail (PO card)
       queryClient.invalidateQueries({ queryKey: ['purchase-order'] })
     },
   })
@@ -110,6 +113,7 @@ export function useDeletePurchaseOrder() {
     mutationFn: (id: string) => api.delete(`/purchase-orders/${id}`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['purchase-orders'] })
+      queryClient.invalidateQueries({ queryKey: ['shipment'] }) // refetch the open shipment detail (PO card)
     },
   })
 }
@@ -129,6 +133,7 @@ export function useLinkShipmentToPO() {
     }) => api.post(`/purchase-orders/${poId}/link-shipment`, { shipmentId, quantity }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['purchase-orders'] })
+      queryClient.invalidateQueries({ queryKey: ['shipment'] }) // refetch the open shipment detail (PO card)
       queryClient.invalidateQueries({ queryKey: ['purchase-order'] })
       queryClient.invalidateQueries({ queryKey: ['shipments'] })
     },
@@ -143,6 +148,7 @@ export function useUnlinkShipmentFromPO() {
       api.delete(`/purchase-orders/${poId}/link-shipment/${linkId}`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['purchase-orders'] })
+      queryClient.invalidateQueries({ queryKey: ['shipment'] }) // refetch the open shipment detail (PO card)
       queryClient.invalidateQueries({ queryKey: ['purchase-order'] })
       queryClient.invalidateQueries({ queryKey: ['shipments'] })
     },
