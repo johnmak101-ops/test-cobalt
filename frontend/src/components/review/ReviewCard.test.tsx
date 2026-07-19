@@ -708,7 +708,6 @@ describe('embedded in the queue table — the row above already states identity'
           defaultExpanded
           embedded
           onApprove={vi.fn()}
-          onDismiss={vi.fn()}
           onSaveAndApprove={vi.fn()}
         />
       </MemoryRouter>,
@@ -723,8 +722,8 @@ describe('embedded in the queue table — the row above already states identity'
     expect(screen.getByTestId('why-review')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /approve 2 changes/i })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /keep existing/i })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /not shipment/i })).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /^dismiss$/i })).toBeNull()
+    // Not shipment is Documents-only (unlinked docs). Review queue has no dismiss path.
+    expect(screen.queryByRole('button', { name: /not shipment/i })).toBeNull()
   })
 
   it('Keep Existing confirms without applying AI Proposed field changes', async () => {

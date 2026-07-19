@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { CheckCircle, ChevronDown, ChevronRight, ExternalLink, Loader2, Mail, NotebookPen, Pencil, Save, XCircle } from 'lucide-react'
+import { CheckCircle, ChevronDown, ChevronRight, ExternalLink, Loader2, Mail, NotebookPen, Pencil, Save } from 'lucide-react'
 import { Badge } from '../ui/Badge'
 import {
   ConflictRow,
@@ -99,7 +99,6 @@ export interface ReviewCardProps {
   readOnly?: boolean
   onSaveAndApprove?: (payload: ReviewCardSavePayload) => Promise<void>
   onApprove?: () => Promise<void>
-  onDismiss?: () => Promise<void>
   /** Zero-identity flow: type booking/SO/B/L and detect if it already exists elsewhere. */
   onIdentify?: (field: string, value: string) => Promise<IdentifyResult>
   /** Zero-identity flow: fold this provisional into an existing shipment that carries the typed key. */
@@ -168,7 +167,6 @@ export function ReviewCard({
   readOnly = false,
   onSaveAndApprove,
   onApprove,
-  onDismiss,
   onIdentify,
   onLink,
 }: ReviewCardProps) {
@@ -388,11 +386,6 @@ export function ReviewCard({
     void run(() => onApprove())
   }
 
-  const handleDismiss = () => {
-    if (!onDismiss || busy || readOnly) return
-    void run(() => onDismiss())
-  }
-
   return (
     <div className={cn('min-w-0 max-w-full', embedded ? undefined : 'rounded-xl border border-border bg-surface-800')}>
       {/* Collapsed identity row (§2.1) — suppressed when embedded: the queue row states it already. */}
@@ -446,18 +439,6 @@ export function ReviewCard({
               >
                 {busy ? <Loader2 size={13} className="animate-spin" /> : <CheckCircle size={13} />}
                 Keep Existing
-              </button>
-            )}
-            {onDismiss && (
-              <button
-                type="button"
-                onClick={handleDismiss}
-                disabled={busy}
-                title="Not a trackable shipment — document / noise only"
-                className={cn(ACTION_BTN, ACTION_VARIANT.danger)}
-              >
-                {busy ? <Loader2 size={13} className="animate-spin" /> : <XCircle size={13} />}
-                Not shipment
               </button>
             )}
           </div>
@@ -763,18 +744,6 @@ export function ReviewCard({
                   >
                     <Pencil size={13} />
                     {editing ? 'Done editing' : 'Edit'}
-                  </button>
-                )}
-                {onDismiss && (
-                  <button
-                    type="button"
-                    onClick={handleDismiss}
-                    disabled={busy}
-                    title="Not a trackable shipment — document / noise only"
-                    className={cn(ACTION_BTN, ACTION_VARIANT.danger)}
-                  >
-                    {busy ? <Loader2 size={13} className="animate-spin" /> : <XCircle size={13} />}
-                    Not shipment
                   </button>
                 )}
                 {onApprove && changeCount > 0 && (

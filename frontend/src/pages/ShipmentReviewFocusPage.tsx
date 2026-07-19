@@ -6,7 +6,6 @@ import { useShipment } from '../hooks/use-shipments'
 import {
   useConfirmShipment,
   useCorrectShipment,
-  useDismissShipments,
   useIdentifyShipment,
   useLinkShipment,
   isStaleConflict,
@@ -22,8 +21,8 @@ import { toast } from '../components/ui/Toast'
  *
  * The shipment detail page's "see conflict table" and "Review & approve" CTAs land here instead of
  * dumping the operator on the queue's landing page (where the row was often paginated out or below
- * the fold). It reuses the queue's presentational ReviewCard — the conflict table + Keep Existing / Approve / Not shipment /
- * Save — so there is still ONE conflict UI. The approve/correct/dismiss wiring mirrors the queue's
+ * the fold). It reuses the queue's presentational ReviewCard — the conflict table + Keep Existing /
+ * Approve — so there is still ONE conflict UI. The approve/correct wiring mirrors the queue's
  * ExpandedReviewPanel + saveAndApproveFor in ReviewQueuePage.tsx; keep the two in step.
  */
 export default function ShipmentReviewFocusPage() {
@@ -40,7 +39,6 @@ export default function ShipmentReviewFocusPage() {
 
   const confirmMutation = useConfirmShipment()
   const correctMutation = useCorrectShipment()
-  const dismissMutation = useDismissShipments()
   const identifyMutation = useIdentifyShipment()
   const linkMutation = useLinkShipment()
 
@@ -98,17 +96,6 @@ export default function ShipmentReviewFocusPage() {
       })
       toast('Shipment approved')
       navigate(backToShipment)
-    } catch (err) {
-      await handleStale(err)
-    }
-  }
-
-  const onDismiss = async () => {
-    setStaleBanner(null)
-    try {
-      await dismissMutation.mutateAsync({ shipmentIds: [shipment.id] })
-      toast('Marked Not shipment — document/noise, not trackable')
-      navigate('/review-queue')
     } catch (err) {
       await handleStale(err)
     }
@@ -209,7 +196,6 @@ export default function ShipmentReviewFocusPage() {
           embedded
           readOnly={readOnly}
           onApprove={readOnly ? undefined : onApprove}
-          onDismiss={readOnly ? undefined : onDismiss}
           onSaveAndApprove={readOnly ? undefined : onSaveAndApprove}
           onIdentify={
             readOnly
