@@ -614,6 +614,7 @@ export function ReviewCard({
               linkedPOs={linkedPOs}
               reviewReasons={reviewReasons}
               readOnly={readOnly}
+              editing={editing && !readOnly}
             />
           )}
 

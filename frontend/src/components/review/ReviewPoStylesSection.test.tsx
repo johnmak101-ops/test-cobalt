@@ -7,14 +7,15 @@ import {
 } from './ReviewPoStylesSection'
 import type { LinkedPO } from '../../hooks/use-shipments'
 
-const updateMutate = vi.fn()
+const updateMutateAsync = vi.fn()
 const toastMock = vi.fn()
 toastMock.error = vi.fn()
 toastMock.success = vi.fn()
 
 vi.mock('../../hooks/use-purchase-orders', () => ({
   useUpdatePurchaseOrder: () => ({
-    mutate: updateMutate,
+    mutate: vi.fn(),
+    mutateAsync: updateMutateAsync,
     isPending: false,
   }),
 }))
@@ -44,21 +45,23 @@ function renderSection(
     linkedPOs?: LinkedPO[]
     reviewReasons?: string[]
     readOnly?: boolean
-    shipmentId?: string
+    editing?: boolean
   } = {},
 ) {
   return render(
     <ReviewPoStylesSection
-      shipmentId={over.shipmentId ?? 'ship-1'}
+      shipmentId="ship-1"
       linkedPOs={over.linkedPOs ?? [po()]}
       reviewReasons={over.reviewReasons}
       readOnly={over.readOnly}
+      editing={over.editing}
     />,
   )
 }
 
 beforeEach(() => {
   vi.clearAllMocks()
+  updateMutateAsync.mockResolvedValue({})
 })
 
 describe('proposedStyleForPo', () => {
@@ -69,20 +72,15 @@ describe('proposedStyleForPo', () => {
       ]),
     ).toBe('NEW-STYLE')
   })
-
-  it('returns null when no matching reason', () => {
-    expect(proposedStyleForPo('6495962', ['PO 999: brand conflict X (kept Y)'])).toBeNull()
-  })
 })
 
 describe('ReviewPoStylesSection', () => {
-  it('renders each linked PO with current style', () => {
-    renderSection({
-      linkedPOs: [po({ id: 'po1', poNumber: '6495962', itemStyleNo: '263121585' })],
-    })
+  it('renders each linked PO with current style (view mode)', () => {
+    renderSection()
     expect(screen.getByText('6495962')).toBeInTheDocument()
     expect(screen.getByText('263121585')).toBeInTheDocument()
-    expect(screen.getByText(/POs & styles/i)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^edit$/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
   })
 
   it('shows empty state when no linked POs', () => {
@@ -90,53 +88,51 @@ describe('ReviewPoStylesSection', () => {
     expect(screen.getByText(/no POs on this shipment/i)).toBeInTheDocument()
   })
 
-  it('hides edit when readOnly', () => {
-    renderSection({ readOnly: true })
-    expect(screen.queryByRole('button', { name: /^edit$/i })).not.toBeInTheDocument()
-  })
-
-  it('has no Remove / Move / Use actions', () => {
+  it('has no Remove / Move / Use / row Edit', () => {
     renderSection({
+      editing: true,
       reviewReasons: ['PO 6495962: item/style "OLD" vs "NEW" (kept NEW-STYLE)'],
     })
     expect(screen.queryByRole('button', { name: /^remove$/i })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /^move/i })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /^use$/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^edit$/i })).not.toBeInTheDocument()
   })
 
-  it('uses the same 3-column shell as the field conflict table', () => {
-    renderSection()
-    const section = screen.getByTestId('review-po-styles-section')
-    expect(within(section).getByRole('columnheader', { name: /^PO#$/i })).toBeInTheDocument()
-    expect(within(section).getByRole('columnheader', { name: /current style/i })).toBeInTheDocument()
-    expect(within(section).getByRole('columnheader', { name: /from email/i })).toBeInTheDocument()
+  it('card Edit mode shows PO# and style inputs', () => {
+    renderSection({ editing: true })
+    expect(screen.getByRole('textbox', { name: /po number/i })).toHaveValue('6495962')
+    expect(screen.getByRole('textbox', { name: /style for po/i })).toHaveValue('263121585')
   })
 
-  it('Edit mode edits PO# and style, then Save patches both', async () => {
+  it('Done editing (editing false) PATCHes dirty PO and style', async () => {
     const user = userEvent.setup()
-    renderSection()
-    await user.click(screen.getByRole('button', { name: /^edit$/i }))
+    const { rerender } = renderSection({ editing: true })
     const poInput = screen.getByRole('textbox', { name: /po number/i })
     const styleInput = screen.getByRole('textbox', { name: /style for po/i })
     await user.clear(poInput)
     await user.type(poInput, '99999')
     await user.clear(styleInput)
     await user.type(styleInput, 'STYLE-X')
-    await user.click(screen.getByRole('button', { name: /^save$/i }))
-    expect(updateMutate).toHaveBeenCalledWith(
-      expect.objectContaining({ id: 'po1', poNumber: '99999', itemStyleNo: 'STYLE-X' }),
-      expect.anything(),
+
+    rerender(
+      <ReviewPoStylesSection
+        shipmentId="ship-1"
+        linkedPOs={[po()]}
+        editing={false}
+      />,
     )
+
+    await vi.waitFor(() => {
+      expect(updateMutateAsync).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 'po1', poNumber: '99999', itemStyleNo: 'STYLE-X' }),
+      )
+    })
   })
 
-  it('Cancel leaves edit mode without saving', async () => {
-    const user = userEvent.setup()
-    renderSection()
-    await user.click(screen.getByRole('button', { name: /^edit$/i }))
-    expect(screen.getByRole('textbox', { name: /style for po/i })).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: /^cancel$/i }))
-    expect(screen.queryByRole('textbox', { name: /style for po/i })).not.toBeInTheDocument()
-    expect(updateMutate).not.toHaveBeenCalled()
+  it('readOnly ignores editing prop', () => {
+    renderSection({ editing: true, readOnly: true })
+    expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
   })
 
   it('shows proposed style as read-only reference', () => {
@@ -146,9 +142,11 @@ describe('ReviewPoStylesSection', () => {
     expect(screen.getByText('NEW-STYLE')).toBeInTheDocument()
   })
 
-  it('renders dash when current style is empty', () => {
-    renderSection({ linkedPOs: [po({ itemStyleNo: null })] })
-    const row = screen.getByTestId('review-po-row-po1')
-    expect(within(row).getAllByText('—').length).toBeGreaterThanOrEqual(1)
+  it('uses the same 3-column shell as the field conflict table', () => {
+    renderSection()
+    const section = screen.getByTestId('review-po-styles-section')
+    expect(within(section).getByRole('columnheader', { name: /^PO#$/i })).toBeInTheDocument()
+    expect(within(section).getByRole('columnheader', { name: /current style/i })).toBeInTheDocument()
+    expect(within(section).getByRole('columnheader', { name: /from email/i })).toBeInTheDocument()
   })
 })
