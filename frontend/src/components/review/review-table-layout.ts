@@ -52,3 +52,21 @@ export const REVIEW_HEAD = {
   existing: 'Current',
   proposed: 'From email / AI',
 } as const
+
+/**
+ * Shared status-panel shell for Needs attention + Critical for sailing.
+ * Same padding / radius / list rhythm so the two cards stack as one column.
+ */
+export const REVIEW_PANEL =
+  'rounded-lg border border-border bg-surface-900 px-3 py-2.5'
+
+export const REVIEW_PANEL_CRITICAL =
+  'rounded-lg border border-status-warning/35 bg-status-warning/5 px-3 py-2.5'
+
+/** Bullet list under a status panel (same left edge on both cards). */
+export const REVIEW_PANEL_LIST = 'mt-1.5 space-y-1'
+
+export const REVIEW_PANEL_ITEM =
+  'flex min-w-0 items-start gap-2 text-sm leading-snug text-text-secondary'
+
+export const REVIEW_PANEL_DOT = 'mt-1.5 inline-block h-1.5 w-1.5 shrink-0 rounded-full'

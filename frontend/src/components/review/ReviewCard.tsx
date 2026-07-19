@@ -36,6 +36,10 @@ import {
   REVIEW_COL,
   REVIEW_GROUP_HEADER,
   REVIEW_HEAD,
+  REVIEW_PANEL,
+  REVIEW_PANEL_DOT,
+  REVIEW_PANEL_ITEM,
+  REVIEW_PANEL_LIST,
   REVIEW_TABLE_CLASS,
   REVIEW_TH,
 } from './review-table-layout'
@@ -550,15 +554,14 @@ export function ReviewCard({
           {needsAttentionGroups.length > 0 && (
             <div
               className={cn(
-                'rounded-lg bg-surface-900 px-3 py-2',
-                editing && 'border-l-2 border-status-warning bg-status-warning/5',
+                REVIEW_PANEL,
+                editing && 'border-status-warning/40 bg-status-warning/5',
               )}
               data-testid="needs-attention"
               data-editing={editing ? 'true' : 'false'}
             >
-              {/* data-testid why-review kept for legacy tests */}
+              {/* data-testid why-review kept for legacy tests — same shell as Critical band */}
               <div data-testid="why-review">
-                {/* meta (12) kicker · body (14) lines — below Critical title (16) */}
                 <p className="text-xs font-medium leading-tight text-text-muted">Needs attention</p>
                 <div className="mt-1.5 space-y-2">
                   {needsAttentionGroups.map((g) => (
@@ -566,16 +569,16 @@ export function ReviewCard({
                       <p className="text-xs font-semibold leading-tight text-text-secondary">
                         {g.title}
                       </p>
-                      <ul className="mt-1 space-y-1">
+                      <ul className={REVIEW_PANEL_LIST}>
                         {g.items.map((r) => (
                           <li
                             key={r.key}
-                            className="flex items-start gap-1.5 text-sm leading-snug text-text-secondary"
+                            className={REVIEW_PANEL_ITEM}
                             title={r.evidence?.join(' · ') || undefined}
                           >
                             <span
                               className={cn(
-                                'mt-1.5 inline-block h-1.5 w-1.5 shrink-0 rounded-full',
+                                REVIEW_PANEL_DOT,
                                 r.severity === 'high'
                                   ? 'bg-status-critical'
                                   : r.severity === 'medium'
