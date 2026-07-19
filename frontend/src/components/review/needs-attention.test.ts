@@ -5,6 +5,7 @@ import {
   GROUP_TITLE,
   looksLikeCountryToken,
   countryOnlyPortMissText,
+  weakIdentityText,
 } from './needs-attention'
 
 describe('buildNeedsAttention / groups', () => {
@@ -250,6 +251,7 @@ describe('buildNeedsAttention / groups', () => {
       ],
       reviewReasons: [],
     })
+    expect(items[0]!.text).toBe(weakIdentityText(false))
     expect(items[0]!.text).toBe('No booking, SO, B/L, or PO — cannot place this email')
     expect(items[0]!.text).not.toMatch(/strong/i)
   })
@@ -320,6 +322,74 @@ describe('buildNeedsAttention / groups', () => {
       reviewReasons: spam,
     })
     expect(groups.some((g) => g.groupId === 'master_miss')).toBe(true)
+  })
+})
+
+describe('weakIdentityText', () => {
+  it('splits by PO presence', () => {
+    expect(weakIdentityText(true)).toBe(
+      'Only PO known — add booking, SO, or B/L to place this email',
+    )
+    expect(weakIdentityText(false)).toBe(
+      'No booking, SO, B/L, or PO — cannot place this email',
+    )
+  })
+})
+
+describe('buildNeedsAttention WEAK_IDENTITY hasPo', () => {
+  it('uses only-PO copy when hasPo true', () => {
+    const items = buildNeedsAttention({
+      conflictsCount: 0,
+      hasPo: true,
+      riskFlags: [
+        {
+          code: 'WEAK_IDENTITY',
+          severity: 'medium',
+          message: 'No strong booking/SO/B/L identity',
+        },
+      ],
+      reviewReasons: [],
+    })
+    expect(items[0]!.lineId).toBe('r-no-id')
+    expect(items[0]!.text).toBe(
+      'Only PO known — add booking, SO, or B/L to place this email',
+    )
+    expect(items[0]!.text).not.toMatch(/or PO|cannot place/i)
+  })
+
+  it('keeps no-PO copy when hasPo false or omitted', () => {
+    const flag = {
+      code: 'WEAK_IDENTITY',
+      severity: 'medium' as const,
+      message: 'No strong booking/SO/B/L identity and no PO',
+    }
+    for (const opts of [{ hasPo: false }, {}]) {
+      const items = buildNeedsAttention({
+        conflictsCount: 0,
+        ...opts,
+        riskFlags: [flag],
+        reviewReasons: [],
+      })
+      expect(items[0]!.text).toBe(
+        'No booking, SO, B/L, or PO — cannot place this email',
+      )
+    }
+  })
+
+  it('rewrites reason-path r-no-id when hasPo', () => {
+    const items = buildNeedsAttention({
+      conflictsCount: 0,
+      hasPo: true,
+      riskFlags: [],
+      reviewReasons: ['neither a strong identity key nor a PO'],
+    })
+    // If reason still maps to r-no-id, text must honor hasPo (PO known on card wins over stale reason text)
+    const hit = items.find((i) => i.lineId === 'r-no-id')
+    if (hit) {
+      expect(hit.text).toBe(
+        'Only PO known — add booking, SO, or B/L to place this email',
+      )
+    }
   })
 })
 

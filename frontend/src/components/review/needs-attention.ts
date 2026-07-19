@@ -220,7 +220,7 @@ function lineFromFlag(code: string, message: string): LineHit | null {
     case 'WEAK_IDENTITY':
       return {
         lineId: 'r-no-id',
-        text: 'No booking, SO, B/L, or PO — cannot place this email',
+        text: weakIdentityText(false),
         category: 'no_identity',
       }
     case 'BACKEND_CONFLICT': {
@@ -365,7 +365,7 @@ function lineFromReason(raw: string, humanized: string): LineHit | null {
     }
     return {
       lineId: 'r-no-id',
-      text: 'No booking, SO, B/L, or PO — cannot place this email',
+      text: weakIdentityText(false),
       category: 'no_identity',
     }
   }
@@ -876,6 +876,13 @@ function isPortMissLine(hit: { lineId: string; text: string }): boolean {
   )
 }
 
+/** Weak-identity Needs attention copy — split by whether a PO is known on the card. */
+export function weakIdentityText(hasPo: boolean): string {
+  return hasPo
+    ? 'Only PO known — add booking, SO, or B/L to place this email'
+    : 'No booking, SO, B/L, or PO — cannot place this email'
+}
+
 /**
  * Flat list of unique short lines (no cap). Prefer {@link buildNeedsAttentionGroups} for UI.
  */
@@ -889,6 +896,8 @@ export function buildNeedsAttention(opts: {
    * (e.g. "Port VIETNAM" / "Ho Chi Minh City" after pod=VNSGN).
    */
   portsLinked?: { pol?: boolean; pod?: boolean } | null
+  /** When true, r-no-id uses only-PO copy (card has linked PO numbers). Default false. */
+  hasPo?: boolean
 }): NeedsAttentionItem[] {
   const tableOwnsConflicts = opts.conflictsCount > 0
   const dropPortMiss = !!(opts.portsLinked?.pol || opts.portsLinked?.pod)
@@ -907,11 +916,12 @@ export function buildNeedsAttention(opts: {
     if (!hit) continue
     if (hit.category === 'conflict' && tableOwnsConflicts) continue
     if (dropPortMiss && isPortMissLine(hit)) continue
+    const text = hit.lineId === 'r-no-id' ? weakIdentityText(!!opts.hasPo) : hit.text
     pushUnique(byLine, {
       key: `flag-${f.code}-${i}`,
       lineId: hit.lineId,
       severity: (f.severity as 'low' | 'medium' | 'high') || 'medium',
-      text: hit.text,
+      text,
       category: hit.category,
       groupId: categoryToGroup(hit.category),
       evidence: hit.evidence,
@@ -935,11 +945,12 @@ export function buildNeedsAttention(opts: {
         if (already && !/^m-(port|party):/.test(hit.lineId)) continue
       }
     }
+    const lineText = hit.lineId === 'r-no-id' ? weakIdentityText(!!opts.hasPo) : hit.text
     pushUnique(byLine, {
       key: `reason-${raw}`,
       lineId: hit.lineId,
       severity: 'medium',
-      text: hit.text,
+      text: lineText,
       category: hit.category,
       groupId: categoryToGroup(hit.category),
       evidence: hit.evidence,
@@ -962,6 +973,8 @@ export function buildNeedsAttentionGroups(opts: {
   reviewReasons?: string[] | null
   conflictsCount: number
   portsLinked?: { pol?: boolean; pod?: boolean } | null
+  /** When true, r-no-id uses only-PO copy (card has linked PO numbers). Default false. */
+  hasPo?: boolean
 }): NeedsAttentionGroup[] {
   const items = buildNeedsAttention(opts)
   const byGroup = new Map<NeedsAttentionGroupId, NeedsAttentionItem[]>()
