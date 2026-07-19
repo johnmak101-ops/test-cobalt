@@ -68,6 +68,26 @@ describe('criticalConflicts', () => {
     ])
     expect(items[0]?.column).toBe('soNo')
   })
+
+  it('accepts crd and actual_departure critic aliases', () => {
+    const items = criticalConflicts([
+      {
+        field: 'crd',
+        candidates: [
+          { value: '2026-07-01', source: 'System' },
+          { value: '2026-07-02', source: 'SO' },
+        ],
+      },
+      {
+        field: 'actual_departure',
+        candidates: [
+          { value: '2026-07-10', source: 'System' },
+          { value: '2026-07-11', source: 'SO' },
+        ],
+      },
+    ])
+    expect(items.map((i) => i.column)).toEqual(['cargoReadyDate', 'atd'])
+  })
 })
 
 describe('isCriticalColumn', () => {

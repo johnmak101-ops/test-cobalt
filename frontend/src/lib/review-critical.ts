@@ -26,6 +26,25 @@ export type CriticalItem =
 const CRITICAL_SET = new Set<string>(CRITICAL_COLUMNS)
 
 /**
+ * Critic conflict.field aliases that mapCriticFieldToColumn may miss (uiKey / snake variants).
+ * Keep local so criticalConflicts stays correct without expanding the global correct-DTO map.
+ */
+const CONFLICT_FIELD_TO_CRITICAL: Record<string, CriticalColumn> = {
+  booking_no: 'bookingNo',
+  bookingNo: 'bookingNo',
+  so_no: 'soNo',
+  soNo: 'soNo',
+  soNumber: 'soNo',
+  crd: 'cargoReadyDate',
+  cargo_ready_date: 'cargoReadyDate',
+  cargoReadyDate: 'cargoReadyDate',
+  etd: 'etd',
+  atd: 'atd',
+  actual_departure: 'atd',
+  actualDeparture: 'atd',
+}
+
+/**
  * Live property names that may hold a critical column value on queue-shaped or detail-shaped
  * shipment objects (uiKey + common aliases). Order = first hit wins.
  */
@@ -35,6 +54,15 @@ const LIVE_KEYS: Record<CriticalColumn, readonly string[]> = {
   cargoReadyDate: ['crd', 'cargoReadyDate'],
   etd: ['etd'],
   atd: ['actualDeparture', 'atd'],
+}
+
+function resolveCriticalColumn(field: string): CriticalColumn | null {
+  if (!field) return null
+  if (CONFLICT_FIELD_TO_CRITICAL[field]) return CONFLICT_FIELD_TO_CRITICAL[field]!
+  const camel = field.replace(/_([a-z0-9])/g, (_, c: string) => c.toUpperCase())
+  if (CONFLICT_FIELD_TO_CRITICAL[camel]) return CONFLICT_FIELD_TO_CRITICAL[camel]!
+  const mapped = mapCriticFieldToColumn(field)
+  return mapped && isCriticalColumn(mapped) ? (mapped as CriticalColumn) : null
 }
 
 function isSystemSource(source: string): boolean {
@@ -99,9 +127,8 @@ export function criticalConflicts(
 ): CriticalItem[] {
   const out: CriticalItem[] = []
   for (const c of conflicts ?? []) {
-    const col = mapCriticFieldToColumn(c.field)
-    if (!col || !isCriticalColumn(col)) continue
-    const column = col as CriticalColumn
+    const column = resolveCriticalColumn(c.field)
+    if (!column) continue
     const candidates = c.candidates ?? []
     const system = candidates.find((x) => isSystemSource(x.source))
     const nonSystem = candidates.find((x) => !isSystemSource(x.source))
