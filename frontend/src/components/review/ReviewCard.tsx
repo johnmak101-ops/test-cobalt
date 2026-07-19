@@ -565,7 +565,7 @@ export function ReviewCard({
                         {g.items.map((r) => (
                           <li
                             key={r.key}
-                            className="flex items-start gap-1.5 text-xs text-text-secondary"
+                            className="flex items-start gap-1.5 text-sm text-text-secondary"
                             title={r.evidence?.join(' · ') || undefined}
                           >
                             <span

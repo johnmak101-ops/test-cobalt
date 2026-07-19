@@ -49,9 +49,9 @@ export function CriticalSailingBand({
           return (
             <li
               key={item.kind === 'conflict' ? `conflict:${item.field}` : `missing:${item.column}`}
-              className="flex items-start gap-1.5 text-xs text-text-secondary"
+              className="flex items-start gap-1.5 text-sm text-text-secondary"
             >
-              <span className="mt-1 inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-status-warning" />
+              <span className="mt-1.5 inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-status-warning" />
               <div className="min-w-0 flex-1">
                 <span className="font-medium text-text-primary">{name}</span>
                 {item.kind === 'missing' ? (
@@ -74,11 +74,11 @@ export function CriticalSailingBand({
                       />
                     )
                   ) : (
-                    <p className="text-text-muted">Not set</p>
+                    <p className="text-sm text-text-muted">Not set</p>
                   )
                 ) : (
                   <div>
-                    <p className="font-mono text-text-secondary">{item.summary}</p>
+                    <p className="font-mono text-sm text-text-secondary">{item.summary}</p>
                     <p className="text-[10px] text-text-muted">Resolve in field conflicts below</p>
                   </div>
                 )}

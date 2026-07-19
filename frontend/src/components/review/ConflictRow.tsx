@@ -118,7 +118,7 @@ export function ConflictRow({
 
   return (
     <tr className="border-b border-border last:border-0 align-top">
-      <td className="px-3 py-2.5 text-xs font-medium text-text-primary">
+      <td className="px-3 py-2.5 text-sm font-medium text-text-primary">
         <span className="inline-flex flex-wrap items-center gap-1.5">
           <span title={conflict.rationale}>{label}</span>
           {critical && (
@@ -164,7 +164,7 @@ export function ConflictRow({
             </span>
           )
         ) : (
-          <span className="text-text-muted">—</span>
+          <span className="font-mono text-sm text-text-muted">—</span>
         )}
       </td>
       <td className="min-w-0 max-w-0 overflow-hidden px-3 py-2.5">
@@ -196,7 +196,7 @@ export function ConflictRow({
             </div>
           ) : (
             <div className="min-w-0 space-y-1">
-              <span className="text-text-muted">—</span>
+              <span className="font-mono text-sm text-text-muted">—</span>
               {canCopyAll && (
                 <button
                   type="button"
@@ -256,7 +256,7 @@ export function ConflictRow({
             </span>
           </span>
         ) : (
-          <span className="text-text-muted">—</span>
+          <span className="font-mono text-sm text-text-muted">—</span>
         )}
       </td>
     </tr>
@@ -267,7 +267,10 @@ export function ConflictRow({
  *  Long lists scroll inside a max-height box so they cannot blow out the review card. */
 export function StyleListDisplay({ value, className }: { value: string; className?: string }) {
   const rows = parseStyleEntries(value)
-  if (rows.length === 0) return <span className="text-text-muted">—</span>
+  // Always set text-sm — bare "—" used to inherit body 16px and look larger than real values.
+  if (rows.length === 0) {
+    return <span className="font-mono text-sm text-text-muted">—</span>
+  }
   return (
     <div className="min-w-0 max-w-full" data-testid="style-list-display">
       <div className="max-h-40 overflow-y-auto overscroll-contain pr-1">
