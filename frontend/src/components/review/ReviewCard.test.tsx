@@ -8,6 +8,7 @@ import type { ReviewShipment } from '../../hooks/use-review-queue'
 import type { LinkedPO } from '../../hooks/use-shipments'
 
 vi.mock('../../hooks/use-purchase-orders', () => ({
+  useCreatePurchaseOrder: () => ({ mutate: vi.fn(), isPending: false }),
   useUpdatePurchaseOrder: () => ({ mutate: vi.fn(), isPending: false }),
   useUnlinkShipmentFromPO: () => ({
     mutate: vi.fn(),

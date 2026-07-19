@@ -612,9 +612,13 @@ export function ReviewCard({
             <ReviewPoStylesSection
               shipmentId={shipment.id}
               linkedPOs={linkedPOs}
+              customerId={
+                (shipment as { customerId?: string | null }).customerId ??
+                (shipment as { customer?: { id?: string } | null }).customer?.id ??
+                null
+              }
               reviewReasons={reviewReasons}
               readOnly={readOnly}
-              editing={editing && !readOnly}
             />
           )}
 
