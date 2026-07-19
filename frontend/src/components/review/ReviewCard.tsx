@@ -187,6 +187,7 @@ export function ReviewCard({
 }: ReviewCardProps) {
   const [expanded, setExpanded] = useState(defaultExpanded)
   const [note, setNote] = useState('')
+  const [emailsOpen, setEmailsOpen] = useState(false) // Source emails: collapsed by default, kept at the bottom
   const [busy, setBusy] = useState(false)
   const isWeakIdentity = (criticReview?.riskFlags ?? []).some((f) => f.code === 'WEAK_IDENTITY')
   const isAmbiguousMatch = (criticReview?.riskFlags ?? []).some((f) => f.code === 'AMBIGUOUS_MATCH')
@@ -479,56 +480,6 @@ export function ReviewCard({
             </div>
           )}
 
-          {/* Source emails — resolving a conflict means reading what the email actually said, so the
-              row has to answer "which email is this, and is it the latest?". Same shape as Related
-              Emails on the shipment page, minus the type tag: it read 'Other' on every chip, and the
-              timestamp is what actually tells the reviewer which statement supersedes which. */}
-          {emails.length > 0 && (
-            <div className="space-y-2" data-testid="source-emails">
-              <p className="text-[11px] font-medium text-text-muted">Source emails</p>
-              {sortedEmails.map((e) => {
-                const openable = e.id != null && !e.bodyMissing
-                return (
-                  <button
-                    key={e.id ?? `orphan-${e.subject}-${e.receivedAt ?? ''}-${e.sender ?? ''}`}
-                    type="button"
-                    onClick={() => openEmailWindow(e)}
-                    disabled={!openable}
-                    aria-label={
-                      openable
-                        ? `Open source email: ${e.subject || '(no subject)'}`
-                        : `Email body not stored: ${e.subject || '(no subject)'}`
-                    }
-                    title={openable ? undefined : 'Email body is not in the store (link only)'}
-                    className={
-                      openable
-                        ? 'flex w-full items-center gap-3 rounded-lg bg-surface-900 p-3 text-left transition-colors hover:bg-surface-700'
-                        : 'flex w-full cursor-default items-center gap-3 rounded-lg bg-surface-900/60 p-3 text-left opacity-80'
-                    }
-                  >
-                    <Mail size={14} className="shrink-0 text-text-muted" />
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm text-text-primary">{e.subject || '(no subject)'}</p>
-                      <p className="text-xs text-text-muted">
-                        {!openable
-                          ? 'Body not stored — re-ingest to open'
-                          : (
-                              <>
-                                {e.sender} ·{' '}
-                                <span className="font-mono">{formatDateTime(e.receivedAt)}</span>
-                              </>
-                            )}
-                      </p>
-                    </div>
-                    {openable && (
-                      <ExternalLink size={12} className="shrink-0 text-text-muted opacity-60" />
-                    )}
-                  </button>
-                )
-              })}
-            </div>
-          )}
-
           {needsAttentionGroups.length > 0 && (
             <div
               className={cn(
@@ -718,6 +669,74 @@ export function ReviewCard({
                   </tbody>
                 ))}
               </table>
+            </div>
+          )}
+
+          {/* Source emails — reference material, collapsed by default and kept at the bottom so the
+              conflict + attention content leads. Expand to read what each email actually said. */}
+          {emails.length > 0 && (
+            <div className="rounded-lg border border-border" data-testid="source-emails">
+              <button
+                type="button"
+                onClick={() => setEmailsOpen((v) => !v)}
+                aria-expanded={emailsOpen}
+                className="flex w-full items-center gap-2 px-3 py-2.5 text-left transition-colors hover:bg-surface-700/40"
+              >
+                {emailsOpen ? (
+                  <ChevronDown size={14} className="shrink-0 text-text-muted" />
+                ) : (
+                  <ChevronRight size={14} className="shrink-0 text-text-muted" />
+                )}
+                <Mail size={14} className="shrink-0 text-text-muted" />
+                <h4 className="text-sm font-semibold text-text-primary">
+                  Source emails
+                  <span className="ml-2 text-xs font-normal text-text-muted">· {emails.length}</span>
+                </h4>
+              </button>
+              {emailsOpen && (
+                <div className="space-y-2 border-t border-border p-3" data-testid="source-emails-list">
+                  {sortedEmails.map((e) => {
+                    const openable = e.id != null && !e.bodyMissing
+                    return (
+                      <button
+                        key={e.id ?? `orphan-${e.subject}-${e.receivedAt ?? ''}-${e.sender ?? ''}`}
+                        type="button"
+                        onClick={() => openEmailWindow(e)}
+                        disabled={!openable}
+                        aria-label={
+                          openable
+                            ? `Open source email: ${e.subject || '(no subject)'}`
+                            : `Email body not stored: ${e.subject || '(no subject)'}`
+                        }
+                        title={openable ? undefined : 'Email body is not in the store (link only)'}
+                        className={
+                          openable
+                            ? 'flex w-full items-center gap-3 rounded-lg bg-surface-900 p-3 text-left transition-colors hover:bg-surface-700'
+                            : 'flex w-full cursor-default items-center gap-3 rounded-lg bg-surface-900/60 p-3 text-left opacity-80'
+                        }
+                      >
+                        <Mail size={14} className="shrink-0 text-text-muted" />
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm text-text-primary">{e.subject || '(no subject)'}</p>
+                          <p className="text-xs text-text-muted">
+                            {!openable
+                              ? 'Body not stored — re-ingest to open'
+                              : (
+                                  <>
+                                    {e.sender} ·{' '}
+                                    <span className="font-mono">{formatDateTime(e.receivedAt)}</span>
+                                  </>
+                                )}
+                          </p>
+                        </div>
+                        {openable && (
+                          <ExternalLink size={12} className="shrink-0 text-text-muted opacity-60" />
+                        )}
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
             </div>
           )}
 
