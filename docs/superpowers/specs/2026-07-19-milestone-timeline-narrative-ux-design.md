@@ -110,7 +110,9 @@ Not started · Next: Booking Request
 | Done, no date | `—` | **Done** (tooltip: “Implied complete; no email date on file”) |
 | Not done, has estimate | `Est. 26 Jul 2026` | **ETD 26 Jul 2026** (Departure) / **ETA …** if ever shown for arrival path |
 | Not done, no estimate | `Awaiting` | **Not yet** |
+| Done, no date (e.g. SAILED, no ATD) | `—` | **Done** — never show ETD/Est on a done stage |
 
+**Caption priority (eng lock):** actual date → **done wins** → estimate → not yet.  
 Do **not** invent estimates for Draft/Final BOL/Delivered.
 
 ### 3. Hierarchy
