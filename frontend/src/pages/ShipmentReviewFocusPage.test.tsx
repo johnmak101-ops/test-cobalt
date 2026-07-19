@@ -18,7 +18,6 @@ vi.mock('../hooks/use-shipments', () => ({ useShipment: mockUseShipment }))
 vi.mock('../hooks/use-review-queue', () => ({
   useConfirmShipment: () => ({ mutateAsync }),
   useCorrectShipment: () => ({ mutateAsync }),
-  useDismissShipments: () => ({ mutateAsync }),
   useIdentifyShipment: () => ({ mutateAsync }),
   useLinkShipment: () => ({ mutateAsync }),
   isStaleConflict: () => false,

@@ -1,12 +1,11 @@
 import { Fragment, useMemo, useReducer, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { CheckCircle, Ship, Package, Loader2, XCircle, RotateCcw } from 'lucide-react'
+import { CheckCircle, Ship, Package, Loader2, RotateCcw } from 'lucide-react'
 import {
   useReviewQueue,
   useReviewCounts,
   useConfirmShipment,
   useCorrectShipment,
-  useDismissShipments,
   useRestoreShipment,
   useIdentifyShipment,
   useLinkShipment,
@@ -30,12 +29,11 @@ import { mapCriticFieldsToColumns } from '../lib/review-fields'
 
 
 
-/** Filter / selection state that often transitions together (view switch clears category, page, selection). */
+/** Filter / expand state that often transitions together (view switch clears category, page). */
 type QueueUiState = {
   view: ReviewQueueView
   page: number
   category: ReasonCategory | 'all'
-  selected: Set<string>
   expandedId: string | null
   staleBanner: string | null
 }
@@ -46,10 +44,6 @@ type QueueUiAction =
   | { type: 'setPage'; page: number }
   | { type: 'setExpandedId'; id: string | null }
   | { type: 'setStaleBanner'; msg: string | null }
-  | { type: 'resetSelection' }
-  | { type: 'toggleRow'; id: string }
-  | { type: 'toggleAll'; ids: string[]; allSelected: boolean }
-  | { type: 'deselectRow'; id: string }
 
 function queueUiReducer(state: QueueUiState, action: QueueUiAction): QueueUiState {
   switch (action.type) {
@@ -58,37 +52,17 @@ function queueUiReducer(state: QueueUiState, action: QueueUiAction): QueueUiStat
         view: action.view,
         page: 1,
         category: 'all',
-        selected: new Set(),
         expandedId: null,
         staleBanner: null,
       }
     case 'pickCategory':
-      return { ...state, category: action.category, page: 1, selected: new Set() }
+      return { ...state, category: action.category, page: 1 }
     case 'setPage':
       return { ...state, page: action.page }
     case 'setExpandedId':
       return { ...state, expandedId: action.id }
     case 'setStaleBanner':
       return { ...state, staleBanner: action.msg }
-    case 'resetSelection':
-      return { ...state, selected: new Set() }
-    case 'toggleRow': {
-      const next = new Set(state.selected)
-      if (next.has(action.id)) next.delete(action.id)
-      else next.add(action.id)
-      return { ...state, selected: next }
-    }
-    case 'toggleAll':
-      return {
-        ...state,
-        selected: action.allSelected ? new Set() : new Set(action.ids),
-      }
-    case 'deselectRow': {
-      if (!state.selected.has(action.id)) return state
-      const next = new Set(state.selected)
-      next.delete(action.id)
-      return { ...state, selected: next }
-    }
     default:
       return state
   }
@@ -99,13 +73,11 @@ function ExpandedReviewPanel({
   row,
   readOnly,
   onApprove,
-  onDismiss,
   onSaveAndApprove,
 }: {
   row: ReviewShipment
   readOnly: boolean
   onApprove?: () => Promise<void>
-  onDismiss?: () => Promise<void>
   onSaveAndApprove?: (payload: {
     fields: Record<string, unknown>
     note: string
@@ -143,7 +115,6 @@ function ExpandedReviewPanel({
         embedded
         readOnly={readOnly}
         onApprove={onApprove}
-        onDismiss={onDismiss}
         onSaveAndApprove={onSaveAndApprove}
         onIdentify={!readOnly ? async (field, value) => identifyMutation.mutateAsync({ shipmentId: row.id, field, value }) : undefined}
         onLink={!readOnly ? async (targetShipmentId) => { await linkMutation.mutateAsync({ shipmentId: row.id, targetShipmentId }) } : undefined}
@@ -158,22 +129,19 @@ export default function ReviewQueuePage() {
     view: 'active' as ReviewQueueView,
     page: 1,
     category: 'all' as ReasonCategory | 'all',
-    selected: new Set<string>(),
     expandedId: (location.state as { expandId?: string } | null)?.expandId ?? null,
     staleBanner: null as string | null,
   })
-  const { view, page, category, selected, expandedId, staleBanner } = ui
+  const { view, page, category, expandedId, staleBanner } = ui
   const { data, isLoading, isError, refetch } = useReviewQueue(view)
   const { data: counts } = useReviewCounts()
   const confirmMutation = useConfirmShipment()
   const correctMutation = useCorrectShipment()
-  const dismissMutation = useDismissShipments()
   const restoreMutation = useRestoreShipment()
   const navigate = useNavigate()
 
   const [perPage, setPerPage] = useState(25)
   const [busyId, setBusyId] = useState<string | null>(null)
-  const [bulkNote, setBulkNote] = useState('')
 
   const shipments = useMemo(() => data?.shipments ?? [], [data?.shipments])
 
@@ -191,16 +159,11 @@ export default function ReviewQueuePage() {
   const { totalItems, totalPages, pageSize, getPage } = usePagination(filtered, perPage)
   const pageShipments = getPage(page)
 
-  const resetSelection = () => dispatch({ type: 'resetSelection' })
   const switchView = (v: ReviewQueueView) => dispatch({ type: 'switchView', view: v })
   const pickCategory = (c: ReasonCategory | 'all') => dispatch({ type: 'pickCategory', category: c })
   const setPage = (p: number) => dispatch({ type: 'setPage', page: p })
   const setExpandedId = (id: string | null) => dispatch({ type: 'setExpandedId', id })
   const setStaleBanner = (msg: string | null) => dispatch({ type: 'setStaleBanner', msg })
-  const toggleRow = (id: string) => dispatch({ type: 'toggleRow', id })
-  const allFilteredSelected = filtered.length > 0 && filtered.every((s) => selected.has(s.id))
-  const toggleAll = () =>
-    dispatch({ type: 'toggleAll', ids: filtered.map((s) => s.id), allSelected: allFilteredSelected })
 
   const handleStale = async (err: unknown) => {
     if (!isStaleConflict(err)) throw err
@@ -212,18 +175,6 @@ export default function ReviewQueuePage() {
   const handleRestore = (id: string) => {
     setBusyId(id)
     restoreMutation.mutate({ shipmentId: id }, { onSettled: () => setBusyId(null) })
-  }
-  const handleDismissSelected = () => {
-    if (selected.size === 0) return
-    dismissMutation.mutate(
-      { shipmentIds: [...selected], note: bulkNote },
-      {
-        onSuccess: () => {
-          resetSelection()
-          setBulkNote('')
-        },
-      },
-    )
   }
 
   const saveAndApproveFor = (s: ReviewShipment) => async (payload: {
@@ -281,12 +232,12 @@ export default function ReviewQueuePage() {
     }
   }
 
-  const anyMutating = confirmMutation.isPending || correctMutation.isPending || dismissMutation.isPending || restoreMutation.isPending
+  const anyMutating = confirmMutation.isPending || correctMutation.isPending || restoreMutation.isPending
   const isActiveView = view === 'active'
   const isRejectedView = view === 'rejected'
-  // Both views happen to be 6 wide: active = checkbox + band + customer + booking + route + status;
-  // rejected/approved = band + customer + booking + route + status + action (Restore / Open).
-  const colSpan = 6
+  // Active = band + customer + booking + route + status (5).
+  // Rejected/Approved = same + action (Restore / Open) (6).
+  const colSpan = isActiveView ? 5 : 6
 
   const emptyCopy = (): string => {
     if (isActiveView) {
@@ -294,7 +245,7 @@ export default function ReviewQueuePage() {
         ? 'No shipments awaiting review.'
         : `No active items in “${CATEGORY_LABEL[category as ReasonCategory]}”.`
     }
-    if (isRejectedView) return 'Nothing marked “Not shipment” yet.'
+    if (isRejectedView) return 'No rejected items.'
     return 'No approved critic-reviewed shipments yet.'
   }
 
@@ -375,35 +326,6 @@ export default function ReviewQueuePage() {
         })}
       </div>
 
-      {/* Bulk-dismiss bar (active view, ≥1 selected) */}
-      {isActiveView && selected.size > 0 && (
-        <div className="flex flex-wrap items-center gap-2 rounded-xl border border-border bg-surface-800 p-3">
-          <span className="text-xs font-medium text-text-primary">{selected.size} selected</span>
-          <input
-            value={bulkNote}
-            onChange={(e) => setBulkNote(e.target.value)}
-            placeholder="Optional note (e.g. portal echo — no carrier move)"
-            className="h-8 min-w-56 flex-1 rounded-lg border border-border bg-surface-900 px-3 text-xs text-text-primary placeholder:text-text-muted"
-          />
-          <button
-            type="button"
-            onClick={handleDismissSelected}
-            disabled={anyMutating}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-status-critical/15 px-3 py-1.5 text-xs font-medium text-status-critical transition-colors hover:bg-status-critical/25 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {dismissMutation.isPending ? <Loader2 size={13} className="animate-spin" /> : <XCircle size={13} />}
-            Not shipment · {selected.size}
-          </button>
-          <button
-            type="button"
-            onClick={resetSelection}
-            className="rounded-lg px-2 py-1.5 text-xs text-text-muted hover:text-text-primary"
-          >
-            Clear
-          </button>
-        </div>
-      )}
-
       {isLoading ? (
         <div className="flex h-64 items-center justify-center">
           <span className="text-sm text-text-muted">Loading review queue...</span>
@@ -420,17 +342,6 @@ export default function ReviewQueuePage() {
               <table className="w-full min-w-[40rem] table-fixed">
                 <thead>
                   <tr className="border-b border-border bg-surface-900/50">
-                    {isActiveView && (
-                      <th className="w-10 px-3 py-3 sm:px-4">
-                        <input
-                          type="checkbox"
-                          checked={allFilteredSelected}
-                          onChange={toggleAll}
-                          title="Select all filtered"
-                          className="h-3.5 w-3.5 accent-cobalt-primary"
-                        />
-                      </th>
-                    )}
                     {/* "Band" is our word for the low/medium/high split, not the reader's. The value
                         IS criticReview.confidence.band, and Badge already calls the variant
                         'confidence' — only this header still leaked the jargon. The wire/domain name
@@ -451,7 +362,7 @@ export default function ReviewQueuePage() {
                       Status
                     </th>
                     {/* Active rows carry no Action column: the row expands on click and the panel
-                        below owns Keep Existing / Approve / Not shipment. Rejected/Approved keep one — Restore and Open
+                        below owns Keep Existing / Approve. Rejected/Approved keep one — Restore and Open
                         have no equivalent inside the read-only panel. */}
                     {!isActiveView && (
                       <th className="w-[6.5rem] px-3 py-3 text-right text-xs font-medium text-text-muted sm:px-4">
@@ -484,18 +395,6 @@ export default function ReviewQueuePage() {
                           }}
                           className="cursor-pointer border-b border-border last:border-0 transition-colors hover:bg-surface-700/50"
                         >
-                          {isActiveView && (
-                            <td className="px-3 py-3 sm:px-4" onClick={(e) => e.stopPropagation()}>
-                              <input
-                                type="checkbox"
-                                aria-label={`Select ${s.bookingNo ?? s.soNo ?? 'shipment'}`}
-                                checked={selected.has(s.id)}
-                                onChange={() => toggleRow(s.id)}
-                                className="h-3.5 w-3.5 accent-cobalt-primary"
-                              />
-                            </td>
-                          )}
-
                           <td className="px-3 py-3 sm:px-4">
                             {band ? (
                               <Badge variant="confidence" value={band} />
@@ -594,17 +493,6 @@ export default function ReviewQueuePage() {
                                         } catch (err) {
                                           await handleStale(err)
                                         }
-                                      }
-                                    : undefined
-                                }
-                                onDismiss={
-                                  isActiveView
-                                    ? async () => {
-                                        await dismissMutation.mutateAsync({ shipmentIds: [s.id] })
-                                        // Drop it from the bulk selection too — this is now the only
-                                        // dismiss path, and a dismissed row must not linger in it.
-                                        dispatch({ type: 'deselectRow', id: s.id })
-                                        setExpandedId(null)
                                       }
                                     : undefined
                                 }
