@@ -19,7 +19,7 @@ const sourceIcons = {
   system: Settings,
 }
 
-const sourceLabels = {
+export const sourceLabels = {
   email: 'Email extraction',
   manual: 'Manual edit',
   system: 'System',
@@ -183,7 +183,7 @@ const DATE_FIELDS = new Set([
   'cfsCutoff', 'inDcDate', 'cfs_cutoff',
 ])
 
-function formatFieldValue(field: string, value: string | null): string {
+export function formatFieldValue(field: string, value: string | null): string {
   if (!value) return '(empty)'
 
   if (DATE_FIELDS.has(field)) {
