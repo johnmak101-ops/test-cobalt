@@ -84,6 +84,14 @@ html {
   -moz-osx-font-smoothing: grayscale;
 }
 
+/* Larger-text accessibility mode (users are mainly 40–60). Scales the root font RELATIVE to the
+   browser's own base size, so "normal" still honours a user's browser setting and "large" is a step
+   up from it. rem-based sizing (most text and spacing) grows with it. Tunable — raise the % for a
+   bigger step. */
+html[data-font-scale="large"] {
+  font-size: 115%;
+}
+
 body {
   background: var(--color-bg);
   color: var(--color-text-primary);

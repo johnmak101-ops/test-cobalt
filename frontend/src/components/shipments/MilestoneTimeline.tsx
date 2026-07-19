@@ -146,53 +146,8 @@ export function MilestoneTimeline({
     est: estDate(type),
   }))
 
-  if (horizontal) {
-    return (
-      <div className="flex items-stretch">
-        {stages.map((s) => (
-          <div key={s.type} className="flex flex-1 items-start">
-            <div className="flex w-full flex-col items-center">
-              <div
-                className={cn(
-                  'z-10 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border-2',
-                  s.isCurrent
-                    ? 'border-status-warning bg-status-warning/20 text-status-warning'
-                    : s.done
-                      ? 'border-cobalt-primary bg-cobalt-primary text-white'
-                      : s.isNext
-                        ? 'border-cobalt-primary bg-transparent'
-                        : 'border-border bg-transparent'
-                )}
-              >
-                {s.isCurrent ? transitIcon : s.done && <Check size={14} />}
-              </div>
-              <div className="mt-1.5 text-center">
-                <p
-                  className={cn(
-                    'text-xs font-medium leading-tight',
-                    s.isCurrent ? 'text-status-warning' : s.done ? 'text-text-primary' : 'text-text-muted',
-                  )}
-                >
-                  {s.label}
-                </p>
-                {dateLine(s, 'text-[11px]')}
-              </div>
-            </div>
-            {!s.isLast && (
-              <div
-                className={cn(
-                  '-mx-1 h-0.5 flex-1 self-center',
-                  s.idx < currentIndex ? 'bg-cobalt-primary' : s.isCurrent ? 'bg-status-warning' : 'bg-border',
-                )}
-              />
-            )}
-          </div>
-        ))}
-      </div>
-    )
-  }
-
-  return (
+  // Vertical stepper — the default layout, and the mobile form of the horizontal tracker below.
+  const verticalView = (
     <div className="space-y-0">
       {stages.map((s) => (
         <div key={s.type} className="flex gap-3">
@@ -234,5 +189,60 @@ export function MilestoneTimeline({
         </div>
       ))}
     </div>
+  )
+
+  if (!horizontal) return verticalView
+
+  const horizontalView = (
+    <div className="flex items-stretch">
+      {stages.map((s) => (
+        <div key={s.type} className="flex flex-1 items-start">
+          <div className="flex w-full flex-col items-center">
+            <div
+              className={cn(
+                'z-10 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border-2',
+                s.isCurrent
+                  ? 'border-status-warning bg-status-warning/20 text-status-warning'
+                  : s.done
+                    ? 'border-cobalt-primary bg-cobalt-primary text-white'
+                    : s.isNext
+                      ? 'border-cobalt-primary bg-transparent'
+                      : 'border-border bg-transparent'
+              )}
+            >
+              {s.isCurrent ? transitIcon : s.done && <Check size={14} />}
+            </div>
+            <div className="mt-1.5 text-center">
+              <p
+                className={cn(
+                  'text-xs font-medium leading-tight',
+                  s.isCurrent ? 'text-status-warning' : s.done ? 'text-text-primary' : 'text-text-muted',
+                )}
+              >
+                {s.label}
+              </p>
+              {dateLine(s, 'text-[11px]')}
+            </div>
+          </div>
+          {!s.isLast && (
+            <div
+              className={cn(
+                '-mx-1 h-0.5 flex-1 self-center',
+                s.idx < currentIndex ? 'bg-cobalt-primary' : s.isCurrent ? 'bg-status-warning' : 'bg-border',
+              )}
+            />
+          )}
+        </div>
+      ))}
+    </div>
+  )
+
+  // Six steps side by side crowd a phone (labels collide) — show the vertical stepper below md and
+  // the horizontal tracker from md up, where there is room for the labels.
+  return (
+    <>
+      <div className="md:hidden">{verticalView}</div>
+      <div className="hidden md:block">{horizontalView}</div>
+    </>
   )
 }
