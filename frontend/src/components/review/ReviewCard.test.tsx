@@ -141,7 +141,7 @@ describe('ReviewCard', () => {
     expect(within(table).getByText('SE26061400006')).toBeInTheDocument()
     expect(within(table).getByTestId('multi-candidate-proposed')).toBeInTheDocument()
     // Column headers — default view shows agent proposals; Resolution/Edited only after Edit / changes.
-    expect(within(table).getByText('Existing')).toBeInTheDocument()
+    expect(within(table).getByText('Current')).toBeInTheDocument()
     expect(within(table).getByTestId('proposed-column-header')).toHaveTextContent('AI Proposed')
     expect(within(table).queryByText('Resolution')).toBeNull()
     expect(within(table).queryByText('Edited')).toBeNull()

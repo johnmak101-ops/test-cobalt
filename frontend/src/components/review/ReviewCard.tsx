@@ -35,9 +35,11 @@ import { buildNeedsAttentionGroups, portsLinkedFromRoute } from './needs-attenti
 import {
   REVIEW_COL,
   REVIEW_GROUP_HEADER,
+  REVIEW_HEAD,
   REVIEW_TABLE_CLASS,
   REVIEW_TH,
 } from './review-table-layout'
+import { ReviewColGroup } from './ReviewColGroup'
 
 /**
  * ONE geometry for every button in the card's action bar; variants change COLOUR only, never size,
@@ -699,78 +701,113 @@ export function ReviewCard({
             </div>
           )}
 
-          {/* Only mount when there are POs to review — empty strip was a second empty table competing
-              with the conflict grid. Detail with zero POs still has the full shipment PO card. */}
-          {/* Always show when we have POs, or while editing so Add PO is reachable with zero POs */}
-          {(linkedPOs.length > 0 || (editing && !readOnly)) && (
-            <ReviewPoStylesSection
-              shipmentId={shipment.id}
-              linkedPOs={linkedPOs}
-              customerId={
-                (shipment as { customerId?: string | null }).customerId ??
-                (shipment as { customer?: { id?: string } | null }).customer?.id ??
-                null
-              }
-              reviewReasons={reviewReasons}
-              readOnly={readOnly}
-              editing={editing && !readOnly}
-            />
-          )}
-
-          {conflicts.length > 0 && (
-            <div className="max-w-full overflow-x-auto rounded-lg border border-border">
-              {/* Shared REVIEW_COL % with POs & styles so stacked tables share one vertical grid. */}
-              <table className={REVIEW_TABLE_CLASS}>
-                <thead>
-                  <tr className="border-b border-border bg-surface-900/50">
-                    <th className={`${REVIEW_COL.label} ${REVIEW_TH}`}>Field</th>
-                    <th className={`${REVIEW_COL.existing} ${REVIEW_TH}`}>Existing</th>
-                    <th
-                      className={`${REVIEW_COL.proposed} ${REVIEW_TH}`}
-                      data-testid="proposed-column-header"
-                    >
-                      {proposedColumnLabel}
-                    </th>
-                  </tr>
-                </thead>
-                {/* Only contested rows render — a field both sides agree on is not a decision. Group
-                    headers appear only where that group HAS a conflict, so the table stays short. */}
-                {groupConflictFields(conflicts).map(({ group, conflicts: rows }) => (
-                  <tbody key={group}>
-                    <tr className="border-b border-border bg-surface-900/30">
-                      <td colSpan={3} className={REVIEW_GROUP_HEADER}>
-                        {group}
-                        <span className="ml-2 font-normal normal-case tracking-normal">
-                          ({rows.length} {rows.length === 1 ? 'change' : 'changes'})
-                        </span>
-                      </td>
-                    </tr>
-                    {rows.map((c) => {
-                      const units = unitsFor(c)
-                      const writable = mapCriticFieldToColumn(c.field) != null
-                      return (
-                        <ConflictRow
-                          key={c.field}
-                          conflict={c}
-                          value={resolutions[c.field] ?? ''}
-                          onChange={(v) => setResolution(c.field, v)}
-                          editing={editing && !readOnly && writable}
-                          existingUnit={units.existing}
-                          proposedUnit={units.proposed}
-                          notWritable={!writable}
-                          canEdit={!readOnly && writable}
-                          critical={isCriticalColumn(mapCriticFieldToColumn(c.field))}
-                          onRequestEdit={() => {
-                            if (!readOnly) startEditing()
-                          }}
-                        />
-                      )
-                    })}
-                  </tbody>
-                ))}
-              </table>
-            </div>
-          )}
+          {/* One decision grid: POs + field conflicts share colgroup, headers, and border. */}
+          {(() => {
+            const showPos = linkedPOs.length > 0 || (editing && !readOnly)
+            const showConflicts = conflicts.length > 0
+            if (!showPos && !showConflicts) return null
+            const canEditGrid = editing && !readOnly
+            // Shared thead only when both blocks show (one header, two section groups).
+            // Solo PO / solo conflict each render their own thead via child defaults.
+            const sharedThead = showPos && showConflicts
+            return (
+              <div
+                className="max-w-full overflow-x-auto rounded-lg border border-border"
+                data-testid="review-decision-grid"
+              >
+                {sharedThead && (
+                  <table className={REVIEW_TABLE_CLASS}>
+                    <ReviewColGroup />
+                    <thead>
+                      <tr className="border-b border-border bg-surface-900/50">
+                        <th className={`${REVIEW_COL.label} ${REVIEW_TH}`}>{REVIEW_HEAD.label}</th>
+                        <th className={`${REVIEW_COL.existing} ${REVIEW_TH}`}>
+                          {REVIEW_HEAD.existing}
+                        </th>
+                        <th
+                          className={`${REVIEW_COL.proposed} ${REVIEW_TH}`}
+                          data-testid="proposed-column-header"
+                        >
+                          {proposedColumnLabel}
+                        </th>
+                      </tr>
+                    </thead>
+                  </table>
+                )}
+                {showPos && (
+                  <ReviewPoStylesSection
+                    shipmentId={shipment.id}
+                    linkedPOs={linkedPOs}
+                    customerId={
+                      (shipment as { customerId?: string | null }).customerId ??
+                      (shipment as { customer?: { id?: string } | null }).customer?.id ??
+                      null
+                    }
+                    reviewReasons={reviewReasons}
+                    readOnly={readOnly}
+                    editing={canEditGrid}
+                    embedded
+                    showColumnHeader={!sharedThead}
+                    proposedColumnLabel={proposedColumnLabel}
+                  />
+                )}
+                {showConflicts && (
+                  <table className={REVIEW_TABLE_CLASS}>
+                    <ReviewColGroup />
+                    {!sharedThead && (
+                      <thead>
+                        <tr className="border-b border-border bg-surface-900/50">
+                          <th className={`${REVIEW_COL.label} ${REVIEW_TH}`}>{REVIEW_HEAD.label}</th>
+                          <th className={`${REVIEW_COL.existing} ${REVIEW_TH}`}>
+                            {REVIEW_HEAD.existing}
+                          </th>
+                          <th
+                            className={`${REVIEW_COL.proposed} ${REVIEW_TH}`}
+                            data-testid="proposed-column-header"
+                          >
+                            {proposedColumnLabel}
+                          </th>
+                        </tr>
+                      </thead>
+                    )}
+                    {groupConflictFields(conflicts).map(({ group, conflicts: rows }) => (
+                      <tbody key={group}>
+                        <tr className="border-b border-border">
+                          <td colSpan={3} className={REVIEW_GROUP_HEADER}>
+                            {group}
+                            <span className="ml-2 font-normal normal-case tracking-normal text-text-muted">
+                              ({rows.length} {rows.length === 1 ? 'change' : 'changes'})
+                            </span>
+                          </td>
+                        </tr>
+                        {rows.map((c) => {
+                          const units = unitsFor(c)
+                          const writable = mapCriticFieldToColumn(c.field) != null
+                          return (
+                            <ConflictRow
+                              key={c.field}
+                              conflict={c}
+                              value={resolutions[c.field] ?? ''}
+                              onChange={(v) => setResolution(c.field, v)}
+                              editing={canEditGrid && writable}
+                              existingUnit={units.existing}
+                              proposedUnit={units.proposed}
+                              notWritable={!writable}
+                              canEdit={!readOnly && writable}
+                              critical={isCriticalColumn(mapCriticFieldToColumn(c.field))}
+                              onRequestEdit={() => {
+                                if (!readOnly) startEditing()
+                              }}
+                            />
+                          )
+                        })}
+                      </tbody>
+                    ))}
+                  </table>
+                )}
+              </div>
+            )
+          })()}
 
           {/* Source emails — reference material, collapsed by default and kept at the bottom so the
               conflict + attention content leads. Expand to read what each email actually said. */}

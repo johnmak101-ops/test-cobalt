@@ -12,6 +12,7 @@ import {
 } from '../../lib/review-fields'
 import { PortPicker } from '../shipments/PortPicker'
 import { cn } from '../../lib/utils'
+import { REVIEW_COL, REVIEW_TD } from './review-table-layout'
 
 export interface ConflictRowProps {
   conflict: CriticConflict
@@ -118,8 +119,8 @@ export function ConflictRow({
 
   return (
     <tr className="border-b border-border last:border-0 align-top">
-      {/* label 14 semibold · values 14 mono — hierarchy via weight/color */}
-      <td className="px-3 py-2.5 text-sm font-semibold text-text-primary">
+      {/* Must use REVIEW_COL so stacked PO + conflict tables share one grid. */}
+      <td className={cn(REVIEW_COL.label, REVIEW_TD, 'font-semibold text-text-primary')}>
         <span className="inline-flex flex-wrap items-center gap-1.5">
           <span title={conflict.rationale}>{label}</span>
           {critical && (
@@ -137,7 +138,7 @@ export function ConflictRow({
           </p>
         )}
       </td>
-      <td className="min-w-0 max-w-0 overflow-hidden px-3 py-2.5">
+      <td className={cn(REVIEW_COL.existing, REVIEW_TD)}>
         {existing?.value ? (
           isStyles ? (
             <div className="min-w-0 space-y-1">
@@ -168,7 +169,7 @@ export function ConflictRow({
           <span className="font-mono text-sm text-text-muted">—</span>
         )}
       </td>
-      <td className="min-w-0 max-w-0 overflow-hidden px-3 py-2.5">
+      <td className={cn(REVIEW_COL.proposed, REVIEW_TD)}>
         {isStyles ? (
           editing && canEdit ? (
             <StyleListEditor

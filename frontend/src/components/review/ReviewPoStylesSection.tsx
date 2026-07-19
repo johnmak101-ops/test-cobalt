@@ -16,10 +16,12 @@ import { toast } from '../ui/Toast'
 import {
   REVIEW_COL,
   REVIEW_GROUP_HEADER,
+  REVIEW_HEAD,
   REVIEW_TABLE_CLASS,
   REVIEW_TD,
   REVIEW_TH,
 } from './review-table-layout'
+import { ReviewColGroup } from './ReviewColGroup'
 import { StyleListDisplay, StyleListEditor } from './ConflictRow'
 import { cn } from '../../lib/utils'
 
@@ -74,6 +76,15 @@ export interface ReviewPoStylesSectionProps {
   /** Card-level Edit / Done editing — drives this whole strip. */
   editing?: boolean
   reviewReasons?: string[]
+  /**
+   * When true, no outer border/title chrome — lives inside the shared decision grid shell
+   * (same column tracks as field conflicts).
+   */
+  embedded?: boolean
+  /** When false, omit column header row (parent already rendered a shared thead). Default true. */
+  showColumnHeader?: boolean
+  /** Third-column header when this section owns the thead (solo PO grid). */
+  proposedColumnLabel?: string
 }
 
 export function ReviewPoStylesSection({
@@ -83,6 +94,9 @@ export function ReviewPoStylesSection({
   readOnly = false,
   editing = false,
   reviewReasons = [],
+  embedded = false,
+  showColumnHeader = true,
+  proposedColumnLabel = REVIEW_HEAD.proposed,
 }: ReviewPoStylesSectionProps) {
   const create = useCreatePurchaseOrder()
   const update = useUpdatePurchaseOrder()
@@ -219,166 +233,183 @@ export function ReviewPoStylesSection({
   const sorted = [...linkedPOs].sort((a, b) =>
     a.poNumber.localeCompare(b.poNumber, undefined, { numeric: true }),
   )
-  const colSpan = canEdit ? 4 : 3
+  /** Always 3 columns — matches field-conflict table (actions live inside proposed cell). */
+  const colSpan = 3
 
-  return (
-    <section
-      className="max-w-full rounded-lg border border-border"
-      data-testid="review-po-styles-section"
-      aria-label="POs and styles"
-    >
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border bg-surface-900/30 px-3 py-1.5">
-        <h4 className={cn(REVIEW_GROUP_HEADER, 'px-0 py-0')}>
-          POs & styles
-          <span className="ml-2 font-normal normal-case tracking-normal">
-            ({sorted.length} {sorted.length === 1 ? 'PO' : 'POs'})
-            {canEdit ? ' — editing' : ''}
-          </span>
-        </h4>
-        {/* Only Add while page is already in Edit — no second Edit button */}
-        {canEdit && (
-          <button
-            type="button"
-            onClick={() => {
-              setAdding(true)
-              setConfirmUnlinkId(null)
-            }}
-            disabled={busy}
-            className={HEADER_BTN}
-            data-testid="review-po-add"
-          >
-            <Plus size={13} /> Add PO
-          </button>
-        )}
-      </div>
-
-      <div className="max-w-full overflow-x-auto">
-        <table className={REVIEW_TABLE_CLASS}>
-          <thead>
-            <tr className="border-b border-border bg-surface-900/50">
-              <th className={cn(REVIEW_COL.label, REVIEW_TH)}>PO#</th>
-              <th className={cn(REVIEW_COL.existing, REVIEW_TH)}>Item / Style</th>
-              <th className={cn(REVIEW_COL.proposed, REVIEW_TH)}>From email / AI</th>
-              {canEdit && <th className="w-px px-2 py-2" />}
-            </tr>
-          </thead>
-          <tbody>
-            {canEdit && adding && (
-              <AddRow busy={busy} onCancel={() => setAdding(false)} onSave={handleAdd} />
-            )}
-            {sorted.map((po) => {
-              const proposed = proposedStyleForPo(po.poNumber, reviewReasons)
-              const draft = drafts[po.id] ?? {
-                poNumber: po.poNumber,
-                itemStyleNo: po.itemStyleNo?.trim() ?? '',
-              }
-              const current = po.itemStyleNo?.trim() || null
-
-              if (canEdit && confirmUnlinkId === po.id) {
-                return (
-                  <tr
-                    key={po.id}
-                    className="border-b border-border bg-surface-900/40"
-                    data-testid={`review-po-unlink-confirm-${po.id}`}
-                  >
-                    <td colSpan={colSpan} className="px-3 py-2 text-xs text-text-secondary">
-                      <span className="mr-3">
-                        Remove PO <span className="font-mono font-medium">{po.poNumber}</span>{' '}
-                        from this shipment?
-                      </span>
-                      <button
-                        type="button"
-                        className="mr-2 font-medium text-status-critical hover:underline disabled:opacity-50"
-                        disabled={busy}
-                        onClick={() => handleUnlink(po)}
-                      >
-                        {busy ? <Loader2 size={12} className="inline animate-spin" /> : 'Confirm'}
-                      </button>
-                      <button
-                        type="button"
-                        className="text-text-muted hover:text-text-primary"
-                        disabled={busy}
-                        onClick={() => setConfirmUnlinkId(null)}
-                      >
-                        Cancel
-                      </button>
-                    </td>
-                  </tr>
-                )
-              }
-
-              return (
-                <tr
-                  key={po.id}
-                  data-testid={`review-po-row-${po.id}`}
-                  className="border-b border-border last:border-0 align-top"
+  const table = (
+    <table className={REVIEW_TABLE_CLASS}>
+      <ReviewColGroup />
+      {showColumnHeader && (
+        <thead>
+          <tr className="border-b border-border bg-surface-900/50">
+            <th className={cn(REVIEW_COL.label, REVIEW_TH)}>{REVIEW_HEAD.label}</th>
+            <th className={cn(REVIEW_COL.existing, REVIEW_TH)}>{REVIEW_HEAD.existing}</th>
+            <th
+              className={cn(REVIEW_COL.proposed, REVIEW_TH)}
+              data-testid="proposed-column-header"
+            >
+              {proposedColumnLabel}
+            </th>
+          </tr>
+        </thead>
+      )}
+      <tbody>
+        {/* Section label row — same rhythm as conflict group headers */}
+        <tr className="border-b border-border">
+          <td colSpan={colSpan} className={REVIEW_GROUP_HEADER}>
+            <span className="inline-flex flex-wrap items-center gap-2">
+              POs & styles
+              <span className="font-normal normal-case tracking-normal text-text-muted">
+                ({sorted.length} {sorted.length === 1 ? 'PO' : 'POs'})
+                {canEdit ? ' — editing' : ''}
+              </span>
+              {canEdit && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAdding(true)
+                    setConfirmUnlinkId(null)
+                  }}
+                  disabled={busy}
+                  className={HEADER_BTN}
+                  data-testid="review-po-add"
                 >
-                  <td className={cn(REVIEW_TD, 'font-medium text-text-primary')}>
-                    {canEdit ? (
-                      <input
-                        className={inputCls}
-                        value={draft.poNumber}
-                        onChange={(e) => setDraft(po.id, { poNumber: e.target.value })}
-                        aria-label={`PO number for ${po.poNumber}`}
-                      />
-                    ) : (
-                      <a
-                        href={`/purchase-orders/${po.id}`}
-                        className="field-value font-mono text-sm font-medium leading-snug text-cobalt-primary-light hover:underline"
-                      >
-                        {po.poNumber}
-                      </a>
-                    )}
-                  </td>
-                  <td className={REVIEW_TD}>
-                    {canEdit ? (
-                      <StyleListEditor
-                        label={`Style for PO ${po.poNumber}`}
-                        value={draft.itemStyleNo}
-                        onChange={(v) => setDraft(po.id, { itemStyleNo: v })}
-                      />
-                    ) : (
-                      <StyleListDisplay
-                        value={current ?? ''}
-                        className={current ? 'text-text-primary' : undefined}
-                      />
-                    )}
-                  </td>
-                  <td className={REVIEW_TD}>
+                  <Plus size={13} /> Add PO
+                </button>
+              )}
+            </span>
+          </td>
+        </tr>
+        {canEdit && adding && (
+          <AddRow busy={busy} onCancel={() => setAdding(false)} onSave={handleAdd} />
+        )}
+        {sorted.map((po) => {
+          const proposed = proposedStyleForPo(po.poNumber, reviewReasons)
+          const draft = drafts[po.id] ?? {
+            poNumber: po.poNumber,
+            itemStyleNo: po.itemStyleNo?.trim() ?? '',
+          }
+          const current = po.itemStyleNo?.trim() || null
+
+          if (canEdit && confirmUnlinkId === po.id) {
+            return (
+              <tr
+                key={po.id}
+                className="border-b border-border bg-surface-900/40"
+                data-testid={`review-po-unlink-confirm-${po.id}`}
+              >
+                <td colSpan={colSpan} className="px-3 py-2 text-sm text-text-secondary">
+                  <span className="mr-3">
+                    Remove PO <span className="font-mono font-medium">{po.poNumber}</span>{' '}
+                    from this shipment?
+                  </span>
+                  <button
+                    type="button"
+                    className="mr-2 font-medium text-status-critical hover:underline disabled:opacity-50"
+                    disabled={busy}
+                    onClick={() => handleUnlink(po)}
+                  >
+                    {busy ? <Loader2 size={12} className="inline animate-spin" /> : 'Confirm'}
+                  </button>
+                  <button
+                    type="button"
+                    className="text-text-muted hover:text-text-primary"
+                    disabled={busy}
+                    onClick={() => setConfirmUnlinkId(null)}
+                  >
+                    Cancel
+                  </button>
+                </td>
+              </tr>
+            )
+          }
+
+          return (
+            <tr
+              key={po.id}
+              data-testid={`review-po-row-${po.id}`}
+              className="border-b border-border last:border-0 align-top"
+            >
+              <td className={cn(REVIEW_COL.label, REVIEW_TD, 'font-medium text-text-primary')}>
+                {canEdit ? (
+                  <input
+                    className={inputCls}
+                    value={draft.poNumber}
+                    onChange={(e) => setDraft(po.id, { poNumber: e.target.value })}
+                    aria-label={`PO number for ${po.poNumber}`}
+                  />
+                ) : (
+                  <a
+                    href={`/purchase-orders/${po.id}`}
+                    className="field-value font-mono text-sm font-medium leading-snug text-cobalt-primary-light hover:underline"
+                  >
+                    {po.poNumber}
+                  </a>
+                )}
+              </td>
+              <td className={cn(REVIEW_COL.existing, REVIEW_TD)}>
+                {canEdit ? (
+                  <StyleListEditor
+                    label={`Style for PO ${po.poNumber}`}
+                    value={draft.itemStyleNo}
+                    onChange={(v) => setDraft(po.id, { itemStyleNo: v })}
+                  />
+                ) : (
+                  <StyleListDisplay
+                    value={current ?? ''}
+                    className={current ? 'text-text-primary' : undefined}
+                  />
+                )}
+              </td>
+              <td className={cn(REVIEW_COL.proposed, REVIEW_TD)}>
+                <div className="flex min-w-0 items-start justify-between gap-2">
+                  <div className="min-w-0 flex-1">
                     <StyleListDisplay
                       value={proposed ?? ''}
                       className={proposed ? 'font-medium text-ai-proposed' : undefined}
                     />
-                  </td>
-                  {canEdit && (
-                    <td className="px-2 py-2">
-                      {po.linkId && (
-                        <div className="flex justify-end">
-                          <IconBtn
-                            title="Remove from this shipment"
-                            disabled={busy}
-                            onClick={() => setConfirmUnlinkId(po.id)}
-                          >
-                            <Link2Off size={14} />
-                          </IconBtn>
-                        </div>
-                      )}
-                    </td>
+                  </div>
+                  {canEdit && po.linkId && (
+                    <IconBtn
+                      title="Remove from this shipment"
+                      disabled={busy}
+                      onClick={() => setConfirmUnlinkId(po.id)}
+                    >
+                      <Link2Off size={14} />
+                    </IconBtn>
                   )}
-                </tr>
-              )
-            })}
-            {sorted.length === 0 && !(canEdit && adding) && (
-              <tr>
-                <td colSpan={colSpan} className="px-3 py-4 text-center text-xs text-text-muted">
-                  No POs on this shipment yet.
-                  {canEdit ? ' Use Add PO above.' : ' Click Edit to add POs.'}
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+                </div>
+              </td>
+            </tr>
+          )
+        })}
+        {sorted.length === 0 && !(canEdit && adding) && (
+          <tr>
+            <td colSpan={colSpan} className="px-3 py-4 text-center text-sm text-text-muted">
+              No POs on this shipment yet.
+              {canEdit ? ' Use Add PO above.' : ' Click Edit to add POs.'}
+            </td>
+          </tr>
+        )}
+      </tbody>
+    </table>
+  )
+
+  if (embedded) {
+    return (
+      <div data-testid="review-po-styles-section" aria-label="POs and styles">
+        {table}
       </div>
+    )
+  }
+
+  return (
+    <section
+      className="max-w-full overflow-x-auto rounded-lg border border-border"
+      data-testid="review-po-styles-section"
+      aria-label="POs and styles"
+    >
+      {table}
     </section>
   )
 }
@@ -424,7 +455,7 @@ function AddRow({
 
   return (
     <tr className="border-b border-border bg-surface-900/40" data-testid="review-po-add-row">
-      <td className="px-3 py-2">
+      <td className={cn(REVIEW_COL.label, REVIEW_TD)}>
         <input
           autoFocus
           className={inputCls}
@@ -434,7 +465,7 @@ function AddRow({
           aria-label="New PO number"
         />
       </td>
-      <td className="px-3 py-2">
+      <td className={cn(REVIEW_COL.existing, REVIEW_TD)}>
         <input
           className={inputCls}
           placeholder="Item / style"
@@ -443,9 +474,8 @@ function AddRow({
           aria-label="New item / style"
         />
       </td>
-      <td className="px-3 py-2 font-mono text-sm text-text-muted">—</td>
-      <td className="px-2 py-2">
-        <div className="flex justify-end gap-0.5">
+      <td className={cn(REVIEW_COL.proposed, REVIEW_TD)}>
+        <div className="flex items-center justify-end gap-0.5">
           <IconBtn title="Save" disabled={!canSave} onClick={() => canSave && onSave(f)}>
             {busy ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
           </IconBtn>

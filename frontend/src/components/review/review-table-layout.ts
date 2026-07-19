@@ -1,21 +1,24 @@
 /**
  * Shared column geometry for Review decision tables (POs & styles + field conflicts).
- * Both tables must use the same % tracks so stacked grids line up: label | existing | proposed.
+ * Both tables must use the same tracks so stacked grids line up:
+ *   Field/PO# | Current | From email / AI
  */
 export const REVIEW_COL = {
-  /** Field / PO# */
-  label: 'w-[22%]',
-  /** Existing / Current style */
-  existing: 'w-[33%]',
-  /** AI Proposed / From email · actions */
-  proposed: 'w-[45%]',
+  /** Field name / PO# */
+  label: 'w-[24%]',
+  /** Current system / style on shipment */
+  existing: 'w-[32%]',
+  /** AI / email proposed */
+  proposed: 'w-[44%]',
 } as const
 
-export const REVIEW_TABLE_CLASS = 'w-full min-w-[36rem] table-fixed'
+/** Widths for <colgroup> (inline styles set from ReviewColGroup in .tsx). */
+export const REVIEW_COL_WIDTHS = ['24%', '32%', '44%'] as const
+
+export const REVIEW_TABLE_CLASS = 'w-full min-w-[36rem] table-fixed border-collapse'
 
 /**
  * Review card type scale — one ladder for every block on the decision desk.
- * Stepped larger for desk-distance readability; hierarchy by weight/color, not tiny px.
  *
  * | Role    | Size | Use |
  * |---------|------|-----|
@@ -39,6 +42,13 @@ export const REVIEW_VALUE = `field-value font-mono ${REVIEW_FS.value} text-text-
 
 export const REVIEW_TH = `px-3 py-2.5 text-left ${REVIEW_FS.meta} font-medium text-text-muted`
 
-export const REVIEW_TD = `min-w-0 max-w-0 overflow-hidden px-3 py-2.5 ${REVIEW_FS.value}`
+export const REVIEW_TD = `min-w-0 overflow-hidden px-3 py-2.5 align-top ${REVIEW_FS.value}`
 
-export const REVIEW_GROUP_HEADER = `px-3 py-2 text-left ${REVIEW_FS.meta} font-semibold uppercase tracking-wide text-text-muted`
+export const REVIEW_GROUP_HEADER = `px-3 py-2 text-left ${REVIEW_FS.meta} font-semibold uppercase tracking-wide text-text-muted bg-surface-900/30`
+
+/** Shared thead labels — same wording on PO + conflict tables so columns read as one grid. */
+export const REVIEW_HEAD = {
+  label: 'Field / PO#',
+  existing: 'Current',
+  proposed: 'From email / AI',
+} as const
