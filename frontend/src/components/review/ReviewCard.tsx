@@ -25,6 +25,12 @@ import type { ReviewShipment } from '../../hooks/use-review-queue'
 import type { LinkedPO, ShipmentDetail } from '../../hooks/use-shipments'
 import { cn, formatDateTime } from '../../lib/utils'
 import { buildNeedsAttentionGroups, portsLinkedFromRoute } from './needs-attention'
+import {
+  REVIEW_COL,
+  REVIEW_GROUP_HEADER,
+  REVIEW_TABLE_CLASS,
+  REVIEW_TH,
+} from './review-table-layout'
 
 /**
  * ONE geometry for every button in the card's action bar; variants change COLOUR only, never size,
@@ -613,15 +619,16 @@ export function ReviewCard({
 
           {conflicts.length > 0 && (
             <div className="max-w-full overflow-x-auto rounded-lg border border-border">
-              {/* table-fixed: auto layout re-measures when the Proposed cell swaps text for an
-                  input, so the columns visibly jumped every time Edit was toggled. Fixed widths
-                  make the two modes the same table. min-w-0 on cells contains long style lists. */}
-              <table className="w-full min-w-[36rem] table-fixed">
+              {/* Shared REVIEW_COL % with POs & styles so stacked tables share one vertical grid. */}
+              <table className={REVIEW_TABLE_CLASS}>
                 <thead>
-                  <tr className="border-b border-border bg-surface-900/50 text-left text-[11px] font-medium text-text-muted">
-                    <th className="w-[22%] px-3 py-2">Field</th>
-                    <th className="w-[33%] px-3 py-2">Existing</th>
-                    <th className="w-[45%] px-3 py-2" data-testid="proposed-column-header">
+                  <tr className="border-b border-border bg-surface-900/50">
+                    <th className={`${REVIEW_COL.label} ${REVIEW_TH}`}>Field</th>
+                    <th className={`${REVIEW_COL.existing} ${REVIEW_TH}`}>Existing</th>
+                    <th
+                      className={`${REVIEW_COL.proposed} ${REVIEW_TH}`}
+                      data-testid="proposed-column-header"
+                    >
                       {proposedColumnLabel}
                     </th>
                   </tr>
@@ -631,10 +638,7 @@ export function ReviewCard({
                 {groupConflictFields(conflicts).map(({ group, conflicts: rows }) => (
                   <tbody key={group}>
                     <tr className="border-b border-border bg-surface-900/30">
-                      <td
-                        colSpan={3}
-                        className="px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-text-muted"
-                      >
+                      <td colSpan={3} className={REVIEW_GROUP_HEADER}>
                         {group}
                         <span className="ml-2 font-normal normal-case tracking-normal">
                           ({rows.length} {rows.length === 1 ? 'change' : 'changes'})

@@ -13,6 +13,13 @@ import {
 import { toast } from '../ui/Toast'
 import { ShipmentSearchPicker } from './ShipmentSearchPicker'
 import type { ShipmentSearchHit } from '../../hooks/use-shipment-search'
+import {
+  REVIEW_COL,
+  REVIEW_GROUP_HEADER,
+  REVIEW_TABLE_CLASS,
+  REVIEW_TD,
+  REVIEW_TH,
+} from './review-table-layout'
 import { cn } from '../../lib/utils'
 
 /** Compact row actions — same weight as conflict table chrome, short labels so the Actions col fits. */
@@ -165,47 +172,33 @@ export function ReviewPoStylesSection({
   const mutationBusy =
     update.isPending || unlink.isPending || link.isPending || busyPoId != null
 
-  // Column geometry mirrors the field conflict table (Field 22% | Existing 33% | AI Proposed 45%).
-  // With actions: first two columns keep that alignment; the 45% proposed span splits into AI + Actions.
-  const colPo = 'w-[22%]'
-  const colCurrent = 'w-[33%]'
-  const colProposed = readOnly ? 'w-[45%]' : 'w-[25%]'
-  const colActions = 'w-[20%]'
-
   return (
     <section
       className="max-w-full overflow-x-auto rounded-lg border border-border"
       data-testid="review-po-styles-section"
       aria-label="POs and styles"
     >
-      {/* Same min-width + table-fixed shell as ReviewCard conflict table so stacked grids line up. */}
-      <table className="w-full min-w-[36rem] table-fixed">
+      {/* Exactly 3 columns — same % as field conflict table so Current style lines up with Existing. */}
+      <table className={REVIEW_TABLE_CLASS}>
         <thead>
           <tr className="border-b border-border bg-surface-900/30">
-            <th
-              colSpan={readOnly ? 3 : 4}
-              className="px-3 py-1.5 text-left text-[11px] font-semibold uppercase tracking-wide text-text-muted"
-            >
+            <th colSpan={3} className={REVIEW_GROUP_HEADER}>
               POs & styles
               <span className="ml-2 font-normal normal-case tracking-normal">
                 ({sorted.length} {sorted.length === 1 ? 'PO' : 'POs'})
               </span>
             </th>
           </tr>
-          <tr className="border-b border-border bg-surface-900/50 text-left text-[11px] font-medium text-text-muted">
-            <th className={cn(colPo, 'px-3 py-2')}>PO#</th>
-            <th className={cn(colCurrent, 'px-3 py-2')}>Current style</th>
-            <th className={cn(colProposed, 'px-3 py-2')}>From email / AI</th>
-            {!readOnly && <th className={cn(colActions, 'px-3 py-2')}>Actions</th>}
+          <tr className="border-b border-border bg-surface-900/50">
+            <th className={cn(REVIEW_COL.label, REVIEW_TH)}>PO#</th>
+            <th className={cn(REVIEW_COL.existing, REVIEW_TH)}>Current style</th>
+            <th className={cn(REVIEW_COL.proposed, REVIEW_TH)}>From email / AI</th>
           </tr>
         </thead>
         <tbody>
           {sorted.length === 0 ? (
             <tr>
-              <td
-                colSpan={readOnly ? 3 : 4}
-                className="px-3 py-6 text-center text-sm text-text-muted"
-              >
+              <td colSpan={3} className="px-3 py-6 text-center text-sm text-text-muted">
                 No POs on this shipment
                 <span className="mt-1 block text-xs">
                   Open the full shipment to add POs, or fix membership after the next email.
@@ -232,8 +225,7 @@ export function ReviewPoStylesSection({
                   data-testid={`review-po-row-${po.id}`}
                   className="border-b border-border last:border-0 align-top"
                 >
-                  {/* Match ConflictRow field label: text-xs medium */}
-                  <td className="min-w-0 max-w-0 overflow-hidden px-3 py-2.5 text-xs font-medium text-text-primary">
+                  <td className={cn(REVIEW_TD, 'text-xs font-medium text-text-primary')}>
                     <a
                       href={`/purchase-orders/${po.id}`}
                       className="font-mono text-xs font-medium text-cobalt-primary-light hover:underline"
@@ -242,54 +234,18 @@ export function ReviewPoStylesSection({
                     </a>
                   </td>
 
-                  {/* Match Existing value: field-value font-mono text-sm */}
-                  <td className="min-w-0 max-w-0 overflow-hidden px-3 py-2.5">
+                  <td className={REVIEW_TD}>
                     {isEditing ? (
-                      <input
-                        className={inputCls}
-                        value={editValue}
-                        onChange={(e) => setEditValue(e.target.value)}
-                        aria-label={`Style for PO ${po.poNumber}`}
-                        autoFocus
-                      />
-                    ) : (
-                      <span
-                        className={cn(
-                          'field-value font-mono text-sm',
-                          current ? 'text-text-primary' : 'text-text-muted',
-                          styleDone && 'text-status-success',
-                        )}
-                        title={current ?? undefined}
-                      >
-                        {current ?? '—'}
-                      </span>
-                    )}
-                  </td>
-
-                  <td className="min-w-0 max-w-0 overflow-hidden px-3 py-2.5">
-                    <span
-                      className={cn(
-                        'field-value font-mono text-sm',
-                        proposed ? 'font-medium text-ai-proposed' : 'text-text-muted',
-                      )}
-                      title={proposed ?? undefined}
-                    >
-                      {proposed ?? '—'}
-                    </span>
-                  </td>
-
-                  {!readOnly && (
-                    <td className="min-w-0 px-3 py-2.5">
-                      <div className="flex flex-wrap items-center gap-1">
-                        {isBusy && (
-                          <Loader2
-                            size={13}
-                            className="animate-spin text-text-muted"
-                            aria-label="Working"
-                          />
-                        )}
-                        {isEditing ? (
-                          <>
+                      <div className="space-y-1.5">
+                        <input
+                          className={inputCls}
+                          value={editValue}
+                          onChange={(e) => setEditValue(e.target.value)}
+                          aria-label={`Style for PO ${po.poNumber}`}
+                          autoFocus
+                        />
+                        {!readOnly && (
+                          <div className="flex flex-wrap gap-1">
                             <button
                               type="button"
                               className={cn(ACTION_BTN, ACTION_VARIANT.primary)}
@@ -306,9 +262,30 @@ export function ReviewPoStylesSection({
                             >
                               Cancel
                             </button>
-                          </>
-                        ) : (
-                          <>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="space-y-1.5">
+                        <span
+                          className={cn(
+                            'field-value font-mono text-sm',
+                            current ? 'text-text-primary' : 'text-text-muted',
+                            styleDone && 'text-status-success',
+                          )}
+                          title={current ?? undefined}
+                        >
+                          {current ?? '—'}
+                        </span>
+                        {!readOnly && (
+                          <div className="flex flex-wrap gap-1">
+                            {isBusy && (
+                              <Loader2
+                                size={13}
+                                className="animate-spin text-text-muted"
+                                aria-label="Working"
+                              />
+                            )}
                             <button
                               type="button"
                               className={cn(ACTION_BTN, ACTION_VARIANT.muted)}
@@ -324,16 +301,6 @@ export function ReviewPoStylesSection({
                             >
                               Keep
                             </button>
-                            {showTake && (
-                              <button
-                                type="button"
-                                className={cn(ACTION_BTN, ACTION_VARIANT.secondary)}
-                                onClick={() => takeProposed(po, proposed!)}
-                                disabled={isBusy}
-                              >
-                                Take
-                              </button>
-                            )}
                             <button
                               type="button"
                               className={cn(ACTION_BTN, ACTION_VARIANT.muted)}
@@ -346,47 +313,73 @@ export function ReviewPoStylesSection({
                             >
                               Edit
                             </button>
-                            <button
-                              type="button"
-                              className={cn(ACTION_BTN, ACTION_VARIANT.danger)}
-                              onClick={() => removeFromShipment(po)}
-                              disabled={isBusy}
-                              title="Unlink this PO from the current shipment"
-                            >
-                              Remove
-                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </td>
+
+                  <td className={REVIEW_TD}>
+                    <div className="space-y-1.5">
+                      <span
+                        className={cn(
+                          'field-value font-mono text-sm',
+                          proposed ? 'font-medium text-ai-proposed' : 'text-text-muted',
+                        )}
+                        title={proposed ?? undefined}
+                      >
+                        {proposed ?? '—'}
+                      </span>
+                      {!readOnly && !isEditing && (
+                        <div className="flex flex-wrap gap-1">
+                          {showTake && (
                             <button
                               type="button"
                               className={cn(ACTION_BTN, ACTION_VARIANT.secondary)}
-                              onClick={() => {
-                                if (!po.linkId) {
-                                  toast('Open full shipment to manage this PO link')
-                                  return
-                                }
-                                setMovingPoId((id) => (id === po.id ? null : po.id))
-                                setEditingId(null)
-                              }}
+                              onClick={() => takeProposed(po, proposed!)}
                               disabled={isBusy}
-                              title="Search any shipment and move this PO there"
                             >
-                              Move…
+                              Take
                             </button>
-                          </>
-                        )}
-                      </div>
-                      {isMoving && (
-                        <div className="mt-2 min-w-0">
-                          <ShipmentSearchPicker
-                            excludeId={shipmentId}
-                            onSelect={(id, hit) => {
-                              void movePo(po, id, hit)
+                          )}
+                          <button
+                            type="button"
+                            className={cn(ACTION_BTN, ACTION_VARIANT.danger)}
+                            onClick={() => removeFromShipment(po)}
+                            disabled={isBusy}
+                            title="Unlink this PO from the current shipment"
+                          >
+                            Remove
+                          </button>
+                          <button
+                            type="button"
+                            className={cn(ACTION_BTN, ACTION_VARIANT.secondary)}
+                            onClick={() => {
+                              if (!po.linkId) {
+                                toast('Open full shipment to manage this PO link')
+                                return
+                              }
+                              setMovingPoId((id) => (id === po.id ? null : po.id))
+                              setEditingId(null)
                             }}
-                            onCancel={() => setMovingPoId(null)}
-                          />
+                            disabled={isBusy}
+                            title="Search any shipment and move this PO there"
+                          >
+                            Move…
+                          </button>
                         </div>
                       )}
-                    </td>
-                  )}
+                      {!readOnly && isMoving && (
+                        <ShipmentSearchPicker
+                          excludeId={shipmentId}
+                          onSelect={(id, hit) => {
+                            void movePo(po, id, hit)
+                          }}
+                          onCancel={() => setMovingPoId(null)}
+                        />
+                      )}
+                    </div>
+                  </td>
                 </tr>
               )
             })

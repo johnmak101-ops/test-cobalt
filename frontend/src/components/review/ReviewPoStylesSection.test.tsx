@@ -135,14 +135,15 @@ describe('ReviewPoStylesSection', () => {
     expect(screen.queryByRole('button', { name: /^move/i })).not.toBeInTheDocument()
   })
 
-  it('uses the same table shell as the field conflict table', () => {
+  it('uses the same 3-column shell as the field conflict table', () => {
     renderSection()
     const section = screen.getByTestId('review-po-styles-section')
     expect(section.querySelector('table')).toBeTruthy()
     expect(within(section).getByRole('columnheader', { name: /^PO#$/i })).toBeInTheDocument()
     expect(within(section).getByRole('columnheader', { name: /current style/i })).toBeInTheDocument()
     expect(within(section).getByRole('columnheader', { name: /from email/i })).toBeInTheDocument()
-    expect(within(section).getByRole('columnheader', { name: /actions/i })).toBeInTheDocument()
+    // No 4th Actions column — buttons live under Current / From email so widths match Field|Existing|AI
+    expect(within(section).queryByRole('columnheader', { name: /actions/i })).toBeNull()
   })
 
   it('Take proposed PATCHes itemStyleNo', async () => {
