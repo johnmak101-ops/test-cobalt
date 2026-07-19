@@ -24,7 +24,7 @@ import { StyleListDisplay, StyleListEditor } from './ConflictRow'
 import { cn } from '../../lib/utils'
 
 const inputCls =
-  'w-full min-w-0 rounded-md border border-border bg-surface-700 px-2 py-1 font-mono text-sm text-text-primary placeholder:text-text-muted focus:border-cobalt-primary focus:outline-none'
+  'w-full min-w-0 rounded-md border border-border bg-surface-700 px-2 py-1 font-mono text-[13px] text-text-primary placeholder:text-text-muted focus:border-cobalt-primary focus:outline-none'
 
 const HEADER_BTN =
   'inline-flex items-center gap-1 rounded-lg border border-border px-2.5 py-1 text-xs font-medium text-text-secondary transition-colors hover:bg-surface-700 hover:text-text-primary disabled:opacity-50'
@@ -324,7 +324,7 @@ export function ReviewPoStylesSection({
                     ) : (
                       <a
                         href={`/purchase-orders/${po.id}`}
-                        className="field-value font-mono text-sm font-medium text-cobalt-primary-light hover:underline"
+                        className="field-value font-mono text-[13px] font-medium leading-snug text-cobalt-primary-light hover:underline"
                       >
                         {po.poNumber}
                       </a>
@@ -443,7 +443,7 @@ function AddRow({
           aria-label="New item / style"
         />
       </td>
-      <td className="px-3 py-2 font-mono text-sm text-text-muted">—</td>
+      <td className="px-3 py-2 font-mono text-[13px] text-text-muted">—</td>
       <td className="px-2 py-2">
         <div className="flex justify-end gap-0.5">
           <IconBtn title="Save" disabled={!canSave} onClick={() => canSave && onSave(f)}>

@@ -5,7 +5,7 @@ import { REVIEW_FS } from './review-table-layout'
 const DATE_COLUMNS = new Set<CriticalColumn>(['cargoReadyDate', 'etd', 'atd'])
 
 const inputCls =
-  'mt-1 w-full min-w-0 rounded-md border border-border bg-surface-700 px-2 py-1.5 text-sm text-text-primary placeholder:text-text-muted focus:border-cobalt-primary focus:outline-none'
+  'mt-1 w-full min-w-0 rounded-md border border-border bg-surface-700 px-2 py-1 text-[13px] text-text-primary placeholder:text-text-muted focus:border-cobalt-primary focus:outline-none'
 
 function isDateColumn(column: CriticalColumn): boolean {
   return DATE_COLUMNS.has(column)
@@ -39,7 +39,7 @@ function shortLabel(item: CriticalItem): string {
 
 /**
  * Decision-desk band: missing / contested Booking · SO · CRD · ETD · ATD.
- * Type scale: title (14) > row label (12 medium) > value (12 muted) > caption (10).
+ * Type scale: title (14) > row label (12 semibold) > value (12 muted) > caption (10).
  * Layout: compact single-line rows in a 1–2 col grid so two items do not leave a sparse void.
  */
 export function CriticalSailingBand({
