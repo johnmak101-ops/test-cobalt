@@ -31,6 +31,7 @@ vi.mock('../../hooks/use-purchase-orders', () => ({
     isPending: false,
   }),
 }))
+// isPending stays false; busyPoId covers in-flight UI
 
 vi.mock('../ui/Toast', () => ({
   toast: Object.assign((msg: string) => toastMock(msg), {
@@ -129,13 +130,19 @@ describe('ReviewPoStylesSection', () => {
 
   it('hides actions when readOnly', () => {
     renderSection({ readOnly: true })
-    expect(screen.queryByRole('button', { name: /take proposed/i })).not.toBeInTheDocument()
-    expect(
-      screen.queryByRole('button', { name: /remove from this shipment/i }),
-    ).not.toBeInTheDocument()
-    expect(
-      screen.queryByRole('button', { name: /move to another shipment/i }),
-    ).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^take$/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^remove$/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^move/i })).not.toBeInTheDocument()
+  })
+
+  it('uses the same table shell as the field conflict table', () => {
+    renderSection()
+    const section = screen.getByTestId('review-po-styles-section')
+    expect(section.querySelector('table')).toBeTruthy()
+    expect(within(section).getByRole('columnheader', { name: /^PO#$/i })).toBeInTheDocument()
+    expect(within(section).getByRole('columnheader', { name: /current style/i })).toBeInTheDocument()
+    expect(within(section).getByRole('columnheader', { name: /from email/i })).toBeInTheDocument()
+    expect(within(section).getByRole('columnheader', { name: /actions/i })).toBeInTheDocument()
   })
 
   it('Take proposed PATCHes itemStyleNo', async () => {
@@ -143,16 +150,16 @@ describe('ReviewPoStylesSection', () => {
     renderSection({
       reviewReasons: ['PO 6495962: item/style "OLD" vs "NEW" (kept NEW-STYLE)'],
     })
-    await user.click(screen.getByRole('button', { name: /take proposed/i }))
+    await user.click(screen.getByRole('button', { name: /^take$/i }))
     expect(updateMutate).toHaveBeenCalledWith(
       expect.objectContaining({ id: 'po1', itemStyleNo: 'NEW-STYLE' }),
       expect.anything(),
     )
   })
 
-  it('hides Take proposed when no proposed style', () => {
+  it('hides Take when no proposed style', () => {
     renderSection({ reviewReasons: [] })
-    expect(screen.queryByRole('button', { name: /take proposed/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^take$/i })).not.toBeInTheDocument()
   })
 
   it('Edit + Save PATCHes free-text style', async () => {
@@ -172,7 +179,7 @@ describe('ReviewPoStylesSection', () => {
   it('Remove unlinks this shipment', async () => {
     const user = userEvent.setup()
     renderSection()
-    await user.click(screen.getByRole('button', { name: /remove from this shipment/i }))
+    await user.click(screen.getByRole('button', { name: /^remove$/i }))
     expect(unlinkMutate).toHaveBeenCalledWith(
       { poId: 'po1', linkId: 'l1' },
       expect.anything(),
@@ -182,7 +189,7 @@ describe('ReviewPoStylesSection', () => {
   it('Remove without linkId toasts and does not call unlink', async () => {
     const user = userEvent.setup()
     renderSection({ linkedPOs: [po({ linkId: null })] })
-    await user.click(screen.getByRole('button', { name: /remove from this shipment/i }))
+    await user.click(screen.getByRole('button', { name: /^remove$/i }))
     expect(unlinkMutate).not.toHaveBeenCalled()
     expect(toastMock).toHaveBeenCalledWith(
       expect.stringMatching(/open full shipment/i),
@@ -192,7 +199,7 @@ describe('ReviewPoStylesSection', () => {
   it('Move: unlink then link to selected shipment', async () => {
     const user = userEvent.setup()
     renderSection()
-    await user.click(screen.getByRole('button', { name: /move to another shipment/i }))
+    await user.click(screen.getByRole('button', { name: /^move/i }))
     await user.click(screen.getByRole('button', { name: /pick-ship-9/i }))
     expect(unlinkMutateAsync).toHaveBeenCalledWith({ poId: 'po1', linkId: 'l1' })
     expect(linkMutateAsync).toHaveBeenCalledWith(
@@ -205,7 +212,7 @@ describe('ReviewPoStylesSection', () => {
     unlinkMutateAsync.mockResolvedValue(undefined)
     linkMutateAsync.mockRejectedValue(new Error('link failed'))
     renderSection()
-    await user.click(screen.getByRole('button', { name: /move to another shipment/i }))
+    await user.click(screen.getByRole('button', { name: /^move/i }))
     await user.click(screen.getByRole('button', { name: /pick-ship-9/i }))
     expect(toastMock).toHaveBeenCalledWith(
       expect.stringMatching(/removed here but failed to link/i),

@@ -600,7 +600,9 @@ export function ReviewCard({
             </div>
           )}
 
-          {(linkedPOs.length > 0 || !readOnly) && (
+          {/* Only mount when there are POs to review — empty strip was a second empty table competing
+              with the conflict grid. Detail with zero POs still has the full shipment PO card. */}
+          {linkedPOs.length > 0 && (
             <ReviewPoStylesSection
               shipmentId={shipment.id}
               linkedPOs={linkedPOs}
