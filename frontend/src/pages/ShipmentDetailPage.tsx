@@ -837,7 +837,7 @@ function DetailRow({
   /** shown next to "(pending)" to explain WHY a value is blank (so a gap reads as expected, not broken) */
   hint?: string
   /** Leg column for this field (e.g. 'qty', 'polRaw'). When it has change history the value shows a
-   *  dotted-underline + clock marker and a hover timeline popover. Omit for untracked rows. */
+   *  clock marker and a hover timeline popover. Omit for untracked rows. */
   historyKey?: string
 }) {
   const historyIndex = useContext(FieldHistoryContext)

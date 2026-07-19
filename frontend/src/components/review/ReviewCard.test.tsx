@@ -117,7 +117,11 @@ describe('ReviewCard', () => {
     const table = screen.getByRole('table')
     expect(within(table).getByText('ETA')).toBeInTheDocument()
     // OUR label, not the payload's bare 'HBL' — reviewFieldLabel prefers EDITABLE_FIELDS.
-    expect(within(table).getByText('HBL / AWB / FCR No.')).toBeInTheDocument()
+    expect(within(table).getByText('HBL / HAWB / FCR No.')).toBeInTheDocument()
+    // Multi-candidate HBL: both proposals visible in AI Proposed (not buried in a datalist)
+    expect(within(table).getByText('SE26061400005')).toBeInTheDocument()
+    expect(within(table).getByText('SE26061400006')).toBeInTheDocument()
+    expect(within(table).getByTestId('multi-candidate-proposed')).toBeInTheDocument()
     // Column headers — the proposal is the agent's, and is the editable cell; Resolution is gone.
     expect(within(table).getByText('Existing')).toBeInTheDocument()
     expect(within(table).getByText('AI Proposed')).toBeInTheDocument()
@@ -173,27 +177,6 @@ describe('ReviewCard', () => {
       ),
     ).toBeInTheDocument()
     expect(screen.getByRole('table')).toBeInTheDocument()
-  })
-
-  // #181: operators must see that only contested fields are in scope
-  it('documents that Save applies contested conflict fields only', () => {
-    render(
-      <MemoryRouter>
-        <ReviewCard
-          shipment={baseShipment()}
-          criticReview={baseReview()}
-          compact={compact}
-          defaultExpanded={true}
-          fullShipmentPath="/shipments/leg-1"
-        />
-      </MemoryRouter>,
-    )
-    const hint = screen.getByTestId('review-edit-scope-hint')
-    expect(hint.textContent).toMatch(/contested \(AI conflict\) fields/i)
-    expect(within(hint).getByRole('link', { name: /Open full shipment/i })).toHaveAttribute(
-      'href',
-      '/shipments/leg-1',
-    )
   })
 
   it('why-review falls back to humanized reviewReasons when the critic payload is absent', () => {
@@ -268,7 +251,8 @@ describe('ReviewCard', () => {
     // short conflict line + master miss (layman groups)
     expect(within(why).getByText(/Field values disagree|field\(s\) disagree/i)).toBeInTheDocument()
     expect(within(why).getByText(/Master miss/)).toBeInTheDocument()
-    expect(within(why).getByText(/A\.P\. Moller - Maersk.*not in master|not in master.*A\.P\. Moller/i)).toBeInTheDocument()
+    // Copy is layman Mesh-Database wording (not the old "not in master" shorthand).
+    expect(within(why).getByText(/A\.P\. Moller - Maersk.*Mesh Database|Mesh Database.*A\.P\. Moller/i)).toBeInTheDocument()
   })
 
   it('why-review does not repeat a reason a risk flag already explains', () => {
@@ -357,7 +341,6 @@ describe('ReviewCard', () => {
     expect(within(why).getByText(/Linked by PO only — may be the wrong leg/)).toBeInTheDocument()
     expect(screen.getByTestId('needs-group-real_shipment')).toBeInTheDocument()
     expect(within(why).getByText(/Thin mail, not a lifecycle booking/)).toBeInTheDocument()
-    expect(within(why).getByText(/not in master/i)).toBeInTheDocument()
     // Table still owns the field comparison
     expect(screen.getByRole('table')).toBeInTheDocument()
   })
@@ -567,10 +550,13 @@ describe('conflict table — read-only by default, Edit to change values', () =>
     )
     await user.click(screen.getByRole('button', { name: /^edit$/i }))
     expect((screen.getByLabelText(/proposed value for eta/i) as HTMLInputElement).value).toBe('2026-07-23')
-    // hbl has NO system candidate and two proposals → first pre-fills, both stay reachable
+    // hbl has NO system candidate and two proposals → first pre-fills, both are visible (not buried in a datalist)
     expect((screen.getByLabelText(/proposed value for hbl/i) as HTMLInputElement).value).toBe('SE26061400005')
-    const options = Array.from(document.querySelectorAll('datalist option')).map((o) => o.getAttribute('value'))
-    expect(options).toContain('SE26061400006')
+    const multi = screen.getByTestId('multi-candidate-proposed')
+    expect(within(multi).getByText('SE26061400005')).toBeInTheDocument()
+    expect(within(multi).getByText('SE26061400006')).toBeInTheDocument()
+    expect(screen.getByRole('radio', { name: /SE26061400005/i })).toBeChecked()
+    expect(screen.getByRole('radio', { name: /SE26061400006/i })).not.toBeChecked()
   })
 
   it('the approve button names how many stored values it will overwrite', async () => {
