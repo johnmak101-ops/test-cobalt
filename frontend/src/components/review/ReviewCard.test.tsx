@@ -415,6 +415,7 @@ describe('ReviewCard', () => {
       />,
     )
 
+    await user.click(screen.getByRole('button', { name: /source emails/i })) // expand (collapsed by default)
     await user.click(screen.getByRole('button', { name: /open source email/i }))
     expect(open).toHaveBeenCalledTimes(1)
     const [url, target, features] = open.mock.calls[0]
@@ -757,12 +758,14 @@ describe('source emails — identify WHICH email, and which is newer', () => {
     },
   ]
 
-  it('shows the full subject plus sender and timestamp, and no type tag', () => {
+  it('shows the full subject plus sender and timestamp, and no type tag', async () => {
+    const user = userEvent.setup()
     render(
       <MemoryRouter>
         <ReviewCard shipment={baseShipment()} criticReview={baseReview()} compact={compact} emails={emails} defaultExpanded />
       </MemoryRouter>,
     )
+    await user.click(screen.getByRole('button', { name: /source emails/i })) // collapsed by default now
     const box = screen.getByTestId('source-emails')
     const row = within(box).getByText(/KOHL'S \(POE\) Final Submit DOCS/).closest('button')!
     expect(within(row).getByText(/YumiHuang@NeoTangent.com/)).toBeInTheDocument()
@@ -773,13 +776,15 @@ describe('source emails — identify WHICH email, and which is newer', () => {
     expect(within(box).queryByText('UNCLASSIFIED')).toBeNull()
   })
 
-  it('lists the newest email first', () => {
+  it('lists the newest email first', async () => {
+    const user = userEvent.setup()
     render(
       <MemoryRouter>
         <ReviewCard shipment={baseShipment()} criticReview={baseReview()} compact={compact} emails={emails} defaultExpanded />
       </MemoryRouter>,
     )
-    const rows = within(screen.getByTestId('source-emails')).getAllByRole('button')
+    await user.click(screen.getByRole('button', { name: /source emails/i }))
+    const rows = within(screen.getByTestId('source-emails-list')).getAllByRole('button')
     expect(rows[0]!.textContent).toMatch(/KOHL'S/)
     expect(rows[1]!.textContent).toMatch(/ACNS/)
   })
