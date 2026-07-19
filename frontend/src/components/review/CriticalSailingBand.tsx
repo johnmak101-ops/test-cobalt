@@ -5,7 +5,7 @@ import { REVIEW_FS } from './review-table-layout'
 const DATE_COLUMNS = new Set<CriticalColumn>(['cargoReadyDate', 'etd', 'atd'])
 
 const inputCls =
-  'mt-1 w-full min-w-0 rounded-md border border-border bg-surface-700 px-2 py-1 text-[13px] text-text-primary placeholder:text-text-muted focus:border-cobalt-primary focus:outline-none'
+  'mt-1 w-full min-w-0 rounded-md border border-border bg-surface-700 px-2 py-1 text-sm text-text-primary placeholder:text-text-muted focus:border-cobalt-primary focus:outline-none'
 
 function isDateColumn(column: CriticalColumn): boolean {
   return DATE_COLUMNS.has(column)

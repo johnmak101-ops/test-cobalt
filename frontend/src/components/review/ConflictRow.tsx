@@ -118,13 +118,13 @@ export function ConflictRow({
 
   return (
     <tr className="border-b border-border last:border-0 align-top">
-      {/* label 12 · values 13 — labels never match value size */}
-      <td className="px-3 py-2 text-xs font-semibold text-text-primary">
+      {/* label 14 semibold · values 14 mono — hierarchy via weight/color */}
+      <td className="px-3 py-2.5 text-sm font-semibold text-text-primary">
         <span className="inline-flex flex-wrap items-center gap-1.5">
           <span title={conflict.rationale}>{label}</span>
           {critical && (
             <span
-              className="text-[10px] font-medium text-status-warning"
+              className="text-[11px] font-medium text-status-warning"
               data-testid="conflict-critical-badge"
             >
               Critical
@@ -132,17 +132,17 @@ export function ConflictRow({
           )}
         </span>
         {notWritable && (
-          <p className="mt-0.5 text-[10px] font-normal text-status-warning" data-testid="conflict-not-writable">
+          <p className="mt-0.5 text-[11px] font-normal text-status-warning" data-testid="conflict-not-writable">
             Not savable here — open full shipment
           </p>
         )}
       </td>
-      <td className="min-w-0 max-w-0 overflow-hidden px-3 py-2">
+      <td className="min-w-0 max-w-0 overflow-hidden px-3 py-2.5">
         {existing?.value ? (
           isStyles ? (
             <div className="min-w-0 space-y-1">
               <StyleListDisplay value={existing.value} />
-              <span className="text-[10px] text-text-muted">(system)</span>
+              <span className="text-[11px] text-text-muted">(system)</span>
               {canCopyAll && (
                 <button
                   type="button"
@@ -157,18 +157,18 @@ export function ConflictRow({
             </div>
           ) : (
             <span className="inline-flex max-w-full flex-wrap items-baseline gap-x-1.5">
-              <span className="field-value font-mono text-[13px] leading-snug text-text-primary">
+              <span className="field-value font-mono text-sm leading-snug text-text-primary">
                 {existing.value}
                 <Unit unit={existingUnit} />
               </span>
-              <span className="text-[10px] text-text-muted">(system)</span>
+              <span className="text-[11px] text-text-muted">(system)</span>
             </span>
           )
         ) : (
-          <span className="font-mono text-[13px] text-text-muted">—</span>
+          <span className="font-mono text-sm text-text-muted">—</span>
         )}
       </td>
-      <td className="min-w-0 max-w-0 overflow-hidden px-3 py-2">
+      <td className="min-w-0 max-w-0 overflow-hidden px-3 py-2.5">
         {isStyles ? (
           editing && canEdit ? (
             <StyleListEditor
@@ -197,7 +197,7 @@ export function ConflictRow({
             </div>
           ) : (
             <div className="min-w-0 space-y-1">
-              <span className="font-mono text-[13px] text-text-muted">—</span>
+              <span className="font-mono text-sm text-text-muted">—</span>
               {canCopyAll && (
                 <button
                   type="button"
@@ -228,7 +228,7 @@ export function ConflictRow({
               onChange={onChange}
               ariaLabel={`Proposed value for ${label}`}
               placeholder="—"
-              className="h-8 w-full rounded-lg border border-border bg-surface-900 px-2.5 font-mono text-[13px] text-text-primary placeholder:text-text-muted"
+              className="h-8 w-full rounded-lg border border-border bg-surface-900 px-2.5 font-mono text-sm text-text-primary placeholder:text-text-muted"
             />
           ) : (
             <span className="inline-flex w-full items-center">
@@ -237,7 +237,7 @@ export function ConflictRow({
                 value={value}
                 onChange={(e) => onChange(e.target.value)}
                 placeholder="—"
-                className="h-8 w-full rounded-lg border border-border bg-surface-900 px-2.5 font-mono text-[13px] text-text-primary placeholder:text-text-muted"
+                className="h-8 w-full rounded-lg border border-border bg-surface-900 px-2.5 font-mono text-sm text-text-primary placeholder:text-text-muted"
               />
               {/* The unit is NOT part of the editable text — the operator types a number, not '87 KGS'. */}
               <Unit unit={proposedUnit} />
@@ -248,7 +248,7 @@ export function ConflictRow({
             {/* Colour alone carries "this differs from stored" — the arrow said the same thing twice. */}
             <span
               className={cn(
-                'field-value font-mono text-[13px] leading-snug',
+                'field-value font-mono text-sm leading-snug',
                 changed ? 'font-medium text-ai-proposed' : 'text-text-primary',
               )}
             >
@@ -257,7 +257,7 @@ export function ConflictRow({
             </span>
           </span>
         ) : (
-          <span className="font-mono text-[13px] text-text-muted">—</span>
+          <span className="font-mono text-sm text-text-muted">—</span>
         )}
       </td>
     </tr>
@@ -270,7 +270,7 @@ export function StyleListDisplay({ value, className }: { value: string; classNam
   const rows = parseStyleEntries(value)
   // Always set 13px — bare "—" must not inherit body 16px.
   if (rows.length === 0) {
-    return <span className="font-mono text-[13px] text-text-muted">—</span>
+    return <span className="font-mono text-sm text-text-muted">—</span>
   }
   return (
     <div className="min-w-0 max-w-full" data-testid="style-list-display">
@@ -280,7 +280,7 @@ export function StyleListDisplay({ value, className }: { value: string; classNam
             <li
               key={`${r.po}-${r.style}-${i}`}
               className={cn(
-                'field-value font-mono text-[13px] leading-snug',
+                'field-value font-mono text-sm leading-snug',
                 className ?? 'text-text-primary',
               )}
             >
@@ -297,7 +297,7 @@ export function StyleListDisplay({ value, className }: { value: string; classNam
         </ul>
       </div>
       {rows.length > 6 && (
-        <p className="mt-1 text-[10px] text-text-muted">{rows.length} styles · scroll for all</p>
+        <p className="mt-1 text-[11px] text-text-muted">{rows.length} styles · scroll for all</p>
       )}
     </div>
   )
@@ -384,7 +384,7 @@ export function StyleListEditor({
                 value={r.po}
                 onChange={(e) => update(i, { po: e.target.value })}
                 placeholder="PO#"
-                className="h-8 w-[30%] min-w-[5rem] shrink-0 rounded-lg border border-border bg-surface-900 px-2 font-mono text-[13px] text-text-primary placeholder:text-text-muted"
+                className="h-8 w-[30%] min-w-[5rem] shrink-0 rounded-lg border border-border bg-surface-900 px-2 font-mono text-sm text-text-primary placeholder:text-text-muted"
               />
             )}
             <input
@@ -394,7 +394,7 @@ export function StyleListEditor({
               value={r.style}
               onChange={(e) => update(i, { style: e.target.value })}
               placeholder="Style / item no. — or paste a list"
-              className="h-8 min-w-0 flex-1 rounded-lg border border-border bg-surface-900 px-2.5 font-mono text-[13px] text-text-primary placeholder:text-text-muted"
+              className="h-8 min-w-0 flex-1 rounded-lg border border-border bg-surface-900 px-2.5 font-mono text-sm text-text-primary placeholder:text-text-muted"
             />
             <button
               type="button"
@@ -429,10 +429,10 @@ export function StyleListEditor({
           <Plus size={12} /> Add style
         </button>
         {rows.length > 6 && (
-          <span className="text-[10px] text-text-muted">{rows.length} styles · scroll for all</span>
+          <span className="text-[11px] text-text-muted">{rows.length} styles · scroll for all</span>
         )}
       </div>
-      <p className="text-[10px] text-text-muted">
+      <p className="text-[11px] text-text-muted">
         Paste a comma list or Excel column to replace all styles
       </p>
     </div>
@@ -491,7 +491,7 @@ function MultiCandidateProposed({
                     onChange={() => onChange(c.value)}
                     aria-label={`Select proposed candidate: ${c.value}`}
                   />
-                  <span className="field-value font-mono text-[13px] leading-snug text-text-primary">
+                  <span className="field-value font-mono text-sm leading-snug text-text-primary">
                     {c.value}
                     <Unit unit={proposedUnit} />
                   </span>
@@ -509,7 +509,7 @@ function MultiCandidateProposed({
                 >
                   <span
                     className={cn(
-                      'field-value font-mono text-[13px] leading-snug',
+                      'field-value font-mono text-sm leading-snug',
                       selected && changed
                         ? 'font-medium text-ai-proposed'
                         : selected
@@ -528,21 +528,21 @@ function MultiCandidateProposed({
       </ul>
       {editing && (
         <div className="space-y-1">
-          <p className="text-[10px] text-text-muted">Or type a different value</p>
+          <p className="text-[11px] text-text-muted">Or type a different value</p>
           <span className="inline-flex w-full items-center">
             <input
               aria-label={`Proposed value for ${label}`}
               value={value}
               onChange={(e) => onChange(e.target.value)}
               placeholder="—"
-              className="h-8 w-full rounded-lg border border-border bg-surface-900 px-2.5 font-mono text-[13px] text-text-primary placeholder:text-text-muted"
+              className="h-8 w-full rounded-lg border border-border bg-surface-900 px-2.5 font-mono text-sm text-text-primary placeholder:text-text-muted"
             />
             <Unit unit={proposedUnit} />
           </span>
         </div>
       )}
       {!editing && (
-        <p className="text-[10px] text-text-muted">
+        <p className="text-[11px] text-text-muted">
           {proposed.length} candidates — pick one in Edit
         </p>
       )}

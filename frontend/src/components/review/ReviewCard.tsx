@@ -556,19 +556,19 @@ export function ReviewCard({
             >
               {/* data-testid why-review kept for legacy tests */}
               <div data-testid="why-review">
-                {/* meta kicker · body (12) lines — below Critical title (14) and table values (13) */}
-                <p className="text-[11px] font-medium leading-tight text-text-muted">Needs attention</p>
+                {/* meta (12) kicker · body (14) lines — below Critical title (16) */}
+                <p className="text-xs font-medium leading-tight text-text-muted">Needs attention</p>
                 <div className="mt-1.5 space-y-2">
                   {needsAttentionGroups.map((g) => (
                     <div key={g.groupId} data-testid={`needs-group-${g.groupId}`}>
-                      <p className="text-[11px] font-semibold leading-tight text-text-secondary">
+                      <p className="text-xs font-semibold leading-tight text-text-secondary">
                         {g.title}
                       </p>
                       <ul className="mt-1 space-y-1">
                         {g.items.map((r) => (
                           <li
                             key={r.key}
-                            className="flex items-start gap-1.5 text-xs leading-snug text-text-secondary"
+                            className="flex items-start gap-1.5 text-sm leading-snug text-text-secondary"
                             title={r.evidence?.join(' · ') || undefined}
                           >
                             <span
@@ -788,9 +788,9 @@ export function ReviewCard({
                   <ChevronRight size={14} className="shrink-0 text-text-muted" />
                 )}
                 <Mail size={14} className="shrink-0 text-text-muted" />
-                <h4 className="text-[11px] font-semibold uppercase tracking-wide text-text-primary">
+                <h4 className="text-xs font-semibold uppercase tracking-wide text-text-primary">
                   Source emails
-                  <span className="ml-2 text-[11px] font-normal normal-case tracking-normal text-text-muted">
+                  <span className="ml-2 text-xs font-normal normal-case tracking-normal text-text-muted">
                     · {emails.length}
                   </span>
                 </h4>
@@ -817,12 +817,12 @@ export function ReviewCard({
                             : 'flex w-full cursor-default items-center gap-2.5 rounded-md bg-surface-900/60 px-2.5 py-2 text-left opacity-80'
                         }
                       >
-                        <Mail size={13} className="shrink-0 text-text-muted" />
+                        <Mail size={14} className="shrink-0 text-text-muted" />
                         <div className="min-w-0 flex-1">
-                          <p className="truncate text-xs text-text-primary">
+                          <p className="truncate text-sm text-text-primary">
                             {e.subject || '(no subject)'}
                           </p>
-                          <p className="text-[11px] leading-tight text-text-muted">
+                          <p className="text-xs leading-tight text-text-muted">
                             {!openable
                               ? 'Body not stored — re-ingest to open'
                               : (
@@ -834,7 +834,7 @@ export function ReviewCard({
                           </p>
                         </div>
                         {openable && (
-                          <ExternalLink size={11} className="shrink-0 text-text-muted opacity-60" />
+                          <ExternalLink size={12} className="shrink-0 text-text-muted opacity-60" />
                         )}
                       </button>
                     )
@@ -849,9 +849,9 @@ export function ReviewCard({
               <div>
                 <label
                   htmlFor={`review-note-${shipment.id}`}
-                  className="mb-1 flex items-center gap-1.5 text-[11px] font-medium text-text-muted"
+                  className="mb-1 flex items-center gap-1.5 text-xs font-medium text-text-muted"
                 >
-                  <NotebookPen size={12} className="text-text-muted" />
+                  <NotebookPen size={13} className="text-text-muted" />
                   Note
                   {overrides.length > 0 && (
                     <span className="font-normal text-status-warning">
@@ -867,12 +867,12 @@ export function ReviewCard({
                   rows={2}
                   placeholder="Why your value beats the agent's? (also trains the next extraction)"
                   className={cn(
-                    'w-full rounded-lg border bg-surface-900 p-2.5 text-xs leading-snug text-text-primary placeholder:text-text-muted',
+                    'w-full rounded-lg border bg-surface-900 p-2.5 text-sm leading-snug text-text-primary placeholder:text-text-muted',
                     noteRequired ? 'border-status-warning/60' : 'border-border',
                   )}
                 />
                 {noteRequired && (
-                  <p className="mt-1 text-[11px] text-status-warning">
+                  <p className="mt-1 text-xs text-status-warning">
                     Add a note before Save & Approve — you changed a value.
                   </p>
                 )}
@@ -881,7 +881,7 @@ export function ReviewCard({
               {remainingCriticalMissing > 0 && (
                 <p
                   data-testid="critical-approve-soft-warn"
-                  className="text-[11px] leading-snug text-status-warning"
+                  className="text-xs leading-snug text-status-warning"
                 >
                   {remainingCriticalMissing} critical blank
                   {remainingCriticalMissing === 1 ? '' : 's'} remain — you can still confirm
