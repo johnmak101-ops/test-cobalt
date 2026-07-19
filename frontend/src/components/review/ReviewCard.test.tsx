@@ -1003,8 +1003,8 @@ function shipmentWithCriticals(over: Record<string, unknown> = {}): ReviewShipme
   } as ReviewShipment
 }
 
-describe('decision desk — critical sailing band + ready state', () => {
-  it('shows Critical for sailing when booking blank on detail shipment', () => {
+describe('decision desk — ready state (no Critical for sailing band)', () => {
+  it('does not show Critical for sailing when booking blank', () => {
     render(
       <MemoryRouter>
         <ReviewCard
@@ -1016,28 +1016,12 @@ describe('decision desk — critical sailing band + ready state', () => {
         />
       </MemoryRouter>,
     )
-    expect(screen.getByTestId('critical-sailing')).toBeInTheDocument()
-    expect(screen.getByText(/Booking No/i)).toBeInTheDocument()
+    expect(screen.queryByTestId('critical-sailing')).toBeNull()
+    expect(screen.queryByText(/Critical for sailing/i)).toBeNull()
+    expect(screen.queryByTestId('critical-approve-soft-warn')).toBeNull()
   })
 
-  it('shows Edit when critical missing even with zero conflicts', () => {
-    render(
-      <MemoryRouter>
-        <ReviewCard
-          shipment={shipmentWithCriticals({ etd: null })}
-          criticReview={baseReview({ conflicts: [], riskFlags: [], reasons: [] })}
-          compact={null}
-          defaultExpanded
-          onApprove={vi.fn()}
-        />
-      </MemoryRouter>,
-    )
-    // etd null → critical missing; no field conflicts → Edit still available
-    expect(screen.getByTestId('critical-sailing')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /^edit$/i })).toBeInTheDocument()
-  })
-
-  it('shows ready banner when no needs-attention, no critical, no conflicts', () => {
+  it('shows ready banner when no needs-attention and no conflicts', () => {
     render(
       <MemoryRouter>
         <ReviewCard
@@ -1049,14 +1033,13 @@ describe('decision desk — critical sailing band + ready state', () => {
         />
       </MemoryRouter>,
     )
-    expect(screen.queryByTestId('critical-sailing')).toBeNull()
     expect(screen.queryByTestId('needs-attention')).toBeNull()
     expect(screen.getByTestId('review-ready-state')).toHaveTextContent(
       /ready to confirm|no open decisions/i,
     )
   })
 
-  it('shows judgment-only line when only needs-attention (no critical, no conflicts)', () => {
+  it('shows judgment-only line when only needs-attention (no conflicts)', () => {
     render(
       <MemoryRouter>
         <ReviewCard
@@ -1080,50 +1063,8 @@ describe('decision desk — critical sailing band + ready state', () => {
       </MemoryRouter>,
     )
     expect(screen.getByTestId('needs-attention')).toBeInTheDocument()
-    expect(screen.queryByTestId('critical-sailing')).toBeNull()
     expect(screen.getByTestId('review-judgment-only')).toHaveTextContent(
       /No field changes|confirm when verified/i,
     )
-  })
-
-  it('soft-warns when critical blanks still empty', () => {
-    render(
-      <MemoryRouter>
-        <ReviewCard
-          shipment={shipmentWithCriticals({ bookingNo: null })}
-          criticReview={baseReview({ conflicts: [], riskFlags: [], reasons: [] })}
-          compact={null}
-          defaultExpanded
-          onApprove={vi.fn()}
-        />
-      </MemoryRouter>,
-    )
-    expect(screen.getByTestId('critical-approve-soft-warn')).toBeInTheDocument()
-    expect(screen.getByTestId('critical-approve-soft-warn')).toHaveTextContent(
-      /critical blank/i,
-    )
-  })
-
-  it('merges filled critical drafts into Save & Approve fields', async () => {
-    const user = userEvent.setup()
-    const onSave = vi.fn().mockResolvedValue(undefined)
-    render(
-      <MemoryRouter>
-        <ReviewCard
-          shipment={shipmentWithCriticals({ bookingNo: null })}
-          criticReview={baseReview({ conflicts: [], riskFlags: [], reasons: [] })}
-          compact={null}
-          defaultExpanded
-          onSaveAndApprove={onSave}
-        />
-      </MemoryRouter>,
-    )
-    await user.click(screen.getByRole('button', { name: /^edit$/i }))
-    const bookingInput = screen.getByLabelText(/Booking No/i)
-    await user.clear(bookingInput)
-    await user.type(bookingInput, 'BK-NEW-99')
-    await user.click(screen.getByRole('button', { name: /approve/i }))
-    expect(onSave).toHaveBeenCalledTimes(1)
-    expect(onSave.mock.calls[0][0].fields).toMatchObject({ bookingNo: 'BK-NEW-99' })
   })
 })

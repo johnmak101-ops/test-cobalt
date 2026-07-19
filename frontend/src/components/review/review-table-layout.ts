@@ -22,14 +22,14 @@ export const REVIEW_TABLE_CLASS = 'w-full min-w-[36rem] table-fixed border-colla
  *
  * | Role    | Size | Use |
  * |---------|------|-----|
- * | topic   | 16px | Panel titles: Needs attention, Critical for sailing |
+ * | topic   | 16px | Panel titles: Needs attention |
  * | value   | 14px | PO#, styles, AI, existing (mono) |
  * | body    | 14px | Field labels, critical rows, needs-attention lines |
  * | meta    | 12px | Subtitles, table headers, group titles, counts |
  * | caption | 11px | Hints under values |
  */
 export const REVIEW_FS = {
-  /** Section topic titles (Needs attention, Critical for sailing) */
+  /** Section topic titles (Needs attention) */
   topic: 'text-base leading-snug',
   /** @deprecated use topic — kept as alias */
   title: 'text-base leading-snug',
@@ -56,17 +56,11 @@ export const REVIEW_HEAD = {
   proposed: 'From email / AI',
 } as const
 
-/**
- * Shared status-panel shell for Needs attention + Critical for sailing.
- * Same padding / radius / list rhythm so the two cards stack as one column.
- */
+/** Shared status-panel shell for Needs attention. */
 export const REVIEW_PANEL =
   'rounded-lg border border-border bg-surface-900 px-3 py-2.5'
 
-export const REVIEW_PANEL_CRITICAL =
-  'rounded-lg border border-status-warning/35 bg-status-warning/5 px-3 py-2.5'
-
-/** Bullet list under a status panel (same left edge on both cards). */
+/** Bullet list under a status panel. */
 export const REVIEW_PANEL_LIST = 'mt-1.5 space-y-1'
 
 export const REVIEW_PANEL_ITEM =
