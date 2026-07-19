@@ -17,7 +17,7 @@ interface MilestoneTimelineProps {
   mode?: string | null
   // DEPARTED/ARRIVED have no milestone EVENT — the backend tracks them as the shipment's atd/ata
   // (actual) and etd/eta (estimated) dates. Pass them so those stages reflect reality instead of
-  // always falling through to "Awaiting".
+  // always falling through to "Not yet".
   etd?: string | null
   atd?: string | null
   eta?: string | null
@@ -52,7 +52,7 @@ const STATE_TO_INDEX: Record<string, number> = {
   ARRIVED: 5, // Delivered — stage removed from display, fold forward (UI status for leg state DELIVERED)
 }
 
-type TimelineStage = {
+export type TimelineStage = {
   type: string
   idx: number
   label: string
@@ -64,11 +64,69 @@ type TimelineStage = {
   est: string | null
 }
 
+/**
+ * Ops-facing date line under a stage.
+ * Priority (eng lock): actual date → done wins → estimate → not yet.
+ * Never call formatDate on null (returns "TBD").
+ * SAILED + no ATD: done=true → "Done", never "ETD …".
+ */
+export function stageDateCaption(s: {
+  date: string | null
+  est: string | null
+  done: boolean
+  type: string
+}): string {
+  if (s.date) return formatDate(s.date)
+  if (s.done) return 'Done'
+  if (s.est) {
+    if (s.type === 'DEPARTED') return `ETD ${formatDate(s.est)}`
+    if (s.type === 'ARRIVED') return `ETA ${formatDate(s.est)}`
+  }
+  return 'Not yet'
+}
+
+/**
+ * Orientation strip above the stepper.
+ * mid: Now: X · Next: Y | terminal complete | not started
+ */
+export function orientationLine(
+  stages: Array<{ label: string; done: boolean; isCurrent: boolean; isNext: boolean; isLast: boolean }>,
+): string {
+  if (stages.length === 0) return 'Not started'
+  const current = stages.find((s) => s.isCurrent)
+  const next = stages.find((s) => s.isNext)
+  const last = stages[stages.length - 1]!
+  if (last.done && last.isLast) {
+    return `Complete · ${last.label}`
+  }
+  if (!current) {
+    const first = stages[0]!
+    return `Not started · Next: ${first.label}`
+  }
+  if (next) return `Now: ${current.label} · Next: ${next.label}`
+  return `Now: ${current.label}`
+}
+
+const DONE_TOOLTIP = 'Implied complete; no email date on file'
+
 function dateLine(s: TimelineStage, sz: string) {
-  if (s.date) return <p className={cn(sz, 'text-text-muted')}>{formatDate(s.date)}</p>
-  if (s.done) return <p className={cn(sz, 'text-text-muted')}>—</p> // implied complete, date unknown
-  if (s.est) return <p className={cn(sz, 'text-text-muted')}>Est. {formatDate(s.est)}</p>
-  return <p className={cn(sz, 'text-text-muted italic')}>Awaiting</p>
+  const caption = stageDateCaption(s)
+  const title = caption === 'Done' && !s.date ? DONE_TOOLTIP : undefined
+  return (
+    <p className={cn(sz, 'whitespace-nowrap text-text-muted', caption === 'Not yet' && 'italic')} title={title}>
+      {caption}
+    </p>
+  )
+}
+
+function stageLabelClass(s: TimelineStage, base: string) {
+  return cn(
+    base,
+    s.isCurrent && 'font-semibold text-status-warning',
+    !s.isCurrent && s.isNext && 'font-medium text-text-primary',
+    !s.isCurrent && !s.isNext && s.done && 'text-text-secondary',
+    !s.isCurrent && !s.isNext && !s.done && 'text-text-muted',
+  )
 }
 
 export function MilestoneTimeline({
@@ -146,6 +204,8 @@ export function MilestoneTimeline({
     est: estDate(type),
   }))
 
+  const orientation = orientationLine(stages)
+
   // Vertical stepper — the default layout, and the mobile form of the horizontal tracker below.
   const verticalView = (
     <div className="space-y-0">
@@ -161,7 +221,7 @@ export function MilestoneTimeline({
                     ? 'border-cobalt-primary bg-cobalt-primary text-white'
                     : s.isNext
                       ? 'border-cobalt-primary bg-transparent'
-                      : 'border-border bg-transparent'
+                      : 'border-border bg-transparent',
               )}
             >
               {s.isCurrent ? transitIcon : s.done && <Check size={14} />}
@@ -175,15 +235,8 @@ export function MilestoneTimeline({
               />
             )}
           </div>
-          <div className="pb-6 pt-0.5">
-            <p
-              className={cn(
-                'text-base font-medium',
-                s.isCurrent ? 'text-status-warning' : s.done ? 'text-text-primary' : 'text-text-muted',
-              )}
-            >
-              {s.label}
-            </p>
+          <div className="min-w-0 pb-6 pt-0.5">
+            <p className={stageLabelClass(s, 'text-base')}>{s.label}</p>
             {dateLine(s, 'text-sm')}
           </div>
         </div>
@@ -191,13 +244,11 @@ export function MilestoneTimeline({
     </div>
   )
 
-  if (!horizontal) return verticalView
-
   const horizontalView = (
     <div className="flex items-stretch">
       {stages.map((s) => (
-        <div key={s.type} className="flex flex-1 items-start">
-          <div className="flex w-full flex-col items-center">
+        <div key={s.type} className="flex min-w-0 flex-1 items-start">
+          <div className="flex w-full min-w-0 flex-col items-center">
             <div
               className={cn(
                 'z-10 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border-2',
@@ -207,20 +258,13 @@ export function MilestoneTimeline({
                     ? 'border-cobalt-primary bg-cobalt-primary text-white'
                     : s.isNext
                       ? 'border-cobalt-primary bg-transparent'
-                      : 'border-border bg-transparent'
+                      : 'border-border bg-transparent',
               )}
             >
               {s.isCurrent ? transitIcon : s.done && <Check size={14} />}
             </div>
-            <div className="mt-1.5 text-center">
-              <p
-                className={cn(
-                  'text-sm font-medium leading-tight',
-                  s.isCurrent ? 'text-status-warning' : s.done ? 'text-text-primary' : 'text-text-muted',
-                )}
-              >
-                {s.label}
-              </p>
+            <div className="mt-1.5 min-w-0 max-w-full px-0.5 text-center">
+              <p className={stageLabelClass(s, 'text-sm leading-tight')}>{s.label}</p>
               {dateLine(s, 'text-xs')}
             </div>
           </div>
@@ -237,12 +281,37 @@ export function MilestoneTimeline({
     </div>
   )
 
+  // Prefer horizontal prop for tests / forced layout; otherwise responsive split.
+  if (horizontal === true) {
+    return (
+      <div data-testid="milestone-timeline">
+        <p className="mb-3 text-sm font-medium text-text-primary" data-testid="milestone-orientation">
+          {orientation}
+        </p>
+        {horizontalView}
+      </div>
+    )
+  }
+  if (horizontal === false) {
+    return (
+      <div data-testid="milestone-timeline">
+        <p className="mb-3 text-sm font-medium text-text-primary" data-testid="milestone-orientation">
+          {orientation}
+        </p>
+        {verticalView}
+      </div>
+    )
+  }
+
   // Six steps side by side crowd a phone (labels collide) — show the vertical stepper below md and
   // the horizontal tracker from md up, where there is room for the labels.
   return (
-    <>
+    <div data-testid="milestone-timeline">
+      <p className="mb-3 text-sm font-medium text-text-primary" data-testid="milestone-orientation">
+        {orientation}
+      </p>
       <div className="md:hidden">{verticalView}</div>
       <div className="hidden md:block">{horizontalView}</div>
-    </>
+    </div>
   )
 }
