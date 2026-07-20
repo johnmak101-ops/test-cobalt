@@ -718,6 +718,43 @@ export function ReviewCard({
             </div>
           )}
 
+          {/* Hybrid-C E2: residual / multi-booking trust strip */}
+          {(hasCandidateLegs ||
+            criticReview?.multiBookingOrigin ||
+            criticReview?.splitAudit) && (
+            <div
+              className="rounded-md border border-border/80 bg-surface-800/80 px-2.5 py-1.5 text-[11px] text-text-secondary"
+              data-testid="multi-leg-trust-strip"
+            >
+              {criticReview?.splitAudit ? (
+                <span className="text-status-warning">
+                  Incomplete multi-booking split — expected {criticReview.splitAudit.expected}{' '}
+                  bookings, system produced {criticReview.splitAudit.actual}. Review carefully.
+                </span>
+              ) : criticReview?.multiBookingOrigin ? (
+                <span>
+                  From multi-booking email: row{' '}
+                  <span className="font-mono text-text-primary">
+                    {criticReview.multiBookingOrigin.index}
+                  </span>{' '}
+                  of{' '}
+                  <span className="font-mono text-text-primary">
+                    {criticReview.multiBookingOrigin.total}
+                  </span>
+                  {criticReview.multiBookingOrigin.bookingNo
+                    ? ` · BK ${criticReview.multiBookingOrigin.bookingNo}`
+                    : ''}
+                  {hasCandidateLegs ? ' · pick which existing shipment to update' : ''}
+                </span>
+              ) : (
+                <span>
+                  Multiple matching shipments — pick by SO / booking / HBL / container (JOB is
+                  internal only).
+                </span>
+              )}
+            </div>
+          )}
+
           {hasCandidateLegs && matchAmbiguity && (
             <CandidateLegsPanel
               matchAmbiguity={matchAmbiguity}

@@ -1,8 +1,10 @@
 /**
  * #129 multi-candidate match: closed-set leg picker.
+ * Hybrid-C E4: business keys (SO / booking / HBL / container) are primary;
+ * JOB# is secondary internal metadata only (virtual master — operators do not use it as identity).
  * Selection only — merge happens on the card primary action (Link & apply) after field decisions.
  */
-import type { MatchAmbiguity } from '../../lib/critic-review'
+import type { MatchAmbiguity, MatchAmbiguityCandidate } from '../../lib/critic-review'
 import { cn, formatDateMaybeTime } from '../../lib/utils'
 
 export interface CandidateLegsPanelProps {
@@ -18,6 +20,18 @@ export interface CandidateLegsPanelProps {
 function dash(v: string | null | undefined): string {
   const s = (v ?? '').trim()
   return s || '—'
+}
+
+/** Primary operator-facing label — business keys first, never JOB-led. */
+export function candidateBizKeyTitle(c: MatchAmbiguityCandidate): string {
+  const parts: string[] = []
+  if ((c.so_no ?? '').trim()) parts.push(`SO ${c.so_no!.trim()}`)
+  if ((c.booking_no ?? '').trim()) parts.push(`BK ${c.booking_no!.trim()}`)
+  if ((c.hbl_awb_fcr_no ?? '').trim()) parts.push(`HBL ${c.hbl_awb_fcr_no!.trim()}`)
+  if ((c.container_no ?? '').trim()) parts.push(`CTR ${c.container_no!.trim()}`)
+  if (parts.length) return parts.slice(0, 3).join(' · ')
+  if ((c.pos ?? []).length) return `PO ${c.pos!.slice(0, 2).join(', ')}`
+  return `${c.shipmentId.slice(0, 8)}…`
 }
 
 function emailKeyLine(emailKey: Record<string, string> | undefined): string {
@@ -58,8 +72,12 @@ export function CandidateLegsPanel({
       <p className="text-[11px] font-medium text-text-muted">
         Which shipment does this email update?
       </p>
+      <p className="text-[11px] text-text-muted" data-testid="candidate-biz-key-hint">
+        Identify by SO / booking / HBL / container. JOB# is internal only.
+      </p>
       <p className="text-xs text-text-secondary">
-        Email keys: <span className="font-mono text-text-primary">{emailKeyLine(matchAmbiguity.emailKey)}</span>
+        Email keys:{' '}
+        <span className="font-mono text-text-primary">{emailKeyLine(matchAmbiguity.emailKey)}</span>
         {matchAmbiguity.candidateCount != null &&
           matchAmbiguity.candidateCount > candidates.length && (
             <span className="text-text-muted">
@@ -85,8 +103,10 @@ export function CandidateLegsPanel({
         <p className="text-[11px] text-text-muted" data-testid="candidate-suggestion">
           Suggested:{' '}
           <span className="font-mono text-text-secondary">
-            {candidates.find((c) => c.shipmentId === suggestedId)?.jobNo ??
-              `${suggestedId.slice(0, 8)}…`}
+            {(() => {
+              const s = candidates.find((c) => c.shipmentId === suggestedId)
+              return s ? candidateBizKeyTitle(s) : `${suggestedId.slice(0, 8)}…`
+            })()}
           </span>
           {matchAmbiguity.suggestion.source === 'llm_rank' && (
             <span className="text-text-muted"> (model)</span>
@@ -101,10 +121,11 @@ export function CandidateLegsPanel({
         </p>
       )}
 
-      <ul className="space-y-1.5" role="radiogroup" aria-label="Matching shipments">
+      <ul className="space-y-1.5" role="radiogroup" aria-label="Matching shipments by business key">
         {candidates.map((c) => {
           const isSelf = currentShipmentId != null && c.shipmentId === currentShipmentId
           const isSuggested = suggestedId === c.shipmentId
+          const title = candidateBizKeyTitle(c)
           return (
             <li key={c.shipmentId}>
               <label
@@ -123,12 +144,15 @@ export function CandidateLegsPanel({
                   checked={selectedId === c.shipmentId}
                   disabled={readOnly || isSelf}
                   onChange={() => onSelect(c.shipmentId)}
-                  aria-label={`Select ${c.jobNo ?? c.shipmentId}`}
+                  aria-label={`Select ${title}`}
                 />
                 <div className="min-w-0 flex-1 space-y-0.5">
                   <div className="flex flex-wrap items-center gap-1.5">
-                    <span className="font-mono font-medium text-text-primary">
-                      {dash(c.jobNo)}
+                    <span
+                      className="font-mono font-medium text-text-primary"
+                      data-testid="candidate-biz-title"
+                    >
+                      {title}
                     </span>
                     {isSuggested && (
                       <span className="rounded bg-cobalt-primary/20 px-1 py-0.5 text-[10px] text-cobalt-primary-light">
@@ -139,9 +163,9 @@ export function CandidateLegsPanel({
                       <span className="text-[10px] text-text-muted">(this provisional)</span>
                     )}
                   </div>
-                  <div className="field-value font-mono text-[11px] text-text-secondary">
-                    BK {dash(c.booking_no)} · SO {dash(c.so_no)} · HBL {dash(c.hbl_awb_fcr_no)} · CTR{' '}
-                    {dash(c.container_no)}
+                  <div className="field-value font-mono text-[11px] text-text-muted">
+                    JOB {dash(c.jobNo)}
+                    {c.mbl ? ` · MBL ${dash(c.mbl)}` : ''}
                   </div>
                   {(c.etd || c.vesselOrFlight || (c.pos && c.pos.length > 0)) && (
                     <div className="field-value text-[11px] text-text-muted">
@@ -171,7 +195,7 @@ export function CandidateLegsPanel({
               <span className="font-medium text-text-secondary">Link &amp; apply</span>.
             </>
           ) : (
-            <>Select a shipment, resolve field conflicts below, then Link &amp; apply.</>
+            <>Select a shipment by business key, resolve fields below, then Link &amp; apply.</>
           )}
         </p>
       )}
