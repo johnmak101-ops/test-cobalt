@@ -12,6 +12,7 @@ import { AuditRepository } from '../db/repositories/audit.repository'
 import { EmailRepository } from '../db/repositories/email.repository'
 import { EvidenceRepository } from '../db/repositories/evidence.repository'
 import { ShipmentsService } from '../shipments/shipments.service'
+import { AlertEvaluatorService } from '../alerts/alert-evaluator.service'
 import {
   buildMatchAmbiguityFromCandidates,
   dedupeReviewReasons,
@@ -140,6 +141,7 @@ export class PresentationService {
     private readonly emailRepo: EmailRepository,
     private readonly evidenceRepo: EvidenceRepository,
     private readonly shipmentsLookup: ShipmentsService,
+    private readonly alertEvaluator: AlertEvaluatorService,
   ) {}
 
   // ---- shared assembly ----
@@ -638,7 +640,9 @@ export class PresentationService {
     return { rules: rows.map(toUiAlertRule) }
   }
 
-  /** Persist edited alert rules. The UI works in DAYS; we store HOURS. Locked rules stay immutable. */
+  /** Persist edited alert rules. The UI works in DAYS; we store HOURS. Locked rules stay immutable.
+   *  After save, re-evaluate every active confirmed leg immediately so new thresholds apply now
+   *  (scheduler still re-runs every ~15 minutes as a safety net). */
   async saveAlertRules(input: { rules?: Array<Record<string, unknown>> }) {
     for (const r of input?.rules ?? []) {
       if (r.locked) continue // A3 etc. are locked — never mutate
@@ -650,15 +654,31 @@ export class PresentationService {
       if (typeof r.enabled === 'boolean') patch.enabled = r.enabled
       const raw = r.countryThresholds
       const ct = typeof raw === 'string' ? (raw ? JSON.parse(raw) : null) : (raw ?? null)
-      patch.countryThresholds =
+      // country_thresholds is nvarchar(max) JSON — must stringify for tedious/MSSQL
+      // ("Validation failed for parameter … Invalid string" if an object is bound).
+      const hoursMap =
         ct && typeof ct === 'object' && Object.keys(ct as object).length > 0
           ? Object.fromEntries(
               Object.entries(ct as Record<string, unknown>).map(([k, d]) => [k, Math.round(Number(d) * 24)]),
             )
           : null
+      patch.countryThresholds = hoursMap != null ? JSON.stringify(hoursMap) : null
       await this.alertRepo.updateRule(id, patch)
     }
-    return this.alertRules()
+    let evalStats: { evaluated: number; fired: number; resolved: number } | null = null
+    try {
+      evalStats = await this.alertEvaluator.evaluate()
+      this.logger.log(
+        `alert rules saved — immediate eval evaluated=${evalStats.evaluated} fired=${evalStats.fired} resolved=${evalStats.resolved}`,
+      )
+    } catch (err) {
+      // Thresholds are already persisted; a failed re-eval must not roll back the save response.
+      this.logger.warn(
+        `alert rules saved but immediate eval failed: ${err instanceof Error ? err.message : String(err)}`,
+      )
+    }
+    const { rules } = await this.alertRules()
+    return { rules, eval: evalStats }
   }
 
   // ---- dashboard ----

@@ -10,7 +10,17 @@ beforeAll(async () => {
   const t = await getTestDb()
   db = t.db
   const r = repos(db)
-  presentation = new PresentationService(r.shipment, r.booking, r.masters, r.alert, r.audit, new EmailRepository(db), r.evidence)
+  presentation = new PresentationService(
+    r.shipment,
+    r.booking,
+    r.masters,
+    r.alert,
+    r.audit,
+    new EmailRepository(db),
+    r.evidence,
+    { lookupByMatchKey: async () => ({ query: {}, candidates: [] }) } as any,
+    { evaluate: async () => ({ evaluated: 0, fired: 0, resolved: 0 }) } as any,
+  )
 })
 afterAll(closeTestDb)
 beforeEach(() => resetDb(db))

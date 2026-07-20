@@ -4,6 +4,8 @@ import { api } from '../../lib/api'
 import { Card } from '../ui/Card'
 import { cn } from '../../lib/utils'
 import { usePageAccess } from '../../hooks/use-page-access'
+import { toast } from '../ui/Toast'
+import { DaysStepper } from './DaysStepper'
 
 interface AlertRule {
   id: string
@@ -21,6 +23,11 @@ interface AlertRule {
   locked: boolean
 }
 
+/** POC A1–A6 configurable threshold rules. A7 is built-in and hidden here. */
+const CONFIGURABLE_RULE_IDS = new Set(['A1', 'A2', 'A3', 'A4', 'A5', 'A6'])
+/** Country absolute-day overrides only for cut-off / Draft B/L rules. */
+const COUNTRY_OVERRIDE_RULE_IDS = new Set(['A2', 'A3'])
+
 const ALERT_COUNTRY_LIST = [
   { code: 'CN', label: 'China' },
   { code: 'BD', label: 'Bangladesh' },
@@ -30,19 +37,25 @@ const ALERT_COUNTRY_LIST = [
   { code: 'LK', label: 'Sri Lanka' },
 ]
 
-const STATE_LABELS: Record<string, string> = {
-  BOOKED: 'Booked',
-  CONFIRMED: 'Confirmed',
-  AT_WAREHOUSE: 'At warehouse',
-  SAILED: 'Sailed',
-  DEPARTED: 'Departure',
-  ARRIVED: 'Delivered',
-}
-
-const SEVERITY_CHIP: Record<string, string> = {
-  CRITICAL: 'bg-status-critical/15 text-status-critical border-status-critical/30',
-  WARNING: 'bg-status-warning/15 text-status-warning border-status-warning/30',
-  INFO: 'bg-status-info/15 text-status-info border-status-info/30',
+/** Human label for the default days control. */
+function thresholdLabel(rule: AlertRule): string {
+  const before = rule.triggerType === 'days_before'
+  switch (rule.triggerReference) {
+    case 'booking_request':
+      return before ? 'Days before booking' : 'Days after booking'
+    case 'cutoff':
+      return before ? 'Days before cut-off' : 'Days after cut-off'
+    case 'draft_bl':
+      return before ? 'Days before Draft B/L' : 'Days after Draft B/L'
+    case 'final_bl':
+      return before ? 'Days before Final B/L' : 'Days after Final B/L'
+    case 'eta':
+      return before ? 'Days before ETA' : 'Days after ETA'
+    case 'etd':
+      return before ? 'Days before ETD' : 'Days after ETD'
+    default:
+      return before ? 'Days before' : 'Days after'
+  }
 }
 
 function normalizeRules(rules: AlertRule[]): AlertRule[] {
@@ -64,7 +77,7 @@ export function AlertRulesSettings() {
   })
   const qc = useQueryClient()
   const { canEdit: canEditPage } = usePageAccess()
-  const canEdit = canEditPage('alert_rules') // Access Control matrix; backend @PageWrite is authoritative
+  const canEdit = canEditPage('alert_rules')
   const serverRules = useMemo(
     () => (data?.rules ? normalizeRules(data.rules) : null),
     [data],
@@ -75,16 +88,14 @@ export function AlertRulesSettings() {
     setServerSnap(serverRules)
     setDraft(null)
   }
-  // Only threshold rules A1/A2 are listed in Settings. Built-ins (e.g. A7 LOCKED) still
-  // evaluate in the backend but must not show noise (0 days / State —) in this UI.
-  // Keep full list for save so we never drop A3–A7 from the API payload.
-  const CONFIGURABLE_RULE_IDS = new Set(['A1', 'A2'])
+  // Keep full list for save so we never drop A7 from the API payload.
   const allRules = draft ?? serverRules ?? []
-  const localRules = allRules.filter((r) => CONFIGURABLE_RULE_IDS.has(r.id))
+  const localRules = allRules
+    .filter((r) => CONFIGURABLE_RULE_IDS.has(r.id))
+    .sort((a, b) => a.id.localeCompare(b.id))
   const dirty = draft !== null
 
   const saveRules = useMutation({
-    // countryThresholds are absolute days (overwrite default for that origin). Empty = no override.
     mutationFn: (rules: AlertRule[]) =>
       api.put('/alert-rules', {
         rules: rules.map((rule) => {
@@ -100,10 +111,19 @@ export function AlertRulesSettings() {
             countryThresholds: cleaned && Object.keys(cleaned).length > 0 ? cleaned : null,
           }
         }),
-      }),
+      }) as Promise<{
+        rules: AlertRule[]
+        eval?: { evaluated: number; fired: number; resolved: number } | null
+      }>,
     onSuccess: () => {
       setDraft(null)
+      toast.success('Saved')
       qc.invalidateQueries({ queryKey: ['alertRules'] })
+      qc.invalidateQueries({ queryKey: ['alerts'] })
+    },
+    onError: (e) => {
+      const msg = e instanceof Error ? e.message.replace(/^API error \d+:\s*/i, '') : 'Save failed'
+      toast.error(msg || 'Save failed')
     },
   })
 
@@ -113,7 +133,6 @@ export function AlertRulesSettings() {
     )
   }
 
-  /** Absolute days for this origin, or '' to clear (use default). */
   const updateCountryDays = (ruleId: string, code: string, days: number | '') => {
     setDraft((prev) =>
       (prev ?? serverRules ?? []).map((r) => {
@@ -135,9 +154,6 @@ export function AlertRulesSettings() {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <h2 className="text-lg font-semibold text-text-primary">Alert rules</h2>
-          <p className="mt-1 max-w-2xl text-sm text-text-secondary">
-            Day thresholds and severity for A1 / A2. Changes apply on save.
-          </p>
         </div>
         <div className="flex shrink-0 items-center gap-2">
           <button
@@ -165,32 +181,15 @@ export function AlertRulesSettings() {
 
       <div className="space-y-4">
         {localRules.map((rule) => {
-          const stateLabel = rule.state
-            ? (STATE_LABELS[rule.state] ?? rule.state.replace(/_/g, ' '))
-            : null
-          const triggerWord = rule.triggerType === 'days_before' ? 'before' : 'after'
+          const showCountry = COUNTRY_OVERRIDE_RULE_IDS.has(rule.id)
           return (
             <Card key={rule.id} className="overflow-hidden">
-              {/* Header */}
               <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/60 pb-4">
                 <div className="flex min-w-0 flex-wrap items-center gap-2.5">
                   <span className="rounded-md bg-surface-700 px-2 py-0.5 font-mono text-[11px] font-semibold text-text-muted">
                     {rule.id}
                   </span>
                   <h3 className="text-sm font-semibold text-text-primary">{rule.name}</h3>
-                  <span
-                    className={cn(
-                      'rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide',
-                      SEVERITY_CHIP[rule.severity] ?? 'border-border bg-surface-700 text-text-muted',
-                    )}
-                  >
-                    {rule.severity}
-                  </span>
-                  {stateLabel && (
-                    <span className="rounded-full border border-border bg-surface-800 px-2 py-0.5 text-[11px] text-text-secondary">
-                      When: {stateLabel}
-                    </span>
-                  )}
                 </div>
                 <button
                   type="button"
@@ -216,36 +215,29 @@ export function AlertRulesSettings() {
                 <p className="mt-3 text-xs leading-relaxed text-text-muted">{rule.description}</p>
               )}
 
-              {/* Primary controls — horizontal form row */}
               {!rule.locked && (
-                <div className="mt-4 flex flex-wrap items-end gap-4">
-                  <div className="min-w-[7.5rem]">
+                <div className="mt-4 flex flex-wrap items-end gap-6">
+                  <div>
                     <label
                       htmlFor={`${id}-${rule.id}-threshold`}
-                      className="mb-1.5 block text-[11px] font-medium uppercase tracking-wide text-text-muted"
+                      className="mb-2 block text-[11px] font-medium uppercase tracking-wide text-text-muted"
                     >
-                      Days {triggerWord} (default)
+                      {thresholdLabel(rule)} (default)
                     </label>
-                    <div className="flex items-center gap-2">
-                      <input
-                        id={`${id}-${rule.id}-threshold`}
-                        type="number"
-                        min={0}
-                        max={30}
-                        value={rule.thresholdDays}
-                        onChange={(e) =>
-                          updateRule(rule.id, 'thresholdDays', parseInt(e.target.value) || 0)
-                        }
-                        disabled={!canEdit}
-                        className="h-10 w-16 rounded-lg border border-border bg-surface-700 px-3 text-center text-sm font-medium text-text-primary disabled:opacity-50"
-                      />
-                      <span className="text-xs text-text-muted">days</span>
-                    </div>
+                    <DaysStepper
+                      id={`${id}-${rule.id}-threshold`}
+                      aria-label={thresholdLabel(rule)}
+                      value={rule.thresholdDays}
+                      min={0}
+                      max={30}
+                      disabled={!canEdit}
+                      onChange={(next) => updateRule(rule.id, 'thresholdDays', next ?? 0)}
+                    />
                   </div>
-                  <div className="min-w-[9rem]">
+                  <div className="min-w-[10rem]">
                     <label
                       htmlFor={`${id}-${rule.id}-severity`}
-                      className="mb-1.5 block text-[11px] font-medium uppercase tracking-wide text-text-muted"
+                      className="mb-2 block text-[11px] font-medium uppercase tracking-wide text-text-muted"
                     >
                       Severity
                     </label>
@@ -254,7 +246,7 @@ export function AlertRulesSettings() {
                       value={rule.severity}
                       onChange={(e) => updateRule(rule.id, 'severity', e.target.value)}
                       disabled={!canEdit}
-                      className="h-10 w-full rounded-lg border border-border bg-surface-700 px-3 text-sm text-text-primary disabled:opacity-50"
+                      className="h-12 w-full rounded-2xl border border-border bg-surface-700 px-3 text-sm text-text-primary disabled:opacity-50"
                     >
                       <option value="CRITICAL">Critical</option>
                       <option value="WARNING">Warning</option>
@@ -264,60 +256,54 @@ export function AlertRulesSettings() {
                 </div>
               )}
 
-              {/* Per-country absolute days (overwrite default for that origin) */}
-              {!rule.locked && (
+              {showCountry && !rule.locked && (
                 <div className="mt-5 rounded-xl border border-border bg-surface-900/40 p-4">
                   <div className="mb-3">
                     <p className="text-xs font-semibold text-text-secondary">Days by origin country</p>
                     <p className="mt-0.5 text-[11px] text-text-muted">
-                      Overrides the default ({rule.thresholdDays} days) for that origin. Leave empty
-                      to use the default.
+                      Absolute days for that origin (overrides the default of {rule.thresholdDays}).
+                      Tap − until <span className="font-medium">Default</span> to inherit the rule
+                      default.
                     </p>
                   </div>
                   <div
                     id={`${id}-${rule.id}-country`}
-                    className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3"
+                    className="grid grid-cols-1 gap-3 sm:grid-cols-2"
                   >
                     {ALERT_COUNTRY_LIST.map((country) => {
                       const raw = rule.countryThresholds?.[country.code]
-                      const days =
-                        typeof raw === 'number' && raw > 0 ? raw : ('' as const)
-                      const active = days !== ''
+                      const days = typeof raw === 'number' && raw > 0 ? raw : null
+                      const active = days != null
                       return (
-                        <label
+                        <div
                           key={country.code}
                           className={cn(
-                            'flex cursor-pointer items-center justify-between gap-3 rounded-lg border px-3 py-2 transition-colors',
+                            'flex items-center justify-between gap-4 rounded-2xl border px-4 py-3 transition-colors',
                             active
                               ? 'border-cobalt-primary/40 bg-cobalt-primary/10'
-                              : 'border-border bg-surface-800/50 hover:border-border hover:bg-surface-700/40',
+                              : 'border-border bg-surface-800/50',
                           )}
                         >
-                          <span className="min-w-0 truncate text-xs">
-                            <span className="font-semibold text-text-primary">{country.code}</span>
-                            <span className="ml-1.5 text-text-muted">{country.label}</span>
+                          <span className="min-w-0 truncate">
+                            <span className="block text-sm font-semibold text-text-primary">
+                              {country.code}
+                            </span>
+                            <span className="block text-xs text-text-muted">{country.label}</span>
                           </span>
-                          <span className="flex shrink-0 items-center gap-1.5">
-                            <input
-                              type="number"
-                              min={1}
-                              max={30}
-                              value={days}
-                              disabled={!canEdit}
-                              onChange={(e) => {
-                                const v = e.target.value
-                                updateCountryDays(
-                                  rule.id,
-                                  country.code,
-                                  v === '' ? '' : Math.max(1, parseInt(v) || 0),
-                                )
-                              }}
-                              placeholder="—"
-                              className="h-8 w-14 rounded-md border border-border bg-surface-700 px-1.5 text-center text-xs font-medium text-text-primary placeholder:text-text-muted/50 disabled:opacity-50"
-                            />
-                            <span className="text-[11px] text-text-muted">days</span>
-                          </span>
-                        </label>
+                          <DaysStepper
+                            size="sm"
+                            optional
+                            emptyLabel="Default"
+                            aria-label={`${country.label} days`}
+                            value={days}
+                            min={1}
+                            max={30}
+                            disabled={!canEdit}
+                            onChange={(next) =>
+                              updateCountryDays(rule.id, country.code, next == null ? '' : next)
+                            }
+                          />
+                        </div>
                       )
                     })}
                   </div>
@@ -330,7 +316,7 @@ export function AlertRulesSettings() {
 
       {localRules.length === 0 && (
         <p className="rounded-lg border border-border bg-surface-800/40 px-4 py-8 text-center text-sm text-text-muted">
-          No configurable alert rules (A1 / A2) available.
+          No configurable alert rules (A1–A6) available.
         </p>
       )}
     </div>

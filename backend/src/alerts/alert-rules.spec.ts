@@ -7,10 +7,20 @@ const facts = (over: Partial<LegFacts> = {}): LegFacts => ({
   cfsCutoff: null,
   atd: null,
   warehouseInAt: null,
+  draftBlAt: null,
   finalBlAt: null,
   originCountry: null,
   etd: null,
-  has: { so: false, draftBl: false, finalBl: false, telex: false, invoice: false, sailed: false },
+  eta: null,
+  has: {
+    so: false,
+    draftBl: false,
+    finalBl: false,
+    telex: false,
+    invoice: false,
+    sailed: false,
+    delivered: false,
+  },
   ...over,
 })
 const rule = (over: Partial<Rule> = {}): Rule => ({
@@ -27,35 +37,161 @@ const D = (s: string) => new Date(s)
 const hasOf = (over: Partial<LegFacts['has']>) => ({ ...facts().has, ...over })
 
 describe('isFiring — Pillar-4 rule logic', () => {
-  it('A3: cut-off passed and no Final B/L → fires (Critical)', () => {
-    const r = rule({ id: 'A3', triggerReference: 'cutoff', watchFor: 'final_bl', thresholdHours: 0, severity: 'CRITICAL' })
-    expect(isFiring(r, facts({ cfsCutoff: D('2026-02-01') }), D('2026-02-02'))).toBe(true)
+  it('A3 POC: cut-off passed, no Draft B/L → Critical', () => {
+    const r = rule({
+      id: 'A3',
+      state: 'CONFIRMED',
+      triggerReference: 'cutoff',
+      watchFor: 'draft_bl',
+      thresholdHours: 0,
+      severity: 'CRITICAL',
+    })
+    expect(isFiring(r, facts({ state: 'CONFIRMED', cfsCutoff: D('2026-02-01') }), D('2026-02-02'))).toBe(true)
   })
 
-  it('A3: does NOT fire once Final B/L is received', () => {
-    const r = rule({ triggerReference: 'cutoff', watchFor: 'final_bl' })
-    expect(isFiring(r, facts({ cfsCutoff: D('2026-02-01'), has: hasOf({ finalBl: true }) }), D('2026-02-02'))).toBe(false)
+  it('A3: does NOT fire once Draft B/L is received', () => {
+    const r = rule({
+      id: 'A3',
+      state: 'CONFIRMED',
+      triggerReference: 'cutoff',
+      watchFor: 'draft_bl',
+      thresholdHours: 0,
+    })
+    expect(
+      isFiring(
+        r,
+        facts({ state: 'CONFIRMED', cfsCutoff: D('2026-02-01'), has: hasOf({ draftBl: true }) }),
+        D('2026-02-02'),
+      ),
+    ).toBe(false)
   })
 
   it('A3: does NOT fire before the cut-off', () => {
-    const r = rule({ triggerReference: 'cutoff', watchFor: 'final_bl', thresholdHours: 0 })
+    const r = rule({
+      id: 'A3',
+      state: 'CONFIRMED',
+      triggerReference: 'cutoff',
+      watchFor: 'draft_bl',
+      thresholdHours: 0,
+    })
     expect(isFiring(r, facts({ cfsCutoff: D('2026-02-10') }), D('2026-02-02'))).toBe(false)
   })
 
-  it('A1: no SO within 48h of booking → fires after the window, not before', () => {
-    const r = rule({ id: 'A1', triggerReference: 'booking_request', watchFor: 'so', thresholdHours: 48 })
-    expect(isFiring(r, facts({ bookingRequestAt: D('2026-01-01T00:00:00Z') }), D('2026-01-03T01:00:00Z'))).toBe(true)
-    expect(isFiring(r, facts({ bookingRequestAt: D('2026-01-01T00:00:00Z') }), D('2026-01-02T00:00:00Z'))).toBe(false)
+  it('A1 POC: no SO within 2 days of booking → fires after the window', () => {
+    const r = rule({
+      id: 'A1',
+      state: 'BOOKED',
+      triggerReference: 'booking_request',
+      watchFor: 'so',
+      thresholdHours: 48,
+    })
+    expect(
+      isFiring(
+        r,
+        facts({ state: 'BOOKED', bookingRequestAt: D('2026-01-01T00:00:00Z') }),
+        D('2026-01-03T01:00:00Z'),
+      ),
+    ).toBe(true)
+    expect(
+      isFiring(
+        r,
+        facts({ state: 'BOOKED', bookingRequestAt: D('2026-01-01T00:00:00Z') }),
+        D('2026-01-02T00:00:00Z'),
+      ),
+    ).toBe(false)
   })
 
-  it('A2: days_before cut-off — fires inside the 72h window, not outside', () => {
-    const r = rule({ triggerType: 'days_before', triggerReference: 'cutoff', watchFor: 'draft_bl', thresholdHours: 72 })
-    expect(isFiring(r, facts({ cfsCutoff: D('2026-02-04T00:00:00Z') }), D('2026-02-02T00:00:00Z'))).toBe(true)
+  it('A2 POC: days_before cut-off — fires inside the 1-day window', () => {
+    const r = rule({
+      id: 'A2',
+      state: 'CONFIRMED',
+      triggerType: 'days_before',
+      triggerReference: 'cutoff',
+      watchFor: 'draft_bl',
+      thresholdHours: 24,
+    })
+    expect(isFiring(r, facts({ cfsCutoff: D('2026-02-04T00:00:00Z') }), D('2026-02-03T12:00:00Z'))).toBe(true)
     expect(isFiring(r, facts({ cfsCutoff: D('2026-02-10T00:00:00Z') }), D('2026-02-02T00:00:00Z'))).toBe(false)
   })
 
-  it('does NOT fire when the reference anchor is missing (rule not yet applicable)', () => {
-    expect(isFiring(rule({ triggerReference: 'departure', watchFor: 'telex' }), facts({ atd: null }), D('2026-06-01'))).toBe(false)
+  it('state gate: A1 does not fire on SAILED even if SO missing', () => {
+    const r = rule({
+      id: 'A1',
+      state: 'BOOKED',
+      triggerReference: 'booking_request',
+      watchFor: 'so',
+      thresholdHours: 48,
+    })
+    expect(
+      isFiring(
+        r,
+        facts({ state: 'SAILED', bookingRequestAt: D('2026-01-01T00:00:00Z') }),
+        D('2026-01-10T00:00:00Z'),
+      ),
+    ).toBe(false)
+  })
+
+  it('A4: days since Draft B/L, no Final B/L', () => {
+    const r = rule({
+      id: 'A4',
+      state: 'AT_WAREHOUSE',
+      triggerReference: 'draft_bl',
+      watchFor: 'final_bl',
+      thresholdHours: 120,
+    })
+    expect(
+      isFiring(
+        r,
+        facts({ state: 'AT_WAREHOUSE', draftBlAt: D('2026-02-01T00:00:00Z') }),
+        D('2026-02-07T00:00:00Z'),
+      ),
+    ).toBe(true)
+    expect(
+      isFiring(
+        r,
+        facts({ state: 'AT_WAREHOUSE', draftBlAt: D('2026-02-01T00:00:00Z') }),
+        D('2026-02-03T00:00:00Z'),
+      ),
+    ).toBe(false)
+  })
+
+  it('A5: days since Final B/L, no Telex', () => {
+    const r = rule({
+      id: 'A5',
+      state: 'SAILED',
+      triggerReference: 'final_bl',
+      watchFor: 'telex',
+      thresholdHours: 168,
+    })
+    expect(
+      isFiring(r, facts({ state: 'SAILED', finalBlAt: D('2026-02-01T00:00:00Z') }), D('2026-02-09T00:00:00Z')),
+    ).toBe(true)
+  })
+
+  it('A6: days past ETA, no delivery', () => {
+    const r = rule({
+      id: 'A6',
+      state: 'RELEASED',
+      triggerReference: 'eta',
+      watchFor: 'delivered',
+      thresholdHours: 72,
+    })
+    expect(isFiring(r, facts({ state: 'RELEASED', eta: D('2026-02-01T00:00:00Z') }), D('2026-02-05T00:00:00Z'))).toBe(
+      true,
+    )
+    expect(
+      isFiring(
+        r,
+        facts({ state: 'RELEASED', eta: D('2026-02-01T00:00:00Z'), has: hasOf({ delivered: true }) }),
+        D('2026-02-05T00:00:00Z'),
+      ),
+    ).toBe(false)
+  })
+
+  it('does NOT fire when the reference anchor is missing', () => {
+    expect(isFiring(rule({ triggerReference: 'departure', watchFor: 'telex' }), facts({ atd: null }), D('2026-06-01'))).toBe(
+      false,
+    )
   })
 
   it('a disabled rule never fires', () => {
@@ -63,7 +199,7 @@ describe('isFiring — Pillar-4 rule logic', () => {
   })
 })
 
-describe('resolveThresholdHours — per-origin-country override (Phase 3)', () => {
+describe('resolveThresholdHours — per-origin-country override', () => {
   const r = (over: Partial<Rule> = {}) =>
     rule({ thresholdHours: 72, countryThresholds: { CN: 72, BD: 168, KH: 168 }, ...over })
 
@@ -90,32 +226,27 @@ describe('resolveThresholdHours — per-origin-country override (Phase 3)', () =
   })
 })
 
-describe('isFiring — country-aware A1, anchored on scheduled ETD (Phase 3)', () => {
-  const a1 = (over: Partial<Rule> = {}) =>
+describe('isFiring — A2 country override on cut-off (days before)', () => {
+  const a2 = (over: Partial<Rule> = {}) =>
     rule({
-      id: 'A1', triggerType: 'days_after', triggerReference: 'etd', watchFor: 'draft_bl',
-      thresholdHours: 24, countryThresholds: { BD: 48, KH: 48 }, ...over,
+      id: 'A2',
+      state: 'CONFIRMED',
+      triggerType: 'days_before',
+      triggerReference: 'cutoff',
+      watchFor: 'draft_bl',
+      thresholdHours: 24,
+      countryThresholds: { BD: 48, KH: 48 },
+      ...over,
     })
-  const etd = D('2026-02-01T00:00:00Z')
+  const cutoff = D('2026-02-10T00:00:00Z')
 
-  it('CN leg fires once 24h past ETD with no Draft B/L', () => {
-    expect(isFiring(a1(), facts({ etd, originCountry: 'CN' }), D('2026-02-02T01:00:00Z'))).toBe(true)
-  })
-
-  it('BD leg does NOT fire at 24h (BD threshold is 48h)', () => {
-    expect(isFiring(a1(), facts({ etd, originCountry: 'BD' }), D('2026-02-02T01:00:00Z'))).toBe(false)
-  })
-
-  it('BD leg fires once 48h past ETD', () => {
-    expect(isFiring(a1(), facts({ etd, originCountry: 'BD' }), D('2026-02-03T01:00:00Z'))).toBe(true)
-  })
-
-  it('does not fire once the Draft B/L has arrived', () => {
-    expect(isFiring(a1(), facts({ etd, originCountry: 'CN', has: hasOf({ draftBl: true }) }), D('2026-02-10T00:00:00Z'))).toBe(false)
-  })
-
-  it('does not fire before ETD is known (anchor missing)', () => {
-    expect(isFiring(a1(), facts({ etd: null, originCountry: 'CN' }), D('2026-02-10T00:00:00Z'))).toBe(false)
+  it('CN fires inside 24h before cut-off; BD needs 48h (fires earlier)', () => {
+    // cutoff Feb 10; CN deadline Feb 9; BD deadline Feb 8
+    // at Feb 9 12:00 both fire; at Feb 8 12:00 only BD; at Feb 8 00:00 neither? BD deadline exact: now > deadline
+    expect(isFiring(a2(), facts({ cfsCutoff: cutoff, originCountry: 'CN' }), D('2026-02-09T12:00:00Z'))).toBe(true)
+    expect(isFiring(a2(), facts({ cfsCutoff: cutoff, originCountry: 'BD' }), D('2026-02-09T12:00:00Z'))).toBe(true)
+    expect(isFiring(a2(), facts({ cfsCutoff: cutoff, originCountry: 'CN' }), D('2026-02-08T12:00:00Z'))).toBe(false)
+    expect(isFiring(a2(), facts({ cfsCutoff: cutoff, originCountry: 'BD' }), D('2026-02-08T12:00:00Z'))).toBe(true)
   })
 })
 
@@ -125,8 +256,8 @@ describe('crdRevisionNotReflected (A7) — requested revision vs latest booking 
   it('fires on the WISEN shape: revision to Jul 8 requested, newer platform doc still shows Jun 29', () => {
     const finding = crdRevisionNotReflected(
       [
-        { receivedAt: D('2026-06-30T04:23:00Z'), crd: '2026-07-08' }, // the multi-booking revision request
-        { receivedAt: D('2026-06-30T05:51:00Z'), crd: '2026-06-29' }, // newer Expeditors notification, unrevised
+        { receivedAt: D('2026-06-30T04:23:00Z'), crd: '2026-07-08' },
+        { receivedAt: D('2026-06-30T05:51:00Z'), crd: '2026-06-29' },
       ],
       D('2026-06-29T00:00:00Z'),
     )
@@ -138,7 +269,7 @@ describe('crdRevisionNotReflected (A7) — requested revision vs latest booking 
     const finding = crdRevisionNotReflected(
       [
         { receivedAt: D('2026-06-30T04:23:00Z'), crd: '2026-07-08' },
-        { receivedAt: D('2026-06-30T05:43:00Z'), crd: '2026-07-08' }, // platform revised (BX808346 V8)
+        { receivedAt: D('2026-06-30T05:43:00Z'), crd: '2026-07-08' },
       ],
       D('2026-07-08T00:00:00Z'),
     )
@@ -148,8 +279,8 @@ describe('crdRevisionNotReflected (A7) — requested revision vs latest booking 
   it('never flags a legitimate pull-forward (the later date is old and obsolete)', () => {
     const finding = crdRevisionNotReflected(
       [
-        { receivedAt: D('2026-06-20T00:00:00Z'), crd: '2026-06-29' }, // original schedule, 10 days old
-        { receivedAt: D('2026-06-30T00:00:00Z'), crd: '2026-06-25' }, // deliberately pulled forward
+        { receivedAt: D('2026-06-20T00:00:00Z'), crd: '2026-06-29' },
+        { receivedAt: D('2026-06-30T00:00:00Z'), crd: '2026-06-25' },
       ],
       D('2026-06-25T00:00:00Z'),
     )

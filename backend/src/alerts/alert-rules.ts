@@ -1,14 +1,19 @@
 /**
  * Pure Pillar-4 rule logic (testable, no DB). A rule reads:
  *   "{threshold_hours} {after|before} the {reference}; if {watch_for} is still missing → fire".
+ * Optional rule.state gates to the matching shipment staircase state.
  * NOTE: compute_tz='vessel' (A2/A3) is computed in UTC for the POC — a port→timezone map is a
  * later refinement; alert thresholds are coarse (hours/days) so the margin is small.
  */
 export interface Rule {
   id: string
+  /** When set, leg must be in this staircase state for the rule to apply. */
+  state?: string | null
   triggerType: 'days_after' | 'days_before'
-  triggerReference: string // booking_request | cutoff | departure | warehouse_in | final_bl | etd
-  watchFor: string // so | draft_bl | final_bl | telex | sailed | invoice
+  /** booking_request | cutoff | departure | warehouse_in | final_bl | etd | draft_bl | eta */
+  triggerReference: string
+  /** so | draft_bl | final_bl | telex | sailed | invoice | delivered */
+  watchFor: string
   thresholdHours: number // default fallback (hours)
   countryThresholds?: Record<string, number> | null // per-origin-country hour overrides (CN/BD/KH/VN/IN)
   severity: string
@@ -22,9 +27,19 @@ export interface LegFacts {
   cfsCutoff: Date | null
   atd: Date | null
   etd: Date | null
+  eta: Date | null
   warehouseInAt: Date | null
+  draftBlAt: Date | null
   finalBlAt: Date | null
-  has: { so: boolean; draftBl: boolean; finalBl: boolean; telex: boolean; invoice: boolean; sailed: boolean }
+  has: {
+    so: boolean
+    draftBl: boolean
+    finalBl: boolean
+    telex: boolean
+    invoice: boolean
+    sailed: boolean
+    delivered: boolean
+  }
 }
 
 export function referenceTime(rule: Rule, f: LegFacts): Date | null {
@@ -39,8 +54,12 @@ export function referenceTime(rule: Rule, f: LegFacts): Date | null {
       return f.warehouseInAt
     case 'final_bl':
       return f.finalBlAt
+    case 'draft_bl':
+      return f.draftBlAt
     case 'etd':
       return f.etd
+    case 'eta':
+      return f.eta
     default:
       return null
   }
@@ -60,6 +79,8 @@ export function watchMet(watchFor: string, f: LegFacts): boolean {
       return f.has.invoice
     case 'sailed':
       return f.has.sailed
+    case 'delivered':
+      return f.has.delivered
     default:
       return false
   }
@@ -82,6 +103,8 @@ export function deadline(rule: Rule, ref: Date, originCountry: string | null): D
 /** True when the rule should raise an alert for these facts at `now`. */
 export function isFiring(rule: Rule, f: LegFacts, now: Date): boolean {
   if (!rule.enabled) return false
+  // POC: only fire when the leg is in the rule's staircase state (if configured).
+  if (rule.state && f.state !== rule.state) return false
   const ref = referenceTime(rule, f)
   if (!ref) return false // anchor not reached → not applicable yet
   if (watchMet(rule.watchFor, f)) return false // the awaited thing arrived → no alert

@@ -91,8 +91,17 @@ export const ALERT_SEVERITY = ['CRITICAL', 'WARNING', 'INFO'] as const
 export const ALERT_STATUS = ['ACTIVE', 'DISMISSED', 'SNOOZED', 'RESOLVED'] as const
 export const ALERT_TRIGGER_TYPE = ['days_after', 'days_before'] as const
 /** The anchor a rule measures from. */
-export const ALERT_TRIGGER_REF = ['booking_request', 'cutoff', 'departure', 'warehouse_in', 'final_bl', 'etd'] as const
+export const ALERT_TRIGGER_REF = [
+  'booking_request',
+  'cutoff',
+  'departure',
+  'warehouse_in',
+  'final_bl',
+  'etd',
+  'draft_bl', // time anchor: when Draft B/L was received (A4)
+  'eta', // schedule anchor (A6)
+] as const
 /** The thing whose ABSENCE fires the rule. */
-export const ALERT_WATCH_FOR = ['so', 'draft_bl', 'final_bl', 'telex', 'sailed', 'invoice'] as const
+export const ALERT_WATCH_FOR = ['so', 'draft_bl', 'final_bl', 'telex', 'sailed', 'invoice', 'delivered'] as const
 /** A2/A3 must compute in the vessel's timezone, not the server's. */
 export const COMPUTE_TZ = ['server', 'vessel'] as const

@@ -5,6 +5,7 @@ import { DocumentPresentationService } from './document-presentation.service'
 import { PurchaseOrderPresentationService } from './purchase-order-presentation.service'
 import { MasterDataPresentationService } from './master-data-presentation.service'
 import { ShipmentsModule } from '../shipments/shipments.module'
+import { AlertsModule } from '../alerts/alerts.module'
 import {
   UiDashboardController,
   UiMastersController,
@@ -22,7 +23,7 @@ import {
  */
 @Global()
 @Module({
-  imports: [forwardRef(() => ShipmentsModule)],
+  imports: [forwardRef(() => ShipmentsModule), AlertsModule],
   controllers: [
     UiDashboardController,
     UiMastersController,

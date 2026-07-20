@@ -97,10 +97,12 @@ const build = () => {
   }
   const evidenceRepo = { forMessages: async () => [], allWithMessage: async () => [] }
   const shipmentsLookup = { lookupByMatchKey: async () => ({ query: {}, candidates: [] }) }
+  const alertEvaluator = { evaluate: async () => ({ evaluated: 0, fired: 0, resolved: 0 }) }
   return new PresentationService(
     shipmentRepo as any, bookingRepo as any, mastersRepo as any, alertRepo as any, auditRepo as any, emailRepo as any,
     evidenceRepo as any,
     shipmentsLookup as any,
+    alertEvaluator as any,
   )
 }
 
@@ -178,6 +180,7 @@ describe('PresentationService.shipments — list', () => {
       } as any,
       { forMessages: async () => [], allWithMessage: async () => [] } as any,
       { lookupByMatchKey: async () => ({ query: {}, candidates: [] }) } as any,
+      { evaluate: async () => ({ evaluated: 0, fired: 0, resolved: 0 }) } as any,
     )
     await svc.shipments()
     expect(perLeg).toBe(0)
@@ -288,6 +291,7 @@ describe('PresentationService.searchShipments', () => {
       { unreadCount: async () => 0, ingestionStatus: async () => ({ count: 0, lastAt: null }), ingestState: async () => null, emailsForShipment: async () => [] } as any,
       { forMessages: async () => [], allWithMessage: async () => [] } as any,
       { lookupByMatchKey: async () => ({ query: {}, candidates: [] }) } as any,
+      { evaluate: async () => ({ evaluated: 0, fired: 0, resolved: 0 }) } as any,
     )
   }
 
@@ -441,6 +445,7 @@ describe('PresentationService.dashboard', () => {
       { unreadCount: async () => 0, ingestionStatus: async () => ({ count: 0, lastAt: null }), ingestState: async () => null, emailsForShipment: async () => [] } as any,
       { forMessages: async () => [], allWithMessage: async () => [] } as any,
       { lookupByMatchKey: async () => ({ query: {}, candidates: [] }) } as any,
+      { evaluate: async () => ({ evaluated: 0, fired: 0, resolved: 0 }) } as any,
     )
     const d = await svc.dashboard()
     expect(d.stats.warningAlerts).toBe(2)
