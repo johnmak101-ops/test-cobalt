@@ -294,6 +294,34 @@ export default function ShipmentDetailPage() {
               {shipment.forwarder && ` · ${shipment.forwarder.name}`}
               {shipment.route && ` · ${shipment.route}`}
             </p>
+            {/* Hybrid-C E6: multi-booking origin crumb */}
+            {shipment.criticReview?.multiBookingOrigin &&
+              shipment.criticReview.multiBookingOrigin.total > 1 && (
+                <p
+                  className="mt-1.5 text-sm text-text-muted"
+                  data-testid="multi-booking-origin-crumb"
+                >
+                  Created from booking row{' '}
+                  <span className="font-mono text-text-secondary">
+                    {shipment.criticReview.multiBookingOrigin.index}
+                  </span>{' '}
+                  of{' '}
+                  <span className="font-mono text-text-secondary">
+                    {shipment.criticReview.multiBookingOrigin.total}
+                  </span>
+                  {shipment.criticReview.multiBookingOrigin.bookingNo
+                    ? (
+                        <>
+                          {' '}
+                          · BK{' '}
+                          <span className="font-mono">
+                            {shipment.criticReview.multiBookingOrigin.bookingNo}
+                          </span>
+                        </>
+                      )
+                    : null}
+                </p>
+              )}
           </div>
           <Badge variant="status" value={shipment.status} />
         </div>
@@ -795,13 +823,18 @@ export default function ShipmentDetailPage() {
                     <div
                       key={emailKey}
                       {...(openable
-                        ? interactiveProps(() =>
+                        ? interactiveProps(() => {
+                            const hl = shipment.criticReview?.multiBookingOrigin?.bookingNo?.trim()
+                            const q = new URLSearchParams()
+                            if (email.emailType) q.set('type', email.emailType)
+                            if (hl) q.set('hl', hl) // Hybrid-C E3: highlight booking token in body
+                            const qs = q.toString()
                             window.open(
-                              `/email/${email.id}?type=${encodeURIComponent(email.emailType ?? '')}`,
+                              `/email/${email.id}${qs ? `?${qs}` : ''}`,
                               `email_${email.id}`,
                               'popup,width=880,height=940,resizable=yes,scrollbars=yes',
-                            ),
-                          )
+                            )
+                          })
                         : {})}
                       className={
                         openable

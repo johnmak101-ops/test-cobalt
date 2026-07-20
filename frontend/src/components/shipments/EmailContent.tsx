@@ -47,18 +47,67 @@ export function fullDate(iso: string | null): string {
   })
 }
 
+/** Escape regex specials for highlight. */
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+/** Escape HTML entities. */
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+}
+
+/**
+ * Hybrid-C E3: plain text → HTML with <mark> around token (escaped).
+ */
+export function highlightPlainTextToHtml(text: string, token: string | null | undefined): string {
+  const t = (token ?? '').trim()
+  const escaped = escapeHtml(text)
+  if (!t) return escaped
+  try {
+    const re = new RegExp(escapeRegExp(escapeHtml(t)), 'gi')
+    // token may not equal escaped form if no special chars — also try raw escape
+    const re2 = new RegExp(escapeRegExp(t), 'gi')
+    if (re2.test(text)) {
+      return escapeHtml(text).replace(
+        new RegExp(escapeRegExp(escapeHtml(t)), 'gi'),
+        (m) => `<mark style="background:#fff3cd;padding:0 2px" data-hybrid-hl="1">${m}</mark>`,
+      )
+    }
+    return escaped.replace(re, (m) => `<mark style="background:#fff3cd;padding:0 2px" data-hybrid-hl="1">${m}</mark>`)
+  } catch {
+    return escaped
+  }
+}
+
 /** Wrap the stored email HTML in a minimal Outlook-reading-pane document (white pane, Segoe UI, links
  *  blue, images clamped). `<base target="_blank">` keeps any link out of the sandbox; sandbox="" blocks it
  *  from navigating anyway — the point is faithful rendering, not interactivity. */
-export function emailSrcDoc(html: string): string {
+export function emailSrcDoc(html: string, highlightToken?: string | null): string {
+  let body = html
+  const t = (highlightToken ?? '').trim()
+  if (t) {
+    // Best-effort: mark plain text occurrences only (avoid breaking tags by only matching outside < >)
+    try {
+      const re = new RegExp(`(>[^<]*?)(${escapeRegExp(t)})([^<]*?<)`, 'gi')
+      body = body.replace(re, '$1<mark style="background:#fff3cd;padding:0 2px" data-hybrid-hl="1">$2</mark>$3')
+    } catch {
+      /* ignore */
+    }
+  }
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><base target="_blank"><style>
     html,body{margin:0;padding:0}
     body{padding:20px;background:#fff;color:#201f1e;font-family:'Segoe UI',-apple-system,'Helvetica Neue',Arial,sans-serif;font-size:14px;line-height:1.5;overflow-wrap:break-word;word-break:normal}
     img{max-width:100%;height:auto}table{max-width:100%}
     a{color:#0f6cbd}
     blockquote{margin:0 0 0 12px;padding-left:12px;border-left:2px solid #e1dfdd;color:#605e5c}
+    mark[data-hybrid-hl]{background:#fff3cd;padding:0 2px}
     *{box-sizing:border-box}
-  </style></head><body>${html}</body></html>`
+  </style></head><body>${body}</body></html>`
 }
 
 /** The From/To/Cc + subject + date + type-badge header, shared by the modal and the pop-up window. */
@@ -107,12 +156,16 @@ export function EmailBodyPane({
   html,
   text,
   isLoading,
+  highlightToken,
 }: {
   subject: string
   html: string | null
   text: string | null
   isLoading: boolean
+  /** Hybrid-C E3: booking/SO token to highlight in the body */
+  highlightToken?: string | null
 }) {
+  const hl = (highlightToken ?? '').trim() || null
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-white">
       {isLoading ? (
@@ -122,12 +175,20 @@ export function EmailBodyPane({
           title={`Email: ${subject}`}
           sandbox=""
           className="min-h-0 w-full flex-1 border-0 bg-white"
-          srcDoc={emailSrcDoc(html)}
+          srcDoc={emailSrcDoc(html, hl)}
         />
       ) : text ? (
-        <pre className="field-value flex-1 overflow-auto whitespace-pre-wrap p-6 font-sans text-sm leading-relaxed text-[#201f1e]">
-          {text}
-        </pre>
+        hl ? (
+          <pre
+            className="field-value flex-1 overflow-auto whitespace-pre-wrap p-6 font-sans text-sm leading-relaxed text-[#201f1e]"
+            data-testid="email-body-highlighted"
+            dangerouslySetInnerHTML={{ __html: highlightPlainTextToHtml(text, hl) }}
+          />
+        ) : (
+          <pre className="field-value flex-1 overflow-auto whitespace-pre-wrap p-6 font-sans text-sm leading-relaxed text-[#201f1e]">
+            {text}
+          </pre>
+        )
       ) : (
         <p className="p-6 text-sm italic text-[#605e5c]">(No body content was captured for this email.)</p>
       )}
