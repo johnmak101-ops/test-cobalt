@@ -76,7 +76,11 @@ export default function AlertRulesPage() {
     setServerSnap(serverRules)
     setDraft(null)
   }
-  const localRules = draft ?? serverRules ?? []
+  // Only A1/A2 are configurable day-threshold rules. Built-ins (A7 LOCKED, etc.) stay off this page.
+  // Save still sends the full rule list so other rules are not wiped.
+  const CONFIGURABLE_RULE_IDS = new Set(['A1', 'A2'])
+  const allRules = draft ?? serverRules ?? []
+  const localRules = allRules.filter((r) => CONFIGURABLE_RULE_IDS.has(r.id))
   const dirty = draft !== null
 
   const saveRules = useMutation({
@@ -196,7 +200,8 @@ export default function AlertRulesPage() {
                 {/* Description */}
                 <p className="mt-1 text-xs text-text-secondary">{rule.description}</p>
 
-                {/* Settings row */}
+                {/* Settings row — day-threshold rules only (A1/A2); locked built-ins never listed */}
+                {!rule.locked && (
                 <div className="mt-4 flex flex-wrap items-end gap-6">
                   <div>
                     <label htmlFor={`${id}-${rule.id}-threshold`} className="text-xs text-text-muted">Default threshold (days)</label>
@@ -207,10 +212,9 @@ export default function AlertRulesPage() {
                       max={30}
                       value={rule.thresholdDays}
                       onChange={(e) =>
-                        !rule.locked &&
                         updateRule(rule.id, 'thresholdDays', parseInt(e.target.value) || 0)
                       }
-                      disabled={rule.locked || !canEdit}
+                      disabled={!canEdit}
                       className="mt-1 h-9 w-20 rounded-lg border border-border bg-surface-700 px-3 text-sm text-text-primary disabled:cursor-not-allowed disabled:opacity-50"
                     />
                   </div>
@@ -220,9 +224,9 @@ export default function AlertRulesPage() {
                       id={`${id}-${rule.id}-severity`}
                       value={rule.severity}
                       onChange={(e) =>
-                        !rule.locked && updateRule(rule.id, 'severity', e.target.value)
+                        updateRule(rule.id, 'severity', e.target.value)
                       }
-                      disabled={rule.locked || !canEdit}
+                      disabled={!canEdit}
                       className="mt-1 h-9 rounded-lg border border-border bg-surface-700 px-3 text-sm text-text-primary disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       <option value="CRITICAL">Critical</option>
@@ -237,6 +241,7 @@ export default function AlertRulesPage() {
                     </p>
                   </div>
                 </div>
+                )}
 
                 {/* Country-specific thresholds */}
                 {!rule.locked && (
@@ -295,7 +300,7 @@ export default function AlertRulesPage() {
             </button>
             <button
               type="button"
-              onClick={() => saveRules.mutate(localRules)}
+              onClick={() => saveRules.mutate(allRules)}
               disabled={!dirty || saveRules.isPending}
               className="rounded-lg bg-cobalt-primary px-4 py-2 text-sm font-medium text-white hover:bg-cobalt-primary-light disabled:opacity-50"
             >
