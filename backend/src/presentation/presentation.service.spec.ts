@@ -70,10 +70,12 @@ const build = () => {
     listVendors: async () => vendors,
     listForwarders: async () => forwarders,
     listPorts: async () => ports,
+    portsByIds: async (ids: string[]) => ports.filter((p) => ids.includes(p.id)),
     listConsignees: async () => [],
   }
   const alertRepo = {
     list: async (status?: string) => (status ? alerts.filter((a) => a.status === status) : alerts),
+    listForShipment: async (shipmentId: string) => alerts.filter((a) => a.shipmentId === shipmentId),
     allRules: async () => rules,
   }
   const auditRepo = { listForEntity: async (_t: string, id: string) => (id === 'leg1' ? auditRows : []) }
@@ -184,13 +186,14 @@ describe('PresentationService.searchShipments', () => {
       listVendors: async () => vendors,
       listForwarders: async () => forwarders,
       listPorts: async () => ports,
+      portsByIds: async (ids: string[]) => ports.filter((p) => ids.includes(p.id)),
       listConsignees: async () => [],
     }
     return new PresentationService(
       shipmentRepo as any,
       bookingRepo as any,
       mastersRepo as any,
-      { list: async () => [], allRules: async () => [] } as any,
+      { list: async () => [], listForShipment: async () => [], allRules: async () => [] } as any,
       { listForEntity: async () => [] } as any,
       { unreadCount: async () => 0, ingestionStatus: async () => ({ count: 0, lastAt: null }), ingestState: async () => null, emailsForShipment: async () => [] } as any,
       { forMessages: async () => [], allWithMessage: async () => [] } as any,

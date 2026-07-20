@@ -145,6 +145,9 @@ export class PresentationService {
   // ---- shared assembly ----
 
   private readonly mapsCache = makeTtlCache<MasterMaps>(MASTER_MAPS_TTL_MS)
+  /** Party masters only (no ports) — detail page needs full party lists for critic code→name hydrate,
+   *  but only 0–2 port rows. Cached separately so detail never waits on ~24k ports. */
+  private readonly partyMapsCache = makeTtlCache<Omit<MasterMaps, 'ports'>>(MASTER_MAPS_TTL_MS)
 
   private masterMaps(): Promise<MasterMaps> {
     // Master data — especially the ~24,768-row ports table — is read-mostly reference data, but it was
@@ -166,6 +169,35 @@ export class PresentationService {
         ports: byId(ports as PortRow[]),
       }
     })
+  }
+
+  private partyMaps(): Promise<Omit<MasterMaps, 'ports'>> {
+    return this.partyMapsCache(async () => {
+      const [customers, vendors, forwarders] = await Promise.all([
+        this.mastersRepo.listCustomers(),
+        this.mastersRepo.listVendors(),
+        this.mastersRepo.listForwarders(),
+      ])
+      const byId = <T extends { id: string }>(rows: T[]) => new Map(rows.map((r) => [r.id, r]))
+      return {
+        customers: byId(customers as Ref[]),
+        vendors: byId(vendors as Ref[]),
+        forwarders: byId(forwarders as Ref[]),
+      }
+    })
+  }
+
+  /** Detail: party maps + only pol/pod port rows (Kysely select-needed, not full ports catalogue). */
+  private async detailMasterMaps(polId?: string | null, podId?: string | null): Promise<MasterMaps> {
+    const ids = [polId, podId].filter((x): x is string => !!x)
+    const [parties, portRows] = await Promise.all([
+      this.partyMaps(),
+      this.mastersRepo.portsByIds(ids),
+    ])
+    return {
+      ...parties,
+      ports: new Map(portRows.map((r) => [r.id, r as PortRow])),
+    }
   }
 
   private assembleInput(
@@ -348,12 +380,17 @@ export class PresentationService {
   async shipment(id: string) {
     const leg = await this.shipmentRepo.findById(id)
     if (!leg) throw new NotFoundException('shipment not found')
+    // Detail path: scoped queries only (no full alerts table, no full ports catalogue).
+    // linkedPosForShipment already carries legQty/legQtyUnit — do not re-query posFor.
     const [booking, maps, milestones, alertRows, legLinkedPos, relatedEmails, identifiers, siblings] =
       await Promise.all([
         this.bookingRepo.findById(leg.bookingId),
-        this.masterMaps(),
+        this.detailMasterMaps(
+          (leg as { polId?: string | null }).polId,
+          (leg as { podId?: string | null }).podId,
+        ),
         this.shipmentRepo.milestonesFor(id),
-        this.alertRepo.list(),
+        this.alertRepo.listForShipment(id),
         this.shipmentRepo.linkedPosForShipment(id) as Promise<LinkedPoRow[]>,
         this.emailRepo.emailsForShipment(id),
         this.shipmentRepo.identifiersFor(id),
@@ -364,19 +401,17 @@ export class PresentationService {
       legLinkedPos.length > 0
         ? legLinkedPos
         : ((await this.shipmentRepo.linkedPosForBooking(leg.bookingId)) as LinkedPoRow[])
-    // per-leg shipped qty/unit lives in shipment_pos — attach it so the PO table shows Shipped/UOM
-    const legPos = await this.shipmentRepo.posFor(id)
-    const legPosMap = new Map(legPos.map((x) => [x.poId, x]))
+    // linkedPosForShipment selects legQty/legQtyUnit; booking fallback has neither (null shipped).
     const linkedPosWithLeg = linkedPos.map((p) => ({
       ...p,
-      legQty: legPosMap.get(p.id)?.quantity ?? (p as { legQty?: number | null }).legQty ?? null,
-      legUnit: legPosMap.get(p.id)?.quantityUnit ?? (p as { legQtyUnit?: string | null }).legQtyUnit ?? null,
+      legQty: (p as { legQty?: number | null }).legQty ?? null,
+      legUnit: (p as { legQtyUnit?: string | null }).legQtyUnit ?? null,
     }))
     const base = toUiShipment(this.assembleInput(leg, booking, maps, linkedPosWithLeg), {
       legNo: (leg as { legNo?: number | null }).legNo ?? 1,
       legCount: siblings.length,
     })
-    const legAlerts = alertRows.filter((a) => a.shipmentId === id).map((a) => toUiAlert({ alert: a, shipment: null }))
+    const legAlerts = alertRows.map((a) => toUiAlert({ alert: a, shipment: null }))
     // Orphan shipment_emails (email_message wiped): keep a stub so Related Emails is not blank.
     const emails = relatedEmails.map((e) => ({
       id: e.id,

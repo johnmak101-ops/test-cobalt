@@ -60,6 +60,16 @@ export class AlertRepository {
     return q.orderBy('firedAt', 'desc').selectAll().execute()
   }
 
+  /** Alerts for one shipment only — detail page must not scan the full alerts table. */
+  listForShipment(shipmentId: string) {
+    return this.db
+      .selectFrom('alerts')
+      .where('shipmentId', '=', shipmentId)
+      .orderBy('firedAt', 'desc')
+      .selectAll()
+      .execute()
+  }
+
   /** Insert a fired alert; returns true only if it was new (dedup_key unique absorbs replays). */
   async insertDeduped(values: AlertInsert): Promise<boolean> {
     try {
