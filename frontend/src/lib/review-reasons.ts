@@ -103,7 +103,7 @@ const TRANSLATIONS: Translation[] = [
   {
     match: /matched multiple backend legs/i,
     text: () =>
-      'This email matched more than one existing leg — pick the right shipment below (multiple legs / 拼柜 is often normal)',
+      'This email matched more than one existing leg — pick the right shipment below (multiple legs / 拼櫃 is often normal)',
   },
   {
     match: /a PO on this email currently belongs to a different shipment/i,

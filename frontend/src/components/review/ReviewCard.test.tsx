@@ -336,7 +336,9 @@ describe('ReviewCard', () => {
     )
     const items = within(screen.getByTestId('why-review')).getAllByRole('listitem')
     expect(items).toHaveLength(1)
-    expect(items[0]!.textContent).toMatch(/cargo details may be incomplete/)
+    expect(items[0]!.textContent).toMatch(
+      /Email says there is an attachment, but none was received — cargo may be incomplete/,
+    )
   })
 
   // Needs attention (2026-07-17): conflict table owns field diffs — hide conflict-class flags/reasons.
@@ -476,18 +478,18 @@ describe('ReviewCard', () => {
     expect(screen.queryByTestId('source-emails')).toBeNull()
   })
 
-  it('does not repeat Open full shipment inside the card (page chrome owns that)', () => {
+  it('shows Open shipment on the expanded panel (Active queue has no row Action link)', () => {
     render(
-      <MemoryRouter>
-        <ReviewCard
-          shipment={baseShipment()}
-          criticReview={baseReview()}
-          compact={compact}
-          defaultExpanded={true}
-        />
-      </MemoryRouter>,
+      <ReviewCard
+        shipment={baseShipment()}
+        criticReview={baseReview()}
+        compact={compact}
+        defaultExpanded={true}
+      />,
     )
-    expect(screen.queryByRole('link', { name: /open full shipment/i })).toBeNull()
+    const open = screen.getByRole('link', { name: /open shipment/i })
+    expect(open).toBeInTheDocument()
+    expect(open).toHaveAttribute('href', expect.stringMatching(/\/shipments\//))
   })
 
   it('readOnly: shows resolved values, hides inputs and primary Save button', () => {

@@ -30,7 +30,7 @@ describe('buildNeedsAttention / groups', () => {
     expect(items.some((i) => /more than one existing shipment/i.test(i.text))).toBe(true)
   })
 
-  it('uses short multi-match copy (no 拼柜 parenthetical)', () => {
+  it('uses short multi-match copy (no 拼櫃 parenthetical)', () => {
     const items = buildNeedsAttention({
       conflictsCount: 0,
       riskFlags: [
@@ -46,7 +46,7 @@ describe('buildNeedsAttention / groups', () => {
     expect(items[0]!.text).toBe(
       'This email matches more than one existing shipment — confirm which one',
     )
-    expect(items[0]!.text).not.toMatch(/拼柜/)
+    expect(items[0]!.text).not.toMatch(/拼柜|拼櫃/)
   })
 
   it('never shows broadcast total reasons', () => {
@@ -249,6 +249,67 @@ describe('buildNeedsAttention / groups', () => {
     expect(namesBlob).toMatch(/YAQI|South Ocean/i)
   })
 
+  it('hides truncated multi-FCR extraction notes', () => {
+    const items = buildNeedsAttention({
+      conflictsCount: 0,
+      riskFlags: [
+        {
+          code: 'EXTRACTION_INCOMPLETE',
+          severity: 'high',
+          message:
+            'Extraction is incomplete or pending (e.g. scanned attachment not fully read) — key fields may be missing.',
+        },
+      ],
+      reviewReasons: [
+        'Two FCR numbers listed (FCR001250330, FCR001256791) but no p',
+        'Extraction notes: Two FCR numbers listed (FCR001250330, FCR001256791) but no p.',
+      ],
+    })
+    expect(items.some((i) => /FCR001250330|numbers listed|but no p/i.test(i.text))).toBe(false)
+    // Real incomplete-extract flag still surfaces
+    expect(items.some((i) => /Parse incomplete — key information may be missing/i.test(i.text))).toBe(
+      true,
+    )
+  })
+
+  it('hides gross_weight / measurement not-summed merge notes', () => {
+    const items = buildNeedsAttention({
+      conflictsCount: 0,
+      riskFlags: [
+        {
+          code: 'MERGE_ADJUSTMENT',
+          severity: 'low',
+          message: 'gross_weight: stated for 0/5 POs — not summed (leg keeps the single value)',
+        },
+        {
+          code: 'MERGE_ADJUSTMENT',
+          severity: 'low',
+          message: 'measurement: stated for 0/5 POs — not summed (leg keeps the single value)',
+        },
+        {
+          code: 'MERGE_ADJUSTMENT',
+          severity: 'low',
+          message:
+            'warehouse_end_date: binding cutoff 2026-07-15 16:00 (earliest current stated) — newest doc said 2026-07-20 12:00',
+        },
+      ],
+      reviewReasons: [
+        'Merge note: gross_weight: stated for 0/5 POs — not summed (leg keeps the single value)',
+        'Merge note: measurement: stated total 100 ≠ per-PO sum 200 — verify',
+      ],
+    })
+    expect(items.some((i) => /not summed|per-PO sum|gross_weight|measurement/i.test(i.text))).toBe(
+      false,
+    )
+    // Binding cut-off is humanized — no DB column, no "Merge note:" prefix
+    const cutoff = items.find((i) => /cut-off|cutoff/i.test(i.text))
+    expect(cutoff).toBeTruthy()
+    expect(cutoff!.text).toBe(
+      'Cargo cut-off kept as 2026-07-15 16:00 (earliest across emails) — a newer email said 2026-07-20 12:00',
+    )
+    expect(cutoff!.text).not.toMatch(/warehouse_end_date|Merge note:/i)
+  })
+
   it('PO-only and multi-destination copy', () => {
     const items = buildNeedsAttention({
       conflictsCount: 0,
@@ -328,6 +389,46 @@ describe('buildNeedsAttention / groups', () => {
     expect(items[0]!.text).toBe(
       'This PO is already on another shipment — move it here, leave it, or split',
     )
+  })
+
+  it('combines PO-only + thin mail into one decision line', () => {
+    const items = buildNeedsAttention({
+      conflictsCount: 0,
+      riskFlags: [
+        {
+          code: 'PO_ONLY_WEAK_MATCH',
+          severity: 'medium',
+          message: 'Matched on PO alone',
+        },
+      ],
+      reviewReasons: [
+        'no lifecycle email type — verify this is a real shipment',
+      ],
+    })
+    const poOrThin = items.filter(
+      (i) =>
+        i.lineId === 'w-po-only' ||
+        i.lineId === 'r-thin' ||
+        i.lineId === 'w-po-thin',
+    )
+    expect(poOrThin).toHaveLength(1)
+    expect(poOrThin[0]!.lineId).toBe('w-po-thin')
+    expect(poOrThin[0]!.groupId).toBe('which_shipment')
+    expect(poOrThin[0]!.text).toBe(
+      'Thin mail linked by PO only — confirm it belongs in tracking and on this shipment',
+    )
+    expect(items.some((i) => i.lineId === 'r-thin')).toBe(false)
+    expect(items.some((i) => /Linked by PO only — add booking/i.test(i.text))).toBe(false)
+  })
+
+  it('thin mail alone keeps Real shipment? copy', () => {
+    const items = buildNeedsAttention({
+      conflictsCount: 0,
+      riskFlags: [],
+      reviewReasons: ['no lifecycle email type — verify this is a real shipment'],
+    })
+    expect(items.some((i) => i.lineId === 'r-thin')).toBe(true)
+    expect(items.some((i) => i.text.includes('Thin mail, not a lifecycle booking'))).toBe(true)
   })
 
   it('no strong ID jargon — weak identity uses booking/SO/B/L/PO', () => {
@@ -602,6 +703,9 @@ describe('looksLikeCountryToken', () => {
     expect(looksLikeCountryToken('VIETNAM')).toBe(true)
     expect(looksLikeCountryToken('CN')).toBe(true)
     expect(looksLikeCountryToken('CHN')).toBe(true)
+    expect(looksLikeCountryToken('Hong Kong')).toBe(true)
+    // Geography clear; LOCODE (sea vs air) is the real choice — not "unknown place"
+    expect(looksLikeCountryToken('HONG KONG, HONG KONG SAR')).toBe(true)
   })
 
   it('rejects cities, LOCODEs, and unknown free text', () => {
@@ -616,16 +720,25 @@ describe('looksLikeCountryToken', () => {
 describe('countryOnlyPortMissText', () => {
   it('names field when known', () => {
     expect(countryOnlyPortMissText('USA', 'pod')).toBe(
-      'Email only named country "USA" for POD — pick a real port',
+      'Email only named USA for POD — please verify mode of transport and port',
     )
     expect(countryOnlyPortMissText('USA', 'pol')).toBe(
-      'Email only named country "USA" for POL — pick a real port',
+      'Email only named USA for POL — please verify mode of transport and port',
     )
   })
 
-  it('uses POL/POD when field unknown', () => {
+  it('uses general mode+port ask when field unknown', () => {
     expect(countryOnlyPortMissText('USA')).toBe(
-      'Email only named country "USA" — pick a real port (POL/POD)',
+      'Email only named USA — please verify mode of transport and port',
+    )
+  })
+
+  it('Hong Kong SAR is region-level, not "add to UN/LOCODE master"', () => {
+    expect(countryOnlyPortMissText('HONG KONG, HONG KONG SAR')).toBe(
+      'Email only named Hong Kong — please verify mode of transport and port',
+    )
+    expect(countryOnlyPortMissText('HONG KONG, HONG KONG SAR')).not.toMatch(
+      /not in UN\/LOCODE|add or alias|HKHKG/i,
     )
   })
 })
@@ -645,8 +758,27 @@ describe('buildNeedsAttention country-only port miss', () => {
       ],
       reviewReasons: [],
     })
-    expect(items.some((i) => /Email only named country "USA"/i.test(i.text))).toBe(true)
+    expect(items.some((i) => /Email only named USA — please verify mode of transport and port/i.test(i.text) || /Email only named USA for/i.test(i.text))).toBe(true)
     expect(items.every((i) => !/UN\/LOCODE masters|add or alias/i.test(i.text))).toBe(true)
+  })
+
+  it('HONG KONG, HONG KONG SAR is region choice not missing master', () => {
+    const items = buildNeedsAttention({
+      conflictsCount: 0,
+      portsLinked: { pol: false, pod: false },
+      riskFlags: [],
+      reviewReasons: [
+        'Port "HONG KONG, HONG KONG SAR" not in UN/LOCODE masters — add or alias, then rematch',
+      ],
+    })
+    expect(
+      items.some((i) =>
+        /Email only named Hong Kong — please verify mode of transport and port/i.test(i.text),
+      ),
+    ).toBe(true)
+    expect(items.every((i) => !/not in UN\/LOCODE masters|add or alias|HKHKG/i.test(i.text))).toBe(
+      true,
+    )
   })
 
   it('rewrites pod "USA" did not exact/curated-match with POD field', () => {
@@ -657,7 +789,9 @@ describe('buildNeedsAttention country-only port miss', () => {
       reviewReasons: ['pod "USA" did not exact/curated-match a port master — left unlinked'],
     })
     const hit = items.find((i) => i.lineId === 'm-port:USA' || i.lineId.startsWith('m-port'))
-    expect(hit?.text).toMatch(/Email only named country "USA" for POD/i)
+    expect(hit?.text).toMatch(
+      /Email only named USA for POD — please verify mode of transport and port/i,
+    )
     expect(hit?.text).not.toMatch(/not in master/i)
   })
 

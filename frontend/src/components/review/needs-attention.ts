@@ -121,6 +121,12 @@ export const PO_REASSIGN_TEXT =
 export const PO_ONLY_AND_REASSIGN_TEXT =
   'PO-only match, and that PO is already on another shipment — confirm move, split, or wrong shipment'
 export const PO_COMBINED_LINE_ID = 'w-po-combined'
+/** Thin mail + PO-only — one decision (belongs in tracking? right shipment?). */
+export const THIN_MAIL_TEXT =
+  'Thin mail, not a lifecycle booking — verify it belongs in tracking'
+export const PO_ONLY_AND_THIN_TEXT =
+  'Thin mail linked by PO only — confirm it belongs in tracking and on this shipment'
+export const PO_ONLY_THIN_LINE_ID = 'w-po-thin'
 
 export type NeedsAttentionGroup = {
   groupId: NeedsAttentionGroupId
@@ -171,6 +177,104 @@ function isRedundantRawNameMasterNote(raw: string): boolean {
   }
   // "X not in master data; raw name emitted" without a useful quoted Mesh action
   if (/not in master data/i.test(s) && /\braw name\b/i.test(s)) return true
+  return false
+}
+
+/**
+ * Humanize merge-adjustment notes for ops — no snake_case DB columns, no "Merge note:" prefix.
+ * Returns null when the note should be hidden (weight/measurement spam).
+ */
+function humanizeMergeNote(raw: string): string | null {
+  const s = raw.replace(/^Merge note:\s*/i, '').trim()
+  if (!s) return null
+  if (isWeightMeasurementMergeNote(s) || isWeightMeasurementMergeNote(raw)) return null
+
+  // warehouse_end_date: binding cutoff 2026-07-15 16:00 (earliest current stated) — newest doc said 2026-07-20 12:00
+  const bind = s.match(
+    /warehouse_end_date:\s*binding cutoff\s+(.+?)\s*\(earliest current stated\)\s*[—–-]\s*newest doc said\s+(.+)/i,
+  )
+  if (bind) {
+    const kept = bind[1]!.trim()
+    const newer = bind[2]!.trim()
+    return `Cargo cut-off kept as ${kept} (earliest across emails) — a newer email said ${newer}`
+  }
+  // Fallback phrasing if wording drifts slightly
+  const bindLoose = s.match(
+    /warehouse_end_date:.*binding cutoff\s+(\d{4}-\d{2}-\d{2}[^\s—–-]*(?:\s+\d{1,2}:\d{2})?).*newest doc said\s+(\d{4}-\d{2}-\d{2}[^\s—–.]*(?:\s+\d{1,2}:\d{2})?)/i,
+  )
+  if (bindLoose) {
+    return `Cargo cut-off kept as ${bindLoose[1]!.trim()} (earliest across emails) — a newer email said ${bindLoose[2]!.trim()}`
+  }
+  if (/binding cutoff/i.test(s) && /warehouse_end/i.test(s)) {
+    return s
+      .replace(/warehouse_end_date/gi, 'Cargo cut-off (WH end)')
+      .replace(/\bbinding cutoff\b/gi, 'kept earliest cut-off')
+      .replace(/\bearliest current stated\b/gi, 'earliest across emails')
+      .replace(/\bnewest doc said\b/gi, 'newer email said')
+  }
+
+  // Generic: replace known snake_case fields with labels (warehouse_end_date → WH End)
+  let out = s
+  const fieldMap: Array<[RegExp, string]> = [
+    [/\bwarehouse_end_date\b/gi, 'cargo cut-off (WH end)'],
+    [/\bwarehouse_start_date\b/gi, 'warehouse open (WH start)'],
+    [/\bcargo_ready_date\b/gi, 'cargo ready'],
+    [/\bgross_weight\b/gi, 'gross weight'],
+    [/\bmeasurement\b/gi, 'measurement'],
+    [/\bhbl_awb_fcr_no\b/gi, 'HBL/AWB/FCR'],
+    [/\bitem_style_no\b/gi, 'item/style'],
+  ]
+  for (const [re, label] of fieldMap) out = out.replace(re, label)
+  // Drop engineering "Merge note:" style leftover
+  out = out.replace(/^Merge note:\s*/i, '').trim()
+  return out || null
+}
+
+/**
+ * Per-PO weight/measurement merge diagnostics (e.g. "gross_weight: stated for 0/5 POs — not summed").
+ * Useful for engineering; ops already see cargo on the shipment and these spam Other.
+ */
+function isWeightMeasurementMergeNote(raw: string): boolean {
+  const s = raw.trim()
+  if (!s) return false
+  if (!/\b(gross_weight|measurement|gross weight)\b/i.test(s) && !/\bMerge note:\s*(gross_weight|measurement)\b/i.test(s)) {
+    // still catch after "Merge note:" prefix without field if body has the pattern
+    if (!/stated for\s+\d+\s*\/\s*\d+\s*POs/i.test(s) && !/per-PO sum/i.test(s) && !/not summed/i.test(s)) {
+      return false
+    }
+  }
+  return (
+    /stated for\s+\d+\s*\/\s*\d+\s*POs/i.test(s) ||
+    /not summed\b/i.test(s) ||
+    /per-PO sum/i.test(s) ||
+    /stated total\s+.+\s*≠\s*per-PO sum/i.test(s) ||
+    /stated total\s+.+\s*!=\s*per-PO sum/i.test(s)
+  )
+}
+
+/**
+ * Parser free-text extraction notes that are truncated or non-actionable for ops.
+ * Example: "Two FCR numbers listed (FCR…, FCR…) but no p" (cut mid-word).
+ * Multi-ID conflict table / strong-id flags already cover dual FCR/HBL when it matters.
+ */
+function isNoisyExtractionNote(raw: string): boolean {
+  const s = raw.trim()
+  if (!s) return false
+  // Critic prefixes extractionReasons as "Extraction notes: …"
+  const body = s.replace(/^Extraction notes:\s*/i, '').trim()
+  // "Two FCR/HBL/AWB numbers listed (A, B) but …"
+  if (
+    /\b(FCR|HBL|AWB|B\/L|BL|MBL|SO)\b/i.test(body) &&
+    /\bnumbers?\s+listed\b/i.test(body)
+  ) {
+    return true
+  }
+  if (/\b(two|three|\d+)\s+(FCR|HBL|AWB|B\/L)\s+numbers?\b/i.test(body)) return true
+  // Obviously truncated free-text (ends mid-word / "but no p.")
+  if (/\bbut no [a-z]\.?$/i.test(body)) return true
+  if (/\bbut no p\.?$/i.test(body)) return true
+  // Trailing single incomplete token after a long paren list
+  if (/\([^)]{8,}\)\s+but no\s+\w{1,3}\.?$/i.test(body)) return true
   return false
 }
 
@@ -382,13 +486,13 @@ function lineFromFlag(code: string, message: string): LineHit | null {
     case 'EXTRACTION_INCOMPLETE':
       return {
         lineId: 'i-parse',
-        text: 'Parse incomplete — key fields may be missing',
+        text: 'Parse incomplete — key information may be missing',
         category: 'extraction',
       }
     case 'MISSING_ATTACHMENT':
       return {
         lineId: 'i-attach',
-        text: 'Attachment missing — cargo details may be incomplete',
+        text: 'Email says there is an attachment, but none was received — cargo may be incomplete',
         category: 'extraction',
       }
     case 'SCAN_OCR_RISK':
@@ -398,12 +502,16 @@ function lineFromFlag(code: string, message: string): LineHit | null {
         text: 'Qty / weight / volume missing or look wrong — please verify',
         category: 'extraction',
       }
-    case 'MERGE_ADJUSTMENT':
+    case 'MERGE_ADJUSTMENT': {
+      // Hide weight/measurement sum diagnostics; humanize the rest (no DB column names).
+      const text = humanizeMergeNote(message)
+      if (!text) return null
       return {
-        lineId: `o-merge:${message}`,
-        text: message.startsWith('Merge note:') ? message : `Merge note: ${message}`,
+        lineId: `o-merge:${text.slice(0, 80)}`,
+        text,
         category: 'other',
       }
+    }
     default: {
       const cat = RISK_CODE_CATEGORY[code] ?? 'other'
       return {
@@ -426,6 +534,28 @@ function lineFromReason(raw: string, humanized: string): LineHit | null {
   // "Vendor name … raw name used" restates Master miss — never show under Other.
   if (isRedundantRawNameMasterNote(raw) || isRedundantRawNameMasterNote(humanized)) {
     return null
+  }
+  // Per-PO GW/measurement merge notes — hide from Needs attention.
+  if (isWeightMeasurementMergeNote(raw) || isWeightMeasurementMergeNote(humanized)) {
+    return null
+  }
+  // Truncated / dual-FCR extraction free-text — hide from Needs attention.
+  if (isNoisyExtractionNote(raw) || isNoisyExtractionNote(humanized)) {
+    return null
+  }
+  // Merge notes (binding cut-off, etc.) — plain language, no snake_case.
+  if (
+    /^Merge note:/i.test(raw) ||
+    /warehouse_end_date:\s*binding cutoff/i.test(raw) ||
+    /binding cutoff/i.test(raw)
+  ) {
+    const text = humanizeMergeNote(raw) ?? humanizeMergeNote(humanized)
+    if (!text) return null
+    return {
+      lineId: `o-merge:${text.slice(0, 80)}`,
+      text,
+      category: 'other',
+    }
   }
 
   // Which shipment?
@@ -485,7 +615,7 @@ function lineFromReason(raw: string, humanized: string): LineHit | null {
     if (/no lifecycle email type|verify this is a real shipment/i.test(raw)) {
       return {
         lineId: 'r-thin',
-        text: 'Thin mail, not a lifecycle booking — verify it belongs in tracking',
+        text: THIN_MAIL_TEXT,
         category: 'no_identity',
       }
     }
@@ -498,7 +628,7 @@ function lineFromReason(raw: string, humanized: string): LineHit | null {
   if (/no lifecycle email type|verify this is a real shipment/i.test(raw)) {
     return {
       lineId: 'r-thin',
-      text: 'Thin mail, not a lifecycle booking — verify it belongs in tracking',
+      text: THIN_MAIL_TEXT,
       category: 'no_identity',
     }
   }
@@ -769,7 +899,7 @@ function lineFromReason(raw: string, humanized: string): LineHit | null {
   if (/vision_pending|output_truncated|input_truncated|content_filter/i.test(raw)) {
     return {
       lineId: 'i-parse',
-      text: 'Parse incomplete — key fields may be missing',
+      text: 'Parse incomplete — key information may be missing',
       category: 'extraction',
     }
   }
@@ -778,7 +908,7 @@ function lineFromReason(raw: string, humanized: string): LineHit | null {
   ) {
     return {
       lineId: 'i-attach',
-      text: 'Attachment missing — cargo details may be incomplete',
+      text: 'Email says there is an attachment, but none was received — cargo may be incomplete',
       category: 'extraction',
     }
   }
@@ -1077,6 +1207,38 @@ function collapsePoOnlyAndReassign(byLine: Map<string, NeedsAttentionItem>): voi
   })
 }
 
+/**
+ * PO-only + thin mail (not a lifecycle booking) both ask "verify this" — one line.
+ * Runs after PO-only+reassign so a remaining w-po-only can still merge with r-thin.
+ */
+function collapsePoOnlyAndThin(byLine: Map<string, NeedsAttentionItem>): void {
+  const only = byLine.get('w-po-only')
+  const thin = byLine.get('r-thin')
+  if (!only || !thin) return
+
+  const severity =
+    (SEV_RANK[only.severity] ?? 0) >= (SEV_RANK[thin.severity] ?? 0) ? only.severity : thin.severity
+  const evidence = [
+    ...(only.evidence ?? []),
+    only.text,
+    ...(thin.evidence ?? []),
+    thin.text,
+  ].filter((s, i, a) => s && a.indexOf(s) === i)
+
+  byLine.delete('w-po-only')
+  byLine.delete('r-thin')
+  byLine.set(PO_ONLY_THIN_LINE_ID, {
+    key: 'w-po-thin',
+    lineId: PO_ONLY_THIN_LINE_ID,
+    severity,
+    text: PO_ONLY_AND_THIN_TEXT,
+    // Prefer which_shipment — ops already placed it; primary question is right place + keep in tracking.
+    category: 'multi_id',
+    groupId: 'which_shipment',
+    evidence: evidence.length ? evidence : undefined,
+  })
+}
+
 /** UN/LOCODE (5-char) — used to detect that a port slot already auto-matched. */
 const LOCODE_RE = /^[A-Z]{2}[A-Z0-9]{3}$/i
 
@@ -1133,7 +1295,7 @@ const COUNTRY_NAMES = new Set(
   ].map((s) => s.toLowerCase()),
 )
 
-/** True when free-text looks like a country name or ISO-2/3 (not a 5-char UN/LOCODE). */
+/** True when free-text looks like a country/region name or ISO-2/3 (not a 5-char UN/LOCODE). */
 export function looksLikeCountryToken(value: string | null | undefined): boolean {
   if (value == null) return false
   const raw = String(value).trim()
@@ -1144,18 +1306,48 @@ export function looksLikeCountryToken(value: string | null | undefined): boolean
   if (upper.length === 2 && ISO2_COUNTRY.has(upper)) return true
   if (upper.length === 3 && ISO3_COUNTRY.has(upper)) return true
   const nameKey = raw.replace(/\s+/g, ' ').trim().toLowerCase()
-  return COUNTRY_NAMES.has(nameKey)
+  if (COUNTRY_NAMES.has(nameKey)) return true
+  // "HONG KONG, HONG KONG SAR" / "Vietnam, Viet Nam" — region is known; LOCODE (sea vs air) is not.
+  const head = nameKey.split(/[,/;|]/)[0]?.trim() ?? ''
+  if (head && COUNTRY_NAMES.has(head)) return true
+  // Strip trailing SAR / country / republic noise
+  const stripped = nameKey
+    .replace(/\b(hong kong sar|sar|p\.?r\.?c\.?|republic of|people'?s republic of)\b/gi, ' ')
+    .replace(/[,/;|]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+  if (stripped && COUNTRY_NAMES.has(stripped)) return true
+  // "hong kong hong kong" after strip
+  for (const c of COUNTRY_NAMES) {
+    if (stripped === c || stripped.startsWith(c + ' ') || stripped.endsWith(' ' + c)) return true
+  }
+  return false
 }
 
-/** Ops-facing line when port raw is country-only. field: 'pol' | 'pod' | null */
+/** Short display label for country-only port blurbs. */
+function countryTokenDisplay(token: string): string {
+  const t = token.trim()
+  const head = t.split(/[,/;|]/)[0]?.trim() ?? t
+  // Prefer the clean country/region name when the rest is SAR boilerplate
+  if (/hong\s*kong/i.test(t)) return 'Hong Kong'
+  if (looksLikeCountryToken(head) && head.length < t.length) return head
+  return t
+}
+
+/** Ops-facing line when port raw is country/region-only (not a LOCODE). field: 'pol' | 'pod' | null */
 export function countryOnlyPortMissText(
   token: string,
   field?: 'pol' | 'pod' | null,
 ): string {
-  const t = token.trim()
-  if (field === 'pol') return `Email only named country "${t}" for POL — pick a real port`
-  if (field === 'pod') return `Email only named country "${t}" for POD — pick a real port`
-  return `Email only named country "${t}" — pick a real port (POL/POD)`
+  const t = countryTokenDisplay(token)
+  // Region/country is clear; ops must pick mode + concrete port — not "add to UN/LOCODE master".
+  if (field === 'pol') {
+    return `Email only named ${t} for POL — please verify mode of transport and port`
+  }
+  if (field === 'pod') {
+    return `Email only named ${t} for POD — please verify mode of transport and port`
+  }
+  return `Email only named ${t} — please verify mode of transport and port`
 }
 
 /** True when a free-text looks like a resolved LOCODE (e.g. CNYTN, VNSGN). */
@@ -1273,6 +1465,7 @@ export function buildNeedsAttention(opts: {
   collapseMeshParties(byLine)
   collapseMeshPorts(byLine)
   collapsePoOnlyAndReassign(byLine)
+  collapsePoOnlyAndThin(byLine)
 
   let items = [...byLine.values()]
   items.sort((a, b) => (SEV_RANK[b.severity] ?? 0) - (SEV_RANK[a.severity] ?? 0))

@@ -498,8 +498,8 @@ export function ReviewCard({
       )}
 
       {/* Expanded: needs-attention + conflicts-only + notes + Save&Approve (§2.2).
-          AI comment + "Open full shipment" are NOT repeated here — band is on the row/header,
-          full-shipment is the page chrome (focus) or queue row (queue). */}
+          Band stays on the queue row/header; Open shipment is on this panel (Active queue has
+          no Action column — Approved/Rejected still keep row-level Open). */}
       {(expanded || embedded) && (
         <div className={cn('space-y-3 px-3 pb-3 pt-3', !embedded && 'border-t border-border')}>
           {needsAttentionGroups.length > 0 && (
@@ -833,39 +833,51 @@ export function ReviewCard({
           )}
 
           {!readOnly && (
-            <>
-              <div>
-                <label
-                  htmlFor={`review-note-${shipment.id}`}
-                  className="mb-1 flex items-center gap-1.5 text-xs font-medium text-text-muted"
-                >
-                  <NotebookPen size={13} className="text-text-muted" />
-                  Note
-                  {overrides.length > 0 && (
-                    <span className="font-normal text-status-warning">
-                      · required when you override the agent
-                    </span>
-                  )}
-                </label>
-                <textarea
-                  id={`review-note-${shipment.id}`}
-                  aria-label="Note"
-                  value={note}
-                  onChange={(e) => setNote(e.target.value)}
-                  rows={2}
-                  placeholder="Explain why you chose a different value — this helps improve future extractions"
-                  className={cn(
-                    'w-full rounded-lg border bg-surface-900 p-2.5 text-sm leading-snug text-text-primary placeholder:text-text-muted',
-                    noteRequired ? 'border-status-warning/60' : 'border-border',
-                  )}
-                />
-                {noteRequired && (
-                  <p className="mt-1 text-xs text-status-warning">
-                    Add a note before Save & Approve — you changed a value.
-                  </p>
+            <div>
+              <label
+                htmlFor={`review-note-${shipment.id}`}
+                className="mb-1 flex items-center gap-1.5 text-xs font-medium text-text-muted"
+              >
+                <NotebookPen size={13} className="text-text-muted" />
+                Note
+                {overrides.length > 0 && (
+                  <span className="font-normal text-status-warning">
+                    · required when you override the agent
+                  </span>
                 )}
-              </div>
+              </label>
+              <textarea
+                id={`review-note-${shipment.id}`}
+                aria-label="Note"
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+                rows={2}
+                placeholder="Explain why you chose a different value — this helps improve future extractions"
+                className={cn(
+                  'w-full rounded-lg border bg-surface-900 p-2.5 text-sm leading-snug text-text-primary placeholder:text-text-muted',
+                  noteRequired ? 'border-status-warning/60' : 'border-border',
+                )}
+              />
+              {noteRequired && (
+                <p className="mt-1 text-xs text-status-warning">
+                  Add a note before Save & Approve — you changed a value.
+                </p>
+              )}
+            </div>
+          )}
 
+          {/* Always show Open shipment — Active queue has no row Action column for it. */}
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <a
+              href={`/shipments/${shipment.id}`}
+              onClick={(e) => e.stopPropagation()}
+              className={cn(ACTION_BTN, ACTION_VARIANT.secondary)}
+              data-testid="open-shipment"
+            >
+              <ExternalLink size={13} />
+              Open shipment
+            </a>
+            {!readOnly && (
               <div className="flex flex-wrap items-center justify-end gap-2">
                 {showEdit && (
                   <button
@@ -914,8 +926,8 @@ export function ReviewCard({
                   </button>
                 )}
               </div>
-            </>
-          )}
+            )}
+          </div>
         </div>
       )}
     </div>

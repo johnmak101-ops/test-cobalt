@@ -31,10 +31,10 @@ const amb: MatchAmbiguity = {
 }
 
 describe('CandidateLegsPanel (#129)', () => {
-  it('renders both jobs and 拼柜 banner', () => {
+  it('renders both jobs and 拼櫃 banner', () => {
     render(<CandidateLegsPanel matchAmbiguity={amb} />)
     expect(screen.getByTestId('candidate-legs-panel')).toBeTruthy()
-    expect(screen.getByTestId('shared-container-banner').textContent).toMatch(/拼柜|CTR-SAME/)
+    expect(screen.getByTestId('shared-container-banner').textContent).toMatch(/拼櫃|CTR-SAME/)
     expect(screen.getByText('JOB-A')).toBeTruthy()
     expect(screen.getByText('JOB-B')).toBeTruthy()
     expect(screen.getByText(/BK BK1/)).toBeTruthy()

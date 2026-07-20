@@ -86,7 +86,7 @@ export function CandidateLegsPanel({
           className="rounded-md bg-status-warning/10 px-2 py-1.5 text-xs text-status-warning"
           data-testid="shared-container-banner"
         >
-          Shared container (拼柜):{' '}
+          Shared container (拼櫃):{' '}
           <span className="font-mono">{matchAmbiguity.sharedContainer}</span>
           {' — '}
           several bookings may share this container; pick which booking this email updates.

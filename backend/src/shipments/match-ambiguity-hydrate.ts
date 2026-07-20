@@ -224,7 +224,7 @@ export function withMatchAmbiguity(
       code: 'AMBIGUOUS_MATCH',
       severity: 'high',
       message:
-        'This email matched more than one existing leg — pick which shipment it updates (multiple legs for one PO/booking/container is often normal, including 拼柜).',
+        'This email matched more than one existing leg — pick which shipment it updates (multiple legs for one PO/booking/container is often normal, including 拼櫃).',
     })
   }
   return { ...base, riskFlags: flags, matchAmbiguity }
