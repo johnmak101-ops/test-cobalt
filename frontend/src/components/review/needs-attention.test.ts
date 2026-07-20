@@ -214,6 +214,41 @@ describe('buildNeedsAttention / groups', () => {
     )
   })
 
+  it('suppresses raw-name-used notes that only restate Master miss', () => {
+    const items = buildNeedsAttention({
+      conflictsCount: 0,
+      riskFlags: [
+        {
+          code: 'PARTY_OPS',
+          severity: 'low',
+          message: 'Vendor name from image but no master code; raw name used',
+        },
+        {
+          code: 'PARTY_OPS',
+          severity: 'low',
+          message:
+            'Cannot match "YAQI" in the vendor list. Please add it in Cobalt Fashion Data Mesh System, then rematch.',
+        },
+      ],
+      reviewReasons: [
+        'Vendor name not in master data; raw name used.',
+        'South Ocean not in master data; raw name emitted',
+        'Cannot match "South Ocean" in the vendor list. Please add it in Cobalt Fashion Data Mesh System, then rematch.',
+      ],
+    })
+    expect(items.some((i) => /raw name used|raw name emitted|no master code/i.test(i.text))).toBe(
+      false,
+    )
+    expect(items.some((i) => i.groupId === 'other' && /vendor|raw name/i.test(i.text))).toBe(false)
+    expect(items.some((i) => i.groupId === 'master_miss')).toBe(true)
+    // Collapsed master-miss keeps names in details (or text when single party)
+    const master = items.filter((i) => i.groupId === 'master_miss')
+    const namesBlob = master
+      .flatMap((i) => [i.text, ...(i.details ?? []), ...(i.evidence ?? [])])
+      .join(' | ')
+    expect(namesBlob).toMatch(/YAQI|South Ocean/i)
+  })
+
   it('PO-only and multi-destination copy', () => {
     const items = buildNeedsAttention({
       conflictsCount: 0,

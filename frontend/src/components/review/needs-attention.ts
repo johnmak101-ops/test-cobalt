@@ -118,6 +118,41 @@ function isBroadcast(rawOrText: string): boolean {
   return BROADCAST_RE.test(rawOrText)
 }
 
+/**
+ * Parser/agent notes that only restate "party not in master / used raw name/code".
+ * Master miss already surfaces the actionable line ("Cannot match "X" in the vendor list…").
+ * Showing these again under Other is pure noise — suppress.
+ *
+ * Examples:
+ *  - "Vendor name not in master data; raw name used."
+ *  - "Vendor name from image but no master code; raw name used"
+ *  - "Factory name … not in master data; raw name used"
+ *  - "Sender is factory (…) but no vendor master code; raw email used"
+ *  - "South Ocean not in master data; raw name emitted"
+ */
+function isRedundantRawNameMasterNote(raw: string): boolean {
+  const s = raw.trim()
+  if (!s) return false
+  if (/\braw name used\b/i.test(s)) return true
+  if (/\braw name emitted\b/i.test(s)) return true
+  if (/\braw email used\b/i.test(s)) return true
+  if (/\braw value kept\b/i.test(s) && /\b(vendor|factory|customer|consignee|shipper)\b/i.test(s)) {
+    // Port "city not in master data; raw value kept" is handled separately as port miss —
+    // only suppress when the note is clearly about a party, not a port/city.
+    return !/\b(port|pol|pod|un\/?locode)\b/i.test(s)
+  }
+  // "Vendor is Hop Shing…; no master code available/known"
+  if (
+    /\b(no master code|not (a )?(\d+-char )?master code|master code (available|known|match))\b/i.test(s) &&
+    /\b(vendor|factory|customer|shipper|invoice party|consignee)\b/i.test(s)
+  ) {
+    return true
+  }
+  // "X not in master data; raw name emitted" without a useful quoted Mesh action
+  if (/not in master data/i.test(s) && /\braw name\b/i.test(s)) return true
+  return false
+}
+
 const PARTY_FIELD_LABEL: Record<string, string> = {
   forwarder_name: 'Forwarder',
   customer_code: 'Customer',
@@ -306,6 +341,8 @@ function lineFromFlag(code: string, message: string): LineHit | null {
     case 'PARTY_OPS': {
       // riskFlags carry the full ops note in `message` (e.g. Cannot match "Maersk…" in the forwarder list).
       // Never collapse to a blank "Party not linked" — reuse the same synonym/value lines as reviewReasons.
+      // Drop "raw name used / no master code" prose — Master miss already has the Cannot-match line.
+      if (isRedundantRawNameMasterNote(message)) return null
       const hit = lineFromReason(message, message)
       if (hit && !hit.lineId.startsWith('reason:')) return hit
       // Fallback: still surface the raw message rather than a useless generic
@@ -363,6 +400,10 @@ function lineFromReason(raw: string, humanized: string): LineHit | null {
   // Brand code vs full name (e.g. Primark vs PRMT) is kept by enrichment; ops do not need to
   // re-verify brand on the decision desk — suppress entirely.
   if (/brand conflict/i.test(raw) || /brand differs/i.test(humanized) || /brand conflict/i.test(humanized)) {
+    return null
+  }
+  // "Vendor name … raw name used" restates Master miss — never show under Other.
+  if (isRedundantRawNameMasterNote(raw) || isRedundantRawNameMasterNote(humanized)) {
     return null
   }
 

@@ -37,6 +37,10 @@ import { computeFieldConflicts } from './field-conflicts'
 import { poQtyIssue, describePoQtyIssue } from '../reconcile/po-qty-consistency'
 import { stateToUiStatus } from './adapters/enums'
 import { makeTtlCache } from '../common/ttl-cache'
+import {
+  entityCodeNameMapsFromRefs,
+  hydrateCriticEntityLabels,
+} from './hydrate-critic-entity-labels'
 
 type Ref = { id: string; code?: string | null; name: string }
 type PortRow = { id: string; unlocode?: string | null; country?: string | null; iata?: string | null }
@@ -403,6 +407,16 @@ export class PresentationService {
           ? [String(base.reviewReasons)]
           : [],
     )
+    // Entity conflict candidates often store Mesh codes (forwarder "058"/"060"); expand to names
+    // for the review table. Response-only — stored critic_review keeps codes for matching/learning.
+    {
+      const codeMaps = entityCodeNameMapsFromRefs(
+        maps.forwarders.values(),
+        maps.customers.values(),
+        maps.vendors.values(),
+      )
+      criticReview = hydrateCriticEntityLabels(criticReview, codeMaps)
+    }
     if (needsMatchAmbiguityHydration(criticReview, reviewReasons)) {
       try {
         const posNums = linkedPosWithLeg.map((p) => p.poNumber).filter(Boolean)
