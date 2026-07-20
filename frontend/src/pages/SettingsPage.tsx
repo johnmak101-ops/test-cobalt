@@ -39,8 +39,12 @@ export default function SettingsPage() {
   }
 
   return (
-    <div className="flex flex-col gap-6 lg:flex-row">
-      <nav className="w-full space-y-1 lg:w-48 lg:shrink-0">
+    <div className="flex min-w-0 flex-col gap-5">
+      {/* Horizontal sub-category tabs (was vertical sidebar) */}
+      <nav
+        aria-label="Settings sections"
+        className="flex w-full min-w-0 flex-wrap gap-1 border-b border-border pb-px"
+      >
         {navItems.map((item) => (
           <NavLink
             key={item.to}
@@ -48,10 +52,10 @@ export default function SettingsPage() {
             end={item.end}
             className={({ isActive }) =>
               cn(
-                'block rounded-lg px-3 py-2 text-sm font-medium transition-colors',
+                '-mb-px border-b-2 px-3 py-2 text-sm font-medium transition-colors',
                 isActive
-                  ? 'bg-cobalt-primary/15 text-cobalt-primary'
-                  : 'text-text-secondary hover:bg-surface-700 hover:text-text-primary',
+                  ? 'border-cobalt-primary text-cobalt-primary'
+                  : 'border-transparent text-text-secondary hover:border-border hover:text-text-primary',
               )
             }
           >
@@ -60,7 +64,7 @@ export default function SettingsPage() {
         ))}
       </nav>
 
-      <div className="flex-1">
+      <div className="min-w-0 flex-1">
         {isAccess ? (
           <AccessControlSettings />
         ) : isUsersSettings ? (

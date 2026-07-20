@@ -99,31 +99,52 @@ export default function AdminMeshMissesPage() {
     return 'rounded-full border border-border bg-surface-800 px-2 py-0.5 text-[11px] text-text-secondary'
   }
 
+  const typeTabs = [
+    { id: 'all' as const, label: 'All types' },
+    { id: 'vendor' as const, label: 'Vendors' },
+    { id: 'forwarder' as const, label: 'Forwarders' },
+    { id: 'customer' as const, label: 'Customers' },
+  ]
+
   return (
     <div className="space-y-4 p-1">
       <div className="flex flex-wrap items-center gap-3">
         <h1 className="text-lg font-semibold text-text-primary">Mesh misses</h1>
-        <select
-          className="rounded border border-border bg-surface-800 px-2 py-1 text-sm text-text-secondary"
-          value={typeFilter}
-          onChange={(e) => setTypeFilter(e.target.value as never)}
+        {/* Horizontal type sub-cats (was a select dropdown) */}
+        <div
+          role="tablist"
+          aria-label="Mesh miss type"
+          className="inline-flex flex-wrap overflow-hidden rounded-lg border border-border"
         >
-          <option value="all">All types</option>
-          <option value="vendor">Vendors</option>
-          <option value="forwarder">Forwarders</option>
-          <option value="customer">Customers</option>
-        </select>
-        <label className="flex items-center gap-1 text-sm text-text-secondary">
+          {typeTabs.map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              role="tab"
+              aria-selected={typeFilter === t.id}
+              onClick={() => setTypeFilter(t.id)}
+              className={
+                typeFilter === t.id
+                  ? 'bg-cobalt-primary px-3 py-1.5 text-xs font-medium text-white'
+                  : 'bg-surface-800 px-3 py-1.5 text-xs font-medium text-text-secondary hover:bg-surface-700 hover:text-text-primary'
+              }
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+        <label className="flex items-center gap-1.5 text-sm text-text-secondary">
           <input
             type="checkbox"
             checked={includeAcked}
             onChange={(e) => setIncludeAcked(e.target.checked)}
+            className="rounded border-border"
           />
-          show acked
+          Show acked
         </label>
         <button
           type="button"
-          className="ml-auto rounded border border-border px-3 py-1 text-sm text-text-secondary hover:bg-surface-700"
+          className="ml-auto rounded-lg border border-border px-3 py-1.5 text-sm text-text-secondary hover:bg-surface-700 hover:text-text-primary"
           onClick={exportCsv}
         >
           Export CSV
