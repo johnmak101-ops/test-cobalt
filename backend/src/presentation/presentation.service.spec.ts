@@ -55,6 +55,16 @@ const build = () => {
         : [],
     // #151: per-leg empty → falls back to booking union
     linkedPosForShipment: async () => [],
+    linkedPosForShipments: async (ids: string[]) => new Map(ids.map((id) => [id, [] as never[]])),
+    linkedPosForBookings: async (ids: string[]) =>
+      new Map(
+        ids
+          .filter((id) => id === 'b1')
+          .map((id) => [
+            id,
+            [{ id: 'po1', poNumber: 'PO-1', totalQuantity: 5000, quantityUnit: 'pieces', vendorName: 'Rose Knit' }],
+          ]),
+      ),
     legsForBooking: async (id: string) => legs.filter((l) => l.bookingId === id),
     identifiersFor: async () => [],
   }
@@ -95,6 +105,86 @@ const build = () => {
 }
 
 describe('PresentationService.shipments — list', () => {
+  it('does not call per-leg linkedPosForShipment (N+1 guard)', async () => {
+    let perLeg = 0
+    let bulkShip = 0
+    let bulkBook = 0
+    const shipmentRepo = {
+      activeLegs: async () => legs,
+      findById: async (id: string) => legs.find((l) => l.id === id) ?? null,
+      findByIds: async (ids: string[]) => new Map(legs.filter((l) => ids.includes(l.id)).map((l) => [l.id, l])),
+      milestonesFor: async () => [],
+      posFor: async () => [],
+      poNumbersByShipment: async () => new Map<string, string[]>(),
+      linkedPosForBooking: async () => {
+        throw new Error('list must use linkedPosForBookings bulk')
+      },
+      linkedPosForShipment: async () => {
+        perLeg++
+        return []
+      },
+      linkedPosForShipments: async (ids: string[]) => {
+        bulkShip++
+        return new Map(ids.map((id) => [id, [] as never[]]))
+      },
+      linkedPosForBookings: async (ids: string[]) => {
+        bulkBook++
+        return new Map(
+          ids
+            .filter((id) => id === 'b1')
+            .map((id) => [
+              id,
+              [
+                {
+                  id: 'po1',
+                  poNumber: 'PO-1',
+                  totalQuantity: 5000,
+                  quantityUnit: 'pieces',
+                  vendorName: 'Rose Knit',
+                },
+              ],
+            ]),
+        )
+      },
+      legsForBooking: async (id: string) => legs.filter((l) => l.bookingId === id),
+      identifiersFor: async () => [],
+    }
+    const bookingRepo = {
+      listOrdered: async () => bookings,
+      findById: async (id: string) => bookings.find((b) => b.id === id) ?? null,
+      findByIds: async (ids: string[]) => new Map(bookings.filter((b) => ids.includes(b.id)).map((b) => [b.id, b])),
+      poNumbersFor: async () => [],
+      poNumbersByBooking: async () => new Map(),
+    }
+    const mastersRepo = {
+      listCustomers: async () => customers,
+      listVendors: async () => vendors,
+      listForwarders: async () => forwarders,
+      listPorts: async () => ports,
+      portsByIds: async (ids: string[]) => ports.filter((p) => ids.includes(p.id)),
+      listConsignees: async () => [],
+    }
+    const svc = new PresentationService(
+      shipmentRepo as any,
+      bookingRepo as any,
+      mastersRepo as any,
+      { list: async () => [], listForShipment: async () => [], allRules: async () => [] } as any,
+      { listForEntity: async () => [] } as any,
+      {
+        unreadCount: async () => 0,
+        ingestionStatus: async () => ({ count: 0, lastAt: null }),
+        ingestState: async () => null,
+        emailsForShipment: async () => [],
+      } as any,
+      { forMessages: async () => [], allWithMessage: async () => [] } as any,
+      { lookupByMatchKey: async () => ({ query: {}, candidates: [] }) } as any,
+    )
+    await svc.shipments()
+    expect(perLeg).toBe(0)
+    expect(bulkShip).toBe(1)
+    expect(bulkBook).toBe(1)
+  })
+
   it('assembles flat shipments from active legs + booking + masters + ports + poNumbers', async () => {
     const { shipments } = await build().shipments()
     expect(shipments).toHaveLength(2)
