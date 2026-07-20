@@ -68,8 +68,8 @@ describe('AlertRulesSettings', () => {
     expect(screen.getByText('Draft B/L before cutoff')).toBeInTheDocument()
     expect(screen.queryByText(/cargo-ready revision/i)).toBeNull()
     expect(screen.queryByText('LOCKED')).toBeNull()
-    // The per-country warning-days editor is part of this section's behavior (one per listed rule).
-    expect(screen.getAllByText('Country warning days').length).toBe(2)
+    // Country offsets section (one per listed rule)
+    expect(screen.getAllByText('Extra days by origin').length).toBe(2)
   })
 
   it('does not crash when a configurable rule has null state', async () => {
@@ -93,6 +93,8 @@ describe('AlertRulesSettings', () => {
     })
     renderWithClient(<AlertRulesSettings />)
     expect(await screen.findByText('Rule with no state')).toBeInTheDocument()
-    expect(screen.getByText('—')).toBeInTheDocument()
+    // null state is omitted from header (no "When: —" chip)
+    expect(screen.queryByText(/^When:/)).toBeNull()
   })
 })
+
