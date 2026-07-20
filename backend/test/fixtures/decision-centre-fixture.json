@@ -2,7 +2,7 @@
   "description": "Canonical decision-centre payload slice. Both repos assert this file byte-for-byte. Change = update BOTH repos in one sitting.",
   "note": "deskClasses lists PRODUCED families only; m-vendor/m-port display lines are track lineIds, fyi per 07-20 spec §3.4",
   "deskClasses": {
-    "decision": ["field conflict", "ambiguous match", "po reassignment", "multi strong id", "missing attachment", "ai_confidence_low", "g-checksum", "g-total", "g-pages"],
+    "decision": ["field conflict", "ambiguous match", "po reassignment", "multi strong id", "missing attachment", "ai_confidence_low", "g-checksum", "g-total", "g-pages", "w-split-incomplete"],
     "fyi": ["brand-across-buyer-families", "g-repaired", "g-evidence-trunc"]
   },
   "representativeNotes": {
@@ -10,7 +10,8 @@
     "vendor-not-stated": "Vendor / factory not stated in email",
     "soft-port-country-only": "Email only named Hong Kong — please verify mode of transport and port",
     "field conflict": "2 field conflict(s)",
-    "ai_confidence_low": "AI confidence low — verify extraction"
+    "ai_confidence_low": "AI confidence low — verify extraction",
+    "w-split-incomplete": "Multi-booking split incomplete — expected 3 bookings, produced 2"
   },
   "criticReview": {
     "wouldBeAuto": true,

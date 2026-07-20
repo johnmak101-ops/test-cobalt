@@ -74,4 +74,8 @@ export interface CriticReview {
   deskAuto?: boolean
   /** Structured Mesh admin worklist entries (nested under criticReview only) */
   masterMisses?: MasterMiss[]
+  /** Hybrid-C: multi-booking fan-out shortfall (nested; whitelist-safe) */
+  splitAudit?: { expected: number; actual: number }
+  /** Hybrid-C: which booking row this decision is within a multi-booking email */
+  multiBookingOrigin?: { index: number; total: number; bookingNo?: string }
 }
