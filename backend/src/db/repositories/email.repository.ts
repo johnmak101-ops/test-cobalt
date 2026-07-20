@@ -155,30 +155,30 @@ export class EmailRepository {
    *
    *  LEFT JOIN so shipment_emails rows still surface after email_message is wiped (orphan links).
    *  Orphans return id/subject/sender null; graphMessageId falls back to shipment_emails.graph_message_id. */
+  /**
+   * Related emails for one shipment.
+   * Prefer two sargable left joins (graph_message_id + graph_id) over a single OR join — SQL Server
+   * often cannot seek indexes under `ON a=b OR a=c`. Coalesce prefers the Message-ID match.
+   * See https://kysely.dev/docs/examples/join/complex-join + dual-join pattern.
+   */
   emailsForShipment(shipmentId: string) {
     return this.db
       .selectFrom('shipmentEmails')
-      .leftJoin('emailMessage', (join) =>
-        join.on((eb) =>
-          eb.or([
-            eb('shipmentEmails.graphMessageId', '=', eb.ref('emailMessage.graphMessageId')),
-            eb('shipmentEmails.graphMessageId', '=', eb.ref('emailMessage.graphId')),
-          ]),
-        ),
-      )
+      .leftJoin('emailMessage as emByMid', 'shipmentEmails.graphMessageId', 'emByMid.graphMessageId')
+      .leftJoin('emailMessage as emByGid', 'shipmentEmails.graphMessageId', 'emByGid.graphId')
       .where('shipmentEmails.shipmentId', '=', shipmentId)
       .orderBy(
-        sql`coalesce(${sql.ref('emailMessage.receivedAt')}, ${sql.ref('shipmentEmails.receivedAt')})`,
+        sql`coalesce(${sql.ref('emByMid.receivedAt')}, ${sql.ref('emByGid.receivedAt')}, ${sql.ref('shipmentEmails.receivedAt')})`,
         'desc',
       )
       .select([
-        'emailMessage.id as id',
-        sql<string | null>`coalesce(${sql.ref('emailMessage.graphMessageId')}, ${sql.ref('shipmentEmails.graphMessageId')})`.as(
+        sql<string | null>`coalesce(${sql.ref('emByMid.id')}, ${sql.ref('emByGid.id')})`.as('id'),
+        sql<string | null>`coalesce(${sql.ref('emByMid.graphMessageId')}, ${sql.ref('emByGid.graphMessageId')}, ${sql.ref('shipmentEmails.graphMessageId')})`.as(
           'graphMessageId',
         ),
-        'emailMessage.subject as subject',
-        'emailMessage.sender as sender',
-        sql<Date | null>`coalesce(${sql.ref('emailMessage.receivedAt')}, ${sql.ref('shipmentEmails.receivedAt')})`.as(
+        sql<string | null>`coalesce(${sql.ref('emByMid.subject')}, ${sql.ref('emByGid.subject')})`.as('subject'),
+        sql<string | null>`coalesce(${sql.ref('emByMid.sender')}, ${sql.ref('emByGid.sender')})`.as('sender'),
+        sql<Date | null>`coalesce(${sql.ref('emByMid.receivedAt')}, ${sql.ref('emByGid.receivedAt')}, ${sql.ref('shipmentEmails.receivedAt')})`.as(
           'receivedAt',
         ),
         'shipmentEmails.emailType as milestoneType',
@@ -192,28 +192,22 @@ export class EmailRepository {
     const rows = shipmentIds.length
       ? await this.db
           .selectFrom('shipmentEmails')
-          .leftJoin('emailMessage', (join) =>
-            join.on((eb) =>
-              eb.or([
-                eb('shipmentEmails.graphMessageId', '=', eb.ref('emailMessage.graphMessageId')),
-                eb('shipmentEmails.graphMessageId', '=', eb.ref('emailMessage.graphId')),
-              ]),
-            ),
-          )
+          .leftJoin('emailMessage as emByMid', 'shipmentEmails.graphMessageId', 'emByMid.graphMessageId')
+          .leftJoin('emailMessage as emByGid', 'shipmentEmails.graphMessageId', 'emByGid.graphId')
           .where('shipmentEmails.shipmentId', 'in', shipmentIds)
           .orderBy(
-            sql`coalesce(${sql.ref('emailMessage.receivedAt')}, ${sql.ref('shipmentEmails.receivedAt')})`,
+            sql`coalesce(${sql.ref('emByMid.receivedAt')}, ${sql.ref('emByGid.receivedAt')}, ${sql.ref('shipmentEmails.receivedAt')})`,
             'desc',
           )
           .select([
             'shipmentEmails.shipmentId as shipmentId',
-            'emailMessage.id as id',
-            sql<string | null>`coalesce(${sql.ref('emailMessage.graphMessageId')}, ${sql.ref('shipmentEmails.graphMessageId')})`.as(
+            sql<string | null>`coalesce(${sql.ref('emByMid.id')}, ${sql.ref('emByGid.id')})`.as('id'),
+            sql<string | null>`coalesce(${sql.ref('emByMid.graphMessageId')}, ${sql.ref('emByGid.graphMessageId')}, ${sql.ref('shipmentEmails.graphMessageId')})`.as(
               'graphMessageId',
             ),
-            'emailMessage.subject as subject',
-            'emailMessage.sender as sender',
-            sql<Date | null>`coalesce(${sql.ref('emailMessage.receivedAt')}, ${sql.ref('shipmentEmails.receivedAt')})`.as(
+            sql<string | null>`coalesce(${sql.ref('emByMid.subject')}, ${sql.ref('emByGid.subject')})`.as('subject'),
+            sql<string | null>`coalesce(${sql.ref('emByMid.sender')}, ${sql.ref('emByGid.sender')})`.as('sender'),
+            sql<Date | null>`coalesce(${sql.ref('emByMid.receivedAt')}, ${sql.ref('emByGid.receivedAt')}, ${sql.ref('shipmentEmails.receivedAt')})`.as(
               'receivedAt',
             ),
             'shipmentEmails.emailType as milestoneType',

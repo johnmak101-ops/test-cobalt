@@ -34,6 +34,13 @@ export class MastersRepository {
   listPorts() {
     return this.db.selectFrom('ports').orderBy('unlocode').selectAll().execute()
   }
+
+  /** Detail-page path: only the ports we need (pol/pod), not the full ~24k-row catalogue. */
+  async portsByIds(ids: string[]) {
+    const uniq = [...new Set(ids.filter(Boolean))]
+    if (!uniq.length) return [] as Awaited<ReturnType<MastersRepository['listPorts']>>
+    return this.db.selectFrom('ports').where('id', 'in', uniq).selectAll().execute()
+  }
   listConsignees() {
     return this.db.selectFrom('consignees').orderBy('name').selectAll().execute()
   }
