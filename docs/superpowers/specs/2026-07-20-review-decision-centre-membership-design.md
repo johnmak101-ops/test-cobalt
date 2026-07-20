@@ -33,10 +33,12 @@ Classification happens at reason **push sites**, not by string matching. Every r
 reviewGate(draft)                       flag OPENPAVE_DESK_MEMBERSHIP = off | shadow | on
   reasons = [{ text, desk: 'decision'|'fyi', code? }]
   ├─ any DECISION reason              → disposition = review  (unchanged)
-  ├─ only FYI reasons:
-  │    ├─ band = low                  → review + decision reason  ai_confidence_low
-  │    ├─ band ≥ medium, flag = on    → disposition = auto · FYI reasons ride the payload → detail "Also noted"
-  │    └─ band ≥ medium, flag = shadow→ review (as today) + criticReview.wouldBeAuto = true
+  ├─ only FYI reasons:  (band = the DETERMINISTIC scorer's band — review R3: the LLM critic band is sampled
+  │                      and degrades on server errors; membership must be reproducible from evidence.
+  │                      The LLM band stays advisory/display everywhere else.)
+  │    ├─ det-band = low              → review + decision reason  ai_confidence_low
+  │    ├─ det-band ≥ medium, flag=on  → disposition = auto · criticReview.deskAuto = true (audit marker — review R2)
+  │    └─ det-band ≥ medium, flag=shadow → review (as today) + criticReview.wouldBeAuto = true
   └─ master misses → structured criticReview.masterMisses[] { type: 'vendor'|'forwarder'|'customer', rawName, field }
 ```
 
@@ -58,7 +60,9 @@ reviewGate(draft)                       flag OPENPAVE_DESK_MEMBERSHIP = off | sh
 
 Count badges + the AI-Confidence `Badge` stay; ordering stays confidence-ASC; the existing filter pills (categories + gate codes) are unchanged.
 
-**Shadow lane.** Under `flag=shadow`, would-be-auto legs show one muted chip `auto-eligible (shadow)` and a one-click **Confirm as-is** row action. Confirm-as-is = agreement data point; any field edit before confirm = **false-skip** data point. The lane is the measurement instrument for turning the flag on.
+**Shadow lane.** Under `flag=shadow`, would-be-auto legs show one muted chip `auto-eligible (shadow)` and a one-click **Confirm as-is** row action. Confirm-as-is = agreement data point; any field edit before confirm = **false-skip** data point. The lane is the measurement instrument for turning the flag on. Queue-side countability (review R2): `wouldBeAuto`/`deskAuto` + firing band also land in RunOutcome and the consumer summary log, so the shadow population is measurable even when a POST fails — the #162 built-the-feature-not-the-telemetry trap does not repeat.
+
+**Brand/buyer-family note (review R4, 2026-07-20):** stays `fyi` per rule A — the brand-verify question lives on shipment detail, not the queue; `merge.ts`'s older "surface for a human" contract comment is updated to match (GUCI/FENIX history: these are brand-leaks, not over-merges).
 
 **ReviewCard**: 07-19 A1 regions unchanged; the card headline shows the same decision phrase. FYI remains on shipment detail "Also noted" (07-20). Legs that stop queueing keep their full story on detail.
 
