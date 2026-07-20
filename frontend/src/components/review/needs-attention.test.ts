@@ -231,10 +231,12 @@ describe('buildNeedsAttention / groups', () => {
       ],
       reviewReasons: [],
     })
-    expect(items.some((i) => i.text === 'Linked by PO only — may be the wrong leg')).toBe(true)
+    expect(
+      items.some((i) => i.text === 'Matched on PO alone — no booking/SO/B/L to pin which shipment'),
+    ).toBe(true)
     expect(
       items.some((i) =>
-        i.text.includes('more than one destination — confirm before cargo is final'),
+        i.text.includes('One booking, more than one destination — cargo may need a split'),
       ),
     ).toBe(true)
   })

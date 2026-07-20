@@ -242,13 +242,15 @@ function lineFromFlag(code: string, message: string): LineHit | null {
     case 'PO_ONLY_WEAK_MATCH':
       return {
         lineId: 'w-po-only',
-        text: 'Linked by PO only — may be the wrong leg',
+        // Identity weakness only — do not restate multi-dest "wrong cargo" here.
+        text: 'Matched on PO alone — no booking/SO/B/L to pin which shipment',
         category: 'multi_id',
       }
     case 'MULTI_DESTINATION_SUSPECT':
       return {
         lineId: 'w-multi-dest',
-        text: 'One booking appears to cover more than one destination — confirm before cargo is final',
+        // Structure issue — orthogonal to PO-only match quality.
+        text: 'One booking, more than one destination — cargo may need a split',
         category: 'multi_id',
       }
     case 'THREAD_SUPERSEDE':
