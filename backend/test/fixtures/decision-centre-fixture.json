@@ -1,7 +1,8 @@
 {
   "description": "Canonical decision-centre payload slice. Both repos assert this file byte-for-byte. Change = update BOTH repos in one sitting.",
+  "note": "deskClasses lists PRODUCED families only; m-vendor/m-port display lines are track lineIds, fyi per 07-20 spec §3.4",
   "deskClasses": {
-    "decision": ["field conflict", "ambiguous match", "po reassignment", "multi strong id", "missing attachment", "ai_confidence_low", "g-checksum", "g-total", "g-pages", "vendor-not-stated", "soft-port-country-only"],
+    "decision": ["field conflict", "ambiguous match", "po reassignment", "multi strong id", "missing attachment", "ai_confidence_low", "g-checksum", "g-total", "g-pages"],
     "fyi": ["brand-across-buyer-families", "g-repaired", "g-evidence-trunc"]
   },
   "representativeNotes": {

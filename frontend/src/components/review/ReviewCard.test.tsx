@@ -237,18 +237,48 @@ describe('ReviewCard', () => {
   })
 
   it('why-review falls back to humanized reviewReasons when the critic payload is absent', () => {
+    // Decision-class reason (rule A: Review hides pure FYI). Use riskFlag so lineId is w-po-only.
     render(
       <ReviewCard
-        shipment={baseShipment({ reviewReasons: ['conflicting_identifiers'] })}
+        shipment={baseShipment({ reviewReasons: [] })}
+        criticReview={{
+          confidence: { score: 50, band: 'medium', label: 'm' },
+          summary: '',
+          observations: [],
+          priorState: { headline: '', fields: [] },
+          proposedChanges: [],
+          riskFlags: [
+            {
+              code: 'PO_ONLY_WEAK_MATCH',
+              severity: 'high',
+              message: 'Matched on PO alone',
+            },
+          ],
+          recommendedHumanAction: 'review',
+          reasons: [],
+        }}
+        compact={null}
+        defaultExpanded={true}
+      />,
+    )
+    // When critic is present, no-critic-note is absent — separate case: decision line still surfaces
+    const why = screen.getByTestId('why-review')
+    expect(why.textContent).toMatch(/Linked by PO only|PO only/i)
+  })
+
+  it('shows no-critic-note when criticReview is null and decision reason is present', () => {
+    render(
+      <ReviewCard
+        shipment={baseShipment({
+          reviewReasons: ['AI confidence low — verify extraction'],
+        })}
         criticReview={null}
         compact={null}
         defaultExpanded={true}
       />,
     )
-    const why = screen.getByTestId('why-review')
-    expect(why.textContent!.length).toBeGreaterThan(0)
+    expect(screen.getByTestId('why-review').textContent).toMatch(/Verify extraction \(AI low confidence\)/)
     expect(screen.getByTestId('no-critic-note')).toBeInTheDocument()
-    expect(screen.getByTestId('no-critic-note').textContent).toMatch(/No agent analysis/)
   })
 
   it('shows no-critic-note whenever criticReview is null (even with no reasons)', () => {
@@ -281,7 +311,8 @@ describe('ReviewCard', () => {
 
   // The queue's riskFlags and ShipTrack's committer reviewReasons are two DIFFERENT sources, not a
   // primary + backup: master-data misses exist only on the ShipTrack side. Real leg 31DFB19C.
-  it('why-review shows a ShipTrack reason no risk flag explains (master-data miss), alongside the flags', () => {
+  // Rule A (2026-07-20): Master miss is FYI — detail-only; Review shows decision lines only.
+  it('why-review shows decision field conflict; master miss is FYI (rule A — detail only)', () => {
     render(
       <ReviewCard
         shipment={baseShipment({
@@ -305,11 +336,12 @@ describe('ReviewCard', () => {
       />,
     )
     const why = screen.getByTestId('why-review')
-    // short conflict line + master miss (layman groups)
     expect(within(why).getByText(/Field values disagree|field\(s\) disagree/i)).toBeInTheDocument()
-    expect(within(why).getByText(/Master miss/)).toBeInTheDocument()
-    // Copy is layman Mesh-Database wording (not the old "not in master" shorthand).
-    expect(within(why).getByText(/A\.P\. Moller - Maersk.*Mesh Database|Mesh Database.*A\.P\. Moller/i)).toBeInTheDocument()
+    // Master miss group hidden on Review desk (rule A)
+    expect(within(why).queryByText(/Master miss/)).toBeNull()
+    expect(
+      within(why).queryByText(/A\.P\. Moller - Maersk.*Mesh Database|Mesh Database.*A\.P\. Moller/i),
+    ).toBeNull()
   })
 
   it('why-review does not repeat a reason a risk flag already explains', () => {
@@ -396,14 +428,13 @@ describe('ReviewCard', () => {
     expect(within(why).queryByText(/3 field conflicts — values disagree/)).toBeNull()
     expect(within(why).queryByText(/^3 field conflict\(s\)$/)).toBeNull()
     expect(screen.queryByTestId('needs-group-fields_disagree')).toBeNull()
-    // Non-field context shown (all groups, no cap of 2)
+    // PO-only + thin collapse into w-po-thin (decision); port miss is FYI (rule A — detail only)
     expect(
       within(why).getByText(
-        /Linked by PO only — add booking\/SO\/B\/L or confirm this shipment is correct/,
+        /Thin mail linked by PO only — confirm it belongs in tracking and on this shipment|Linked by PO only/,
       ),
     ).toBeInTheDocument()
-    expect(screen.getByTestId('needs-group-real_shipment')).toBeInTheDocument()
-    expect(within(why).getByText(/Thin mail, not a lifecycle booking/)).toBeInTheDocument()
+    expect(screen.getByTestId('needs-group-which_shipment')).toBeInTheDocument()
     // Table still owns the field comparison
     expect(screen.getByRole('table')).toBeInTheDocument()
   })

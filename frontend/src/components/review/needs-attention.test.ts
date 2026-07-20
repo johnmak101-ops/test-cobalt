@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   buildNeedsAttention,
   buildNeedsAttentionGroups,
+  tagDesk,
   GROUP_TITLE,
   looksLikeCountryToken,
   countryOnlyPortMissText,
@@ -777,6 +778,89 @@ describe('desk filter (decision vs fyi, rule A)', () => {
       true,
     )
     expect(detailLines.length).toBeGreaterThan(reviewLines.length)
+  })
+
+  it('T2-1: f-backend residual (no conflict table) stays decision on Review', () => {
+    const groups = buildNeedsAttentionGroups({
+      conflictsCount: 0,
+      riskFlags: [],
+      reviewReasons: ['backend conflict on etd'],
+      desk: 'decision',
+    })
+    const ids = groups.flatMap((g) => g.items.map((i) => i.lineId))
+    expect(ids.some((id) => id.startsWith('f-backend') || id === 'f-backend')).toBe(true)
+  })
+
+  it('T2-1: i-cargo (CARGO_SANITY) is decision', () => {
+    const groups = buildNeedsAttentionGroups({
+      conflictsCount: 0,
+      riskFlags: [{ code: 'CARGO_SANITY', severity: 'medium', message: 'cargo looks wrong' }],
+      reviewReasons: [],
+      desk: 'decision',
+    })
+    expect(groups.flatMap((g) => g.items.map((i) => i.lineId))).toContain('i-cargo')
+  })
+
+  it('T2-1: severity high valve promotes unmapped other-group line', () => {
+    expect(
+      tagDesk({
+        lineId: 'reason:future-queue-code-xyz',
+        groupId: 'other',
+        text: 'unknown future signal',
+        severity: 'high',
+      }),
+    ).toBe('decision')
+    expect(
+      tagDesk({
+        lineId: 'reason:soft-noise',
+        groupId: 'other',
+        text: 'soft note',
+        severity: 'low',
+      }),
+    ).toBe('fyi')
+  })
+
+  it('T2-1: brand FYI anchored; hostile filename-like text does not match brand family', () => {
+    expect(
+      tagDesk({
+        lineId: 'o-merge:brand',
+        groupId: 'other',
+        text: "brand 'Barbour' appears across 2 distinct buyer families — possible house/agent leak, verify",
+        severity: 'low',
+      }),
+    ).toBe('fyi')
+    // Anchor requires "— possible house/agent leak"; .pdf: suffix must not match as FYI brand
+    // Quiet-desk default: unmapped low severity in `other` → fyi (not a false brand FYI path)
+    expect(
+      tagDesk({
+        lineId: 'o-merge:hostile',
+        groupId: 'other',
+        text: "brand 'X' appears across 2 distinct buyer families.pdf: original not forwarded",
+        severity: 'low',
+      }),
+    ).toBe('fyi')
+    // Same text at high severity → valve forces decision
+    expect(
+      tagDesk({
+        lineId: 'o-merge:hostile',
+        groupId: 'other',
+        text: "brand 'X' appears across 2 distinct buyer families.pdf: original not forwarded",
+        severity: 'high',
+      }),
+    ).toBe('decision')
+  })
+
+  it('T2-2: AI confidence low → i-ai-low on decision desk', () => {
+    const groups = buildNeedsAttentionGroups({
+      conflictsCount: 0,
+      riskFlags: [],
+      reviewReasons: ['AI confidence low — verify extraction'],
+      desk: 'decision',
+    })
+    const items = groups.flatMap((g) => g.items)
+    const hit = items.find((i) => i.lineId === 'i-ai-low')
+    expect(hit).toBeDefined()
+    expect(hit!.text).toBe('Verify extraction (AI low confidence)')
   })
 })
 

@@ -26,7 +26,11 @@ import {
   type ReasonCategory,
 } from '../lib/review-reasons'
 import { mapCriticFieldsToColumns } from '../lib/review-fields'
-import { decisionPhrase, AI_CONFIDENCE_LOW_REASON } from '../lib/decision-phrase'
+import {
+  decisionPhrase,
+  AI_CONFIDENCE_LOW_REASON,
+  isWeakIdentityReason,
+} from '../lib/decision-phrase'
 import { isShadowEligible } from '../lib/shadow-lane'
 
 
@@ -379,17 +383,20 @@ export default function ReviewQueuePage() {
                     const expanded = expandedId === s.id
                     const band = s.criticReviewCompact?.band
                     const bookingLabel = s.bookingNo ?? s.soNo ?? '—'
+                    const compact = s.criticReviewCompact
                     const phrase = decisionPhrase({
-                      candidates: s.criticReviewCompact?.candidateCount,
-                      weakIdentity: s.reviewReasons?.some((r) =>
-                        /no booking|no identity|portal echo|not actionable|thin mail/i.test(r),
-                      ),
-                      conflictField: s.criticReviewCompact?.topConflictType?.includes('conflict')
-                        ? s.criticReviewCompact.topConflictType.replace(/\s*conflict$/i, '')
+                      candidates: compact?.candidateCount,
+                      weakIdentity: s.reviewReasons?.some(isWeakIdentityReason),
+                      conflictField: compact?.topConflictType?.includes('conflict')
+                        ? compact.topConflictType.replace(/\s*conflict$/i, '')
                         : null,
                       aiLowReason: s.reviewReasons?.includes(AI_CONFIDENCE_LOW_REASON),
                     })
-                    const shadow = isShadowEligible(s.criticReviewCompact)
+                    const shadow = isShadowEligible(compact)
+                    // T2-4 / T3-A: never one-click confirm when the row still shows an open decision
+                    const openDecision =
+                      /conflict$/i.test(compact?.topConflictType ?? '') ||
+                      (compact?.candidateCount ?? 0) > 1
                     return (
                       <Fragment key={s.id}>
                         {/* The whole row is the expand control — a dedicated chevron column was a
@@ -401,6 +408,8 @@ export default function ReviewQueuePage() {
                           aria-expanded={expanded}
                           onClick={() => setExpandedId(expanded ? null : s.id)}
                           onKeyDown={(e) => {
+                            // T2-4: Enter on a focused child button must not also toggle the row
+                            if (e.target !== e.currentTarget) return
                             if (e.key === 'Enter' || e.key === ' ') {
                               e.preventDefault()
                               setExpandedId(expanded ? null : s.id)
@@ -430,14 +439,14 @@ export default function ReviewQueuePage() {
                               </span>
                             )}
                             {shadow && (
-                              <span className="mt-0.5 inline-flex items-center gap-1">
+                              <span className="mt-0.5 inline-flex min-w-0 flex-wrap items-center gap-1">
                                 <span
                                   className="rounded-full border border-border bg-surface-800 px-2 py-0.5 text-[10px] font-medium text-text-muted"
                                   data-testid="shadow-chip"
                                 >
                                   auto-eligible (shadow)
                                 </span>
-                                {isActiveView && (
+                                {isActiveView && !openDecision && (
                                   <button
                                     type="button"
                                     data-testid="confirm-as-is"
@@ -451,7 +460,21 @@ export default function ReviewQueuePage() {
                                           shipmentId: s.id,
                                           expectedUpdatedAt: s.updatedAt,
                                         },
-                                        { onSettled: () => setBusyId(null) },
+                                        {
+                                          onError: async (err) => {
+                                            try {
+                                              await handleStale(err)
+                                            } catch (e) {
+                                              const msg =
+                                                e instanceof Error ? e.message : 'Confirm failed'
+                                              toast(
+                                                msg.replace(/^API error \d+:\s*/i, '') ||
+                                                  'Confirm failed — try again',
+                                              )
+                                            }
+                                          },
+                                          onSettled: () => setBusyId(null),
+                                        },
                                       )
                                     }}
                                   >
