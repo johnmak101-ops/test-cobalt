@@ -801,6 +801,17 @@ describe('desk filter (decision vs fyi, rule A)', () => {
     expect(groups.flatMap((g) => g.items.map((i) => i.lineId))).toContain('i-cargo')
   })
 
+  it('Hybrid-C: w-split-incomplete is decision desk', () => {
+    expect(
+      tagDesk({
+        lineId: 'w-split-incomplete',
+        groupId: 'which_shipment',
+        text: 'Multi-booking split incomplete — expected 3 bookings, produced 2',
+        severity: 'high',
+      }),
+    ).toBe('decision')
+  })
+
   it('T2-1: severity high valve promotes unmapped other-group line', () => {
     expect(
       tagDesk({

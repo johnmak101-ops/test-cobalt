@@ -115,6 +115,7 @@ const DESK_DECISION_LINE_IDS = new Set([
   'w-multi-dest',
   'w-multi-match',
   'w-multi-id',
+  'w-split-incomplete',
   'w-supersede',
   'r-no-id',
   'r-thin',
@@ -632,6 +633,14 @@ function lineFromReason(raw: string, humanized: string): LineHit | null {
   }
 
   // Which shipment?
+  // Hybrid-C: multi-booking fan-out shortfall (queue INCOMPLETE_SPLIT_REASON)
+  if (/^Multi-booking split incomplete/i.test(raw) || /Multi-booking split incomplete/i.test(humanized)) {
+    return {
+      lineId: 'w-split-incomplete',
+      text: humanized || raw,
+      category: 'which_shipment',
+    }
+  }
   if (/matched multiple backend legs/i.test(raw)) {
     return {
       lineId: 'w-multi-match',
