@@ -26,6 +26,8 @@ import {
   type ReasonCategory,
 } from '../lib/review-reasons'
 import { mapCriticFieldsToColumns } from '../lib/review-fields'
+import { decisionPhrase, AI_CONFIDENCE_LOW_REASON } from '../lib/decision-phrase'
+import { isShadowEligible } from '../lib/shadow-lane'
 
 
 
@@ -377,6 +379,17 @@ export default function ReviewQueuePage() {
                     const expanded = expandedId === s.id
                     const band = s.criticReviewCompact?.band
                     const bookingLabel = s.bookingNo ?? s.soNo ?? '—'
+                    const phrase = decisionPhrase({
+                      candidates: s.criticReviewCompact?.candidateCount,
+                      weakIdentity: s.reviewReasons?.some((r) =>
+                        /no booking|no identity|portal echo|not actionable|thin mail/i.test(r),
+                      ),
+                      conflictField: s.criticReviewCompact?.topConflictType?.includes('conflict')
+                        ? s.criticReviewCompact.topConflictType.replace(/\s*conflict$/i, '')
+                        : null,
+                      aiLowReason: s.reviewReasons?.includes(AI_CONFIDENCE_LOW_REASON),
+                    })
+                    const shadow = isShadowEligible(s.criticReviewCompact)
                     return (
                       <Fragment key={s.id}>
                         {/* The whole row is the expand control — a dedicated chevron column was a
@@ -407,6 +420,46 @@ export default function ReviewQueuePage() {
                             <span className="block truncate" title={s.customer ?? undefined}>
                               {s.customer ?? '—'}
                             </span>
+                            {phrase && (
+                              <span
+                                className="mt-0.5 block truncate text-[11px] font-medium text-text-primary"
+                                title={phrase}
+                                data-testid="decision-phrase"
+                              >
+                                {phrase}
+                              </span>
+                            )}
+                            {shadow && (
+                              <span className="mt-0.5 inline-flex items-center gap-1">
+                                <span
+                                  className="rounded-full border border-border bg-surface-800 px-2 py-0.5 text-[10px] font-medium text-text-muted"
+                                  data-testid="shadow-chip"
+                                >
+                                  auto-eligible (shadow)
+                                </span>
+                                {isActiveView && (
+                                  <button
+                                    type="button"
+                                    data-testid="confirm-as-is"
+                                    className="rounded border border-border px-1.5 py-0.5 text-[10px] font-medium text-text-secondary hover:bg-surface-700 hover:text-text-primary disabled:opacity-50"
+                                    disabled={anyMutating}
+                                    onClick={(e) => {
+                                      e.stopPropagation()
+                                      setBusyId(s.id)
+                                      confirmMutation.mutate(
+                                        {
+                                          shipmentId: s.id,
+                                          expectedUpdatedAt: s.updatedAt,
+                                        },
+                                        { onSettled: () => setBusyId(null) },
+                                      )
+                                    }}
+                                  >
+                                    Confirm as-is
+                                  </button>
+                                )}
+                              </span>
+                            )}
                             {s.forwarder && (
                               <span className="mt-0.5 block truncate text-[11px] text-text-muted" title={s.forwarder}>
                                 {s.forwarder}

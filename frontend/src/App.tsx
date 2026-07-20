@@ -12,6 +12,7 @@ import InboxPage from './pages/InboxPage'
 import AlertsPage from './pages/AlertsPage'
 import AlertRulesPage from './pages/AlertRulesPage'
 import SettingsPage from './pages/SettingsPage'
+import AdminMeshMissesPage from './pages/AdminMeshMissesPage'
 import { PageAccessRoute } from './components/PageAccessRoute'
 import ReviewQueuePage from './pages/ReviewQueuePage'
 import ShipmentReviewFocusPage from './pages/ShipmentReviewFocusPage'
@@ -54,6 +55,14 @@ function RequireAuth({ children }: { children: ReactNode }) {
   if (loading) return <FullScreenSpinner />
   if (!user) return <Navigate to="/login" replace />
   return <>{children}</>
+}
+
+/** ADMIN+ (incl. SUPERADMIN) — Mesh misses admin report. */
+function AdminRoute({ children }: { children: ReactNode }) {
+  const { user, loading } = useAuth()
+  if (loading) return <FullScreenSpinner />
+  if (user?.role === 'ADMIN' || user?.role === 'SUPERADMIN') return <>{children}</>
+  return <Navigate to="/" replace />
 }
 
 /** Settings (and alert-rules config) are superadmin-only; everyone else lands back on the dashboard. */
@@ -141,6 +150,8 @@ function AppRoutes() {
         {/* Review Policy settings removed (#124) — redirect bookmarks. */}
         <Route path="/settings/review-policy" element={<Navigate to="/settings" replace />} />
         <Route path="/settings/access" element={<SuperadminRoute><SettingsPage /></SuperadminRoute>} />
+        <Route path="/settings/mesh-misses" element={<AdminRoute><SettingsPage /></AdminRoute>} />
+        <Route path="/admin/mesh-misses" element={<AdminRoute><AdminMeshMissesPage /></AdminRoute>} />
       </Route>
     </Routes>
   )

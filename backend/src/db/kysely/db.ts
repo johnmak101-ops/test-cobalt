@@ -127,6 +127,15 @@ export interface CriticCalibration {
   reasonsJson: Json<string[] | null>
 }
 
+/** Admin Mesh-miss ack table (0016). Not in codegen until regenerating after 0016. */
+export interface MeshMissAck {
+  id: Generated<string>
+  type: string
+  normalizedName: string
+  ackedBy: string
+  ackedAt: Generated<Date>
+}
+
 export interface DB
   extends Omit<GeneratedDB, 'shipments' | 'bookings' | 'shipmentMilestones' | 'alertRules' | 'reviewEmail' | 'parsedRecord'> {
   shipments: Shipments
@@ -137,4 +146,5 @@ export interface DB
   parsedRecord: ParsedRecord
   routingShadow: RoutingShadow
   criticCalibration: CriticCalibration
+  meshMissAck: MeshMissAck
 }

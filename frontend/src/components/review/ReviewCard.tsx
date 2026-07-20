@@ -27,6 +27,7 @@ import type { LinkedPO, ShipmentDetail } from '../../hooks/use-shipments'
 import { cn, formatDateTime } from '../../lib/utils'
 import { buildNeedsAttentionGroups, isExpandableMiss, portsLinkedFromRoute } from './needs-attention'
 import { NeedsAttentionMeshMiss } from './NeedsAttentionMeshMiss'
+import { decisionPhrase, AI_CONFIDENCE_LOW_REASON } from '../../lib/decision-phrase'
 import {
   REVIEW_COL,
   REVIEW_FS,
@@ -247,6 +248,8 @@ export function ReviewCard({
         conflictsCount: conflicts.length,
         portsLinked: portsLinkedFromRoute((shipment as { route?: string | null }).route),
         hasPo,
+        // Rule A: Review desk shows decision items only; FYI stays on shipment detail.
+        desk: 'decision',
       }),
     [criticReview, reviewReasons, shipment, conflicts.length, hasPo, linkedPOs],
   )
@@ -302,6 +305,17 @@ export function ReviewCard({
 
   const id = identityOf(shipment)
   const band = compact?.band ?? criticReview?.confidence?.band ?? null
+  const cardPhrase = decisionPhrase({
+    candidates:
+      criticReview?.matchAmbiguity?.candidates?.length ??
+      criticReview?.matchAmbiguity?.candidateCount ??
+      compact?.candidateCount,
+    weakIdentity: reviewReasons?.some((r) =>
+      /no booking|no identity|portal echo|not actionable|thin mail/i.test(r),
+    ),
+    conflictField: conflicts[0]?.label ?? conflicts[0]?.field ?? null,
+    aiLowReason: reviewReasons?.includes(AI_CONFIDENCE_LOW_REASON),
+  })
 
   /**
    * Leg columns to POST on Save & Approve. Keys are camelCase correct-DTO columns so every
@@ -513,6 +527,14 @@ export function ReviewCard({
             >
               {/* data-testid why-review kept for legacy tests — same shell as Critical band */}
               <div data-testid="why-review">
+                {cardPhrase && (
+                  <p
+                    className={`${REVIEW_FS.meta} mb-1 font-semibold text-text-primary`}
+                    data-testid="decision-phrase-headline"
+                  >
+                    {cardPhrase}
+                  </p>
+                )}
                 <p className={`${REVIEW_FS.topic} font-semibold text-text-primary`}>
                   Needs attention
                 </p>

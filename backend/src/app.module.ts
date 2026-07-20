@@ -24,6 +24,7 @@ import { PresentationModule } from './presentation/presentation.module'
 import { AuthModule } from './auth/auth.module'
 import { UsersModule } from './users/users.module'
 import { AccessModule } from './access/access.module'
+import { AdminModule } from './admin/admin.module'
 
 @Module({
   imports: [
@@ -43,6 +44,7 @@ import { AccessModule } from './access/access.module'
     AuthModule,
     UsersModule,
     AccessModule,
+    AdminModule,
     HealthModule,
     MastersModule,
     BookingsModule,
