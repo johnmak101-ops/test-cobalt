@@ -254,10 +254,10 @@ export function TopBar() {
                           <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-cobalt-primary-light" />
                           <div className="min-w-0 flex-1">
                             <p className="truncate text-xs font-medium text-text-primary">
-                              {item.customer ?? item.bookingNo ?? item.soNo ?? 'Provisional shipment'}
+                              {item.customer ?? item.bookingNo ?? item.soNo ?? item.hblAwbFcrNo ?? 'Provisional shipment'}
                             </p>
                             <p className="mt-0.5 text-[10px] text-text-muted">
-                              {item.bookingNo ?? item.soNo ?? '—'} · {formatRelativeTime(item.createdAt)}
+                              {item.bookingNo ?? item.soNo ?? item.hblAwbFcrNo ?? '—'} · {formatRelativeTime(item.createdAt)}
                               {item.reviewReasons.length > 0 && (
                                 <> · {humanizeReason(item.reviewReasons[0]!)}</>
                               )}

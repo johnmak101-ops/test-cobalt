@@ -382,7 +382,7 @@ export default function ReviewQueuePage() {
                     const rowBusy = busyId === s.id
                     const expanded = expandedId === s.id
                     const band = s.criticReviewCompact?.band
-                    const bookingLabel = s.bookingNo ?? s.soNo ?? '—'
+                    const bookingLabel = s.bookingNo ?? s.soNo ?? s.hblAwbFcrNo ?? '—'
                     const compact = s.criticReviewCompact
                     const phrase = decisionPhrase({
                       candidates: compact?.candidateCount,
