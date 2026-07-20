@@ -1056,6 +1056,23 @@ export function ReviewCard({
                           : 'Approve'}
                   </button>
                 )}
+                {/* F11: multi-candidate escape hatch — genuinely new shipment (e.g. 拼櫃) without linking */}
+                {multiCandNeedsTarget && onApprove && (
+                  <button
+                    type="button"
+                    data-testid="confirm-as-separate"
+                    onClick={() => {
+                      if (busy || readOnly) return
+                      void run(() => onApprove())
+                    }}
+                    disabled={busy}
+                    title="Confirm this provisional as its own shipment — do not link into a candidate above"
+                    className={cn(ACTION_BTN, ACTION_VARIANT.secondary)}
+                  >
+                    {busy ? <Loader2 size={13} className="animate-spin" /> : <CheckCircle size={13} />}
+                    Confirm as separate shipment
+                  </button>
+                )}
               </div>
             )}
           </div>

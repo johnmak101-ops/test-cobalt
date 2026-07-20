@@ -21,6 +21,7 @@ export default function EmailWindowPage() {
   const [params] = useSearchParams()
   const navigate = useNavigate()
   const emailType = params.get('type')?.trim() || null
+  const highlightToken = params.get('hl')?.trim() || null // Hybrid-C E3
 
   const { data: body, isLoading } = useEmailBody(id)
   const { data: atts } = useEmailAttachments(id)
@@ -48,8 +49,24 @@ export default function EmailWindowPage() {
         </h2>
       </div>
 
+      {highlightToken && (
+        <p
+          className="border-b border-border bg-status-warning/10 px-4 py-1.5 text-xs text-status-warning sm:px-6"
+          data-testid="email-hl-banner"
+        >
+          Highlighting booking key from multi-booking origin:{' '}
+          <span className="font-mono">{highlightToken}</span>
+        </p>
+      )}
+
       <EmailHeader email={email} toRecipients={body?.toRecipients} ccRecipients={body?.ccRecipients} />
-      <EmailBodyPane subject={email.subject} html={html} text={text} isLoading={isLoading} />
+      <EmailBodyPane
+        subject={email.subject}
+        html={html}
+        text={text}
+        isLoading={isLoading}
+        highlightToken={highlightToken}
+      />
       <EmailAttachments attachments={attachments} />
 
       {/* Conversation panel — a forwarded MIME lumps earlier files onto the latest message, so show

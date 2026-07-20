@@ -812,6 +812,34 @@ describe('desk filter (decision vs fyi, rule A)', () => {
     ).toBe('decision')
   })
 
+  it('F12: Multi-booking split incomplete reason maps via pipeline to w-split-incomplete', () => {
+    const groups = buildNeedsAttentionGroups({
+      reviewReasons: ['Multi-booking split incomplete — expected 3 bookings, produced 2'],
+      riskFlags: [],
+      conflictsCount: 0,
+      hasPo: true,
+    })
+    const ids = groups.flatMap((g) => g.items.map((i) => i.lineId))
+    expect(ids).toContain('w-split-incomplete')
+    const item = groups.flatMap((g) => g.items).find((i) => i.lineId === 'w-split-incomplete')
+    expect(item).toBeTruthy()
+    expect(tagDesk(item!)).toBe('decision')
+  })
+
+  it('F8: Hybrid-C multi-booking backfill stamp is FYI (i-backfill-rematch)', () => {
+    const groups = buildNeedsAttentionGroups({
+      reviewReasons: [
+        'Hybrid-C multi-booking backfill — rematch recommended (re-run queue matcher on source email)',
+      ],
+      riskFlags: [],
+      conflictsCount: 0,
+      hasPo: true,
+    })
+    const item = groups.flatMap((g) => g.items).find((i) => i.lineId === 'i-backfill-rematch')
+    expect(item).toBeTruthy()
+    expect(tagDesk(item!)).toBe('fyi')
+  })
+
   it('T2-1: severity high valve promotes unmapped other-group line', () => {
     expect(
       tagDesk({

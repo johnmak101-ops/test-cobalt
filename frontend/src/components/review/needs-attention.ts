@@ -140,6 +140,7 @@ const DESK_FYI_LINE_IDS = new Set([
   'm-consignee',
   'g-repaired',
   'g-evidence-trunc',
+  'i-backfill-rematch',
 ])
 
 /** Anchored brand FYI note (mirrors queue MERGE_NOTE_FYI_FAMILIES full body). */
@@ -638,7 +639,15 @@ function lineFromReason(raw: string, humanized: string): LineHit | null {
     return {
       lineId: 'w-split-incomplete',
       text: humanized || raw,
-      category: 'which_shipment',
+      category: 'multi_id',
+    }
+  }
+  // Hybrid-C F8: admin backfill rematch stamp — FYI (advisory)
+  if (/^Hybrid-C multi-booking backfill/i.test(raw) || /^Hybrid-C multi-booking backfill/i.test(humanized)) {
+    return {
+      lineId: 'i-backfill-rematch',
+      text: humanized || raw,
+      category: 'other',
     }
   }
   if (/matched multiple backend legs/i.test(raw)) {
