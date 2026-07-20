@@ -3,7 +3,7 @@
 **Date:** 2026-07-20  
 **Status:** Approved (brainstorm) — Approach 1, product rule **A**  
 **Surface:** Review Queue expand + Review focus (`ReviewCard`); Shipment detail Needs attention  
-**Related:** `2026-07-17-review-needs-attention-ux-design.md`, `2026-07-19-review-decision-desk-design.md`, judgment-only banner (checks only / no field conflicts)
+**Related:** `2026-07-17-review-needs-attention-ux-design.md`, `2026-07-19-review-decision-desk-design.md`, judgment-only banner (checks only / no field conflicts), `D:\cobalt-queue\docs\designs\document-parse-flow-enhancement.md` (gate codes bind into this taxonomy — §3.4 additions 2026-07-20)
 
 ---
 
@@ -63,6 +63,7 @@ Items where the operator must **choose**, **not approve blind**, or **use in-des
 | Missing attachment (body claims file, none ingested) | Cargo may be incomplete; don’t confirm blind |
 | EXTRACTION_INCOMPLETE when still shown (blocking parse trust) | Don’t trust sparse extract |
 | Field-disagree lines only when **no** conflict table (rare residual) | Or hide if table owns — existing rule |
+| **Gate failures** (parse-flow plan, added 2026-07-20): `g-checksum` (check digit fails, value retained), `g-total` (line Σ ≠ footer TOTAL), `g-pages` (pages skipped AND footer TOTAL missing) | Deterministic data-integrity checks — don't confirm blind |
 
 ### 3.2 FYI (detail only; hide on Review)
 
@@ -73,6 +74,7 @@ Items where the operator must **choose**, **not approve blind**, or **use in-des
 | Brand across buyer families / house-agent style notes | Verify later on detail |
 | “Vendor / factory not stated” when placement is already handled elsewhere | Incomplete data soft |
 | Soft merge notes, packing noise (already suppressed), raw-name restatements (already suppressed) | Stay hidden or detail-only |
+| **Gate audit notes** (added 2026-07-20): `g-repaired` ("container repaired X→Y" low note), `g-evidence-trunc` (evidence truncated) | Audit trail, non-blocking; truncation also annotates INSIDE gate popovers when a decision gate is present |
 
 ### 3.3 Rule of thumb
 
@@ -90,6 +92,7 @@ Items where the operator must **choose**, **not approve blind**, or **use in-des
 - `r-no-id`, `r-thin`, `r-portal`  
 - `i-attach` (missing attachment)  
 - `i-parse` when still surfaced as parse incomplete  
+- `g-checksum`, `g-total`, `g-pages` (gate failures — added 2026-07-20; these only exist when a gate FIRED, so the unmapped-default must never see them)  
 
 **Must be fyi (hide on Review):**
 
@@ -97,6 +100,7 @@ Items where the operator must **choose**, **not approve blind**, or **use in-des
 - Brand / buyer-family merge notes under `other` matching brand-across-families  
 - `m-vendor` / “Vendor / factory not stated” incomplete soft lines  
 - `m-port:collapsed` / soft country-only port lines (detail; operator uses Open shipment for LOCODE)  
+- `g-repaired`, `g-evidence-trunc` (gate audit notes — added 2026-07-20; evidence-trunc still annotates inside decision-gate popovers)  
 
 ---
 
