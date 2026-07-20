@@ -68,8 +68,8 @@ describe('AlertRulesSettings', () => {
     expect(screen.getByText('Draft B/L before cutoff')).toBeInTheDocument()
     expect(screen.queryByText(/cargo-ready revision/i)).toBeNull()
     expect(screen.queryByText('LOCKED')).toBeNull()
-    // Country offsets section (one per listed rule)
-    expect(screen.getAllByText('Extra days by origin').length).toBe(2)
+    // Absolute per-country days (overwrite default)
+    expect(screen.getAllByText('Days by origin country').length).toBe(2)
   })
 
   it('does not crash when a configurable rule has null state', async () => {

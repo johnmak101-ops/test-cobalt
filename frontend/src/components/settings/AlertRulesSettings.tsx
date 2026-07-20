@@ -14,8 +14,8 @@ interface AlertRule {
   triggerType: string
   triggerReference: string
   thresholdDays: number
-  countryThresholds: Record<string, number> | null // ABSOLUTE days per origin country (as stored by the API)
-  countryOffsets?: Record<string, number> // UI-only: extra days vs the default ("CN +1 day")
+  /** Absolute days per origin country (as stored by the API). Empty/null = use default. */
+  countryThresholds: Record<string, number> | null
   severity: string
   enabled: boolean
   locked: boolean
@@ -45,21 +45,15 @@ const SEVERITY_CHIP: Record<string, string> = {
   INFO: 'bg-status-info/15 text-status-info border-status-info/30',
 }
 
-/**
- * The API stores per-country thresholds as ABSOLUTE days; this section edits them as an OFFSET
- * vs the rule's default ("CN +1 day"). Converting at the load/save boundary keeps the backend,
- * the evaluator, and the standalone Alert Rules page on their existing absolute model.
- */
-function deriveCountryOffsets(rule: AlertRule): Record<string, number> {
-  const out: Record<string, number> = {}
-  if (rule.countryThresholds) {
-    for (const [code, days] of Object.entries(rule.countryThresholds)) out[code] = days - rule.thresholdDays
-  }
-  return out
-}
-
-function withOffsets(rules: AlertRule[]): AlertRule[] {
-  return rules.map((r) => ({ ...r, countryOffsets: deriveCountryOffsets(r) }))
+function normalizeRules(rules: AlertRule[]): AlertRule[] {
+  return rules.map((r) => ({
+    ...r,
+    countryThresholds: r.countryThresholds
+      ? typeof r.countryThresholds === 'string'
+        ? (JSON.parse(r.countryThresholds as unknown as string) as Record<string, number>)
+        : r.countryThresholds
+      : null,
+  }))
 }
 
 export function AlertRulesSettings() {
@@ -72,7 +66,7 @@ export function AlertRulesSettings() {
   const { canEdit: canEditPage } = usePageAccess()
   const canEdit = canEditPage('alert_rules') // Access Control matrix; backend @PageWrite is authoritative
   const serverRules = useMemo(
-    () => (data?.rules ? withOffsets(data.rules) : null),
+    () => (data?.rules ? normalizeRules(data.rules) : null),
     [data],
   )
   const [draft, setDraft] = useState<AlertRule[] | null>(null)
@@ -90,16 +84,21 @@ export function AlertRulesSettings() {
   const dirty = draft !== null
 
   const saveRules = useMutation({
-    // Convert each rule's per-country OFFSET back to the API's ABSOLUTE days (default + offset)
-    // and drop the UI-only countryOffsets field before sending.
+    // countryThresholds are absolute days (overwrite default for that origin). Empty = no override.
     mutationFn: (rules: AlertRule[]) =>
       api.put('/alert-rules', {
-        rules: rules.map(({ countryOffsets, ...rule }) => {
-          const ct: Record<string, number> = {}
-          for (const [code, off] of Object.entries(countryOffsets ?? {})) {
-            if (off) ct[code] = rule.thresholdDays + off
+        rules: rules.map((rule) => {
+          const ct = rule.countryThresholds
+          const cleaned =
+            ct && Object.keys(ct).length > 0
+              ? Object.fromEntries(
+                  Object.entries(ct).filter(([, days]) => typeof days === 'number' && days > 0),
+                )
+              : null
+          return {
+            ...rule,
+            countryThresholds: cleaned && Object.keys(cleaned).length > 0 ? cleaned : null,
           }
-          return { ...rule, countryThresholds: Object.keys(ct).length > 0 ? ct : null }
         }),
       }),
     onSuccess: () => {
@@ -114,14 +113,15 @@ export function AlertRulesSettings() {
     )
   }
 
-  const updateCountryOffset = (ruleId: string, code: string, offset: number | '') => {
+  /** Absolute days for this origin, or '' to clear (use default). */
+  const updateCountryDays = (ruleId: string, code: string, days: number | '') => {
     setDraft((prev) =>
       (prev ?? serverRules ?? []).map((r) => {
         if (r.id !== ruleId) return r
-        const offs = { ...(r.countryOffsets ?? {}) }
-        if (offset === '' || offset === 0) delete offs[code]
-        else offs[code] = offset
-        return { ...r, countryOffsets: offs }
+        const ct = { ...(r.countryThresholds ?? {}) }
+        if (days === '' || days === 0) delete ct[code]
+        else ct[code] = days
+        return { ...r, countryThresholds: Object.keys(ct).length > 0 ? ct : null }
       }),
     )
   }
@@ -224,7 +224,7 @@ export function AlertRulesSettings() {
                       htmlFor={`${id}-${rule.id}-threshold`}
                       className="mb-1.5 block text-[11px] font-medium uppercase tracking-wide text-text-muted"
                     >
-                      Days {triggerWord}
+                      Days {triggerWord} (default)
                     </label>
                     <div className="flex items-center gap-2">
                       <input
@@ -264,24 +264,25 @@ export function AlertRulesSettings() {
                 </div>
               )}
 
-              {/* Country offsets */}
+              {/* Per-country absolute days (overwrite default for that origin) */}
               {!rule.locked && (
                 <div className="mt-5 rounded-xl border border-border bg-surface-900/40 p-4">
-                  <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
-                    <div>
-                      <p className="text-xs font-semibold text-text-secondary">Extra days by origin</p>
-                      <p className="mt-0.5 text-[11px] text-text-muted">
-                        Added to the default ({rule.thresholdDays}d). Leave empty for no extra.
-                      </p>
-                    </div>
+                  <div className="mb-3">
+                    <p className="text-xs font-semibold text-text-secondary">Days by origin country</p>
+                    <p className="mt-0.5 text-[11px] text-text-muted">
+                      Overrides the default ({rule.thresholdDays} days) for that origin. Leave empty
+                      to use the default.
+                    </p>
                   </div>
                   <div
                     id={`${id}-${rule.id}-country`}
                     className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3"
                   >
                     {ALERT_COUNTRY_LIST.map((country) => {
-                      const off = rule.countryOffsets?.[country.code]
-                      const active = off != null && off > 0
+                      const raw = rule.countryThresholds?.[country.code]
+                      const days =
+                        typeof raw === 'number' && raw > 0 ? raw : ('' as const)
+                      const active = days !== ''
                       return (
                         <label
                           key={country.code}
@@ -296,26 +297,25 @@ export function AlertRulesSettings() {
                             <span className="font-semibold text-text-primary">{country.code}</span>
                             <span className="ml-1.5 text-text-muted">{country.label}</span>
                           </span>
-                          <span className="flex shrink-0 items-center gap-1">
-                            <span className="text-[11px] text-text-muted">+</span>
+                          <span className="flex shrink-0 items-center gap-1.5">
                             <input
                               type="number"
-                              min={0}
+                              min={1}
                               max={30}
-                              value={off ?? ''}
+                              value={days}
                               disabled={!canEdit}
                               onChange={(e) => {
                                 const v = e.target.value
-                                updateCountryOffset(
+                                updateCountryDays(
                                   rule.id,
                                   country.code,
-                                  v === '' ? '' : parseInt(v) || 0,
+                                  v === '' ? '' : Math.max(1, parseInt(v) || 0),
                                 )
                               }}
-                              placeholder="0"
-                              className="h-8 w-12 rounded-md border border-border bg-surface-700 px-1.5 text-center text-xs font-medium text-text-primary placeholder:text-text-muted/40 disabled:opacity-50"
+                              placeholder="—"
+                              className="h-8 w-14 rounded-md border border-border bg-surface-700 px-1.5 text-center text-xs font-medium text-text-primary placeholder:text-text-muted/50 disabled:opacity-50"
                             />
-                            <span className="w-7 text-[11px] text-text-muted">d</span>
+                            <span className="text-[11px] text-text-muted">days</span>
                           </span>
                         </label>
                       )
