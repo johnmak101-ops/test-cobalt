@@ -579,6 +579,53 @@ describe('identify section (WEAK_IDENTITY / AMBIGUOUS_MATCH legs)', () => {
     expect(screen.getByText(/Multiple matching shipments/i)).toBeInTheDocument()
   })
 
+  it('F11: multi-candidate without target — Confirm as separate enabled and calls onApprove', async () => {
+    const user = userEvent.setup()
+    const onApprove = vi.fn().mockResolvedValue(undefined)
+    const onLink = vi.fn().mockResolvedValue(undefined)
+    render(
+      <MemoryRouter>
+        <ReviewCard
+          shipment={baseShipment()}
+          criticReview={baseReview({
+            conflicts: [],
+            riskFlags: [
+              { code: 'AMBIGUOUS_MATCH', severity: 'high', message: 'Could belong to more than one shipment.' },
+            ],
+            matchAmbiguity: {
+              kind: 'multi_candidate',
+              candidates: [
+                {
+                  shipmentId: 'id-a',
+                  jobNo: 'JOB-A',
+                  so_no: 'SO1',
+                  booking_no: 'BK1',
+                  matchedBy: 'strong_key',
+                },
+                {
+                  shipmentId: 'id-b',
+                  jobNo: 'JOB-B',
+                  so_no: 'SO2',
+                  booking_no: 'BK2',
+                  matchedBy: 'strong_key',
+                },
+              ],
+            },
+          })}
+          compact={compact}
+          defaultExpanded
+          onApprove={onApprove}
+          onLink={onLink}
+        />
+      </MemoryRouter>,
+    )
+    const btn = screen.getByTestId('confirm-as-separate')
+    expect(btn).toBeEnabled()
+    await user.click(btn)
+    expect(onApprove).toHaveBeenCalled()
+    expect(onLink).not.toHaveBeenCalled()
+  })
+
   it('typed key that exists elsewhere → shows the candidate + one-click link', async () => {
     const user = userEvent.setup()
     const onIdentify = vi.fn().mockResolvedValue({

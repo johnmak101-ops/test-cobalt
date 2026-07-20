@@ -6,6 +6,7 @@ import { ForbiddenException, Inject, Injectable } from '@nestjs/common'
 import { sql, type Kysely } from 'kysely'
 import { KYSELY } from '../db/kysely.provider'
 import type { DB } from '../db/kysely/db'
+import { AuditRepository } from '../db/repositories/audit.repository'
 import { BACKFILL_STAMP_REASON, detectMultiBookingMushSignals } from './multi-booking-backfill.signals'
 
 export { BACKFILL_STAMP_REASON, detectMultiBookingMushSignals } from './multi-booking-backfill.signals'
@@ -57,7 +58,10 @@ function parseCritic(raw: unknown): Record<string, unknown> | null {
 
 @Injectable()
 export class MultiBookingBackfillService {
-  constructor(@Inject(KYSELY) private readonly db: Kysely<DB>) {}
+  constructor(
+    @Inject(KYSELY) private readonly db: Kysely<DB>,
+    private readonly audit: AuditRepository,
+  ) {}
 
   async inventory(limitRaw?: number, includeStamped = false): Promise<{
     dryRun: true
@@ -176,6 +180,18 @@ export class MultiBookingBackfillService {
         .set({ reviewReasons: JSON.stringify(next) as never })
         .where('id', '=', c.shipmentId)
         .execute()
+      // F10: audit every stamped shipment (admin data mutation)
+      await this.audit.write({
+        entityType: 'shipment',
+        entityId: c.shipmentId,
+        field: 'reviewReasons',
+        oldValue: null,
+        newValue: 'hybrid-c-backfill-stamp',
+        changeType: 'update',
+        sourceType: 'manual',
+        actorUserId: opts.actor?.slice(0, 200) ?? null,
+        note: 'admin: hybrid-c backfill stamp',
+      })
       applied++
       done.push(c.shipmentId)
     }
