@@ -341,29 +341,35 @@ export class PresentationService {
     const bookingsById = new Map<string, BookingRow>(bookingRows.map((b: BookingRow) => [b.id, b]))
     // #151: leg counts per booking (one pass over the list — no N+1)
     const legCountByBooking = new Map<string, number>()
+    const realLegs: typeof legs = []
     for (const leg of legs) {
       if ((leg as { kind?: string | null }).kind === 'DOCUMENT') continue
       legCountByBooking.set(leg.bookingId, (legCountByBooking.get(leg.bookingId) ?? 0) + 1)
+      realLegs.push(leg)
     }
-    const poCache = new Map<string, LinkedPoRow[]>()
+    // Bulk PO load — kills sequential await linkedPosForShipment(leg.id) (root cause of ~4s list).
+    const legIds = realLegs.map((l) => l.id)
+    const posByShipment = await this.shipmentRepo.linkedPosForShipments(legIds)
+    const needBookingFallback = new Set<string>()
+    for (const leg of realLegs) {
+      if (!(posByShipment.get(leg.id)?.length)) needBookingFallback.add(leg.bookingId)
+    }
+    const posByBooking =
+      needBookingFallback.size > 0
+        ? await this.shipmentRepo.linkedPosForBookings([...needBookingFallback])
+        : new Map<string, LinkedPoRow[]>()
+
     const out: ReturnType<typeof toUiShipment>[] = []
-    for (const leg of legs) {
-      // Only REAL shipments belong on the tracker; DOCUMENT legs live in the Unlinked Documents view.
-      // (null-kind is treated as SHIPMENT defensively, for rows predating the split.)
-      if ((leg as { kind?: string | null }).kind === 'DOCUMENT') continue
+    for (const leg of realLegs) {
       if (filter?.forwarderId && leg.forwarderId !== filter.forwarderId) continue
       const booking = bookingsById.get(leg.bookingId) ?? null
       if (filter?.customerId && booking?.customerId !== filter.customerId) continue
       // Prefer per-leg POs; fall back to booking union when leg has none (legacy).
-      let linkedPos = (await this.shipmentRepo.linkedPosForShipment(leg.id)) as LinkedPoRow[]
-      if (!linkedPos.length) {
-        let bookingPos = poCache.get(leg.bookingId)
-        if (!bookingPos) {
-          bookingPos = (await this.shipmentRepo.linkedPosForBooking(leg.bookingId)) as LinkedPoRow[]
-          poCache.set(leg.bookingId, bookingPos)
-        }
-        linkedPos = bookingPos
-      }
+      const legPos = (posByShipment.get(leg.id) ?? []) as LinkedPoRow[]
+      const linkedPos =
+        legPos.length > 0
+          ? legPos
+          : ((posByBooking.get(leg.bookingId) ?? []) as LinkedPoRow[])
       const ui = toUiShipment(
         this.assembleInput(leg, booking, maps, linkedPos),
         {

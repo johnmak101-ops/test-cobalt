@@ -363,6 +363,79 @@ export class ShipmentRepository {
       .execute()
   }
 
+  /**
+   * Bulk form of linkedPosForShipment — ONE query for the tracker list.
+   * Root cause of ~4s GET /shipments: sequential per-leg linkedPosForShipment in a for-loop.
+   */
+  async linkedPosForShipments(
+    shipmentIds: string[],
+  ): Promise<
+    Map<
+      string,
+      Awaited<ReturnType<ShipmentRepository['linkedPosForShipment']>>
+    >
+  > {
+    const map = new Map<string, Awaited<ReturnType<ShipmentRepository['linkedPosForShipment']>>>()
+    if (!shipmentIds.length) return map
+    const rows = await this.db
+      .selectFrom('shipmentPos')
+      .innerJoin('purchaseOrders', 'shipmentPos.poId', 'purchaseOrders.id')
+      .leftJoin('vendors', 'purchaseOrders.vendorId', 'vendors.id')
+      .where('shipmentPos.shipmentId', 'in', shipmentIds)
+      .select([
+        'shipmentPos.shipmentId as shipmentId',
+        'purchaseOrders.id as id',
+        'purchaseOrders.poNumber as poNumber',
+        'purchaseOrders.totalQuantity as totalQuantity',
+        'purchaseOrders.quantityUnit as quantityUnit',
+        'purchaseOrders.itemStyleNo as itemStyleNo',
+        'purchaseOrders.brand as brand',
+        'vendors.name as vendorName',
+        'shipmentPos.id as linkId',
+        'shipmentPos.quantity as legQty',
+        'shipmentPos.quantityUnit as legQtyUnit',
+      ])
+      .execute()
+    for (const r of rows) {
+      const { shipmentId, ...rest } = r
+      const arr = map.get(shipmentId)
+      if (arr) arr.push(rest)
+      else map.set(shipmentId, [rest])
+    }
+    return map
+  }
+
+  /** Bulk form of linkedPosForBooking — ONE query for booking-PO fallback on the tracker list. */
+  async linkedPosForBookings(
+    bookingIds: string[],
+  ): Promise<Map<string, Awaited<ReturnType<ShipmentRepository['linkedPosForBooking']>>>> {
+    const map = new Map<string, Awaited<ReturnType<ShipmentRepository['linkedPosForBooking']>>>()
+    if (!bookingIds.length) return map
+    const rows = await this.db
+      .selectFrom('bookingPos')
+      .innerJoin('purchaseOrders', 'bookingPos.poId', 'purchaseOrders.id')
+      .leftJoin('vendors', 'purchaseOrders.vendorId', 'vendors.id')
+      .where('bookingPos.bookingId', 'in', bookingIds)
+      .select([
+        'bookingPos.bookingId as bookingId',
+        'purchaseOrders.id as id',
+        'purchaseOrders.poNumber as poNumber',
+        'purchaseOrders.totalQuantity as totalQuantity',
+        'purchaseOrders.quantityUnit as quantityUnit',
+        'purchaseOrders.itemStyleNo as itemStyleNo',
+        'purchaseOrders.brand as brand',
+        'vendors.name as vendorName',
+      ])
+      .execute()
+    for (const r of rows) {
+      const { bookingId, ...rest } = r
+      const arr = map.get(bookingId)
+      if (arr) arr.push(rest)
+      else map.set(bookingId, [rest])
+    }
+    return map
+  }
+
   // --- shipment_pos ---
 
   /** Idempotently link a shipment to a PO (the `uq_shipment_pos` unique absorbs replays). */
