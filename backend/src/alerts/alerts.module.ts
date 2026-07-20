@@ -7,7 +7,7 @@ import { AlertSchedulerService } from './alert-scheduler.service'
 @Module({
   controllers: [AlertsController],
   providers: [AlertsService, AlertEvaluatorService, AlertSchedulerService],
-  // Export so nestjs-doctor sees lifecycle-only scheduler as intentional (OnModuleInit timers).
-  exports: [AlertSchedulerService],
+  // Export scheduler for intentional lifecycle use; export evaluator so save-rules can re-run now.
+  exports: [AlertSchedulerService, AlertEvaluatorService],
 })
 export class AlertsModule {}

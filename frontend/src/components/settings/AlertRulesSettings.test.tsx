@@ -10,7 +10,7 @@ vi.mock('../../lib/api', () => ({
         {
           id: 'A1',
           name: 'No SO after booking',
-          description: 'SO not received in time',
+          description: 'Awaiting booking confirmation from forwarder',
           state: 'BOOKED',
           triggerType: 'days_after',
           triggerReference: 'booking_request',
@@ -22,14 +22,66 @@ vi.mock('../../lib/api', () => ({
         },
         {
           id: 'A2',
-          name: 'Draft B/L before cutoff',
-          description: 'Draft B/L window',
+          name: 'Draft B/L before cut-off',
+          description: 'Cut-off tomorrow — confirm cargo delivery status',
           state: 'CONFIRMED',
           triggerType: 'days_before',
           triggerReference: 'cutoff',
-          thresholdDays: 3,
+          thresholdDays: 1,
           countryThresholds: null,
           severity: 'WARNING',
+          enabled: true,
+          locked: false,
+        },
+        {
+          id: 'A3',
+          name: 'Cut-off passed, no Draft B/L',
+          description: 'Cut-off passed — cargo may have missed the vessel',
+          state: 'CONFIRMED',
+          triggerType: 'days_after',
+          triggerReference: 'cutoff',
+          thresholdDays: 0,
+          countryThresholds: null,
+          severity: 'CRITICAL',
+          enabled: true,
+          locked: false,
+        },
+        {
+          id: 'A4',
+          name: 'No Final B/L after Draft',
+          description: 'Awaiting departure confirmation',
+          state: 'AT_WAREHOUSE',
+          triggerType: 'days_after',
+          triggerReference: 'draft_bl',
+          thresholdDays: 5,
+          countryThresholds: null,
+          severity: 'WARNING',
+          enabled: true,
+          locked: false,
+        },
+        {
+          id: 'A5',
+          name: 'No Telex after Final B/L',
+          description: 'Awaiting telex release',
+          state: 'SAILED',
+          triggerType: 'days_after',
+          triggerReference: 'final_bl',
+          thresholdDays: 7,
+          countryThresholds: null,
+          severity: 'INFO',
+          enabled: true,
+          locked: false,
+        },
+        {
+          id: 'A6',
+          name: 'No delivery after ETA',
+          description: 'Vessel should have arrived',
+          state: 'RELEASED',
+          triggerType: 'days_after',
+          triggerReference: 'eta',
+          thresholdDays: 3,
+          countryThresholds: null,
+          severity: 'INFO',
           enabled: true,
           locked: false,
         },
@@ -62,14 +114,22 @@ function renderWithClient(ui: React.ReactElement) {
 }
 
 describe('AlertRulesSettings', () => {
-  it('renders only A1 and A2 — hides locked built-ins (A7)', async () => {
+  it('renders A1–A6 and hides locked built-in A7', async () => {
     renderWithClient(<AlertRulesSettings />)
     expect(await screen.findByText('No SO after booking')).toBeInTheDocument()
-    expect(screen.getByText('Draft B/L before cutoff')).toBeInTheDocument()
+    expect(screen.getByText('Draft B/L before cut-off')).toBeInTheDocument()
+    expect(screen.getByText('Cut-off passed, no Draft B/L')).toBeInTheDocument()
+    expect(screen.getByText('No Final B/L after Draft')).toBeInTheDocument()
+    expect(screen.getByText('No Telex after Final B/L')).toBeInTheDocument()
+    expect(screen.getByText('No delivery after ETA')).toBeInTheDocument()
     expect(screen.queryByText(/cargo-ready revision/i)).toBeNull()
-    expect(screen.queryByText('LOCKED')).toBeNull()
-    // Absolute per-country days (overwrite default)
-    expect(screen.getAllByText('Days by origin country').length).toBe(2)
+  })
+
+  it('shows country day grid only for A2 and A3', async () => {
+    renderWithClient(<AlertRulesSettings />)
+    await screen.findByText('No SO after booking')
+    // A2 + A3 only
+    expect(screen.getAllByText('Days by origin country')).toHaveLength(2)
   })
 
   it('does not crash when a configurable rule has null state', async () => {
@@ -82,7 +142,7 @@ describe('AlertRulesSettings', () => {
           description: null,
           state: null,
           triggerType: 'days_after',
-          triggerReference: 'etd',
+          triggerReference: 'booking_request',
           thresholdDays: 1,
           countryThresholds: null,
           severity: 'INFO',
@@ -93,8 +153,6 @@ describe('AlertRulesSettings', () => {
     })
     renderWithClient(<AlertRulesSettings />)
     expect(await screen.findByText('Rule with no state')).toBeInTheDocument()
-    // null state is omitted from header (no "When: —" chip)
     expect(screen.queryByText(/^When:/)).toBeNull()
   })
 })
-

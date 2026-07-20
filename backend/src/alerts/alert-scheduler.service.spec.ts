@@ -13,7 +13,7 @@ describe('AlertSchedulerService', () => {
   })
 
   const envConfig = { get: (k: string) => process.env[k] } as any
-  const make = (evaluate = vi.fn().mockResolvedValue({ evaluated: 2, fired: 1 })) => {
+  const make = (evaluate = vi.fn().mockResolvedValue({ evaluated: 2, fired: 1, resolved: 0 })) => {
     const evaluator = { evaluate } as unknown as AlertEvaluatorService
     const svc = new AlertSchedulerService(evaluator, envConfig)
     return { svc, evaluate }
@@ -23,14 +23,14 @@ describe('AlertSchedulerService', () => {
     const { svc, evaluate } = make()
     const r = await svc.tick('test')
     expect(evaluate).toHaveBeenCalledOnce()
-    expect(r).toEqual({ evaluated: 2, fired: 1 })
+    expect(r).toEqual({ evaluated: 2, fired: 1, resolved: 0 })
   })
 
   it('skips overlapping ticks while a run is in flight', async () => {
-    let resolveEval!: (v: { evaluated: number; fired: number }) => void
+    let resolveEval!: (v: { evaluated: number; fired: number; resolved: number }) => void
     const evaluate = vi.fn(
       () =>
-        new Promise<{ evaluated: number; fired: number }>((res) => {
+        new Promise<{ evaluated: number; fired: number; resolved: number }>((res) => {
           resolveEval = res
         }),
     )
@@ -39,7 +39,7 @@ describe('AlertSchedulerService', () => {
     const second = await svc.tick('b')
     expect(second).toBeNull()
     expect(evaluate).toHaveBeenCalledOnce()
-    resolveEval({ evaluated: 1, fired: 0 })
+    resolveEval({ evaluated: 1, fired: 0, resolved: 0 })
     await first
   })
 

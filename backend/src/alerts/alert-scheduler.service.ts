@@ -63,7 +63,7 @@ export class AlertSchedulerService implements OnModuleInit, OnModuleDestroy {
     try {
       const result = await this.evaluator.evaluate()
       this.log.log(
-        `alert eval (${reason}): evaluated=${result.evaluated} fired=${result.fired}`,
+        `alert eval (${reason}): evaluated=${result.evaluated} fired=${result.fired} resolved=${result.resolved}`,
       )
       return result
     } catch (err) {
