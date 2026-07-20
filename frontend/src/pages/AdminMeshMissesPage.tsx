@@ -140,7 +140,7 @@ export default function AdminMeshMissesPage() {
             onChange={(e) => setIncludeAcked(e.target.checked)}
             className="rounded border-border"
           />
-          Show acked
+          Include already added
         </label>
         <button
           type="button"
