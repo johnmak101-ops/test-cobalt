@@ -77,6 +77,9 @@ function categoryToGroup(c: ReasonCategory): NeedsAttentionGroupId {
   }
 }
 
+/** Review desk: decision = show on Review queue; fyi = shipment detail only (rule A, 2026-07-20). */
+export type Desk = 'decision' | 'fyi'
+
 export type NeedsAttentionItem = {
   key: string
   /** Stable combine key — same line once per card. */
@@ -85,6 +88,8 @@ export type NeedsAttentionItem = {
   text: string
   category: ReasonCategory
   groupId: NeedsAttentionGroupId
+  /** decision = Review queue; fyi = detail-only (rule A). Set by buildNeedsAttention via tagDesk. */
+  desk?: Desk
   /** Diagnostics folded into this line (tooltip); not separate bullets. */
   evidence?: string[]
   /**
@@ -99,6 +104,53 @@ export const MESH_PARTY_COLLAPSED_LINE_ID = 'm-party:collapsed'
 
 /** Collapsed multi-port UN/LOCODE miss — expand in UI to list each raw port token. */
 export const MESH_PORT_COLLAPSED_LINE_ID = 'm-port:collapsed'
+
+/** Must stay decision (spec §3.4). */
+const DESK_DECISION_LINE_IDS = new Set([
+  'w-po-only',
+  'w-po-other',
+  'w-po-combined',
+  'w-po-thin',
+  'w-multi-dest',
+  'w-multi-match',
+  'w-multi-id',
+  'w-supersede',
+  'r-no-id',
+  'r-thin',
+  'r-portal',
+  'i-attach',
+  'i-parse',
+  'i-ai-low',
+  'g-checksum',
+  'g-total',
+  'g-pages',
+])
+
+/** Must be fyi (spec §3.4). */
+const DESK_FYI_LINE_IDS = new Set([
+  MESH_PARTY_COLLAPSED_LINE_ID,
+  MESH_PORT_COLLAPSED_LINE_ID,
+  'm-mesh',
+  'm-party',
+  'm-customer',
+  'g-repaired',
+  'g-evidence-trunc',
+])
+
+/**
+ * Tag an item for Review vs detail (rule A). Unmapped default: decision for
+ * which_shipment / real_shipment groups, else fyi.
+ */
+export function tagDesk(item: Pick<NeedsAttentionItem, 'lineId' | 'groupId' | 'text'>): Desk {
+  if (DESK_DECISION_LINE_IDS.has(item.lineId)) return 'decision'
+  if (DESK_FYI_LINE_IDS.has(item.lineId)) return 'fyi'
+  if (item.lineId.startsWith('m-party') || item.lineId.startsWith('m-mesh') || item.lineId.startsWith('m-port')) {
+    return 'fyi'
+  }
+  if (/brand\b.*\bbuyer\s+famil/i.test(item.text)) return 'fyi'
+  if (item.groupId === 'which_shipment' || item.groupId === 'real_shipment') return 'decision'
+  return 'fyi'
+}
 
 export function isMeshPartyCollapsed(item: NeedsAttentionItem): boolean {
   return item.lineId === MESH_PARTY_COLLAPSED_LINE_ID && (item.details?.length ?? 0) > 0
@@ -1467,7 +1519,7 @@ export function buildNeedsAttention(opts: {
   collapsePoOnlyAndReassign(byLine)
   collapsePoOnlyAndThin(byLine)
 
-  let items = [...byLine.values()]
+  let items = [...byLine.values()].map((it) => ({ ...it, desk: tagDesk(it) }))
   items.sort((a, b) => (SEV_RANK[b.severity] ?? 0) - (SEV_RANK[a.severity] ?? 0))
   if (opts.max != null && Number.isFinite(opts.max)) {
     items = items.slice(0, opts.max)
@@ -1475,7 +1527,8 @@ export function buildNeedsAttention(opts: {
   return items
 }
 
-/** Grouped for ReviewCard (headers + bullets). Empty groups omitted. */
+/** Grouped for ReviewCard (headers + bullets). Empty groups omitted.
+ *  `desk: 'decision'` = Review queue (rule A); `'all'` = shipment detail (decision + fyi). */
 export function buildNeedsAttentionGroups(opts: {
   riskFlags?: Array<{ code: string; severity?: string; message?: string }> | null
   reviewReasons?: string[] | null
@@ -1483,8 +1536,13 @@ export function buildNeedsAttentionGroups(opts: {
   portsLinked?: { pol?: boolean; pod?: boolean } | null
   /** When true, r-no-id uses only-PO copy (card has linked PO numbers). Default false. */
   hasPo?: boolean
+  /** Review queue: decision only. Detail: all. Default all. */
+  desk?: 'decision' | 'all'
 }): NeedsAttentionGroup[] {
-  const items = buildNeedsAttention(opts)
+  const deskMode = opts.desk ?? 'all'
+  const items = buildNeedsAttention(opts).filter(
+    (it) => deskMode === 'all' || it.desk === 'decision',
+  )
   const byGroup = new Map<NeedsAttentionGroupId, NeedsAttentionItem[]>()
   for (const it of items) {
     const list = byGroup.get(it.groupId) ?? []

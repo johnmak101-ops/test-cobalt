@@ -49,6 +49,8 @@ export function compactCriticReview(cr: CriticReview | null | undefined): {
   band: Band
   summary: string
   topConflictType: string
+  wouldBeAuto?: boolean
+  candidateCount?: number
 } | null {
   if (!cr?.confidence?.band) return null
   const top = cr.riskFlags?.[0]
@@ -57,7 +59,14 @@ export function compactCriticReview(cr: CriticReview | null | undefined): {
     : cr.conflicts?.[0]?.label
       ? `${cr.conflicts[0].label} conflict`
       : 'Needs review'
-  return { band: cr.confidence.band, summary: cr.summary, topConflictType }
+  const candidateCount = cr.matchAmbiguity?.candidates?.length ?? cr.matchAmbiguity?.candidateCount
+  return {
+    band: cr.confidence.band,
+    summary: cr.summary,
+    topConflictType,
+    ...(cr.wouldBeAuto === true ? { wouldBeAuto: true } : {}),
+    ...(candidateCount && candidateCount > 1 ? { candidateCount } : {}),
+  }
 }
 
 export interface ShipmentLegRow {

@@ -1,0 +1,23 @@
+{
+  "description": "Canonical decision-centre payload slice. Both repos assert this file byte-for-byte. Change = update BOTH repos in one sitting.",
+  "deskClasses": {
+    "decision": ["field conflict", "ambiguous match", "po reassignment", "multi strong id", "missing attachment", "ai_confidence_low", "g-checksum", "g-total", "g-pages", "vendor-not-stated", "soft-port-country-only"],
+    "fyi": ["brand-across-buyer-families", "g-repaired", "g-evidence-trunc"]
+  },
+  "representativeNotes": {
+    "brand-across-buyer-families": "brand 'Barbour' appears across 2 distinct buyer families — possible house/agent leak, verify",
+    "vendor-not-stated": "Vendor / factory not stated in email",
+    "soft-port-country-only": "Email only named Hong Kong — please verify mode of transport and port",
+    "field conflict": "2 field conflict(s)",
+    "ai_confidence_low": "AI confidence low — verify extraction"
+  },
+  "criticReview": {
+    "wouldBeAuto": true,
+    "masterMisses": [
+      { "type": "vendor", "rawName": "Dongguan Great Co", "field": "vendor_code" },
+      { "type": "forwarder", "rawName": "Speedy Logistics", "field": "forwarder_name" }
+    ]
+  },
+  "aiConfidenceLowReason": "AI confidence low — verify extraction",
+  "normalizer": "casefold+trim+collapse-ws"
+}

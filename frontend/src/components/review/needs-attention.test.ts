@@ -743,6 +743,43 @@ describe('countryOnlyPortMissText', () => {
   })
 })
 
+describe('desk filter (decision vs fyi, rule A)', () => {
+  it('Review decision build hides mesh party FYI; detail all shows both', () => {
+    const base = {
+      conflictsCount: 0,
+      reviewReasons: [] as string[],
+      riskFlags: [
+        {
+          code: 'PO_ONLY_WEAK_MATCH',
+          severity: 'high',
+          message: 'Matched on PO alone',
+        },
+        {
+          code: 'PARTY_OPS',
+          severity: 'low',
+          message:
+            'Cannot match "ACME Co" in the vendor list. Please add it in Cobalt Fashion Data Mesh System, then rematch.',
+        },
+      ] as { code: string; severity?: string; message?: string }[],
+    }
+    const allItems = buildNeedsAttention(base)
+    const review = buildNeedsAttentionGroups({ ...base, desk: 'decision' })
+    const detail = buildNeedsAttentionGroups({ ...base, desk: 'all' })
+    const reviewLines = review.flatMap((g) => g.items.map((i) => i.lineId))
+    const detailLines = detail.flatMap((g) => g.items.map((i) => i.lineId))
+    expect(allItems.some((i) => i.desk === 'decision')).toBe(true)
+    expect(allItems.some((i) => i.desk === 'fyi')).toBe(true)
+    expect(reviewLines).toContain('w-po-only')
+    expect(reviewLines.some((id) => id.startsWith('m-party') || id === 'm-party:collapsed')).toBe(
+      false,
+    )
+    expect(detailLines.some((id) => id.startsWith('m-party') || id === 'm-party:collapsed')).toBe(
+      true,
+    )
+    expect(detailLines.length).toBeGreaterThan(reviewLines.length)
+  })
+})
+
 describe('buildNeedsAttention country-only port miss', () => {
   it('rewrites Cannot match "USA" as a port to country copy', () => {
     const items = buildNeedsAttention({

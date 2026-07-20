@@ -56,6 +56,10 @@ export interface CriticReview {
   reasons: string[]
   /** #129: email matched ≥2 existing legs — pick among known IDs */
   matchAmbiguity?: MatchAmbiguity
+  /** Desk membership shadow marker from queue */
+  wouldBeAuto?: boolean
+  deskAuto?: boolean
+  masterMisses?: { type: string; rawName: string; field: string }[]
 }
 
 /** Queue-safe projection — band/summary/topConflictType only (never raw confidence score). */
@@ -63,6 +67,8 @@ export interface CriticReviewCompact {
   band: Band
   summary: string
   topConflictType: string
+  wouldBeAuto?: boolean
+  candidateCount?: number
 }
 
 const BAND_LABELS: Record<Band, 'Low' | 'Medium' | 'High'> = {

@@ -30,6 +30,7 @@ import * as m0012_shipment_critic_review from './kysely-migrations/0012_shipment
 import * as m0013_routing_shadow from './kysely-migrations/0013_routing_shadow'
 import * as m0014_critic_calibration from './kysely-migrations/0014_critic_calibration'
 import * as m0015_forwarder_alias_kind from './kysely-migrations/0015_forwarder_alias_kind'
+import * as m0016_mesh_miss_ack from './kysely-migrations/0016_mesh_miss_ack'
 
 const MIGRATIONS = {
   '0000_init': m0000_init,
@@ -48,6 +49,7 @@ const MIGRATIONS = {
   '0013_routing_shadow': m0013_routing_shadow,
   '0014_critic_calibration': m0014_critic_calibration,
   '0015_forwarder_alias_kind': m0015_forwarder_alias_kind,
+  '0016_mesh_miss_ack': m0016_mesh_miss_ack,
 }
 
 /** Exported for the registry drift-guard spec — a migration file that is never registered here is

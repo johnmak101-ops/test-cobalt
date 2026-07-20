@@ -44,6 +44,18 @@ export interface MatchAmbiguity {
   } | null
 }
 
+/** Structured Mesh miss from queue (criticReview.masterMisses). */
+export interface MasterMiss {
+  type: 'vendor' | 'forwarder' | 'customer'
+  rawName: string
+  field: string
+}
+
+/** casefold + trim + collapse internal whitespace — MUST match cobalt-queue. */
+export function normalizeMasterName(raw: string): string {
+  return raw.toLowerCase().trim().replace(/\s+/g, ' ')
+}
+
 export interface CriticReview {
   confidence: { score: number; band: Band; label: string }
   summary: string
@@ -56,4 +68,10 @@ export interface CriticReview {
   reasons: string[]
   /** #129 closed-set candidates when email matched ≥2 legs */
   matchAmbiguity?: MatchAmbiguity
+  /** Desk membership shadow: queue would auto-commit if OPENPAVE_DESK_MEMBERSHIP=on */
+  wouldBeAuto?: boolean
+  /** On-mode desk flip (audit; never wire-identical to a clean gate auto) */
+  deskAuto?: boolean
+  /** Structured Mesh admin worklist entries (nested under criticReview only) */
+  masterMisses?: MasterMiss[]
 }

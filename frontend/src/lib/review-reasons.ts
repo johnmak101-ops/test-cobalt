@@ -250,6 +250,11 @@ const TRANSLATIONS: Translation[] = [
     text: () => 'A quantity was repeated across several POs (shared shipment total) — verify per-PO split',
   },
   {
+    // Desk membership (queue OPENPAVE_DESK_MEMBERSHIP=on, band=low on fyi-only)
+    match: /^AI confidence low — verify extraction$/i,
+    text: () => 'Verify extraction (AI low confidence)',
+  },
+  {
     match: /sender:\s*ETD\s+(\S+)\s+is\s+(\d+)\s+days before this email/i,
     text: (m) => `ETD ${m[1]} is ${m[2]} days before this email`,
   },
@@ -415,6 +420,7 @@ const CATEGORY_RULES: Array<{ match: RegExp; category: ReasonCategory }> = [
   { match: /Party name not in master list/i, category: 'master_miss' },
   { match: /Port name did not match UN\/LOCODE/i, category: 'master_miss' },
   { match: /vision_pending|output_truncated|input_truncated|content_filter/i, category: 'extraction' },
+  { match: /AI confidence low|verify extraction \(AI low/i, category: 'extraction' },
   { match: /attachment|missing cargo detail|screenshot|broadcast total/i, category: 'extraction' },
   // Vendor/consignee missing from email (incomplete extract, not Mesh master miss)
   { match: /no\s+vendor\s+code|factory not identified/i, category: 'extraction' },
