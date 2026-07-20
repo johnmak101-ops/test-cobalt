@@ -60,16 +60,26 @@ export class AlertEvaluatorService {
       for (const rule of rules) {
         if (!THRESHOLD_RULE_IDS.has(rule.id)) continue
         if (!isFiring(rule, facts, now)) continue
+        const message = rule.description ?? rule.id
+        const dedupKey = `${rule.id}:${leg.id}`
         const isNew = await this.alerts.insertDeduped({
           ruleId: rule.id,
           bookingId: leg.bookingId,
           shipmentId: leg.id,
           severity: rule.severity as never,
-          message: rule.description ?? rule.id,
-          dedupKey: `${rule.id}:${leg.id}`,
+          message,
+          dedupKey,
           firedAt: now,
         })
-        if (isNew) fired++
+        if (isNew) {
+          fired++
+        } else {
+          // Already ACTIVE for this rule+leg — push current severity/message so Settings edits apply.
+          await this.alerts.refreshActiveByDedupKey(dedupKey, {
+            severity: rule.severity,
+            message,
+          })
+        }
       }
     }
     fired += await this.evaluateCrdRevisions(legs, now)

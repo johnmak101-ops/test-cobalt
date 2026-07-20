@@ -60,6 +60,10 @@ export interface CriticReview {
   wouldBeAuto?: boolean
   deskAuto?: boolean
   masterMisses?: { type: string; rawName: string; field: string }[]
+  /** Hybrid-C: multi-booking fan-out shortfall */
+  splitAudit?: { expected: number; actual: number }
+  /** Hybrid-C: which booking row this decision is within a multi-booking email */
+  multiBookingOrigin?: { index: number; total: number; bookingNo?: string }
 }
 
 /** Queue-safe projection — band/summary/topConflictType only (never raw confidence score). */

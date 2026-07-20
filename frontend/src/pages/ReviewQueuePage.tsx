@@ -93,6 +93,7 @@ function ExpandedReviewPanel({
   const { data, isLoading, isError } = useShipment(row.id)
   const identifyMutation = useIdentifyShipment()
   const linkMutation = useLinkShipment()
+  const navigate = useNavigate()
 
   if (isLoading) {
     return (
@@ -123,7 +124,32 @@ function ExpandedReviewPanel({
         onApprove={onApprove}
         onSaveAndApprove={onSaveAndApprove}
         onIdentify={!readOnly ? async (field, value) => identifyMutation.mutateAsync({ shipmentId: row.id, field, value }) : undefined}
-        onLink={!readOnly ? async (targetShipmentId) => { await linkMutation.mutateAsync({ shipmentId: row.id, targetShipmentId }) } : undefined}
+        onLink={
+          !readOnly
+            ? async (targetShipmentId, payload) => {
+                try {
+                  const fields = payload?.fields
+                    ? mapCriticFieldsToColumns(payload.fields)
+                    : undefined
+                  await linkMutation.mutateAsync({
+                    shipmentId: row.id,
+                    targetShipmentId,
+                    fields,
+                    reason: payload?.note,
+                  })
+                  toast.success('Linked & applied — opening shipment')
+                  navigate(`/shipments/${targetShipmentId}`, { state: { fromReview: true } })
+                } catch (e) {
+                  const msg =
+                    e instanceof Error
+                      ? e.message.replace(/^API error \d+:\s*/i, '')
+                      : 'Link failed'
+                  toast.error(msg || 'Link failed')
+                  throw e
+                }
+              }
+            : undefined
+        }
       />
     </div>
   )

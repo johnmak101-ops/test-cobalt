@@ -645,7 +645,7 @@ export class PresentationService {
    *  (scheduler still re-runs every ~15 minutes as a safety net). */
   async saveAlertRules(input: { rules?: Array<Record<string, unknown>> }) {
     for (const r of input?.rules ?? []) {
-      if (r.locked) continue // A3 etc. are locked — never mutate
+      if (r.locked) continue // A7 etc. are locked — never mutate
       const id = String(r.id ?? '')
       if (!id) continue
       const patch: Record<string, unknown> = {}
@@ -664,6 +664,21 @@ export class PresentationService {
           : null
       patch.countryThresholds = hoursMap != null ? JSON.stringify(hoursMap) : null
       await this.alertRepo.updateRule(id, patch)
+
+      // Push severity/message onto existing ACTIVE alert rows NOW (do not wait for re-fire).
+      // Alerts store a copy of severity at first fire; without this, Settings→Info leaves cards CRITICAL.
+      if (r.enabled === false) {
+        await this.alertRepo.resolveAllActiveForRule(id)
+      } else if (typeof r.severity === 'string') {
+        const message =
+          (typeof r.description === 'string' && r.description) ||
+          (typeof r.name === 'string' && r.name) ||
+          id
+        await this.alertRepo.syncActivePresentation(id, {
+          severity: r.severity,
+          message,
+        })
+      }
     }
     let evalStats: { evaluated: number; fired: number; resolved: number } | null = null
     try {
@@ -672,7 +687,7 @@ export class PresentationService {
         `alert rules saved — immediate eval evaluated=${evalStats.evaluated} fired=${evalStats.fired} resolved=${evalStats.resolved}`,
       )
     } catch (err) {
-      // Thresholds are already persisted; a failed re-eval must not roll back the save response.
+      // Thresholds + presentation already persisted; a failed re-eval must not roll back the save.
       this.logger.warn(
         `alert rules saved but immediate eval failed: ${err instanceof Error ? err.message : String(err)}`,
       )

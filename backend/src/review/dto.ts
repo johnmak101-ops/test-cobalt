@@ -38,9 +38,18 @@ export class IdentifyDto {
   value!: string
 }
 
-/** Fold a zero-identity provisional leg into an existing shipment that already carries the typed key. */
+/** Fold a provisional into an existing shipment; optional field patches apply to the **target**. */
 export class LinkDto {
   @IsString()
   @Length(1, 64)
   targetShipmentId!: string
+
+  /** CamelCase leg columns to write on the target before merge (same shape as CorrectDto.fields). */
+  @IsOptional()
+  @IsObject()
+  fields?: Record<string, unknown>
+
+  @IsOptional()
+  @IsString()
+  reason?: string
 }

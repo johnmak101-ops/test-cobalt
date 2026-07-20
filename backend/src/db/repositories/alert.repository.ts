@@ -86,6 +86,58 @@ export class AlertRepository {
     }
   }
 
+  /**
+   * Keep an already-ACTIVE alert in sync with the current rule (severity / message).
+   * Without this, Settings severity changes never show on the Alerts page — insertDeduped
+   * hits the unique dedup_key and leaves the old CRITICAL/WARNING stamp in place.
+   * No OUTPUT clause — MSSQL update OUTPUT is flaky here and was aborting the eval loop.
+   */
+  async refreshActiveByDedupKey(
+    dedupKey: string,
+    patch: { severity: string; message: string },
+  ): Promise<void> {
+    await this.db
+      .updateTable('alerts')
+      .set({ severity: patch.severity, message: patch.message })
+      .where('dedupKey', '=', dedupKey)
+      .where('status', '=', 'ACTIVE')
+      .execute()
+  }
+
+  /**
+   * Push rule presentation (severity + message) onto every ACTIVE alert for that rule.
+   * Called on Settings save so severity changes apply immediately without relying on
+   * per-leg re-fire (which is a no-op when dedup_key already exists).
+   */
+  async syncActivePresentation(
+    ruleId: string,
+    patch: { severity: string; message: string },
+  ): Promise<void> {
+    await this.db
+      .updateTable('alerts')
+      .set({ severity: patch.severity, message: patch.message })
+      .where('ruleId', '=', ruleId)
+      .where('status', '=', 'ACTIVE')
+      .execute()
+  }
+
+  /** Resolve every ACTIVE alert for a rule (e.g. rule disabled in Settings). */
+  async resolveAllActiveForRule(ruleId: string, now: Date = new Date()): Promise<number> {
+    const rows = await this.db
+      .selectFrom('alerts')
+      .select(['id', 'dedupKey'])
+      .where('ruleId', '=', ruleId)
+      .where('status', '=', 'ACTIVE')
+      .execute()
+    for (const row of rows) {
+      await this.setStatus(row.id, 'RESOLVED', {
+        resolvedAt: now,
+        dedupKey: `${row.dedupKey ?? row.id}:resolved:${row.id}`,
+      })
+    }
+    return rows.length
+  }
+
   /** Idempotently register a rule row — built-in checks need a rule id to hang their alerts on. */
   async ensureRule(values: AlertRuleInsert): Promise<void> {
     try {

@@ -594,7 +594,10 @@ describe('identify section (WEAK_IDENTITY / AMBIGUOUS_MATCH legs)', () => {
     expect(onIdentify).toHaveBeenCalledWith('booking_no', 'BX845666')
     expect(await screen.findByText(/JOB-2026-0017/)).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: /link into this shipment/i }))
-    expect(onLink).toHaveBeenCalledWith('TARGET-1')
+    expect(onLink).toHaveBeenCalledWith(
+      'TARGET-1',
+      expect.objectContaining({ fields: expect.any(Object) }),
+    )
   })
 
   it('ambiguous result shows the count and offers no link', async () => {

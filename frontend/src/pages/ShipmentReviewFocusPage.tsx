@@ -205,8 +205,27 @@ export default function ShipmentReviewFocusPage() {
           onLink={
             readOnly
               ? undefined
-              : async (targetShipmentId) => {
-                  await linkMutation.mutateAsync({ shipmentId: shipment.id, targetShipmentId })
+              : async (targetShipmentId, payload) => {
+                  try {
+                    const fields = payload?.fields
+                      ? mapCriticFieldsToColumns(payload.fields)
+                      : undefined
+                    await linkMutation.mutateAsync({
+                      shipmentId: shipment.id,
+                      targetShipmentId,
+                      fields,
+                      reason: payload?.note,
+                    })
+                    toast.success('Linked & applied — opening shipment')
+                    navigate(`/shipments/${targetShipmentId}`, { state: { fromReview: true } })
+                  } catch (e) {
+                    const msg =
+                      e instanceof Error
+                        ? e.message.replace(/^API error \d+:\s*/i, '')
+                        : 'Link failed'
+                    toast.error(msg || 'Link failed')
+                    throw e
+                  }
                 }
           }
         />
