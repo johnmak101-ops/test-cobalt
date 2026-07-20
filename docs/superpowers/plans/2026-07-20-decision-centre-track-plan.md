@@ -1,4 +1,4 @@
-# Decision-Centre Desk (Track Side) Implementation Plan
+﻿# Decision-Centre Desk (Track Side) Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 > **EXECUTE AFTER the queue plan** (`D:\cobalt-queue\docs\superpowers\plans\2026-07-20-decision-centre-queue-plan.md`) — Task 1 here copies the fixture that queue Task 6 authors. Tasks 4-5 (admin report) only depend on Task 1 and may run before Tasks 2-3.
@@ -456,3 +456,57 @@ Register the route beside the existing admin pages (same guard/wrapper the sende
   3. `/admin/mesh-misses` as admin: rows render, 已入 Mesh hides the row, re-check with `includeAcked=true` shows `acked`; non-admin gets 403.
   4. Review card headline shows a phrase on a multi-candidate leg.
 - [ ] **Step 4: Commit + PR** — `git commit -am "feat(review): ai_confidence_low translation + desk registration"`; push `feat/decision-centre-desk`; PR titled `feat: decision-centre desk — phrases, shadow lane, admin Mesh report`.
+
+---
+
+## Round 2 — post-review fixes (2026-07-20, /review of merged PR 249: 6 passes + red team)
+
+Same rules; NEW GATE RULE (fixes a Round-1 plan bug): frontend gate = `npx tsc --noEmit && pnpm test` (vitest was missing, which is how 3 broken ReviewCard tests merged). John's rulings: T2 = enumerate + high-severity valve (spec's quiet-desk default STANDS); T3 = suppress Confirm-as-is on open decisions + error feedback. Backend is green (1025/1026) — do not touch what isn't listed.
+
+### T2-1 (CRITICAL): tagDesk enumeration + severity valve — `frontend/src/components/review/needs-attention.ts`
+
+Live-proven hole: `fields_disagree` lines (`f-count`, `f-backend`, `f-lock`, `f-mode`), `i-cargo` (CARGO_SANITY), and any future unmapped code fall to the final `'fyi'` return → hidden on Review while "Ready to confirm — no open decisions" renders and one click blind-confirms (and `emitConfirms` writes false approved rows into learning/2b calibration).
+
+- `tagDesk` gains severity: `tagDesk(item: Pick<NeedsAttentionItem,'lineId'|'groupId'|'text'|'severity'>)`.
+- Order of checks: must-decision set → must-fyi set → `lineId.startsWith('f-')` → `'decision'` → m-* prefixes → `'fyi'` → brand-text regex (ANCHOR it: `/^brand '[^']{1,80}' appears across \d+ distinct buyer families/i`, mirroring the queue anchor) → `'fyi'` → group default (which_shipment/real_shipment → decision) → **severity valve: unmapped && severity 'high' → 'decision'** (future queue codes never vanish silently) → `'fyi'`.
+- Add `'i-cargo'` to DESK_DECISION_LINE_IDS; add `'m-vendor'`, `'m-consignee'` to DESK_FYI_LINE_IDS (spec §3.4 lists them).
+- Tests (extend the desk describe): one per branch — `f-backend` with no conflict table → decision build shows it; `i-cargo` → decision; exact fyi-set id (`m-party:collapsed`) → hidden on Review, shown on detail; unmapped id in `other` with severity high → decision (valve); unmapped low → fyi; anchored brand note → fyi; hostile text `"brand 'X' ... families.pdf: original not forwarded"` under a non-listed lineId → decision.
+
+### T2-2 (CRITICAL): wire the `i-ai-low` producer — `needs-attention.ts` / `review-reasons.ts`
+
+`'i-ai-low'` is a dead set entry: no classifier assigns that lineId, so the flagship band-low reason 'AI confidence low — verify extraction' lands lineId `reason:<raw>` → group incomplete_data → fyi → **hidden**. Add a classifier branch (mirror the `i-parse` one) mapping the exact string → lineId `'i-ai-low'`, category `extraction`. Build the regex FROM the exported `AI_CONFIDENCE_LOW_REASON` const (decision-phrase.ts) so the string exists once. Test: `buildNeedsAttentionGroups({reviewReasons:['AI confidence low — verify extraction'], desk:'decision'})` contains lineId `i-ai-low` with text 'Verify extraction (AI low confidence)'.
+
+### T2-3 (CRITICAL): fix the 3 ReviewCard tests broken by the desk filter
+
+After T2-1/T2-2, re-run `pnpm test` — the 3 new failures should mostly pass again because their lines are now decision-class. Any that still fail: update the expectation ONLY if the desk-filtered rendering is the intended behavior, with a comment naming rule A. Note: 2 more failures + 2 tsc errors (`ReviewPoStylesSection.test.tsx` Mock type) are PRE-EXISTING on main — leave them.
+
+### T2-4: Confirm-as-is guard + feedback + keyboard — `frontend/src/pages/ReviewQueuePage.tsx`
+
+- Suppress the button when the row shows an open decision: `const openDecision = /conflict$/i.test(compact?.topConflictType ?? '') || (compact?.candidateCount ?? 0) > 1` → render chip only, no button.
+- onError: reuse the page's existing stale-conflict path (409 → stale banner + refetch) else `toast(message)`. Keep `onSettled` busy-reset.
+- Keyboard: in the row `onKeyDown`, bail when `e.target !== e.currentTarget` so Enter on the focused button activates the button, not row-expand.
+- Layout: add `flex-wrap` + `min-w-0` to the chip+button span.
+- Test: row with `wouldBeAuto:true` + topConflictType 'ETD conflict' → chip yes, button NO; clean shadow row → button posts confirm with `expectedUpdatedAt` and does not expand the row.
+
+### T2-5: fixture reconciliation (BOTH repos, one sitting — byte-identical again)
+
+REMOVE `vendor-not-stated` + `soft-port-country-only` from `deskClasses.decision` (keep their `representativeNotes`); add `"note": "deskClasses lists PRODUCED families only; m-vendor/m-port display lines are track lineIds, fyi per 07-20 spec §3.4"`. Update both repos' fixtures identically.
+
+### T2-6: ack endpoint hardening — mesh-misses controller/service
+
+- Concurrent-ack 2627 → idempotent success; other errors → generic BadRequestException (no raw SQL passthrough).
+- `@MaxLength(400)` on normalizedName.
+- Controller spec for @Roles and list param coercion.
+
+### T2-7: polish batch
+
+- CSV BOM for CJK + formula neutralization + revokeObjectURL.
+- Status Badge; empty-state copy by filter; tooltip cap shipmentIds.
+- Export isWeakIdentityReason; drop PhraseInput.band.
+- `/admin/mesh-misses` → Navigate to settings; drop unused AdminModule exports; hoist 30-day const.
+
+### T2-8: test backfill
+
+- aggregateMisses edge cases; compactCriticReview wouldBeAuto/candidateCount; AdminMeshMissesPage tests.
+
+**Exit:** frontend gate = tsc + vitest; fixtures byte-identical; deploy after boot checklist.

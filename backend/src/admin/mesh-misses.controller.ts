@@ -1,6 +1,6 @@
 import { Body, Controller, Get, Post, Query, BadRequestException } from '@nestjs/common'
-import { IsIn, IsString, MinLength } from 'class-validator'
-import { MeshMissesService } from './mesh-misses.service'
+import { IsIn, IsString, MaxLength, MinLength } from 'class-validator'
+import { MeshMissesService, MESH_MISS_DEFAULT_DAYS } from './mesh-misses.service'
 import { Roles, CurrentUser } from '../auth/decorators'
 import type { AuthUser } from '../auth/auth.service'
 
@@ -10,7 +10,13 @@ class AckDto {
 
   @IsString()
   @MinLength(1)
+  @MaxLength(400)
   normalizedName!: string
+}
+
+function isUniqueViolation(e: unknown): boolean {
+  const msg = e instanceof Error ? e.message : String(e ?? '')
+  return /2627|unique|duplicate/i.test(msg)
 }
 
 /** Admin Mesh-miss worklist (structured criticReview.masterMisses aggregation). */
@@ -24,7 +30,8 @@ export class MeshMissesController {
     @Query('days') daysRaw?: string,
     @Query('includeAcked') includeAckedRaw?: string,
   ) {
-    const days = daysRaw != null ? Number(daysRaw) : 30
+    const parsed = daysRaw != null ? Number(daysRaw) : NaN
+    const days = Number.isFinite(parsed) && parsed > 0 ? parsed : MESH_MISS_DEFAULT_DAYS
     const includeAcked = includeAckedRaw === 'true' || includeAckedRaw === '1'
     return this.meshMisses.list(days, includeAcked)
   }
@@ -35,7 +42,10 @@ export class MeshMissesController {
     try {
       await this.meshMisses.ack(dto.type, dto.normalizedName, actor?.email ?? actor?.id ?? 'admin')
     } catch (e) {
-      throw new BadRequestException(e instanceof Error ? e.message : 'ack failed')
+      // Concurrent double-ack on unique (type, normalized_name) → idempotent success
+      if (isUniqueViolation(e)) return { ok: true }
+      // Never rethrow e.message (DbExceptionFilter exists to sanitize SQL leaks)
+      throw new BadRequestException('ack failed')
     }
     return { ok: true }
   }

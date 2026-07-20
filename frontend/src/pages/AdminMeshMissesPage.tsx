@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { api } from '../lib/api'
 import { toast } from '../components/ui/Toast'
 
+/** mirrors backend MeshMissRow — keep in sync */
 interface Row {
   type: string
   rawName: string
@@ -11,6 +12,21 @@ interface Row {
   firstSeen: string
   lastSeen: string
   status: 'open' | 'acked' | 'recurred'
+}
+
+/** Shared with backend MESH_MISS_DEFAULT_DAYS */
+const MESH_MISS_DAYS = 30
+
+function csvCell(raw: string): string {
+  let s = raw.replace(/"/g, '""')
+  // Formula neutralization (defense-in-depth — EDITOR can post unhardened criticReview)
+  if (/^[=+\-@]/.test(s)) s = `'${s}`
+  return `"${s}"`
+}
+
+function shipmentTooltip(ids: string[]): string {
+  if (ids.length <= 10) return ids.join(', ')
+  return `${ids.slice(0, 10).join(', ')} +${ids.length - 10} more`
 }
 
 export default function AdminMeshMissesPage() {
@@ -25,7 +41,7 @@ export default function AdminMeshMissesPage() {
     setError(null)
     try {
       const data = await api.get<Row[]>(
-        `/admin/mesh-misses?days=30&includeAcked=${includeAcked ? 'true' : 'false'}`,
+        `/admin/mesh-misses?days=${MESH_MISS_DAYS}&includeAcked=${includeAcked ? 'true' : 'false'}`,
       )
       setRows(Array.isArray(data) ? data : [])
     } catch (e) {
@@ -45,6 +61,8 @@ export default function AdminMeshMissesPage() {
     [rows, typeFilter],
   )
 
+  const filtered = typeFilter !== 'all' || includeAcked
+
   const ack = async (r: Row) => {
     try {
       await api.post('/admin/mesh-misses/ack', {
@@ -60,23 +78,25 @@ export default function AdminMeshMissesPage() {
 
   const exportCsv = () => {
     const head = 'type,rawName,count,firstSeen,lastSeen,status'
-    const csv = [
-      head,
-      ...view.map((r) =>
-        [
-          r.type,
-          `"${r.rawName.replace(/"/g, '""')}"`,
-          r.count,
-          r.firstSeen,
-          r.lastSeen,
-          r.status,
-        ].join(','),
-      ),
-    ].join('\n')
+    // UTF-8 BOM so Excel opens CJK names correctly
+    const bom = '\uFEFF'
+    const csv =
+      bom +
+      [head, ...view.map((r) => [r.type, csvCell(r.rawName), r.count, r.firstSeen, r.lastSeen, r.status].join(','))].join(
+        '\n',
+      )
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }))
     const a = document.createElement('a')
-    a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }))
+    a.href = url
     a.download = `mesh-misses-${new Date().toISOString().slice(0, 10)}.csv`
     a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  const statusClass = (s: Row['status']) => {
+    if (s === 'recurred') return 'rounded-full border border-status-warning/40 bg-status-warning/15 px-2 py-0.5 text-[11px] font-semibold text-status-warning'
+    if (s === 'acked') return 'rounded-full border border-border bg-surface-800 px-2 py-0.5 text-[11px] text-text-muted'
+    return 'rounded-full border border-border bg-surface-800 px-2 py-0.5 text-[11px] text-text-secondary'
   }
 
   return (
@@ -133,17 +153,15 @@ export default function AdminMeshMissesPage() {
                 <tr key={`${r.type}:${r.normalizedName}`} className="border-t border-border">
                   <td className="px-3 py-2 font-medium text-text-primary">{r.rawName}</td>
                   <td className="px-3 py-2 capitalize text-text-secondary">{r.type}</td>
-                  <td className="px-3 py-2 text-text-secondary" title={r.shipmentIds.join(', ')}>
+                  <td className="px-3 py-2 text-text-secondary" title={shipmentTooltip(r.shipmentIds)}>
                     {r.count}
                   </td>
                   <td className="px-3 py-2 text-text-muted">{r.firstSeen.slice(0, 10)}</td>
                   <td className="px-3 py-2 text-text-muted">{r.lastSeen.slice(0, 10)}</td>
                   <td className="px-3 py-2">
-                    {r.status === 'recurred' ? (
-                      <span className="font-semibold text-status-warning">recurred after ack</span>
-                    ) : (
-                      r.status
-                    )}
+                    <span className={statusClass(r.status)}>
+                      {r.status === 'recurred' ? 'recurred after ack' : r.status}
+                    </span>
                   </td>
                   <td className="px-3 py-2 text-right">
                     {r.status !== 'acked' && (
@@ -161,7 +179,9 @@ export default function AdminMeshMissesPage() {
               {view.length === 0 && (
                 <tr>
                   <td colSpan={7} className="px-3 py-6 text-center text-text-muted">
-                    No open Mesh misses in the last 30 days.
+                    {filtered
+                      ? 'No Mesh misses match these filters.'
+                      : `No open Mesh misses in the last ${MESH_MISS_DAYS} days.`}
                   </td>
                 </tr>
               )}

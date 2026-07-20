@@ -8,8 +8,14 @@ export interface PhraseInput {
   criticalBlanks?: number
   conflictField?: string | null
   gateCodes?: string[]
-  band?: 'low' | 'medium' | 'high'
   aiLowReason?: boolean
+}
+
+export const AI_CONFIDENCE_LOW_REASON = 'AI confidence low — verify extraction'
+
+/** Shared weak-identity reason detector (Review queue + ReviewCard). */
+export function isWeakIdentityReason(raw: string): boolean {
+  return /no booking|no identity|portal echo|not actionable|thin mail/i.test(raw)
 }
 
 const GATE_PHRASE: Record<string, string> = {
@@ -33,5 +39,3 @@ export function decisionPhrase(i: PhraseInput): string | null {
   if (i.aiLowReason) return 'Verify extraction (AI low confidence) · 驗證拆解'
   return null
 }
-
-export const AI_CONFIDENCE_LOW_REASON = 'AI confidence low — verify extraction'

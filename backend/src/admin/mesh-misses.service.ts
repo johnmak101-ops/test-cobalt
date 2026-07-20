@@ -28,6 +28,8 @@ interface AckRow {
 }
 
 const RECUR_MS = 7 * 24 * 3600 * 1000
+/** Default window for the admin worklist (page copy + query share this). */
+export const MESH_MISS_DEFAULT_DAYS = 30
 
 function parseMisses(criticReview: LegRow['criticReview']): MasterMiss[] {
   if (criticReview == null) return []
@@ -111,8 +113,8 @@ export function aggregateMisses(legs: LegRow[], acks: AckRow[]): MeshMissRow[] {
 export class MeshMissesService {
   constructor(@Inject(KYSELY) private readonly db: Kysely<DB>) {}
 
-  async list(days = 30, includeAcked = false): Promise<MeshMissRow[]> {
-    const d = Math.min(Math.max(1, Number(days) || 30), 365)
+  async list(days = MESH_MISS_DEFAULT_DAYS, includeAcked = false): Promise<MeshMissRow[]> {
+    const d = Math.min(Math.max(1, Number(days) || MESH_MISS_DEFAULT_DAYS), 365)
     const since = new Date(Date.now() - d * 24 * 3600 * 1000)
     // Prefer LIKE on nvarchar critic_review text; ParseJSON may leave objects — cast via sql.
     const legs = await this.db

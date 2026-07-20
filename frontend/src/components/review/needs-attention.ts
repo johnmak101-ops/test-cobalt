@@ -7,6 +7,7 @@ import {
   humanizeReasons,
   type ReasonCategory,
 } from '../../lib/review-reasons'
+import { AI_CONFIDENCE_LOW_REASON } from '../../lib/decision-phrase'
 
 /** Queue risk flags → ReasonCategory (also used for category suppress). */
 export const RISK_CODE_CATEGORY: Record<string, ReasonCategory> = {
@@ -105,7 +106,7 @@ export const MESH_PARTY_COLLAPSED_LINE_ID = 'm-party:collapsed'
 /** Collapsed multi-port UN/LOCODE miss — expand in UI to list each raw port token. */
 export const MESH_PORT_COLLAPSED_LINE_ID = 'm-port:collapsed'
 
-/** Must stay decision (spec §3.4). */
+/** Must stay decision (spec §3.4 + T2-1). */
 const DESK_DECISION_LINE_IDS = new Set([
   'w-po-only',
   'w-po-other',
@@ -121,34 +122,54 @@ const DESK_DECISION_LINE_IDS = new Set([
   'i-attach',
   'i-parse',
   'i-ai-low',
+  'i-cargo',
   'g-checksum',
   'g-total',
   'g-pages',
 ])
 
-/** Must be fyi (spec §3.4). */
+/** Must be fyi (spec §3.4 + T2-1). */
 const DESK_FYI_LINE_IDS = new Set([
   MESH_PARTY_COLLAPSED_LINE_ID,
   MESH_PORT_COLLAPSED_LINE_ID,
   'm-mesh',
   'm-party',
   'm-customer',
+  'm-vendor',
+  'm-consignee',
   'g-repaired',
   'g-evidence-trunc',
 ])
 
+/** Anchored brand FYI note (mirrors queue MERGE_NOTE_FYI_FAMILIES full body). */
+const BRAND_FYI_NOTE =
+  /^brand '[^']{1,80}' appears across \d+ distinct buyer families\s*(?:—|–|-)\s*possible house\/agent leak/i
+
 /**
- * Tag an item for Review vs detail (rule A). Unmapped default: decision for
- * which_shipment / real_shipment groups, else fyi.
+ * Tag an item for Review vs detail (rule A). Order (T2-1):
+ * must-decision → must-fyi → f-* prefix → m-* prefixes → brand anchor →
+ * group default → severity≥high valve → fyi.
  */
-export function tagDesk(item: Pick<NeedsAttentionItem, 'lineId' | 'groupId' | 'text'>): Desk {
+export function tagDesk(
+  item: Pick<NeedsAttentionItem, 'lineId' | 'groupId' | 'text' | 'severity'>,
+): Desk {
   if (DESK_DECISION_LINE_IDS.has(item.lineId)) return 'decision'
   if (DESK_FYI_LINE_IDS.has(item.lineId)) return 'fyi'
-  if (item.lineId.startsWith('m-party') || item.lineId.startsWith('m-mesh') || item.lineId.startsWith('m-port')) {
+  // Field-disagree residual lines (f-count, f-backend, f-lock, f-mode, …)
+  if (item.lineId.startsWith('f-')) return 'decision'
+  if (
+    item.lineId.startsWith('m-party') ||
+    item.lineId.startsWith('m-mesh') ||
+    item.lineId.startsWith('m-port') ||
+    item.lineId.startsWith('m-vendor') ||
+    item.lineId.startsWith('m-consignee')
+  ) {
     return 'fyi'
   }
-  if (/brand\b.*\bbuyer\s+famil/i.test(item.text)) return 'fyi'
+  if (BRAND_FYI_NOTE.test(item.text)) return 'fyi'
   if (item.groupId === 'which_shipment' || item.groupId === 'real_shipment') return 'decision'
+  // Safety valve: unmapped high severity never vanishes from Review (future queue codes).
+  if (item.severity === 'high') return 'decision'
   return 'fyi'
 }
 
@@ -952,6 +973,14 @@ function lineFromReason(raw: string, humanized: string): LineHit | null {
     return {
       lineId: 'i-parse',
       text: 'Parse incomplete — key information may be missing',
+      category: 'extraction',
+    }
+  }
+  // Desk membership band-low reason (exact string from queue AI_CONFIDENCE_LOW_REASON)
+  if (raw.trim() === AI_CONFIDENCE_LOW_REASON || new RegExp(`^${AI_CONFIDENCE_LOW_REASON.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i').test(raw.trim())) {
+    return {
+      lineId: 'i-ai-low',
+      text: 'Verify extraction (AI low confidence)',
       category: 'extraction',
     }
   }

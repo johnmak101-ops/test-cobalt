@@ -27,7 +27,11 @@ import type { LinkedPO, ShipmentDetail } from '../../hooks/use-shipments'
 import { cn, formatDateTime } from '../../lib/utils'
 import { buildNeedsAttentionGroups, isExpandableMiss, portsLinkedFromRoute } from './needs-attention'
 import { NeedsAttentionMeshMiss } from './NeedsAttentionMeshMiss'
-import { decisionPhrase, AI_CONFIDENCE_LOW_REASON } from '../../lib/decision-phrase'
+import {
+  decisionPhrase,
+  AI_CONFIDENCE_LOW_REASON,
+  isWeakIdentityReason,
+} from '../../lib/decision-phrase'
 import {
   REVIEW_COL,
   REVIEW_FS,
@@ -310,9 +314,7 @@ export function ReviewCard({
       criticReview?.matchAmbiguity?.candidates?.length ??
       criticReview?.matchAmbiguity?.candidateCount ??
       compact?.candidateCount,
-    weakIdentity: reviewReasons?.some((r) =>
-      /no booking|no identity|portal echo|not actionable|thin mail/i.test(r),
-    ),
+    weakIdentity: reviewReasons?.some(isWeakIdentityReason),
     conflictField: conflicts[0]?.label ?? conflicts[0]?.field ?? null,
     aiLowReason: reviewReasons?.includes(AI_CONFIDENCE_LOW_REASON),
   })
