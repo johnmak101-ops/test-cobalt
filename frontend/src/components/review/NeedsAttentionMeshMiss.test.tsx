@@ -34,4 +34,28 @@ describe('NeedsAttentionMeshMiss', () => {
     await user.click(screen.getByTestId('mesh-party-expand'))
     expect(screen.queryByTestId('mesh-party-details')).not.toBeInTheDocument()
   })
+
+  it('expands multi-port UN/LOCODE miss the same way', async () => {
+    const user = userEvent.setup()
+    const portItem: NeedsAttentionItem = {
+      key: 'm-port-collapsed',
+      lineId: 'm-port:collapsed',
+      severity: 'medium',
+      text: '4 ports not in UN/LOCODE masters — add or alias, then rematch',
+      category: 'master_miss',
+      groupId: 'master_miss',
+      details: ['Atianta', 'HK for Japan', 'HKGHKG', 'HONGKONG'],
+    }
+    render(
+      <ul>
+        <NeedsAttentionMeshMiss item={portItem} />
+      </ul>,
+    )
+    expect(screen.getByTestId('mesh-port-collapsed')).toBeInTheDocument()
+    expect(screen.getByText(/Show 4 ports/i)).toBeInTheDocument()
+    await user.click(screen.getByTestId('mesh-port-expand'))
+    expect(screen.getByTestId('mesh-port-details')).toBeInTheDocument()
+    expect(screen.getByText('HONGKONG')).toBeInTheDocument()
+    expect(screen.getAllByText(/not in UN\/LOCODE masters/i).length).toBeGreaterThanOrEqual(2)
+  })
 })

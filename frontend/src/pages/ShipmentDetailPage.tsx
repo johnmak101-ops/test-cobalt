@@ -15,7 +15,7 @@ import { AlertCard } from '../components/alerts/AlertCard'
 import { formatDate, formatDateTime, formatDateMaybeTime, cn } from '../lib/utils'
 import {
   buildNeedsAttentionGroups,
-  isMeshPartyCollapsed,
+  isExpandableMiss,
   looksLikeLocode,
 } from '../components/review/needs-attention'
 import { NeedsAttentionMeshMiss } from '../components/review/NeedsAttentionMeshMiss'
@@ -349,7 +349,7 @@ export default function ShipmentDetailPage() {
                 <p className="text-sm font-semibold text-text-secondary">{g.title}</p>
                 <ul className="mt-1 list-disc space-y-1.5 pl-5 text-sm leading-snug text-text-secondary">
                   {g.items.map((it) =>
-                    isMeshPartyCollapsed(it) ? (
+                    isExpandableMiss(it) ? (
                       <NeedsAttentionMeshMiss
                         key={it.lineId}
                         item={it}

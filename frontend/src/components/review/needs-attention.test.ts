@@ -267,13 +267,67 @@ describe('buildNeedsAttention / groups', () => {
       reviewReasons: [],
     })
     expect(
-      items.some((i) => i.text === 'Matched on PO alone — no booking/SO/B/L to pin which shipment'),
+      items.some(
+        (i) =>
+          i.text ===
+          'Linked by PO only — add booking/SO/B/L or confirm this shipment is correct',
+      ),
     ).toBe(true)
     expect(
       items.some((i) =>
         i.text.includes('One booking, more than one destination — cargo may need a split'),
       ),
     ).toBe(true)
+  })
+
+  it('combines PO-only + PO reassign into one decision line', () => {
+    const items = buildNeedsAttention({
+      conflictsCount: 0,
+      riskFlags: [
+        {
+          code: 'PO_ONLY_WEAK_MATCH',
+          severity: 'medium',
+          message: 'Matched on PO alone',
+        },
+        {
+          code: 'PO_REASSIGN',
+          severity: 'high',
+          message: 'PO belongs to a different shipment',
+        },
+      ],
+      reviewReasons: [],
+    })
+    const poLines = items.filter(
+      (i) =>
+        i.lineId === 'w-po-only' ||
+        i.lineId === 'w-po-other' ||
+        i.lineId === 'w-po-combined',
+    )
+    expect(poLines).toHaveLength(1)
+    expect(poLines[0]!.lineId).toBe('w-po-combined')
+    expect(poLines[0]!.text).toBe(
+      'PO-only match, and that PO is already on another shipment — confirm move, split, or wrong shipment',
+    )
+    expect(poLines[0]!.severity).toBe('high')
+    expect(items.some((i) => /already on another job/i.test(i.text))).toBe(false)
+  })
+
+  it('PO reassign alone uses move/leave/split copy', () => {
+    const items = buildNeedsAttention({
+      conflictsCount: 0,
+      riskFlags: [
+        {
+          code: 'PO_REASSIGN',
+          severity: 'high',
+          message: 'PO belongs to a different shipment',
+        },
+      ],
+      reviewReasons: [],
+    })
+    expect(items).toHaveLength(1)
+    expect(items[0]!.text).toBe(
+      'This PO is already on another shipment — move it here, leave it, or split',
+    )
   })
 
   it('no strong ID jargon — weak identity uses booking/SO/B/L/PO', () => {
@@ -333,11 +387,13 @@ describe('buildNeedsAttention / groups', () => {
     // Conflict prose suppressed when table present
     expect(texts.some((t) => /field\(s\) disagree|conflict table/i.test(t))).toBe(false)
 
-    // One customer line, mentions FENIX if possible
-    const customer = items.filter((i) => i.lineId === 'm-customer' || i.lineId.startsWith('m-customer'))
-    expect(customer.length).toBe(1)
-    expect(customer[0]!.text).toMatch(/Customer/i)
-    expect(customer[0]!.text).toMatch(/FENIX/i)
+    // No "Customer not linked to Mesh / no resolvable code" restatement — Master miss owns that.
+    expect(
+      items.some((i) => /Customer not linked to Mesh|no resolvable customer code/i.test(i.text)),
+    ).toBe(false)
+    expect(items.filter((i) => i.lineId === 'm-customer' || i.lineId.startsWith('m-customer')).length).toBe(
+      0,
+    )
 
     // One vendor
     expect(items.filter((i) => i.lineId === 'm-vendor').length).toBe(1)
@@ -350,7 +406,7 @@ describe('buildNeedsAttention / groups', () => {
     expect(ports.length).toBe(1)
     expect(ports[0]!.text).toMatch(/Ho Chi Minh|port/i)
 
-    // Mesh generic merges into party/port, not a 6th customer
+    // Mesh generic + vendor + consignee + port (no customer restatement)
     expect(items.length).toBeLessThanOrEqual(5)
 
     const groups = buildNeedsAttentionGroups({
@@ -410,6 +466,61 @@ describe('Mesh party collapse', () => {
     expect(mesh[0]!.details?.length).toBeGreaterThanOrEqual(4)
     expect(mesh[0]!.details?.length).toBeLessThanOrEqual(6)
     expect(mesh[0]!.details!.some((n) => /south ocean/i.test(n))).toBe(true)
+  })
+})
+
+describe('Mesh port collapse', () => {
+  it('collapses many distinct port misses into one expandable summary', () => {
+    const ports = ['HONGKONG', 'HK for Japan', 'HKGHKG', 'Atianta']
+    const items = buildNeedsAttention({
+      conflictsCount: 0,
+      riskFlags: [],
+      reviewReasons: ports.map(
+        (p) => `Port "${p}" not in UN/LOCODE masters — add or alias, then rematch`,
+      ),
+    })
+    const portLines = items.filter(
+      (i) => i.lineId === 'm-port:collapsed' || i.lineId.startsWith('m-port'),
+    )
+    expect(portLines.length).toBe(1)
+    expect(portLines[0]!.lineId).toBe('m-port:collapsed')
+    expect(portLines[0]!.text).toBe(
+      '4 ports not in UN/LOCODE masters — add or alias, then rematch',
+    )
+    expect(portLines[0]!.details).toEqual(
+      expect.arrayContaining(['Atianta', 'HK for Japan', 'HKGHKG', 'HONGKONG']),
+    )
+    expect(portLines[0]!.details).toHaveLength(4)
+  })
+
+  it('collapses Cannot-match port prose the same way', () => {
+    const items = buildNeedsAttention({
+      conflictsCount: 0,
+      riskFlags: [],
+      reviewReasons: [
+        'Cannot match "HONGKONG" as a port',
+        'Cannot match "HK for Japan" as a port',
+        'Cannot match "HKGHKG" as a port',
+        'Cannot match "Atianta" as a port',
+      ],
+    })
+    const portLines = items.filter((i) => i.lineId.startsWith('m-port'))
+    expect(portLines).toHaveLength(1)
+    expect(portLines[0]!.lineId).toBe('m-port:collapsed')
+    expect(portLines[0]!.details).toHaveLength(4)
+  })
+
+  it('keeps a single port miss as one line (no collapse chrome)', () => {
+    const items = buildNeedsAttention({
+      conflictsCount: 0,
+      riskFlags: [],
+      reviewReasons: ['Cannot match "Atianta" as a port'],
+    })
+    const ports = items.filter((i) => i.lineId.startsWith('m-port'))
+    expect(ports.length).toBe(1)
+    expect(ports[0]!.lineId).not.toBe('m-port:collapsed')
+    expect(ports[0]!.details).toBeUndefined()
+    expect(ports[0]!.text).toMatch(/Atianta/)
   })
 })
 

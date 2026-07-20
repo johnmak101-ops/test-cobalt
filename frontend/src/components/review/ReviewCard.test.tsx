@@ -395,7 +395,11 @@ describe('ReviewCard', () => {
     expect(within(why).queryByText(/^3 field conflict\(s\)$/)).toBeNull()
     expect(screen.queryByTestId('needs-group-fields_disagree')).toBeNull()
     // Non-field context shown (all groups, no cap of 2)
-    expect(within(why).getByText(/Matched on PO alone — no booking\/SO\/B\/L to pin which shipment/)).toBeInTheDocument()
+    expect(
+      within(why).getByText(
+        /Linked by PO only — add booking\/SO\/B\/L or confirm this shipment is correct/,
+      ),
+    ).toBeInTheDocument()
     expect(screen.getByTestId('needs-group-real_shipment')).toBeInTheDocument()
     expect(within(why).getByText(/Thin mail, not a lifecycle booking/)).toBeInTheDocument()
     // Table still owns the field comparison

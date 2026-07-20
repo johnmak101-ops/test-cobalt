@@ -97,9 +97,30 @@ export type NeedsAttentionItem = {
 /** Collapsed multi-party Mesh miss — expand in UI to list each name. */
 export const MESH_PARTY_COLLAPSED_LINE_ID = 'm-party:collapsed'
 
+/** Collapsed multi-port UN/LOCODE miss — expand in UI to list each raw port token. */
+export const MESH_PORT_COLLAPSED_LINE_ID = 'm-port:collapsed'
+
 export function isMeshPartyCollapsed(item: NeedsAttentionItem): boolean {
   return item.lineId === MESH_PARTY_COLLAPSED_LINE_ID && (item.details?.length ?? 0) > 0
 }
+
+export function isMeshPortCollapsed(item: NeedsAttentionItem): boolean {
+  return item.lineId === MESH_PORT_COLLAPSED_LINE_ID && (item.details?.length ?? 0) > 0
+}
+
+/** Expandable master-miss summary (parties or ports). */
+export function isExpandableMiss(item: NeedsAttentionItem): boolean {
+  return isMeshPartyCollapsed(item) || isMeshPortCollapsed(item)
+}
+
+/** Solo / combined PO match copy — avoid two near-duplicate "which shipment?" lines. */
+export const PO_ONLY_TEXT =
+  'Linked by PO only — add booking/SO/B/L or confirm this shipment is correct'
+export const PO_REASSIGN_TEXT =
+  'This PO is already on another shipment — move it here, leave it, or split'
+export const PO_ONLY_AND_REASSIGN_TEXT =
+  'PO-only match, and that PO is already on another shipment — confirm move, split, or wrong shipment'
+export const PO_COMBINED_LINE_ID = 'w-po-combined'
 
 export type NeedsAttentionGroup = {
   groupId: NeedsAttentionGroupId
@@ -271,14 +292,14 @@ function lineFromFlag(code: string, message: string): LineHit | null {
     case 'PO_REASSIGN':
       return {
         lineId: 'w-po-other',
-        text: 'PO already on another job — confirm move or split',
+        text: PO_REASSIGN_TEXT,
         category: 'multi_id',
       }
     case 'PO_ONLY_WEAK_MATCH':
       return {
         lineId: 'w-po-only',
         // Identity weakness only — do not restate multi-dest "wrong cargo" here.
-        text: 'Matched on PO alone — no booking/SO/B/L to pin which shipment',
+        text: PO_ONLY_TEXT,
         category: 'multi_id',
       }
     case 'MULTI_DESTINATION_SUSPECT':
@@ -418,7 +439,18 @@ function lineFromReason(raw: string, humanized: string): LineHit | null {
   if (/belongs to a different shipment|already belongs to another shipment|moved or reassigned/i.test(raw)) {
     return {
       lineId: 'w-po-other',
-      text: 'PO already on another job — confirm move or split',
+      text: PO_REASSIGN_TEXT,
+      category: 'multi_id',
+    }
+  }
+  if (
+    /matched (an existing shipment )?on PO alone|PO.?only weak match|linked by PO only|Matched on PO alone/i.test(
+      raw,
+    )
+  ) {
+    return {
+      lineId: 'w-po-only',
+      text: PO_ONLY_TEXT,
       category: 'multi_id',
     }
   }
@@ -593,35 +625,20 @@ function lineFromReason(raw: string, humanized: string): LineHit | null {
 
   // --- Synonym families (collapse LLM/ops prose spam) ---
 
-  // Customer unlinked / not resolvable
+  // Customer "no 4-char code / not resolvable" parser notes — Master miss already shows
+  // "Cannot match "X" in the customer list…". Do not restate under Needs attention.
   if (
     /no\s+4-?char\s+customer\s+code/i.test(raw) ||
     /no\s+customer\s+code/i.test(raw) ||
     /customer\s+code\s+(not\s+)?resolvable/i.test(raw) ||
+    /no resolvable customer code/i.test(raw) ||
+    /not a known 4-?char customer master code/i.test(raw) ||
     /brand\/party not resolvable/i.test(raw) ||
     /sourcing house, not a (customer|resolvable)/i.test(raw) ||
-    /is a shipment ref, not a customer code/i.test(raw)
+    /is a shipment ref, not a customer code/i.test(raw) ||
+    /Customer not linked to Mesh/i.test(raw)
   ) {
-    const partyName =
-      raw.match(/FENIX FASHION LIMITED/i)?.[0] ??
-      raw.match(/invoice party is ([A-Z][A-Z0-9 &.'-]{3,80})/i)?.[1] ??
-      raw.match(/([A-Z][A-Z0-9 &.'-]{3,80})\s+is a sourcing house/i)?.[1] ??
-      extractQuotedParty(raw)
-    const ref = raw.match(/subject has ([A-Z0-9][A-Z0-9_-]{4,})/i)?.[1] ?? null
-    const evidence = [
-      partyName ? `Invoice party: ${partyName}` : null,
-      ref ? `Rejected subject token: ${ref}` : null,
-      /4-?char/i.test(raw) ? 'No 4-char customer code in subject/body' : null,
-      /sourcing house/i.test(raw) ? 'Treated as sourcing house, not Mesh customer code' : null,
-    ].filter(Boolean) as string[]
-    return {
-      lineId: 'm-customer',
-      text: partyName
-        ? `Customer not linked — "${partyName}" (not a Mesh customer code)`
-        : 'Customer not linked to Mesh — no resolvable customer code in email',
-      category: 'master_miss',
-      evidence: evidence.length ? evidence : undefined,
-    }
+    return null
   }
 
   // Vendor missing
@@ -664,10 +681,31 @@ function lineFromReason(raw: string, humanized: string): LineHit | null {
     }
   }
 
+  // Already-humanized / canonical port miss lines (re-entry safe for collapse)
+  {
+    const portCanon = raw.match(/Port\s+"([^"]+)"\s+not in UN\/LOCODE/i)
+    if (portCanon) {
+      const name = portCanon[1]!.trim()
+      if (looksLikeCountryToken(name)) {
+        return {
+          lineId: `m-port:${name}`,
+          text: countryOnlyPortMissText(name, null),
+          category: 'master_miss',
+        }
+      }
+      return {
+        lineId: `m-port:${name}`,
+        text: `Port "${name}" not in UN/LOCODE masters — add or alias, then rematch`,
+        category: 'master_miss',
+      }
+    }
+  }
+
   // Generic UN/LOCODE / port-name miss (fold with value-specific m-port:* later)
   if (
     /port name did not match UN\/LOCODE/i.test(raw) ||
-    /did not match UN\/LOCODE masters/i.test(raw)
+    /did not match UN\/LOCODE masters/i.test(raw) ||
+    /not in UN\/LOCODE masters/i.test(raw)
   ) {
     return {
       lineId: 'm-port',
@@ -930,6 +968,115 @@ function collapseMeshParties(byLine: Map<string, NeedsAttentionItem>): void {
   })
 }
 
+/** Port display token from m-port:* item text ("Port \"X\" …" or country-only copy). */
+function extractPortDisplayName(item: NeedsAttentionItem): string | null {
+  const fromQuote = item.text.match(/Port\s+"([^"]+)"/i)?.[1]?.trim()
+  if (fromQuote) return fromQuote
+  const fromCountry = item.text.match(/country\s+"([^"]+)"/i)?.[1]?.trim()
+  if (fromCountry) return fromCountry
+  if (item.lineId.startsWith('m-port:') && item.lineId !== MESH_PORT_COLLAPSED_LINE_ID) {
+    return item.lineId.slice('m-port:'.length).trim() || null
+  }
+  return null
+}
+
+/**
+ * Collapse many port-miss bullets into one expandable summary (same UX as Mesh parties).
+ * Single port stays as its own line; 2+ → "N ports not in UN/LOCODE masters…".
+ */
+function collapseMeshPorts(byLine: Map<string, NeedsAttentionItem>): void {
+  const portKeys = [...byLine.keys()].filter(
+    (k) => k === 'm-port' || (k.startsWith('m-port:') && k !== MESH_PORT_COLLAPSED_LINE_ID),
+  )
+  if (portKeys.length <= 1) {
+    // Still drop bare m-port when a specific m-port:* exists (collapseGenericPort already does most of this)
+    return
+  }
+
+  const names: string[] = []
+  let maxSev: NeedsAttentionItem['severity'] = 'low'
+  const evidence: string[] = []
+  const seen = new Set<string>()
+
+  for (const k of portKeys) {
+    const item = byLine.get(k)!
+    const rawName =
+      extractPortDisplayName(item) ??
+      (k === 'm-port' ? 'Port' : k.slice('m-port:'.length))
+    const name = rawName.trim()
+    const key = name.toUpperCase()
+    if (name && !seen.has(key)) {
+      seen.add(key)
+      names.push(name)
+    }
+    evidence.push(item.text, ...(item.evidence ?? []))
+    if ((SEV_RANK[item.severity] ?? 0) > (SEV_RANK[maxSev] ?? 0)) maxSev = item.severity
+    byLine.delete(k)
+  }
+
+  if (names.length <= 1) {
+    // Degenerate: case-variants only — re-emit single line if we still have a name
+    if (names.length === 1) {
+      const only = names[0]!
+      byLine.set(`m-port:${only}`, {
+        key: `m-port-${only}`,
+        lineId: `m-port:${only}`,
+        severity: maxSev,
+        text: `Port "${only}" not in UN/LOCODE masters — add or alias, then rematch`,
+        category: 'master_miss',
+        groupId: 'master_miss',
+        evidence: evidence.length ? [...new Set(evidence.filter(Boolean))] : undefined,
+      })
+    }
+    return
+  }
+
+  names.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
+  const uniqEvidence = [...new Set(evidence.filter(Boolean))]
+
+  byLine.set(MESH_PORT_COLLAPSED_LINE_ID, {
+    key: 'm-port-collapsed',
+    lineId: MESH_PORT_COLLAPSED_LINE_ID,
+    severity: maxSev,
+    text: `${names.length} ports not in UN/LOCODE masters — add or alias, then rematch`,
+    category: 'master_miss',
+    groupId: 'master_miss',
+    evidence: uniqEvidence.length ? uniqEvidence : names,
+    details: names,
+  })
+}
+
+/**
+ * PO-only weak match + PO reassign together are one decision for ops — fold into a single line.
+ * Solo copy stays distinct when only one signal is present.
+ */
+function collapsePoOnlyAndReassign(byLine: Map<string, NeedsAttentionItem>): void {
+  const only = byLine.get('w-po-only')
+  const other = byLine.get('w-po-other')
+  if (!only || !other) return
+
+  const severity =
+    (SEV_RANK[only.severity] ?? 0) >= (SEV_RANK[other.severity] ?? 0) ? only.severity : other.severity
+  const evidence = [
+    ...(only.evidence ?? []),
+    only.text,
+    ...(other.evidence ?? []),
+    other.text,
+  ].filter((s, i, a) => s && a.indexOf(s) === i)
+
+  byLine.delete('w-po-only')
+  byLine.delete('w-po-other')
+  byLine.set(PO_COMBINED_LINE_ID, {
+    key: 'w-po-combined',
+    lineId: PO_COMBINED_LINE_ID,
+    severity,
+    text: PO_ONLY_AND_REASSIGN_TEXT,
+    category: 'multi_id',
+    groupId: 'which_shipment',
+    evidence: evidence.length ? evidence : undefined,
+  })
+}
+
 /** UN/LOCODE (5-char) — used to detect that a port slot already auto-matched. */
 const LOCODE_RE = /^[A-Z]{2}[A-Z0-9]{3}$/i
 
@@ -1124,6 +1271,8 @@ export function buildNeedsAttention(opts: {
 
   collapseGenericPort(byLine)
   collapseMeshParties(byLine)
+  collapseMeshPorts(byLine)
+  collapsePoOnlyAndReassign(byLine)
 
   let items = [...byLine.values()]
   items.sort((a, b) => (SEV_RANK[b.severity] ?? 0) - (SEV_RANK[a.severity] ?? 0))

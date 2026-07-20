@@ -142,8 +142,14 @@ const TRANSLATIONS: Translation[] = [
       'Master data API was unreachable when matching a party — rematch after recovery (do not add a duplicate in Mesh yet)',
   },
   {
+    // Keep the token so multi-port misses stay distinct (Needs attention expand/collapse).
+    match: /Cannot match "([^"]+)" as a port/i,
+    text: (m) =>
+      `Port "${m[1]}" not in UN/LOCODE masters — add or alias, then rematch`,
+  },
+  {
     match: /Cannot match .+ as a port/i,
-    text: () => 'Port name did not match UN/LOCODE masters — add or alias the port, then rematch',
+    text: () => 'Port not in UN/LOCODE masters — add or alias, then rematch',
   },
   {
     match: /Cannot match "([^"]+)" in the (?:forwarder|customer|vendor|consignee) list/i,

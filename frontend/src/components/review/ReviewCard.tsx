@@ -25,7 +25,7 @@ import { ReviewPoStylesSection } from './ReviewPoStylesSection'
 import type { ReviewShipment } from '../../hooks/use-review-queue'
 import type { LinkedPO, ShipmentDetail } from '../../hooks/use-shipments'
 import { cn, formatDateTime } from '../../lib/utils'
-import { buildNeedsAttentionGroups, isMeshPartyCollapsed, portsLinkedFromRoute } from './needs-attention'
+import { buildNeedsAttentionGroups, isExpandableMiss, portsLinkedFromRoute } from './needs-attention'
 import { NeedsAttentionMeshMiss } from './NeedsAttentionMeshMiss'
 import {
   REVIEW_COL,
@@ -524,7 +524,7 @@ export function ReviewCard({
                       </p>
                       <ul className={REVIEW_PANEL_LIST}>
                         {g.items.map((r) =>
-                          isMeshPartyCollapsed(r) ? (
+                          isExpandableMiss(r) ? (
                             <NeedsAttentionMeshMiss key={r.key} item={r} />
                           ) : (
                             <li
