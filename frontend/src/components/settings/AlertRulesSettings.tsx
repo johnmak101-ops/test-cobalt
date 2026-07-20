@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { useId, useMemo, useState } from 'react'
+import { useId, useMemo, useRef, useState } from 'react'
 import { api } from '../../lib/api'
 import { Card } from '../ui/Card'
 import { cn } from '../../lib/utils'
@@ -90,6 +90,8 @@ export function AlertRulesSettings() {
   }
   // Keep full list for save so we never drop A7 from the API payload.
   const allRules = draft ?? serverRules ?? []
+  const allRulesRef = useRef(allRules)
+  allRulesRef.current = allRules
   const localRules = allRules
     .filter((r) => CONFIGURABLE_RULE_IDS.has(r.id))
     .sort((a, b) => a.id.localeCompare(b.id))
@@ -120,6 +122,7 @@ export function AlertRulesSettings() {
       toast.success('Saved')
       qc.invalidateQueries({ queryKey: ['alertRules'] })
       qc.invalidateQueries({ queryKey: ['alerts'] })
+      qc.invalidateQueries({ queryKey: ['dashboard'] })
     },
     onError: (e) => {
       const msg = e instanceof Error ? e.message.replace(/^API error \d+:\s*/i, '') : 'Save failed'
@@ -166,7 +169,11 @@ export function AlertRulesSettings() {
           </button>
           <button
             type="button"
-            onClick={() => saveRules.mutate(allRules)}
+            onClick={() => {
+              // Flush focused DaysStepper input, then save latest draft (ref avoids stale closure).
+              ;(document.activeElement as HTMLElement | null)?.blur?.()
+              window.setTimeout(() => saveRules.mutate(allRulesRef.current), 0)
+            }}
             disabled={!canEdit || !dirty || saveRules.isPending}
             className="rounded-lg bg-cobalt-primary px-4 py-2 text-sm font-medium text-white hover:bg-cobalt-primary-light disabled:opacity-50"
           >

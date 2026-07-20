@@ -2,7 +2,7 @@ import { Badge } from '../ui/Badge'
 import { parsePONumbers, formatPoHeader, formatRelativeTime } from '../../lib/utils'
 import { useNavigate } from 'react-router-dom'
 import { useMarkAlertRead, useMarkAlertUnread } from '../../hooks/use-alerts'
-import { CheckCircle, CircleDot } from 'lucide-react'
+import { MailOpen } from 'lucide-react'
 import { cn } from '../../lib/utils'
 import { interactiveProps } from '../../lib/interactive'
 
@@ -58,33 +58,57 @@ export function AlertCard({ alert, compact }: AlertCardProps) {
   const titleParts = [poHeader, route].filter(Boolean)
   const title = titleParts.length > 0 ? titleParts.join(' | ') : null
 
+  const openAlert = () => {
+    // Like inbox: opening an item marks it read, then go to the shipment.
+    if (!isRead) markRead.mutate(alert.id)
+    if (alert.shipmentId) {
+      navigate(`/shipments/${alert.shipmentId}`, { state: { fromAlerts: true } })
+    }
+  }
+
   return (
     <div
-      {...interactiveProps(() =>
-        navigate(`/shipments/${alert.shipmentId}`, { state: { fromAlerts: true } }),
-      )}
+      {...interactiveProps(openAlert)}
       className={cn(
         'cursor-pointer rounded-lg border border-border border-l-4 bg-surface-800 transition-colors hover:bg-surface-700',
         severityBorder[alert.severity],
-        isRead && 'opacity-50',
+        isRead && 'opacity-60',
         compact ? 'p-3' : 'p-4',
       )}
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <div className="flex min-w-0 flex-wrap items-center gap-2">
+            {!isRead && (
+              <span
+                className="h-2 w-2 shrink-0 rounded-full bg-cobalt-primary"
+                title="Unread"
+                aria-hidden
+              />
+            )}
             <Badge variant="severity" value={alert.severity} />
             {title && (
-              <span className="min-w-0 truncate font-mono text-sm font-medium text-text-primary">
+              <span
+                className={cn(
+                  'min-w-0 truncate font-mono text-sm',
+                  isRead ? 'font-normal text-text-secondary' : 'font-medium text-text-primary',
+                )}
+              >
                 {title}
               </span>
             )}
-            {isRead && <span className="shrink-0 text-xs text-text-muted">(read)</span>}
           </div>
           {consignee && (
             <p className="mt-0.5 truncate text-xs text-text-muted">{consignee}</p>
           )}
-          <p className="mt-1.5 text-sm text-text-secondary">{alert.message}</p>
+          <p
+            className={cn(
+              'mt-1.5 text-sm',
+              isRead ? 'text-text-muted' : 'text-text-secondary',
+            )}
+          >
+            {alert.message}
+          </p>
           {action && !compact && (
             <p className="mt-2 text-xs text-text-muted">
               <span className="font-semibold text-text-secondary">Action:</span> {action}
@@ -93,24 +117,20 @@ export function AlertCard({ alert, compact }: AlertCardProps) {
           <p className="mt-1 text-xs text-text-muted">{formatRelativeTime(alert.triggeredAt)}</p>
         </div>
 
-        {!compact && (
+        {/* Explicit mark-as-unread only (read happens on open, like email). */}
+        {!compact && isRead && (
           <button
             type="button"
             onClick={(e) => {
               e.stopPropagation()
-              if (isRead) {
-                markUnread.mutate(alert.id)
-              } else {
-                markRead.mutate(alert.id)
-              }
+              markUnread.mutate(alert.id)
             }}
-            className={cn(
-              'shrink-0 rounded-md p-1.5 text-text-muted hover:bg-surface-600',
-              isRead ? 'hover:text-status-warning' : 'hover:text-status-success',
-            )}
-            title={isRead ? 'Mark as Unread' : 'Mark as Read'}
+            className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-border bg-surface-700 px-2.5 py-1.5 text-xs font-medium text-text-secondary transition-colors hover:border-cobalt-primary/40 hover:bg-surface-600 hover:text-text-primary"
+            title="Mark as unread"
+            aria-label="Mark as unread"
           >
-            {isRead ? <CircleDot size={14} /> : <CheckCircle size={14} />}
+            <MailOpen size={14} />
+            <span>Mark unread</span>
           </button>
         )}
       </div>

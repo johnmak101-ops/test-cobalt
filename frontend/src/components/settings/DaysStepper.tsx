@@ -185,6 +185,14 @@ export function DaysStepper({
                 const v = e.target.value.replace(/[^\d]/g, '')
                 setDraft(v)
                 setEditing(true)
+                // Live-commit valid numbers so Save without blur still persists the typed value.
+                if (v === '') return
+                const parsed = Number.parseInt(v, 10)
+                if (!Number.isFinite(parsed)) return
+                const lo = min === 0 && optional ? 1 : min
+                const clamped = Math.min(max, Math.max(lo, parsed))
+                if (optional && clamped <= 0) return
+                onChange(clamped)
               }}
               onBlur={commitDraft}
               onKeyDown={(e) => {

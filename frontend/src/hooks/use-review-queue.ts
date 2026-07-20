@@ -185,8 +185,8 @@ export function useIdentifyShipment() {
 }
 
 /**
- * Fold a zero-identity provisional into an existing shipment that carries the typed key.
- * Invalidates queue + counts + both shipment detail caches.
+ * Fold a provisional into an existing shipment (emails + POs copied; source leaves the Active queue).
+ * Does NOT create an "Approved" row — the source is dismissed/linked; open the target shipment to see data.
  */
 export function useLinkShipment() {
   const queryClient = useQueryClient()
@@ -195,10 +195,20 @@ export function useLinkShipment() {
     mutationFn: ({
       shipmentId,
       targetShipmentId,
+      fields,
+      reason,
     }: {
       shipmentId: string
       targetShipmentId: string
-    }) => api.post(`/review/${shipmentId}/link`, { targetShipmentId }),
+      /** CamelCase leg columns applied to the **target** before merge. */
+      fields?: Record<string, unknown>
+      reason?: string
+    }) =>
+      api.post<{ ok: true; targetShipmentId: string }>(`/review/${shipmentId}/link`, {
+        targetShipmentId,
+        ...(fields && Object.keys(fields).length > 0 ? { fields } : {}),
+        ...(reason?.trim() ? { reason: reason.trim() } : {}),
+      }),
     onSuccess: (_data, vars) => {
       queryClient.invalidateQueries({ queryKey: ['review-queue'] })
       queryClient.invalidateQueries({ queryKey: ['review-counts'] })

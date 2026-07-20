@@ -99,7 +99,9 @@ export function Sidebar() {
     }
   }, [mobileNavOpen, isDesktop])
 
-  const unreadAlerts = alertsData?.alerts?.filter((a) => a.status === 'ACTIVE' && !a.readAt).length ?? 0
+  // Unread = ACTIVE and not yet marked read (all severities, including Info).
+  const unreadAlerts =
+    alertsData?.alerts?.filter((a) => a.status === 'ACTIVE' && !a.readAt).length ?? 0
 
   const badges: Record<string, number> = {
     pending: reviewCounts?.provisional ?? 0,

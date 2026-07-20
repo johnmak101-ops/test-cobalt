@@ -1,26 +1,18 @@
 /**
- * #129 multi-candidate match: closed-set leg picker for humans.
- * Never invents shipment IDs — only lists matchAmbiguity.candidates from the agent.
+ * #129 multi-candidate match: closed-set leg picker.
+ * Selection only — merge happens on the card primary action (Link & apply) after field decisions.
  */
-import { useState } from 'react'
-import { Loader2 } from 'lucide-react'
 import type { MatchAmbiguity } from '../../lib/critic-review'
-import { cn } from '../../lib/utils'
-
-const ACTION_BTN =
-  'inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50'
-const ACTION_VARIANT = {
-  primary:
-    'border-cobalt-primary bg-cobalt-primary text-white hover:border-cobalt-primary-light hover:bg-cobalt-primary-light',
-  secondary: 'border-cobalt-primary/30 bg-cobalt-primary/15 text-cobalt-primary-light hover:bg-cobalt-primary/25',
-} as const
+import { cn, formatDateMaybeTime } from '../../lib/utils'
 
 export interface CandidateLegsPanelProps {
   matchAmbiguity: MatchAmbiguity
-  /** Current provisional leg id — disable linking into self */
+  /** Current provisional leg id — cannot select self as link target */
   currentShipmentId?: string
   readOnly?: boolean
-  onLink?: (targetShipmentId: string) => Promise<void>
+  /** Controlled selection (parent owns Link & apply). */
+  selectedId: string | null
+  onSelect: (shipmentId: string | null) => void
 }
 
 function dash(v: string | null | undefined): string {
@@ -47,20 +39,16 @@ export function CandidateLegsPanel({
   matchAmbiguity,
   currentShipmentId,
   readOnly = false,
-  onLink,
+  selectedId,
+  onSelect,
 }: CandidateLegsPanelProps) {
   const candidates = matchAmbiguity.candidates ?? []
   const suggestedId =
     matchAmbiguity.suggestion && !matchAmbiguity.suggestion.cannotDecide
       ? matchAmbiguity.suggestion.shipmentId
       : null
-  // Do not pre-select suggestion — human must click (safety)
-  const [selected, setSelected] = useState<string | null>(null)
-  const [busy, setBusy] = useState(false)
 
   if (candidates.length < 2) return null
-
-  const canLink = !readOnly && !!onLink && !!selected && selected !== currentShipmentId
 
   return (
     <div
@@ -109,7 +97,7 @@ export function CandidateLegsPanel({
           {matchAmbiguity.suggestion.rationale
             ? ` — ${matchAmbiguity.suggestion.rationale}`
             : ''}
-          {' · confirm by selecting (not auto-applied)'}
+          {' · select below, resolve fields, then Link & apply'}
         </p>
       )}
 
@@ -122,7 +110,7 @@ export function CandidateLegsPanel({
               <label
                 className={cn(
                   'flex cursor-pointer items-start gap-2 rounded-md border px-2.5 py-2 text-xs transition-colors',
-                  selected === c.shipmentId
+                  selectedId === c.shipmentId
                     ? 'border-cobalt-primary bg-cobalt-primary/10'
                     : 'border-border bg-surface-800 hover:bg-surface-700',
                   isSelf && 'opacity-60',
@@ -132,9 +120,9 @@ export function CandidateLegsPanel({
                   type="radio"
                   name="match-candidate"
                   className="mt-0.5"
-                  checked={selected === c.shipmentId}
+                  checked={selectedId === c.shipmentId}
                   disabled={readOnly || isSelf}
-                  onChange={() => setSelected(c.shipmentId)}
+                  onChange={() => onSelect(c.shipmentId)}
                   aria-label={`Select ${c.jobNo ?? c.shipmentId}`}
                 />
                 <div className="min-w-0 flex-1 space-y-0.5">
@@ -142,11 +130,6 @@ export function CandidateLegsPanel({
                     <span className="font-mono font-medium text-text-primary">
                       {dash(c.jobNo)}
                     </span>
-                    {c.matchedBy && c.matchedBy !== 'unknown' && (
-                      <span className="rounded bg-surface-700 px-1 py-0.5 text-[10px] text-text-muted">
-                        matched: {c.matchedBy === 'po' ? 'PO' : 'strong key'}
-                      </span>
-                    )}
                     {isSuggested && (
                       <span className="rounded bg-cobalt-primary/20 px-1 py-0.5 text-[10px] text-cobalt-primary-light">
                         suggested
@@ -163,7 +146,7 @@ export function CandidateLegsPanel({
                   {(c.etd || c.vesselOrFlight || (c.pos && c.pos.length > 0)) && (
                     <div className="field-value text-[11px] text-text-muted">
                       {c.vesselOrFlight && <span>{c.vesselOrFlight} · </span>}
-                      {c.etd && <span>ETD {c.etd}</span>}
+                      {c.etd && <span>ETD {formatDateMaybeTime(c.etd)}</span>}
                       {c.pos && c.pos.length > 0 && (
                         <span>
                           {c.etd ? ' · ' : ''}
@@ -180,29 +163,17 @@ export function CandidateLegsPanel({
         })}
       </ul>
 
-      {!readOnly && onLink && (
-        <div className="flex flex-wrap items-center gap-2 pt-0.5">
-          <button
-            type="button"
-            disabled={!canLink || busy}
-            className={cn(ACTION_BTN, ACTION_VARIANT.primary)}
-            onClick={async () => {
-              if (!selected || !onLink) return
-              setBusy(true)
-              try {
-                await onLink(selected)
-              } finally {
-                setBusy(false)
-              }
-            }}
-          >
-            {busy ? <Loader2 size={13} className="animate-spin" /> : null}
-            Use selected leg
-          </button>
-          <span className="text-[11px] text-text-muted">
-            Links this provisional into the chosen shipment. Not in list? Use Identify below.
-          </span>
-        </div>
+      {!readOnly && (
+        <p className="text-[11px] text-text-muted" data-testid="candidate-select-hint">
+          {selectedId && selectedId !== currentShipmentId ? (
+            <>
+              Selected for update — resolve fields below, then use{' '}
+              <span className="font-medium text-text-secondary">Link &amp; apply</span>.
+            </>
+          ) : (
+            <>Select a shipment, resolve field conflicts below, then Link &amp; apply.</>
+          )}
+        </p>
       )}
     </div>
   )

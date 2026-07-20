@@ -294,10 +294,10 @@ export class ReviewService {
     return { outcome: 'set' as const, field: dto.field, value: dto.value }
   }
 
-  /** One-click fold of a zero-identity provisional leg into the existing shipment that carries the typed
-   *  key. Emails+POs are copied to the target (linkDocument pattern); the source is stamped
-   *  linkedShipmentId + dismissedAt so it leaves the Active queue but keeps its match_keys — a matcher
-   *  re-ingest A2-matches the retired husk instead of recreating a queue item. */
+  /**
+   * Fold a provisional into an existing shipment. Optionally apply human field decisions to the
+   * **target** first (Link & apply flow), then copy emails/POs and dismiss the source.
+   */
   async link(shipmentId: string, dto: LinkDto, actorId: string) {
     if (dto.targetShipmentId === shipmentId) throw new BadRequestException('cannot link a leg into itself')
     const source = await this.shipments.findById(shipmentId)
@@ -314,22 +314,59 @@ export class ReviewService {
     if (srcKeys.size > 0 && !keysOverlap(srcKeys, tgtKeys))
       throw new BadRequestException('leg carries a different identity than the target — not a duplicate; edit it on the shipment page instead')
 
+    // Validate + coerce field patches on the TARGET before any write.
+    const fieldEntries = Object.entries(dto.fields ?? {})
+    for (const [field, raw] of fieldEntries) {
+      if (!CORRECTABLE_COLUMNS.has(field)) throw new BadRequestException(`field not correctable: ${field}`)
+      coerceLegField(field, raw)
+    }
+
+    const messageId = (await this.shipments.sourceGraphIdFor(shipmentId)) ?? shipmentId
+    const forwarder = ((source as Record<string, unknown>).forwarderRaw as string | null) ?? null
+    const note = dto.reason?.trim() || 'review: linked into existing shipment'
+    let correctedFieldCount = 0
+
+    // Apply human field decisions to the target (not the husk), then merge.
+    const targetCurrent = target as Record<string, unknown>
+    for (const [field, raw] of fieldEntries) {
+      await this.applyHumanFieldWrite(
+        dto.targetShipmentId,
+        targetCurrent,
+        field,
+        raw,
+        actorId,
+        note,
+        messageId,
+        forwarder,
+        dto.reason ?? null,
+      )
+      targetCurrent[field] = coerceLegField(field, raw)
+      correctedFieldCount++
+    }
+
     await this.shipments.linkProvisionalLeg(shipmentId, dto.targetShipmentId)
     await this.audit.write({
       entityType: 'shipment', entityId: shipmentId, field: null,
       oldValue: 'provisional', newValue: `linked:${dto.targetShipmentId}`, changeType: 'update',
-      sourceType: 'manual', actorUserId: actorId, note: 'review: linked into existing shipment',
+      sourceType: 'manual', actorUserId: actorId, note,
     })
     await this.audit.write({
       entityType: 'shipment', entityId: dto.targetShipmentId, field: null,
       oldValue: null, newValue: `absorbed:${shipmentId}`, changeType: 'update',
-      sourceType: 'manual', actorUserId: actorId, note: 'review: absorbed a zero-identity provisional leg (emails + POs copied)',
+      sourceType: 'manual', actorUserId: actorId,
+      note:
+        correctedFieldCount > 0
+          ? `review: absorbed provisional + applied ${correctedFieldCount} field(s)`
+          : 'review: absorbed a provisional leg (emails + POs copied)',
     })
     await this.recordCalibration({
-      shipmentId, leg: source, outcome: 'corrected', correctedFieldCount: 0, actorId,
+      shipmentId,
+      leg: source,
+      outcome: 'corrected',
+      correctedFieldCount,
+      actorId,
       reasons: ['linked-into-existing'],
     })
-    // #129 / #173 A′: human multi-candidate pick vs suggestion (display pos + decisionRef)
     try {
       logAmbiguityPickFromLink({
         sourceShipmentId: shipmentId,

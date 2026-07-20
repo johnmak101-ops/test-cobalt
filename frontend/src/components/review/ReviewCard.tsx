@@ -122,8 +122,14 @@ export interface ReviewCardProps {
   onApprove?: () => Promise<void>
   /** Zero-identity flow: type booking/SO/B/L and detect if it already exists elsewhere. */
   onIdentify?: (field: string, value: string) => Promise<IdentifyResult>
-  /** Zero-identity flow: fold this provisional into an existing shipment that carries the typed key. */
-  onLink?: (targetShipmentId: string) => Promise<void>
+  /**
+   * Multi-candidate / identify: fold provisional into target and optionally apply field patches
+   * to the **target**. Called only from the final Link & apply / Link without field changes CTA.
+   */
+  onLink?: (
+    targetShipmentId: string,
+    payload?: { fields?: Record<string, unknown>; note?: string },
+  ) => Promise<void>
 }
 
 function nameOf(value: unknown): string | null {
@@ -193,7 +199,6 @@ export function ReviewCard({
 }: ReviewCardProps) {
   const [expanded, setExpanded] = useState(defaultExpanded)
   const [note, setNote] = useState('')
-  const [emailsOpen, setEmailsOpen] = useState(false) // Source emails: collapsed by default, kept at the bottom
   const [busy, setBusy] = useState(false)
   const isWeakIdentity = (criticReview?.riskFlags ?? []).some((f) => f.code === 'WEAK_IDENTITY')
   const isAmbiguousMatch = (criticReview?.riskFlags ?? []).some((f) => f.code === 'AMBIGUOUS_MATCH')
@@ -207,6 +212,11 @@ export function ReviewCard({
   const [identValue, setIdentValue] = useState('')
   const [identResult, setIdentResult] = useState<IdentifyResult | null>(null)
   const [identBusy, setIdentBusy] = useState(false)
+  /** Multi-candidate target — must pick before Link & apply. */
+  const [selectedTargetId, setSelectedTargetId] = useState<string | null>(null)
+  const shipmentId = (shipment as { id?: string }).id
+  const linkTargetReady =
+    !!selectedTargetId && selectedTargetId !== shipmentId
 
   /** Detail DTO carries membership; queue list rows do not. */
   const linkedPOs: LinkedPO[] = useMemo(() => {
@@ -402,7 +412,18 @@ export function ReviewCard({
   const showEdit = !readOnly && (conflicts.length > 0 || linkedPOs.length > 0)
   const deskEmpty = needsAttentionGroups.length === 0 && conflicts.length === 0
   const judgmentOnly = needsAttentionGroups.length > 0 && conflicts.length === 0
-  const canSave = !readOnly && !noteRequired && !busy && (onSaveAndApprove || onApprove)
+  // Multi-candidate: require a real target before primary CTAs; use onLink path.
+  const multiCandNeedsTarget = hasCandidateLegs && !!onLink
+  const canSave =
+    !readOnly &&
+    !noteRequired &&
+    !busy &&
+    (multiCandNeedsTarget
+      ? linkTargetReady
+      : !!(onSaveAndApprove || onApprove))
+
+  // Collapsed on open — expand only when the operator needs the email.
+  const [emailsOpen, setEmailsOpen] = useState(false)
 
   const run = async (fn: () => Promise<void>) => {
     setBusy(true)
@@ -413,10 +434,28 @@ export function ReviewCard({
     }
   }
 
+  const handleLinkAndApply = (withFields: boolean) => {
+    if (busy || !onLink || !linkTargetReady || !selectedTargetId) return
+    if (withFields && noteRequired) return
+    setEditing(false)
+    const fields = withFields ? fieldsToApply : {}
+    void run(() =>
+      onLink(selectedTargetId, {
+        fields,
+        note: note.trim() || undefined,
+      }),
+    )
+  }
+
   const handleSaveAndApprove = () => {
     if (busy) return
     if (noteRequired) {
       // Button is usually disabled; still guard so a race cannot skip the note.
+      return
+    }
+    // Multi-candidate: one shot — apply field choices to target + merge provisional.
+    if (multiCandNeedsTarget) {
+      handleLinkAndApply(true)
       return
     }
     setEditing(false)
@@ -449,9 +488,18 @@ export function ReviewCard({
   }
 
   const handleApproveCollapsed = () => {
-    if (!onApprove || busy || readOnly) return
+    if (busy || readOnly) return
+    if (multiCandNeedsTarget) {
+      handleLinkAndApply(false)
+      return
+    }
+    if (!onApprove) return
     void run(() => onApprove())
   }
+
+  const selectedJobLabel =
+    matchAmbiguity?.candidates?.find((c) => c.shipmentId === selectedTargetId)?.jobNo ??
+    (selectedTargetId ? selectedTargetId.slice(0, 8) : null)
 
   return (
     <div className={cn('min-w-0 max-w-full', embedded ? undefined : 'rounded-xl border border-border bg-surface-800')}>
@@ -599,12 +647,84 @@ export function ReviewCard({
             </p>
           )}
 
+          {/* Source emails under Needs attention — evidence while picking leg + fields */}
+          {emails.length > 0 && (
+            <div className="rounded-lg border border-border" data-testid="source-emails">
+              <button
+                type="button"
+                onClick={() => setEmailsOpen((v) => !v)}
+                aria-expanded={emailsOpen}
+                className="flex w-full items-center gap-2 px-3 py-2.5 text-left transition-colors hover:bg-surface-700/40"
+              >
+                {emailsOpen ? (
+                  <ChevronDown size={14} className="shrink-0 text-text-muted" />
+                ) : (
+                  <ChevronRight size={14} className="shrink-0 text-text-muted" />
+                )}
+                <Mail size={14} className="shrink-0 text-text-muted" />
+                <h4 className="text-xs font-semibold uppercase tracking-wide text-text-primary">
+                  Source emails
+                  <span className="ml-2 text-xs font-normal normal-case tracking-normal text-text-muted">
+                    · {emails.length}
+                  </span>
+                </h4>
+              </button>
+              {emailsOpen && (
+                <div className="space-y-1.5 border-t border-border p-2.5" data-testid="source-emails-list">
+                  {sortedEmails.map((e) => {
+                    const openable = e.id != null && !e.bodyMissing
+                    return (
+                      <button
+                        key={e.id ?? `orphan-${e.subject}-${e.receivedAt ?? ''}-${e.sender ?? ''}`}
+                        type="button"
+                        onClick={() => openEmailWindow(e)}
+                        disabled={!openable}
+                        aria-label={
+                          openable
+                            ? `Open source email: ${e.subject || '(no subject)'}`
+                            : `Email body not stored: ${e.subject || '(no subject)'}`
+                        }
+                        title={openable ? undefined : 'Email body is not in the store (link only)'}
+                        className={
+                          openable
+                            ? 'flex w-full items-center gap-2.5 rounded-md bg-surface-900 px-2.5 py-2 text-left transition-colors hover:bg-surface-700'
+                            : 'flex w-full cursor-default items-center gap-2.5 rounded-md bg-surface-900/60 px-2.5 py-2 text-left opacity-80'
+                        }
+                      >
+                        <Mail size={14} className="shrink-0 text-text-muted" />
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm text-text-primary">
+                            {e.subject || '(no subject)'}
+                          </p>
+                          <p className="text-xs leading-tight text-text-muted">
+                            {!openable
+                              ? 'Body not stored — re-ingest to open'
+                              : (
+                                  <>
+                                    {e.sender} ·{' '}
+                                    <span className="font-mono">{formatDateTime(e.receivedAt)}</span>
+                                  </>
+                                )}
+                          </p>
+                        </div>
+                        {openable && (
+                          <ExternalLink size={12} className="shrink-0 text-text-muted opacity-60" />
+                        )}
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
           {hasCandidateLegs && matchAmbiguity && (
             <CandidateLegsPanel
               matchAmbiguity={matchAmbiguity}
-              currentShipmentId={(shipment as { id?: string }).id}
+              currentShipmentId={shipmentId}
               readOnly={readOnly}
-              onLink={onLink}
+              selectedId={selectedTargetId}
+              onSelect={setSelectedTargetId}
             />
           )}
 
@@ -661,11 +781,17 @@ export function ReviewCard({
                   </span>
                   <button
                     type="button"
-                    disabled={identBusy}
+                    disabled={identBusy || noteRequired}
                     onClick={async () => {
                       setIdentBusy(true)
-                      try { await onLink(identResult.candidate.shipmentId) }
-                      finally { setIdentBusy(false) }
+                      try {
+                        await onLink(identResult.candidate.shipmentId, {
+                          fields: fieldsToApply,
+                          note: note.trim() || undefined,
+                        })
+                      } finally {
+                        setIdentBusy(false)
+                      }
                     }}
                     className={cn(ACTION_BTN, ACTION_VARIANT.success)}
                   >
@@ -784,78 +910,6 @@ export function ReviewCard({
             )
           })()}
 
-          {/* Source emails — reference material, collapsed by default and kept at the bottom so the
-              conflict + attention content leads. Expand to read what each email actually said. */}
-          {emails.length > 0 && (
-            <div className="rounded-lg border border-border" data-testid="source-emails">
-              <button
-                type="button"
-                onClick={() => setEmailsOpen((v) => !v)}
-                aria-expanded={emailsOpen}
-                className="flex w-full items-center gap-2 px-3 py-2.5 text-left transition-colors hover:bg-surface-700/40"
-              >
-                {emailsOpen ? (
-                  <ChevronDown size={14} className="shrink-0 text-text-muted" />
-                ) : (
-                  <ChevronRight size={14} className="shrink-0 text-text-muted" />
-                )}
-                <Mail size={14} className="shrink-0 text-text-muted" />
-                <h4 className="text-xs font-semibold uppercase tracking-wide text-text-primary">
-                  Source emails
-                  <span className="ml-2 text-xs font-normal normal-case tracking-normal text-text-muted">
-                    · {emails.length}
-                  </span>
-                </h4>
-              </button>
-              {emailsOpen && (
-                <div className="space-y-1.5 border-t border-border p-2.5" data-testid="source-emails-list">
-                  {sortedEmails.map((e) => {
-                    const openable = e.id != null && !e.bodyMissing
-                    return (
-                      <button
-                        key={e.id ?? `orphan-${e.subject}-${e.receivedAt ?? ''}-${e.sender ?? ''}`}
-                        type="button"
-                        onClick={() => openEmailWindow(e)}
-                        disabled={!openable}
-                        aria-label={
-                          openable
-                            ? `Open source email: ${e.subject || '(no subject)'}`
-                            : `Email body not stored: ${e.subject || '(no subject)'}`
-                        }
-                        title={openable ? undefined : 'Email body is not in the store (link only)'}
-                        className={
-                          openable
-                            ? 'flex w-full items-center gap-2.5 rounded-md bg-surface-900 px-2.5 py-2 text-left transition-colors hover:bg-surface-700'
-                            : 'flex w-full cursor-default items-center gap-2.5 rounded-md bg-surface-900/60 px-2.5 py-2 text-left opacity-80'
-                        }
-                      >
-                        <Mail size={14} className="shrink-0 text-text-muted" />
-                        <div className="min-w-0 flex-1">
-                          <p className="truncate text-sm text-text-primary">
-                            {e.subject || '(no subject)'}
-                          </p>
-                          <p className="text-xs leading-tight text-text-muted">
-                            {!openable
-                              ? 'Body not stored — re-ingest to open'
-                              : (
-                                  <>
-                                    {e.sender} ·{' '}
-                                    <span className="font-mono">{formatDateTime(e.receivedAt)}</span>
-                                  </>
-                                )}
-                          </p>
-                        </div>
-                        {openable && (
-                          <ExternalLink size={12} className="shrink-0 text-text-muted opacity-60" />
-                        )}
-                      </button>
-                    )
-                  })}
-                </div>
-              )}
-            </div>
-          )}
-
           {!readOnly && (
             <div>
               <label
@@ -914,39 +968,55 @@ export function ReviewCard({
                     {editing ? 'Done editing' : 'Edit'}
                   </button>
                 )}
-                {onApprove && changeCount > 0 && (
+                {(onApprove || multiCandNeedsTarget) && changeCount > 0 && (
                   <button
                     type="button"
                     onClick={() => {
                       if (busy || readOnly) return
-                      void run(() => onApprove())
+                      if (multiCandNeedsTarget) {
+                        handleLinkAndApply(false)
+                        return
+                      }
+                      if (onApprove) void run(() => onApprove())
                     }}
-                    disabled={busy}
-                    title="Confirm shipment and keep Existing values — do not apply AI Proposed"
+                    disabled={busy || (multiCandNeedsTarget && !linkTargetReady)}
+                    title={
+                      multiCandNeedsTarget
+                        ? 'Link into selected shipment without applying AI field proposals'
+                        : 'Confirm shipment and keep Existing values — do not apply AI Proposed'
+                    }
                     className={cn(ACTION_BTN, ACTION_VARIANT.success)}
                   >
                     {busy ? <Loader2 size={13} className="animate-spin" /> : <CheckCircle size={13} />}
-                    Keep Existing
+                    {multiCandNeedsTarget ? 'Link without field changes' : 'Keep Existing'}
                   </button>
                 )}
-                {(onSaveAndApprove || onApprove) && (
+                {(onSaveAndApprove || onApprove || multiCandNeedsTarget) && (
                   <button
                     type="button"
                     onClick={handleSaveAndApprove}
                     disabled={!canSave}
                     title={
-                      changeCount > 0
-                        ? 'Apply Resolution / AI Proposed values and confirm'
-                        : 'Confirm shipment'
+                      multiCandNeedsTarget
+                        ? linkTargetReady
+                          ? `Link into ${selectedJobLabel ?? 'selected shipment'} and apply field decisions`
+                          : 'Select a shipment above first'
+                        : changeCount > 0
+                          ? 'Apply Resolution / AI Proposed values and confirm'
+                          : 'Confirm shipment'
                     }
                     className={cn(ACTION_BTN, ACTION_VARIANT.primary)}
                   >
                     {busy ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />}
-                    {changeCount > 0
-                      ? `Approve ${changeCount} change${changeCount === 1 ? '' : 's'}`
-                      : onApprove
-                        ? 'Keep Existing'
-                        : 'Approve'}
+                    {multiCandNeedsTarget
+                      ? changeCount > 0
+                        ? `Link & apply ${changeCount} change${changeCount === 1 ? '' : 's'}`
+                        : 'Link & apply'
+                      : changeCount > 0
+                        ? `Approve ${changeCount} change${changeCount === 1 ? '' : 's'}`
+                        : onApprove
+                          ? 'Keep Existing'
+                          : 'Approve'}
                   </button>
                 )}
               </div>

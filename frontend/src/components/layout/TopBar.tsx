@@ -39,9 +39,10 @@ export function TopBar() {
   const menuRef = useRef<HTMLDivElement>(null)
   const notiRef = useRef<HTMLDivElement>(null)
 
-  // Unread alerts — active + not read
-  const unreadAlerts =
-    (alertsData?.alerts ?? []).filter((a) => a.status === 'ACTIVE' && !a.readAt)
+  // Unread alerts — ACTIVE and not yet marked read (all severities)
+  const unreadAlerts = (alertsData?.alerts ?? []).filter(
+    (a) => a.status === 'ACTIVE' && !a.readAt,
+  )
 
   // Unread emails — pending processing
   const unreadEmails =
