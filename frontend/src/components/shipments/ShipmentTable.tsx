@@ -201,7 +201,8 @@ export function ShipmentTable({ shipments }: ShipmentTableProps) {
                 className="cursor-pointer border-b border-border last:border-0 hover:bg-surface-700 transition-colors"
               >
                 <td className="truncate px-3 py-3 font-mono text-sm font-medium text-cobalt-primary-light">
-                  {s.bookingNo ?? '—'}
+                  {/* parse-identity D1: same spine fallthrough as ReviewQueue/TopBar (booking → SO → HBL/HAWB) */}
+                  {s.bookingNo ?? s.soNumber ?? s.hblNumber ?? '—'}
                   {(s.legCount ?? 1) > 1 && (
                     <span className="ml-1 text-[11px] font-normal text-text-muted">
                       · Leg {s.legNo ?? 1}/{s.legCount}
@@ -218,10 +219,10 @@ export function ShipmentTable({ shipments }: ShipmentTableProps) {
                   />
                 </td>
                 <td className="truncate px-3 py-3 text-sm text-text-secondary">
-                  {s.customer?.name ?? '—'}
+                  {s.customer?.name ?? s.customerRaw ?? '—'}
                 </td>
                 <td className="truncate px-3 py-3 text-sm text-text-secondary">
-                  {s.forwarder?.name ?? '—'}
+                  {s.forwarder?.name ?? s.forwarderRaw ?? '—'}
                 </td>
                 <td className="truncate px-3 py-3 text-sm text-text-secondary">{s.route ?? '—'}</td>
                 <td className="px-3 py-3">
