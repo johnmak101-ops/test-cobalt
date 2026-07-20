@@ -66,7 +66,12 @@ export function AlertRulesSettings() {
     setServerSnap(serverRules)
     setDraft(null)
   }
-  const localRules = draft ?? serverRules ?? []
+  // Only threshold rules A1/A2 are listed in Settings. Built-ins (e.g. A7 LOCKED) still
+  // evaluate in the backend but must not show noise (0 days / State —) in this UI.
+  // Keep full list for save so we never drop A3–A7 from the API payload.
+  const CONFIGURABLE_RULE_IDS = new Set(['A1', 'A2'])
+  const allRules = draft ?? serverRules ?? []
+  const localRules = allRules.filter((r) => CONFIGURABLE_RULE_IDS.has(r.id))
   const dirty = draft !== null
 
   const saveRules = useMutation({
@@ -155,6 +160,8 @@ export function AlertRulesSettings() {
               </button>
             </div>
 
+            {/* Threshold / severity / country — only meaningful for day-based rules (A1/A2). */}
+            {!rule.locked && (
             <div className="mt-5 flex flex-wrap items-center gap-x-8 gap-y-4">
               <div>
                 <label htmlFor={`${id}-${rule.id}-threshold`} className="text-xs text-text-muted">
@@ -167,10 +174,9 @@ export function AlertRulesSettings() {
                   max={30}
                   value={rule.thresholdDays}
                   onChange={(e) =>
-                    !rule.locked &&
                     updateRule(rule.id, 'thresholdDays', parseInt(e.target.value) || 0)
                   }
-                  disabled={rule.locked}
+                  disabled={!canEdit}
                   className="mt-1 h-9 w-20 rounded-lg border border-border bg-surface-700 px-3 text-sm text-text-primary disabled:cursor-not-allowed disabled:opacity-50"
                 />
               </div>
@@ -180,9 +186,9 @@ export function AlertRulesSettings() {
                   id={`${id}-${rule.id}-severity`}
                   value={rule.severity}
                   onChange={(e) =>
-                    !rule.locked && updateRule(rule.id, 'severity', e.target.value)
+                    updateRule(rule.id, 'severity', e.target.value)
                   }
-                  disabled={rule.locked}
+                  disabled={!canEdit}
                   className="mt-1 h-9 rounded-lg border border-border bg-surface-700 px-3 text-sm text-text-primary disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   <option value="CRITICAL">Critical</option>
@@ -197,6 +203,7 @@ export function AlertRulesSettings() {
                 </p>
               </div>
             </div>
+            )}
 
             {/* Per-country warning days — extra days added to the default for a given origin country */}
             {!rule.locked && (
@@ -258,7 +265,7 @@ export function AlertRulesSettings() {
         </button>
         <button
           type="button"
-          onClick={() => saveRules.mutate(localRules)}
+          onClick={() => saveRules.mutate(allRules)}
           disabled={!canEdit || !dirty || saveRules.isPending}
           className="rounded-lg bg-cobalt-primary px-4 py-2 text-sm font-medium text-white hover:bg-cobalt-primary-light disabled:opacity-50"
         >

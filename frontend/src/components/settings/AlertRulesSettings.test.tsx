@@ -8,22 +8,52 @@ vi.mock('../../lib/api', () => ({
     get: vi.fn().mockResolvedValue({
       rules: [
         {
-          id: 'IN_TRANSIT_LATE',
-          name: 'In-transit running late',
-          description: 'Vessel behind schedule',
-          state: 'IN_TRANSIT',
+          id: 'A1',
+          name: 'No SO after booking',
+          description: 'SO not received in time',
+          state: 'BOOKED',
           triggerType: 'days_after',
-          triggerReference: 'etd',
+          triggerReference: 'booking_request',
+          thresholdDays: 2,
+          countryThresholds: null,
+          severity: 'WARNING',
+          enabled: true,
+          locked: false,
+        },
+        {
+          id: 'A2',
+          name: 'Draft B/L before cutoff',
+          description: 'Draft B/L window',
+          state: 'CONFIRMED',
+          triggerType: 'days_before',
+          triggerReference: 'cutoff',
           thresholdDays: 3,
           countryThresholds: null,
           severity: 'WARNING',
           enabled: true,
           locked: false,
         },
+        {
+          id: 'A7',
+          name: 'Requested cargo-ready revision not reflected',
+          description: 'Built-in CRD check',
+          state: null,
+          triggerType: 'days_after',
+          triggerReference: 'booking_request',
+          thresholdDays: 0,
+          countryThresholds: null,
+          severity: 'WARNING',
+          enabled: true,
+          locked: true,
+        },
       ],
     }),
     put: vi.fn(),
   },
+}))
+
+vi.mock('../../hooks/use-page-access', () => ({
+  usePageAccess: () => ({ canEdit: () => true, canView: () => true }),
 }))
 
 function renderWithClient(ui: React.ReactElement) {
@@ -32,19 +62,22 @@ function renderWithClient(ui: React.ReactElement) {
 }
 
 describe('AlertRulesSettings', () => {
-  it('renders each configured alert rule fetched from /alert-rules', async () => {
+  it('renders only A1 and A2 — hides locked built-ins (A7)', async () => {
     renderWithClient(<AlertRulesSettings />)
-    expect(await screen.findByText('In-transit running late')).toBeInTheDocument()
-    // The per-country warning-days editor is part of this section's behavior.
-    expect(await screen.findByText('Country warning days')).toBeInTheDocument()
+    expect(await screen.findByText('No SO after booking')).toBeInTheDocument()
+    expect(screen.getByText('Draft B/L before cutoff')).toBeInTheDocument()
+    expect(screen.queryByText(/cargo-ready revision/i)).toBeNull()
+    expect(screen.queryByText('LOCKED')).toBeNull()
+    // The per-country warning-days editor is part of this section's behavior (one per listed rule).
+    expect(screen.getAllByText('Country warning days').length).toBe(2)
   })
 
-  it('does not crash when a rule has null state (API allows null staircase mapping)', async () => {
+  it('does not crash when a configurable rule has null state', async () => {
     const { api } = await import('../../lib/api')
     vi.mocked(api.get).mockResolvedValueOnce({
       rules: [
         {
-          id: 'NULL_STATE',
+          id: 'A1',
           name: 'Rule with no state',
           description: null,
           state: null,
