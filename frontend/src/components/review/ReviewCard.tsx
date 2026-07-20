@@ -853,7 +853,7 @@ export function ReviewCard({
                   value={note}
                   onChange={(e) => setNote(e.target.value)}
                   rows={2}
-                  placeholder="Why your value beats the agent's? (also trains the next extraction)"
+                  placeholder="Explain why you chose a different value — this helps improve future extractions"
                   className={cn(
                     'w-full rounded-lg border bg-surface-900 p-2.5 text-sm leading-snug text-text-primary placeholder:text-text-muted',
                     noteRequired ? 'border-status-warning/60' : 'border-border',
