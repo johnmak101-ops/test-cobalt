@@ -119,10 +119,24 @@ describe('ShipmentTable — Customer PO popover (#118)', () => {
 })
 
 describe('ShipmentTable — column layout (#119)', () => {
-  it('does not render an SO No column', () => {
+  it('does not render a separate SO No column (SO may still appear as Booking ID fallback)', () => {
     renderTable([baseShipment({ soNumber: 'SO-SHOULD-NOT-SHOW' })])
     expect(screen.queryByRole('columnheader', { name: /so no/i })).not.toBeInTheDocument()
+    // bookingNo present → SO not used as Booking ID label
     expect(screen.queryByText('SO-SHOULD-NOT-SHOW')).not.toBeInTheDocument()
+    expect(screen.getByText('BY058417')).toBeInTheDocument()
+  })
+
+  it('Booking ID falls through bookingNo → soNumber → hblNumber (parse-identity D1)', () => {
+    renderTable([
+      baseShipment({ id: 'a', bookingNo: null, soNumber: 'S2600144827', hblNumber: 'SNZ260004243' }),
+      baseShipment({ id: 'b', bookingNo: null, soNumber: null, hblNumber: 'SZA26050003' }),
+      baseShipment({ id: 'c', bookingNo: null, soNumber: null, hblNumber: null }),
+    ])
+    expect(screen.getByText('S2600144827')).toBeInTheDocument()
+    expect(screen.getByText('SZA26050003')).toBeInTheDocument()
+    // pure keyless shell still —
+    expect(screen.getAllByText('—').length).toBeGreaterThan(0)
   })
 
   it('puts the provisional awaiting-review icon in Risk, not next to Status', () => {
