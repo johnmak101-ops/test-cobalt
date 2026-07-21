@@ -5,6 +5,7 @@
 import {
   categorizeReason,
   humanizeReasons,
+  prettifyVisibleFields,
   type ReasonCategory,
 } from '../../lib/review-reasons'
 import { AI_CONFIDENCE_LOW_REASON } from '../../lib/decision-phrase'
@@ -382,14 +383,17 @@ function partyFieldLabel(rawField: string): string {
   return PARTY_FIELD_LABEL[rawField] ?? rawField.replace(/_/g, ' ')
 }
 
-/** Extract field list from backend-conflict style messages. */
+/** Extract field list from backend-conflict style messages (GW / HTS stripped — not on Order Details). */
 function fieldsFromBackendMsg(msg: string): string | null {
   const m =
     msg.match(/already stored on (.+?)\s*[—-]/i) ||
     msg.match(/backend conflict on (.+)/i) ||
     msg.match(/disagree(?:s)? about:\s*(.+?)(?:\s*[—-]|$)/i) ||
     msg.match(/differ on (.+?)\s*[—-]/i)
-  return m?.[1]?.trim() || null
+  const raw = m?.[1]?.trim()
+  if (!raw) return null
+  const visible = prettifyVisibleFields(raw)
+  return visible || null
 }
 
 function nFromFieldConflicts(msg: string): string | null {

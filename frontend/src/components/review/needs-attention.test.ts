@@ -483,7 +483,9 @@ describe('buildNeedsAttention / groups', () => {
       ],
       reviewReasons: [],
     })
-    expect(items[0]!.text).toMatch(/Email and system differ on Qty, Gross Weight — choose which values to keep/)
+    // Gross Weight stripped — not on Order Details / conflict table
+    expect(items[0]!.text).toMatch(/Email and system differ on Qty — choose which values to keep/)
+    expect(items[0]!.text).not.toMatch(/Gross Weight|HTS/i)
   })
 
   it('collapses customer/vendor/port/consignee synonym spam into one line per fact', () => {

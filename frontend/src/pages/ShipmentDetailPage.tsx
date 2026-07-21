@@ -28,8 +28,8 @@ import { ArrowLeft, Mail, Clock, ClipboardList, Package, Ship, Calendar, AlertTr
 // (+ locks + audits); `get` reads the current value off the loaded shipment (whose UI names differ from db).
 // Mode / POL / POD / forwarder / customer / vendor are all editable free-text raw columns (#183 + the
 // Mesh-lag stand-in): masters are read-only ERP, so the raw twin holds the correct party/port until the
-// master resolves. POL/POD pick from the seeded ports master. PO# / Item·Style stay on the Customer
-// Purchase Orders card, not this form.
+// master resolves. POL/POD pick from the seeded ports master. Item·Style is not on Order Details
+// (per-PO on the Customer Purchase Orders card).
 type EditType = 'text' | 'number' | 'date'
 interface EditField {
   db: string
@@ -42,14 +42,14 @@ interface EditField {
 /**
  * Derived from EDITABLE_FIELDS, never hand-listed: this modal used to keep its own copy of every
  * label and it drifted from both the read view below it and the review queue's conflict table.
- * PO# / Item·Style are excluded — they live on the Customer Purchase Orders card (per-PO), not here.
+ * Item·Style is not in EDITABLE_FIELDS — it lives on the Customer Purchase Orders card (per-PO).
  */
 const EDIT_SECTIONS: { title: string; fields: EditField[] }[] = (() => {
   const order: EditableField['section'][] = ['Order Info', 'Cargo & Logistics', 'Shipping', 'Key Dates']
   return order.map((title) => ({
     title,
     fields: EDITABLE_FIELDS.reduce<EditField[]>((acc, f) => {
-      if (f.section !== title || f.column === 'itemStyleNo') return acc
+      if (f.section !== title) return acc
       acc.push({
         db: f.column,
         label: f.label,
@@ -636,19 +636,9 @@ export default function ShipmentDetailPage() {
         <div className="grid grid-cols-1 gap-x-8 gap-y-6 md:grid-cols-2">
           {/* Section 1: Order Info */}
           <DetailSection title="Order Info" icon={<ClipboardList size={14} className="text-text-muted" />}>
+            {/* Codes only — full Customer/Vendor names live in the page header; Item/Style is on the PO table. */}
             <DetailRow label="Customer Code" value={shipment.customer?.code ?? null} />
-            <DetailRow
-              historyKey="customerRaw"
-              label={fieldLabel('customerRaw')}
-              // Prefer free-text raw (review corrections write here) over Mesh master name.
-              value={(shipment.customerRaw?.trim() || shipment.customer?.name) ?? null}
-            />
             <DetailRow label="Vendor Code" value={shipment.vendor?.code ?? null} />
-            <DetailRow
-              historyKey="vendorRaw"
-              label={fieldLabel('vendorRaw')}
-              value={(shipment.vendorRaw?.trim() || shipment.vendor?.name) ?? null}
-            />
             <DetailRow
               historyKey="bookingNo"
               label={fieldLabel('bookingNo')}
@@ -665,11 +655,6 @@ export default function ShipmentDetailPage() {
               historyKey="soNo"
               label={fieldLabel('soNo')}
               value={displaySoNumber(shipment)}
-            />
-            <DetailRow
-              historyKey="itemStyleNo"
-              label={fieldLabel('itemStyleNo')}
-              value={shipment.itemStyleNo?.replace(/,/g, ', ') ?? null}
             />
             <DetailRow
               label="Last Email"

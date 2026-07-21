@@ -304,7 +304,9 @@ describe('ReviewCard', () => {
       />,
     )
     const why = screen.getByTestId('why-review')
-    expect(why.textContent).toMatch(/Email and system differ on qty, gross_weight — choose which values to keep/)
+    // gross_weight omitted from flag copy (not on Order Details)
+    expect(why.textContent).toMatch(/Email and system differ on Qty — choose which values to keep/)
+    expect(why.textContent).not.toMatch(/gross_weight|Gross Weight|HTS/i)
     expect(why.textContent).not.toMatch(/below|highlighted fields/)
     expect(why.textContent).toMatch(/Fields disagree/)
   })
@@ -701,9 +703,7 @@ describe('conflict table — read-only by default, Edit to change values', () =>
     expect(screen.getByRole('radio', { name: /SE26061400006/i })).not.toBeChecked()
   })
 
-  it('Item / Style No. edits as one field per style, not a comma string', async () => {
-    const user = userEvent.setup()
-    const onSave = vi.fn().mockResolvedValue(undefined)
+  it('hides bag-level Item / Style No. conflict (styles are per-PO, not Order Details)', () => {
     const conflictStyles: CriticConflict = {
       field: 'item_style_no',
       label: 'Item / Style No.',
@@ -723,29 +723,13 @@ describe('conflict table — read-only by default, Edit to change values', () =>
           criticReview={baseReview({ conflicts: [conflictStyles] })}
           compact={compact}
           defaultExpanded
-          onSaveAndApprove={onSave}
         />
       </MemoryRouter>,
     )
-    // Existing: one row per style (not one mid-wrapped comma blob)
-    const existingList = screen.getAllByTestId('style-list-display')[0]!
-    expect(within(existingList).getByText('26-HMIGHLE-0293-1')).toBeInTheDocument()
-    expect(within(existingList).getByText('26-HMIGHLE-0280-1')).toBeInTheDocument()
-
-    // Copy all works from Existing without a prior Edit click (enters edit + fills Resolution)
-    await user.click(screen.getByTestId('style-copy-all-existing'))
-    const editor = screen.getByTestId('style-list-editor')
-    expect(within(editor).getByDisplayValue('26-HMIGHLE-0293-1')).toBeInTheDocument()
-    expect(within(editor).getByDisplayValue('26-HMIGHLE-0280-1')).toBeInTheDocument()
-    // Paste multi-line Excel-style list replaces all
-    const firstInput = within(editor).getAllByPlaceholderText(/Style \/ item no/)[0]!
-    await user.click(firstInput)
-    await user.paste('STYLE-A\nSTYLE-B\nSTYLE-C')
-    expect(within(editor).getByDisplayValue('STYLE-A')).toBeInTheDocument()
-    expect(within(editor).getByDisplayValue('STYLE-C')).toBeInTheDocument()
-    await user.type(screen.getByRole('textbox', { name: /note/i }), 'Pasted full style list')
-    await user.click(screen.getByRole('button', { name: /approve 1 change/i }))
-    expect(onSave.mock.calls[0][0].fields.itemStyleNo).toBe('STYLE-A, STYLE-B, STYLE-C')
+    // Only bag style conflict → no decision grid (same as GW/HTS hide)
+    expect(screen.queryByTestId('review-decision-grid')).toBeNull()
+    expect(screen.queryByTestId('style-list-editor')).toBeNull()
+    expect(screen.getByTestId('review-judgment-only')).toBeInTheDocument()
   })
 
   it('column header becomes Edited after a value is changed from the AI proposal', async () => {
@@ -1102,8 +1086,106 @@ describe('source emails — identify WHICH email, and which is newer', () => {
         />
       </MemoryRouter>,
     )
-    expect(screen.queryByText('Item / Style No.')).toBeNull()
-    expect(screen.getByText('Total Quantity')).toBeInTheDocument()
+    const grid = screen.getByTestId('review-decision-grid')
+    expect(within(grid).queryByText('Item / Style No.')).toBeNull()
+    expect(within(grid).getByText('Total Quantity')).toBeInTheDocument()
+  })
+})
+
+describe('qty live-leg settle on decision table', () => {
+  it('hides qty conflict when live leg already matches AI proposed (GZL-class)', () => {
+    const shipment = baseShipment({
+      quantityShipped: 16,
+      quantityUnit: 'cartons',
+      linkedPOs: [
+        {
+          id: 'po1',
+          linkId: 'l1',
+          poNumber: '28739',
+          quantity: 10,
+          totalQuantity: null,
+          quantityUnit: 'cartons',
+          itemStyleNo: 'RED STRIPE',
+        },
+        {
+          id: 'po2',
+          linkId: 'l2',
+          poNumber: '28740',
+          quantity: 6,
+          totalQuantity: null,
+          quantityUnit: 'cartons',
+          itemStyleNo: 'X',
+        },
+      ],
+    } as never)
+    const conflictQty: CriticConflict = {
+      field: 'qty',
+      label: 'Total Quantity',
+      candidates: [
+        { value: '5', source: 'system' },
+        { value: '16', source: 'Final B/L' },
+      ],
+      rationale: 'stale system vs email',
+    }
+    const conflictVendor: CriticConflict = {
+      field: 'vendor_code',
+      label: 'Vendor',
+      candidates: [
+        { value: '', source: 'system' },
+        { value: 'MACAU FUNG TAI LIMITED', source: 'SO' },
+      ],
+      rationale: 'vendor',
+    }
+    render(
+      <MemoryRouter>
+        <ReviewCard
+          shipment={shipment}
+          criticReview={baseReview({ conflicts: [conflictQty, conflictVendor] })}
+          compact={null}
+          defaultExpanded
+          onSaveAndApprove={vi.fn()}
+        />
+      </MemoryRouter>,
+    )
+    const grid = screen.getByTestId('review-decision-grid')
+    expect(within(grid).queryByText('Total Quantity')).toBeNull()
+    expect(within(grid).getByText('Vendor')).toBeInTheDocument()
+    // Qty settled — Approve must not double-count it as a second change
+    expect(screen.queryByRole('button', { name: /approve 2 changes/i })).toBeNull()
+  })
+
+  it('still shows qty when live differs from all non-system candidates', () => {
+    const shipment = baseShipment({
+      quantityShipped: 16,
+      quantityUnit: 'cartons',
+      linkedPOs: [],
+    } as never)
+    render(
+      <MemoryRouter>
+        <ReviewCard
+          shipment={shipment}
+          criticReview={baseReview({
+            conflicts: [
+              {
+                field: 'qty',
+                label: 'Total Quantity',
+                candidates: [
+                  { value: '5', source: 'system' },
+                  { value: '100', source: 'SO' },
+                ],
+                rationale: 'real fight',
+              },
+            ],
+          })}
+          compact={null}
+          defaultExpanded
+        />
+      </MemoryRouter>,
+    )
+    const grid = screen.getByTestId('review-decision-grid')
+    expect(within(grid).getByText('Total Quantity')).toBeInTheDocument()
+    // Current column shows live leg qty, not stale system candidate
+    expect(within(grid).getByText('16')).toBeInTheDocument()
   })
 })
 

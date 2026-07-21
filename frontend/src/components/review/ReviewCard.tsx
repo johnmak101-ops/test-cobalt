@@ -14,6 +14,13 @@ import {
   parseStyleEntries,
   serializeStyleEntries,
 } from '../../lib/review-fields'
+import {
+  existingQtyDisplay,
+  filterActionableConflicts,
+  isQtyConflict,
+  liveQtyFromShipment,
+  poShipmentTotalFromLinked,
+} from '../../lib/qty-conflict-settle'
 import { isCriticalColumn } from '../../lib/review-critical'
 import {
   type CriticConflict,
@@ -232,22 +239,26 @@ export function ReviewCard({
     () => criticReview?.conflicts ?? [],
     [criticReview],
   )
+  const liveQty = useMemo(
+    () => liveQtyFromShipment(shipment as { quantityShipped?: number | null }),
+    [shipment],
+  )
+  const poShipmentTotal = useMemo(
+    () => poShipmentTotalFromLinked(linkedPOs),
+    [linkedPOs],
+  )
   /**
-   * When per-PO styles are available, drop the bag-level item/style conflict — membership + style
-   * live on ReviewPoStylesSection, not the leg-level conflict table.
-   * Gross weight / HTS Code are hidden from Order Details — also hide from this conflict table.
+   * Bag-level item/style, gross weight, and HTS are hidden from Order Details — also hide from this
+   * conflict table. Per-PO styles live on ReviewPoStylesSection / the PO card.
+   * Qty conflicts that already match the live leg (or PO shipment total) are settled and dropped.
    */
   const conflicts = useMemo(() => {
-    let list = rawConflicts
-    if (linkedPOs.length > 0) {
-      list = list.filter((c) => mapCriticFieldToColumn(c.field) !== 'itemStyleNo')
-    }
-    list = list.filter((c) => {
+    const base = rawConflicts.filter((c) => {
       const col = mapCriticFieldToColumn(c.field) ?? c.field
-      return col !== 'grossWeight' && col !== 'htsCode'
+      return col !== 'itemStyleNo' && col !== 'grossWeight' && col !== 'htsCode'
     })
-    return list
-  }, [rawConflicts, linkedPOs.length])
+    return filterActionableConflicts(base, { liveQty, poShipmentTotal })
+  }, [rawConflicts, liveQty, poShipmentTotal])
   /** Newest first: "which statement is the latest?" is the question a reviewer actually has, and a
    *  date they must compare by hand only half-answers it. Undated mail sorts last, not first. */
   const sortedEmails = useMemo(
@@ -938,6 +949,9 @@ export function ReviewCard({
                               notWritable={!writable}
                               canEdit={!readOnly && writable}
                               critical={isCriticalColumn(mapCriticFieldToColumn(c.field))}
+                              existingOverride={
+                                isQtyConflict(c) ? existingQtyDisplay(c, liveQty) : null
+                              }
                               onRequestEdit={() => {
                                 if (!readOnly) startEditing()
                               }}

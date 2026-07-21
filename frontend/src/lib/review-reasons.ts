@@ -46,12 +46,46 @@ const FIELD_WORDS: Record<string, string> = {
 const fieldLabel = (raw: string): string =>
   FIELD_WORDS[raw] ?? raw.replace(/_/g, ' ')
 
-const prettifyFields = (list: string) =>
-  list
-    .split(/[,\s]+/)
+/**
+ * Fields removed from Order Details + review conflict table — never list them in flag / reason copy.
+ * Operators cannot "choose" these values on the card anymore.
+ */
+const HIDDEN_OPS_FIELDS = new Set(['gross_weight', 'hts_code'])
+
+/** Normalize "Gross Weight" / "gross_weight" / "gross-weight" → gross_weight for hidden checks. */
+function normalizeFieldToken(raw: string): string {
+  return raw
+    .trim()
+    .toLowerCase()
+    .replace(/[\s/-]+/g, '_')
+    .replace(/_+/g, '_')
+}
+
+/** True when this token is a hidden ops field (GW / HTS). */
+export function isHiddenOpsField(raw: string): boolean {
+  const n = normalizeFieldToken(raw)
+  return HIDDEN_OPS_FIELDS.has(n)
+}
+
+/**
+ * Split a field list, drop GW/HTS, map to ops labels. Empty when only hidden fields remain.
+ * Accepts snake_case ("qty, gross_weight") or title case ("Qty, Gross Weight").
+ */
+export function prettifyVisibleFields(list: string): string {
+  const parts = list
+    .split(',')
+    .map((p) => p.trim())
     .filter(Boolean)
-    .map(fieldLabel)
+    .filter((p) => !isHiddenOpsField(p))
+  return parts
+    .map((p) => {
+      const n = normalizeFieldToken(p)
+      return FIELD_WORDS[n] ?? fieldLabel(n)
+    })
     .join(', ')
+}
+
+const prettifyFields = (list: string) => prettifyVisibleFields(list)
 
 /** Last resort: replace any snake_case field tokens so ops never see DB column names. */
 const scrubFieldTokens = (s: string): string =>
@@ -98,6 +132,11 @@ const TRANSLATIONS: Translation[] = [
     match: /backend conflict on (.+)/i,
     text: (m, opts) => {
       const fields = prettifyFields(m[1]!)
+      if (!fields) {
+        return opts?.fieldDetailAvailable === false
+          ? 'Emails disagree on some values — open the full shipment to compare (no field breakdown on this card)'
+          : 'Emails disagree on some values — check the fields below'
+      }
       if (opts?.fieldDetailAvailable === false) {
         return `Emails disagree about: ${fields} — open the full shipment to compare values (no field breakdown on this card)`
       }

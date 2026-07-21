@@ -36,6 +36,8 @@ export interface ConflictRowProps {
   onRequestEdit?: () => void
   /** When true, field is a critical sailing column — light badge next to label. */
   critical?: boolean
+  /** When set, Current column shows this instead of critic system candidate (qty live-leg). */
+  existingOverride?: string | null
 }
 
 /** A number is meaningless without its unit ('14' vs '14 cartons'), so render them together. */
@@ -99,6 +101,7 @@ export function ConflictRow({
   canEdit = false,
   onRequestEdit,
   critical = false,
+  existingOverride = null,
 }: ConflictRowProps) {
   const { existing, proposed } = splitCandidates(conflict)
   const changed = changesStoredValue(conflict, value)
@@ -110,6 +113,12 @@ export function ConflictRow({
   const multi = proposed.length > 1
   const existingStyles = existing?.value ?? ''
   const canCopyAll = canEdit && parseStyleEntries(existingStyles).length > 0
+  const useLiveExisting =
+    existingOverride != null && existingOverride !== ''
+  const existingDisplay = useLiveExisting
+    ? existingOverride
+    : (existing?.value ?? '')
+  const existingSourceLabel = useLiveExisting ? '(on shipment)' : '(system)'
 
   const copyAllFromExisting = () => {
     if (!canCopyAll) return
@@ -139,11 +148,11 @@ export function ConflictRow({
         )}
       </td>
       <td className={cn(REVIEW_COL.existing, REVIEW_TD)}>
-        {existing?.value ? (
+        {existingDisplay ? (
           isStyles ? (
             <div className="min-w-0 space-y-1">
-              <StyleListDisplay value={existing.value} />
-              <span className="text-[11px] text-text-muted">(system)</span>
+              <StyleListDisplay value={existingDisplay} />
+              <span className="text-[11px] text-text-muted">{existingSourceLabel}</span>
               {canCopyAll && (
                 <button
                   type="button"
@@ -159,10 +168,10 @@ export function ConflictRow({
           ) : (
             <span className="inline-flex max-w-full flex-wrap items-baseline gap-x-1.5">
               <span className="field-value font-mono text-sm leading-snug text-text-primary">
-                {existing.value}
+                {existingDisplay}
                 <Unit unit={existingUnit} />
               </span>
-              <span className="text-[11px] text-text-muted">(system)</span>
+              <span className="text-[11px] text-text-muted">{existingSourceLabel}</span>
             </span>
           )
         ) : (

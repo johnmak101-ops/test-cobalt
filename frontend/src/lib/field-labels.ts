@@ -23,6 +23,9 @@ const EXTRA_LABELS: Record<string, string> = {
   // 入仓/订仓 SO — distinct from soNo (SO#); never dual-written into so_no / booking_no
   warehouseSo: 'Warehouse SO',
   warehouse_so: 'Warehouse SO',
+  // Bag item/style removed from Order Details form — styles live per-PO on the PO card
+  itemStyleNo: 'Item / Style No.',
+  item_style_no: 'Item / Style No.',
   // routing / parties — email-replay tokens + the committer's resolved/raw columns
   forwarder: 'Forwarder',
   forwarderId: 'Forwarder',
