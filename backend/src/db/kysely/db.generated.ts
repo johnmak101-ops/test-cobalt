@@ -106,6 +106,17 @@ export interface Consignees {
   updatedAt: Generated<Date>;
 }
 
+export interface CriticCalibration {
+  actorId: string | null;
+  band: string | null;
+  correctedFieldCount: Generated<number>;
+  decidedAt: Generated<Date>;
+  id: Generated<string>;
+  outcome: string;
+  reasonsJson: string | null;
+  shipmentId: string | null;
+}
+
 export interface Customers {
   address: string | null;
   code: string;
@@ -204,6 +215,14 @@ export interface MasterResolution {
   updatedAt: Generated<Date>;
 }
 
+export interface MeshMissAck {
+  ackedAt: Generated<Date>;
+  ackedBy: string;
+  id: Generated<string>;
+  normalizedName: string;
+  type: string;
+}
+
 export interface ParsedRecord {
   confidence: string | null;
   createdAt: Generated<Date>;
@@ -216,9 +235,7 @@ export interface ParsedRecord {
   mode: string | null;
   parserAdapter: string | null;
   poNo: string | null;
-  /** Normalized PO key (normKey(po_no) || normKey(match_keys.customer_po)) — index for commit enrichment. */
   poNoNorm: string | null;
-  /** cobalt-queue soul version (queue.prompt_version.id) that produced this parse — provenance (0007). */
   promptVersion: number | null;
   recordIdx: Generated<number>;
   senderType: string | null;
@@ -282,6 +299,17 @@ export interface ReviewEmail {
   subject: string | null;
   suggestedData: string | null;
   updatedAt: Generated<Date>;
+}
+
+export interface RoutingShadow {
+  band: string | null;
+  bandRouting: string;
+  differs: boolean;
+  gateRouting: string;
+  id: Generated<string>;
+  ingestedAt: Generated<Date>;
+  reasonsJson: string | null;
+  shipmentId: string | null;
 }
 
 export interface ShipmentEmails {
@@ -361,13 +389,12 @@ export interface Shipments {
   cfsCutoff: Date | null;
   confidence: number | null;
   confirmedByEmail: Generated<boolean>;
-  /** Agent critic review JSON blob (0012) — nvarchar(max), ParseJSONResultsPlugin-parsed at runtime via overlay. */
-  criticReview: string | null;
   consigneeAddress: string | null;
   consigneeId: string | null;
   consigneeName: string | null;
   containerNo: string | null;
   createdAt: Generated<Date>;
+  criticReview: string | null;
   customerRaw: string | null;
   dismissedAt: Date | null;
   eta: Date | null;
@@ -407,11 +434,11 @@ export interface Shipments {
   state: Generated<string>;
   supersededById: string | null;
   updatedAt: Generated<Date>;
-  /** raw parser vendor_code kept when it doesn't resolve to a master vendor (0010) — like customerRaw. */
   vendorRaw: string | null;
   vesselName: string | null;
   voyageNo: string | null;
   warehouseEndDate: Date | null;
+  warehouseSo: string | null;
   warehouseStartDate: Date | null;
 }
 
@@ -451,6 +478,7 @@ export interface DB {
   carriers: Carriers;
   changeLog: ChangeLog;
   consignees: Consignees;
+  criticCalibration: CriticCalibration;
   customers: Customers;
   emailAttachment: EmailAttachment;
   emailMessage: EmailMessage;
@@ -460,11 +488,13 @@ export interface DB {
   forwarders: Forwarders;
   ingestState: IngestState;
   masterResolution: MasterResolution;
+  meshMissAck: MeshMissAck;
   parsedRecord: ParsedRecord;
   ports: Ports;
   purchaseOrders: PurchaseOrders;
   refreshTokens: RefreshTokens;
   reviewEmail: ReviewEmail;
+  routingShadow: RoutingShadow;
   shipmentEmails: ShipmentEmails;
   shipmentIdentifiers: ShipmentIdentifiers;
   shipmentMatchKeys: ShipmentMatchKeys;
