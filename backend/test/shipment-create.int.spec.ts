@@ -26,7 +26,8 @@ beforeAll(async () => {
   db = t.db
   const r = repos(db)
   committer = new CommitterService(r.masters, r.booking, r.shipment, r.fieldLock, r.audit, r.evidence, r.purchaseOrder)
-  svc = new ShipmentsService(r.shipment, r.booking, r.fieldLock, r.audit, committer)
+  const queueLearning = { postCorrection: async () => undefined } as never
+  svc = new ShipmentsService(r.shipment, r.booking, r.fieldLock, r.audit, committer, queueLearning)
 })
 afterAll(closeTestDb)
 beforeEach(() => resetDb(db))
