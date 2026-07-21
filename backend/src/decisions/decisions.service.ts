@@ -7,7 +7,7 @@ import type { CreateDecisionDto } from './dto'
 import { resolveEmailDisposition } from './email-disposition'
 import { assembleIngestReviewReasons } from './review-reasons-assemble'
 import { collectSourceEvents } from '../reconcile/source-events'
-import { resolveBandRouting } from './band-routing'
+import { resolveBandRouting, isHighBandAutoEligible } from './band-routing'
 import type { CriticReview } from './critic-review.types'
 
 export interface DecisionResult extends Omit<CommitResult, 'action'> {
@@ -171,6 +171,15 @@ export class DecisionsService {
     // Cancel remains authoritative over band mode — re-apply after mode select.
     if (dto.cancelled === true) {
       reviewStatus = 'provisional'
+    }
+
+    // Product: high-confidence (no hard-stop flags) never enters the human Review Queue —
+    // auto-confirm even when critic_routing_mode=gate. Cancel still wins above.
+    if (dto.cancelled !== true && isHighBandAutoEligible(critic)) {
+      reviewStatus = 'confirmed'
+      if (!(reviewReasons ?? []).some((r) => /high-band auto/i.test(r))) {
+        reviewReasons = [...(reviewReasons ?? []), 'high-band auto-confirmed']
+      }
     }
 
     // Related Emails: union every channel that may carry a graph message id. Relying on

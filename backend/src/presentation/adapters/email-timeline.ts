@@ -33,6 +33,7 @@ export interface EmailFieldChange {
 const TRACKED: ReadonlyArray<readonly [string, string]> = [
   ['booking_no', 'bookingNo'],
   ['so_no', 'soNo'],
+  ['warehouse_so', 'warehouseSo'], // 入仓/订仓 — never alias of so_no
   ['hbl_awb_fcr_no', 'hblAwbFcrNo'],
   ['mbl', 'mbl'],
   ['container_no', 'containerNo'],

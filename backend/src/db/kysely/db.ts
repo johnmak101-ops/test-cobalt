@@ -137,7 +137,19 @@ export interface MeshMissAck {
 }
 
 export interface DB
-  extends Omit<GeneratedDB, 'shipments' | 'bookings' | 'shipmentMilestones' | 'alertRules' | 'reviewEmail' | 'parsedRecord'> {
+  extends Omit<
+    GeneratedDB,
+    | 'shipments'
+    | 'bookings'
+    | 'shipmentMilestones'
+    | 'alertRules'
+    | 'reviewEmail'
+    | 'parsedRecord'
+    // Hand-typed overrides (codegen Generated<> vs app ColumnType) — omit then re-add below
+    | 'routingShadow'
+    | 'criticCalibration'
+    | 'meshMissAck'
+  > {
   shipments: Shipments
   bookings: Bookings
   shipmentMilestones: ShipmentMilestones

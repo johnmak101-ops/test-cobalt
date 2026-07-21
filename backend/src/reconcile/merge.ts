@@ -15,11 +15,11 @@
  *         pol/pod tie-break ARE ported. notes[] mirrors queue merge-adjustment notes where applicable.
  *
  * Policy by field class:
- *   identity (so_no/hbl/mbl/booking_no/container_no) — most authoritative doc wins; a different-RANK
+ *   identity (so_no/hbl/mbl/booking_no/container_no/warehouse_so) — most authoritative doc wins; a different-RANK
  *            restatement (Draft → Final B/L) is a lifecycle SUPERSEDE (no conflict). An EQUAL-rank
  *            DISTINCT value is a CO-CURRENT member (consolidation / multi-HBL), NOT a conflict — note
  *            only (#117 / queue merge.ts). sameId folds office-prefix variants. Bare ≤3-digit sequence
- *            tokens ('001') are dropped.
+ *            tokens ('001') are dropped. warehouse_so is 入仓/订仓 — not dual-written to so_no.
  *   entity   CODES (customer/vendor) match exactly, any clash = conflict. NAMES (forwarder/consignee)
  *            match by containment; higher-rank wins cleanly; only an EQUAL-rank name clash conflicts.
  *   schedule (cargo_ready/warehouse/etd/atd/eta/ata/in_dc) — LATEST email wins (schedules re-quoted).
@@ -35,6 +35,7 @@ export type FieldClass = 'identity' | 'entity' | 'schedule' | 'quantity' | 'text
 export const FIELD_CLASS: Record<string, FieldClass> = {
   customer_po: 'po',
   so_no: 'identity', hbl_awb_fcr_no: 'identity', mbl: 'identity', booking_no: 'identity', container_no: 'identity',
+  warehouse_so: 'identity', // 入仓/订仓号 — display + history; NOT dual-written to so_no; not a strong partition key
   customer_code: 'entity', vendor_code: 'entity', forwarder_name: 'entity', consignee_name: 'entity',
   cargo_ready_date: 'schedule', warehouse_start_date: 'schedule', warehouse_end_date: 'schedule',
   etd: 'schedule', atd: 'schedule', eta: 'schedule', ata: 'schedule', in_dc_date: 'schedule',

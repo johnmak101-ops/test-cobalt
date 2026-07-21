@@ -165,8 +165,9 @@ describe('conflictColumns — parse "why review?" reasons into column names', ()
   it('extracts snake_case field tokens and maps to leg columns', () => {
     const cols = conflictColumns(['backend conflict on qty, gross_weight, measurement'])
     expect(cols).toContain('qty')
-    expect(cols).toContain('grossWeight')
     expect(cols).toContain('measurement')
+    // grossWeight is no longer on the Order Details form (COLUMN_SET) — not highlighted there
+    expect(cols).not.toContain('grossWeight')
   })
 
   it('ignores reasons that name no known fields', () => {
@@ -335,10 +336,10 @@ describe('groupConflictFields — only conflict rows, grouped, empty groups omit
   })
 
   it('groups conflicts in REVIEW_GROUP_ORDER and omits groups with no conflicts', () => {
-    const groups = groupConflictFields([conflict('qty', 'Qty'), conflict('hts_code', 'HTS Code')])
+    const groups = groupConflictFields([conflict('qty', 'Qty'), conflict('measurement', 'Measurement')])
     expect(groups).toHaveLength(1)
     expect(groups[0]!.group).toBe('Cargo & Logistics')
-    expect(groups[0]!.conflicts.map((c) => c.field)).toEqual(['qty', 'hts_code'])
+    expect(groups[0]!.conflicts.map((c) => c.field)).toEqual(['qty', 'measurement'])
   })
 
   it('orders groups by REVIEW_GROUP_ORDER regardless of conflict order', () => {
@@ -379,7 +380,7 @@ describe('fieldLabel — the one vocabulary, used by every surface that names a 
     // renamed/removed COLUMN fails here instead of silently rendering the raw column name.
     const rendered = [
       'bookingNo', 'soNo',
-      'qty', 'qtyUnit', 'grossWeight', 'measurement', 'htsCode', 'containerNo', 'hblAwbFcrNo', 'mbl', 'mawb', 'scacCode',
+      'qty', 'qtyUnit', 'measurement', 'containerNo', 'hblAwbFcrNo', 'mbl', 'mawb', 'scacCode',
       'mode', 'polRaw', 'podRaw', 'forwarderRaw',
       'consigneeName', 'consigneeAddress', 'vesselName', 'voyageNo', 'flightNo',
       'cargoReadyDate', 'warehouseStartDate', 'warehouseEndDate', 'cfsCutoff',
@@ -390,7 +391,11 @@ describe('fieldLabel — the one vocabulary, used by every surface that names a 
       expect(fieldLabel(c)).not.toBe(c)
     }
     expect(fieldLabel('qty')).toBe('Total Quantity')
-    expect(fieldLabel('grossWeight')).toBe('Gross Weight')
+    // Gross weight / HTS / separate Warehouse SO row removed from Order Details form
+    expect(EDITABLE_FIELDS.some((f) => f.column === 'grossWeight')).toBe(false)
+    expect(EDITABLE_FIELDS.some((f) => f.column === 'htsCode')).toBe(false)
+    expect(EDITABLE_FIELDS.some((f) => f.column === 'warehouseSo')).toBe(false)
+    expect(fieldLabel('warehouseSo')).toBe('Warehouse SO')
   })
 
   it('falls back to the column name rather than rendering a blank label', () => {
@@ -399,8 +404,7 @@ describe('fieldLabel — the one vocabulary, used by every surface that names a 
 })
 
 describe('fieldUnit — the Order Details convention: unit lives in the VALUE', () => {
-  it('gives the fixed physical units', () => {
-    expect(fieldUnit('grossWeight')).toBe('KGS')
+  it('gives the fixed physical units still on the form', () => {
     expect(fieldUnit('measurement')).toBe('CBM')
   })
 

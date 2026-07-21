@@ -21,16 +21,18 @@ describe('SettingsPage nav (access-aware)', () => {
     expect(screen.queryByRole('link', { name: /resolution rules/i })).not.toBeInTheDocument()
     expect(screen.queryByRole('link', { name: /^users$/i })).not.toBeInTheDocument()
     expect(screen.queryByRole('link', { name: /access control/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: /mesh misses/i })).not.toBeInTheDocument()
     expect(screen.queryByRole('link', { name: /^vendors$/i })).not.toBeInTheDocument()
     expect(screen.queryByRole('link', { name: /review policy/i })).not.toBeInTheDocument()
   })
-  it('a SUPERADMIN sees config tabs but not Resolution, Vendors, or Review Policy', () => {
+  it('a SUPERADMIN sees Users, Access Control, Mesh misses but not Resolution, Vendors, or Review Policy', () => {
     mockUser.role = 'SUPERADMIN'
     render(<MemoryRouter initialEntries={['/settings/users']}><SettingsPage /></MemoryRouter>)
     expect(screen.queryByRole('link', { name: /^general$/i })).not.toBeInTheDocument()
     expect(screen.queryByRole('link', { name: /resolution rules/i })).not.toBeInTheDocument()
     expect(screen.getByRole('link', { name: /^users$/i })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: /access control/i })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /mesh misses/i })).toBeInTheDocument()
     expect(screen.queryByRole('link', { name: /^vendors$/i })).not.toBeInTheDocument()
     expect(screen.queryByRole('link', { name: /review policy/i })).not.toBeInTheDocument()
   })

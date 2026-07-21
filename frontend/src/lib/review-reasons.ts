@@ -71,6 +71,29 @@ interface Translation {
 }
 
 const TRANSLATIONS: Translation[] = [
+  // Schedule policy — clear ops copy (not "Incomplete data")
+  {
+    match:
+      /etd:\s*aligned to ATD\s+(.+?)\s+after sail\s*\(was booking\/pre-sail\s*'?([^')]+)'?\)/i,
+    text: (m) =>
+      `ETD set to departure date ${m[1]!.trim()} (booking estimate was ${m[2]!.trim()})`,
+  },
+  {
+    match: /etd:\s*aligned to ATD\s+(.+?)(?:\s+after sail)?/i,
+    text: (m) => `ETD set to departure date ${m[1]!.trim()}`,
+  },
+  {
+    match:
+      /(?:warehouse_end_date|cargo cut-off \(WH end\)):\s*next CFS\s+(.+?)\s*\(cross-day cutoffs[^)]*kept over older\s+(.+?)\)/i,
+    text: (m) =>
+      `Warehouse / CFS cut-off updated to ${m[1]!.trim()} (replaces earlier ${m[2]!.trim()})`,
+  },
+  {
+    match:
+      /warehouse_end_date:\s*binding cutoff\s+(.+?)\s*\(earliest (?:current|same-day) stated\)\s*[—–-]\s*newest doc said\s+(.+)/i,
+    text: (m) =>
+      `Warehouse cut-off kept at ${m[1]!.trim()} (earliest stated; a later email said ${m[2]!.trim()})`,
+  },
   {
     match: /backend conflict on (.+)/i,
     text: (m, opts) => {
@@ -325,6 +348,16 @@ const TRANSLATIONS: Translation[] = [
   },
 ]
 
+/** Fully silent audits — never show in Review / Other. Schedule ETD/CFS notes are shown via TRANSLATIONS. */
+export function isSilentOpsReason(reason: string): boolean {
+  const r = reason ?? ''
+  return (
+    /subject-party-pin|subject-party-veto/i.test(r) ||
+    // Not parse-incomplete: subject/filename spine recovery
+    /identity_fallback/i.test(r)
+  )
+}
+
 /** Plain-language version of a review reason; never surfaces raw DB field names. */
 export function humanizeReason(reason: string, opts?: HumanizeOpts): string {
   for (const t of TRANSLATIONS) {
@@ -346,6 +379,7 @@ export function humanizeReasons(reasons: string[], opts?: HumanizeOpts): Humaniz
   const out: HumanizedReason[] = []
   const seen = new Set<string>()
   for (const raw of reasons) {
+    if (isSilentOpsReason(raw)) continue
     const text = humanizeReason(raw, opts)
     if (seen.has(text)) continue
     seen.add(text)
@@ -419,9 +453,12 @@ const CATEGORY_RULES: Array<{ match: RegExp; category: ReasonCategory }> = [
   { match: /not in master data|raw value kept/i, category: 'master_miss' },
   { match: /Party name not in master list/i, category: 'master_miss' },
   { match: /Port name did not match UN\/LOCODE/i, category: 'master_miss' },
-  { match: /vision_pending|output_truncated|input_truncated|content_filter/i, category: 'extraction' },
+  // Real incomplete extract only — not identity_fallback / schedule policy
+  { match: /vision_pending|output_truncated|input_truncated|content_filter|split_parse/i, category: 'extraction' },
   { match: /AI confidence low|verify extraction \(AI low/i, category: 'extraction' },
-  { match: /attachment|missing cargo detail|screenshot|broadcast total/i, category: 'extraction' },
+  { match: /missing attachment|attachment not present|no attachment was ingested|references an attachment|missing cargo detail|screenshot|broadcast total/i, category: 'extraction' },
+  // Schedule policy updates → Other (FYI), never Incomplete data
+  { match: /etd:\s*aligned to ATD|aligned to ATD .+ after sail|next CFS|binding cutoff|warehouse_end_date/i, category: 'other' },
   // Vendor/consignee missing from email (incomplete extract, not Mesh master miss)
   { match: /no\s+vendor\s+code|factory not identified/i, category: 'extraction' },
   { match: /consignee not stated/i, category: 'extraction' },
@@ -436,6 +473,9 @@ export function categorizeReason(raw: string): ReasonCategory {
 /** A shipment's category set = union over its reasons; a reason-less row files under 'other'. */
 export function categoriesOf(reasons: string[]): Set<ReasonCategory> {
   const s = new Set<ReasonCategory>()
-  for (const r of reasons) s.add(categorizeReason(r))
+  for (const r of reasons) {
+    if (isSilentOpsReason(r)) continue
+    s.add(categorizeReason(r))
+  }
   return s.size ? s : new Set<ReasonCategory>(['other'])
 }

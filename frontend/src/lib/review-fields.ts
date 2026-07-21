@@ -48,13 +48,12 @@ export interface EditableField {
 
 export const EDITABLE_FIELDS: EditableField[] = [
   { section: 'Order Info', label: 'Booking No.', uiKey: 'bookingNo', column: 'bookingNo', type: 'text' },
+  // Combined display: soNo ?? warehouseSo (see displaySoNumber). Warehouse SO stays writable via critic map.
   { section: 'Order Info', label: 'SO#', uiKey: 'soNumber', column: 'soNo', type: 'text' },
   { section: 'Order Info', label: 'Item / Style No.', uiKey: 'itemStyleNo', column: 'itemStyleNo', type: 'text' },
   { section: 'Cargo & Logistics', label: 'Total Quantity', uiKey: 'quantityShipped', column: 'qty', type: 'number' },
   { section: 'Cargo & Logistics', label: 'UOM', uiKey: 'quantityUnit', column: 'qtyUnit', type: 'text', options: UOM_OPTIONS },
-  { section: 'Cargo & Logistics', label: 'Gross Weight', uiKey: 'grossWeight', column: 'grossWeight', type: 'number', unit: 'KGS' },
   { section: 'Cargo & Logistics', label: 'Measurement', uiKey: 'measurement', column: 'measurement', type: 'number', unit: 'CBM' },
-  { section: 'Cargo & Logistics', label: 'HTS Code', uiKey: 'htsCode', column: 'htsCode', type: 'text' },
   { section: 'Cargo & Logistics', label: 'Container No.', uiKey: 'containerNo', column: 'containerNo', type: 'text' },
   { section: 'Cargo & Logistics', label: 'HBL / HAWB / FCR No.', uiKey: 'hblNumber', column: 'hblAwbFcrNo', type: 'text' },
   { section: 'Cargo & Logistics', label: 'MBL', uiKey: 'mblNumber', column: 'mbl', type: 'text' },
@@ -245,6 +244,13 @@ const CRITIC_EXTRA_COLUMNS: Record<string, string> = {
   mode: 'mode',
   flight_no: 'flightNo',
   mawb: 'mawb',
+  // Still map for critic/history labels; not on Order Details form (HIDDEN_FIELD_LABELS)
+  gross_weight: 'grossWeight',
+  grossWeight: 'grossWeight',
+  hts_code: 'htsCode',
+  htsCode: 'htsCode',
+  warehouse_so: 'warehouseSo',
+  warehouseSo: 'warehouseSo',
   // Voyage aliases (history + some critic payloads use voyage_number / voyageNumber)
   voyage_number: 'voyageNo',
   voyageNumber: 'voyageNo',
@@ -333,6 +339,17 @@ export function reviewGroupOf(field: string): ReviewGroup {
 }
 
 /**
+ * Labels for columns we still humanize (history, critic conflict copy) but do **not** show on
+ * Order Details read/edit — e.g. gross weight / HTS removed from the form per product.
+ */
+const HIDDEN_FIELD_LABELS: Record<string, string> = {
+  grossWeight: 'Gross Weight',
+  htsCode: 'HTS Code',
+  // Combined into SO# on Order Details (soNo ?? warehouseSo)
+  warehouseSo: 'Warehouse SO',
+}
+
+/**
  * Label for a leg COLUMN, from the one vocabulary. Every surface that names a field goes through
  * here (Order Details read view + its edit modal + the review conflict table) so a wording change
  * lands in one place instead of three.
@@ -342,7 +359,11 @@ export function reviewGroupOf(field: string): ReviewGroup {
  * a rename fails there first.
  */
 export function fieldLabel(column: string): string {
-  return EDITABLE_FIELDS.find((f) => f.column === column)?.label ?? column
+  return (
+    EDITABLE_FIELDS.find((f) => f.column === column)?.label ??
+    HIDDEN_FIELD_LABELS[column] ??
+    column
+  )
 }
 
 /** The fixed unit for a column, or null when it has none (see EditableField.unit). */

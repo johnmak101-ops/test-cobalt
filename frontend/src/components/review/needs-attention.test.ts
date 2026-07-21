@@ -267,10 +267,33 @@ describe('buildNeedsAttention / groups', () => {
       ],
     })
     expect(items.some((i) => /FCR001250330|numbers listed|but no p/i.test(i.text))).toBe(false)
-    // Real incomplete-extract flag still surfaces
-    expect(items.some((i) => /Parse incomplete — key information may be missing/i.test(i.text))).toBe(
+    // Real incomplete-extract flag still surfaces (document/scan failure only)
+    expect(items.some((i) => /Parse incomplete — a document or scan was not fully read/i.test(i.text))).toBe(
       true,
     )
+  })
+
+  it('schedule policy notes are UX-rephrased under Other — not Incomplete data', () => {
+    const items = buildNeedsAttention({
+      conflictsCount: 0,
+      riskFlags: [],
+      reviewReasons: [
+        'identity_fallback: subject/filename spine present but zero p',
+        "etd: aligned to ATD 2026-02-17 after sail (was booking/pre-sail '2026-02-16')",
+        'warehouse_end_date: next CFS 2026-03-02 18:00 (cross-day cutoffs; kept over older 2026-02-02 18:00)',
+      ],
+    })
+    expect(items.some((i) => i.groupId === 'incomplete_data')).toBe(false)
+    expect(items.some((i) => /Parse incomplete/i.test(i.text))).toBe(false)
+    expect(items.some((i) => /identity_fallback/i.test(i.text))).toBe(false)
+    const etd = items.find((i) => /ETD set to departure/i.test(i.text))
+    expect(etd?.groupId).toBe('other')
+    expect(etd!.text).toMatch(/departure date 2026-02-17/)
+    expect(etd!.text).toMatch(/booking estimate was 2026-02-16/)
+    const cfs = items.find((i) => /CFS cut-off updated/i.test(i.text))
+    expect(cfs?.groupId).toBe('other')
+    expect(cfs!.text).toMatch(/2026-03-02 18:00/)
+    expect(cfs!.text).toMatch(/replaces earlier 2026-02-02 18:00/)
   })
 
   it('hides gross_weight / measurement not-summed merge notes', () => {
@@ -302,12 +325,11 @@ describe('buildNeedsAttention / groups', () => {
     expect(items.some((i) => /not summed|per-PO sum|gross_weight|measurement/i.test(i.text))).toBe(
       false,
     )
-    // Binding cut-off is humanized — no DB column, no "Merge note:" prefix
-    const cutoff = items.find((i) => /cut-off|cutoff/i.test(i.text))
+    // Binding cut-off rephrased for ops (Other / FYI) — no snake_case, not Incomplete data
+    const cutoff = items.find((i) => /Warehouse cut-off kept/i.test(i.text))
     expect(cutoff).toBeTruthy()
-    expect(cutoff!.text).toBe(
-      'Cargo cut-off kept as 2026-07-15 16:00 (earliest across emails) — a newer email said 2026-07-20 12:00',
-    )
+    expect(cutoff!.groupId).toBe('other')
+    expect(cutoff!.text).toMatch(/2026-07-15 16:00/)
     expect(cutoff!.text).not.toMatch(/warehouse_end_date|Merge note:/i)
   })
 

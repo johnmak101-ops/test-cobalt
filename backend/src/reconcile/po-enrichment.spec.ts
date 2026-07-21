@@ -1,6 +1,12 @@
 import { describe, it, expect } from 'vitest'
 import { normKey } from './match-keys'
 import {
+  STYLE_NESTED_UNION_MAX_TOKENS,
+  styleTokenSet,
+  isStyleTokenSuperset,
+  stylesAreNested,
+  formatStyleUnion,
+  pickItemStyleNo,
   resolvePoEnrichment,
   conflictingValues,
   unattributedBrandStyle,
@@ -54,7 +60,10 @@ describe('resolvePoEnrichment', () => {
       row({ id: 'latest', poNo: 'PO-2', receivedAt: at('2026-06-02T00:00:00Z'), fields: { brand: 'FENIX', item_style_no: '33058', qty: null, qty_unit: null } }),
     ])
     const enr = map.get(normKey('PO-2'))
-    expect(enr?.itemStyleNo).toBe('33058') // latest wins
+    // Nested subset (33058 ⊂ 33058,43078) with maxTok<=3 → union both, not T1a single
+    expect(styleCommaCount(enr!.itemStyleNo!)).toBe(2)
+    expect(styleTokenSet(enr!.itemStyleNo!).has('33058')).toBe(true)
+    expect(styleTokenSet(enr!.itemStyleNo!).has('43078')).toBe(true)
     expect(enr?.totalQuantity).toBe(24) // fell back to the older record that has a qty
     expect(enr?.quantityUnit).toBe('cartons') // unit comes from the SAME record as the qty
   })
@@ -434,5 +443,114 @@ describe('unattributedBrandStyle (de-correction b2 — no-PO drop)', () => {
   })
   it('ignores a no-PO record that carries no brand/style', () => {
     expect(unattributedBrandStyle([row({ id: 'x', poNo: null, matchKeys: { so_no: 'SO-1' }, fields: { qty: '5' } })])).toEqual([])
+  })
+})
+
+describe('pickItemStyleNo — nested subset union (Set1) vs T1a large multi (IZAC)', () => {
+  it('exports STYLE_NESTED_UNION_MAX_TOKENS = 3', () => {
+    expect(STYLE_NESTED_UNION_MAX_TOKENS).toBe(3)
+  })
+
+  it('Set1: incomplete single does not beat two-style list → union both', () => {
+    // newest first
+    const picked = pickItemStyleNo([
+      '56571/SS26SW022, 56572/SS26SW023', // telex / latest full
+      '56572/SS26SW023', // incomplete INV/PL
+      '56571/SS26SW022, 56572/SS26SW023',
+    ])
+    const toks = [...styleTokenSet(picked!)]
+    expect(toks.sort()).toEqual(['56571/SS26SW022', '56572/SS26SW023'].map((s) => s.toUpperCase()).sort())
+    expect(styleCommaCount(picked!)).toBe(2)
+  })
+
+  it('IZAC: single beats large multi-token packing stamp (maxTok > 3)', () => {
+    const picked2 = pickItemStyleNo([
+      'PUH26BAINE, PUH26BENJI, PUH26BHALE, BONNIE, BOH26YACOTE',
+      'PUH26BHALE',
+    ])
+    expect(picked2).toBe('PUH26BHALE')
+  })
+
+  it('genuine divergence keeps T1a newest min-token', () => {
+    expect(pickItemStyleNo(['BBB', 'AAA'])).toBe('BBB')
+  })
+
+  it('stylesAreNested true for subset pairs', () => {
+    expect(stylesAreNested(['A, B', 'B'])).toBe(true)
+    expect(stylesAreNested(['111', '222'])).toBe(false)
+  })
+
+  it('isStyleTokenSuperset: both styles upgrades single', () => {
+    expect(isStyleTokenSuperset('56571/SS26SW022, 56572/SS26SW023', '56572/SS26SW023')).toBe(true)
+    expect(isStyleTokenSuperset('56572/SS26SW023', '56571/SS26SW022, 56572/SS26SW023')).toBe(false)
+    expect(isStyleTokenSuperset('AAA', 'BBB')).toBe(false)
+  })
+
+  it('formatStyleUnion preserves first-seen display order oldest→newest', () => {
+    // newest first input; scan reverses to chronological
+    expect(formatStyleUnion(['56572/SS26SW023', '56571/SS26SW022, 56572/SS26SW023'])).toBe(
+      '56571/SS26SW022, 56572/SS26SW023',
+    )
+  })
+})
+
+describe('resolvePoEnrichment — Set1 PO 25312 shape', () => {
+  it('keeps both styles when thread mixes full list and incomplete single', () => {
+    const map = resolvePoEnrichment([
+      row({
+        id: '1',
+        poNo: '25312',
+        receivedAt: at('2026-01-22T16:01:00Z'),
+        fields: { item_style_no: '56571/SS26SW022, 56572/SS26SW023' },
+      }),
+      row({
+        id: '3',
+        poNo: '25312',
+        receivedAt: at('2026-02-04T14:26:00Z'),
+        fields: { item_style_no: '56572/SS26SW023' },
+      }),
+      row({
+        id: '5',
+        poNo: '25312',
+        receivedAt: at('2026-02-24T11:19:00Z'),
+        fields: { item_style_no: '56571/SS26SW022, 56572/SS26SW023' },
+      }),
+    ])
+    const sty = map.get(normKey('25312'))!.itemStyleNo!
+    expect(styleCommaCount(sty)).toBe(2)
+    expect(styleTokenSet(sty).has('56571/SS26SW022'.toUpperCase())).toBe(true)
+    expect(styleTokenSet(sty).has('56572/SS26SW023'.toUpperCase())).toBe(true)
+  })
+})
+
+describe('resolvePoEnrichment — Set5 P0-shaped style scrub', () => {
+  it('drops Customs P028642 list and keeps real garment name from older mail', () => {
+    const map = resolvePoEnrichment([
+      row({
+        id: 'old',
+        poNo: '28631',
+        receivedAt: at('2026-01-16T14:23:00Z'),
+        fields: { item_style_no: 'FERN JUMPER' },
+      }),
+      row({
+        id: 'new',
+        poNo: '28631',
+        receivedAt: at('2026-01-31T08:53:00Z'),
+        fields: { item_style_no: 'P028642, P028630' },
+      }),
+    ])
+    expect(map.get(normKey('28631'))?.itemStyleNo).toBe('FERN JUMPER')
+  })
+
+  it('returns null when only P0-shaped styles exist', () => {
+    const map = resolvePoEnrichment([
+      row({
+        id: 'a',
+        poNo: '28642',
+        receivedAt: at('2026-01-31T08:53:00Z'),
+        fields: { item_style_no: 'P028642, P028630' },
+      }),
+    ])
+    expect(map.get(normKey('28642'))?.itemStyleNo).toBeNull()
   })
 })

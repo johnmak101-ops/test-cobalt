@@ -78,6 +78,8 @@ export interface ShipmentLegRow {
   riskLevel: string | null
   bookingNo: string | null
   soNo: string | null
+  /** 入仓/订仓 SO — never an alias of soNo / bookingNo. */
+  warehouseSo?: string | null
   itemStyleNo: string | null
   consigneeName: string | null
   consigneeAddress: string | null
@@ -158,6 +160,8 @@ export interface UiShipment {
   legCount: number
   bookingNo: string | null
   soNumber: string | null
+  /** 入仓/订仓 SO number (distinct from soNumber). */
+  warehouseSo: string | null
   itemStyleNo: string | null
   consigneeName: string | null
   consigneeAddress: string | null
@@ -231,6 +235,7 @@ export function toUiShipment(
     legCount: legMeta.legCount ?? 1,
     bookingNo: leg.bookingNo ?? null,
     soNumber: leg.soNo ?? null,
+    warehouseSo: leg.warehouseSo ?? null,
     itemStyleNo: leg.itemStyleNo ?? null,
     consigneeName: leg.consigneeName ?? null,
     consigneeAddress: leg.consigneeAddress ?? null,

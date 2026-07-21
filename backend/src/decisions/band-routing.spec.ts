@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   mapRecommendedToStatus,
   hasHardStopFlags,
+  isHighBandAutoEligible,
   resolveBandRouting,
   HARD_STOP_RISK_CODES,
 } from './band-routing'
@@ -61,5 +62,31 @@ describe('band-routing', () => {
     for (const c of ['INTRA_EMAIL_MULTI_STRONG_ID', 'AMBIGUOUS_MATCH', 'BACKEND_CONFLICT', 'PO_REASSIGN', 'PORTAL_ECHO']) {
       expect(HARD_STOP_RISK_CODES.has(c)).toBe(true)
     }
+  })
+
+  it('isHighBandAutoEligible: high clean only', () => {
+    const clean = {
+      confidence: { score: 90, band: 'high' as const, label: 'High' },
+      summary: '',
+      observations: [],
+      priorState: { headline: '', fields: [] },
+      proposedChanges: [],
+      riskFlags: [] as { code: string; severity: 'low' | 'medium' | 'high'; message: string }[],
+      recommendedHumanAction: 'approve_ok' as const,
+      reasons: [],
+    }
+    expect(isHighBandAutoEligible(clean)).toBe(true)
+    expect(
+      isHighBandAutoEligible({
+        ...clean,
+        riskFlags: [{ code: 'BACKEND_CONFLICT', severity: 'high', message: 'x' }],
+      }),
+    ).toBe(false)
+    expect(
+      isHighBandAutoEligible({
+        ...clean,
+        confidence: { score: 40, band: 'low', label: 'Low' },
+      }),
+    ).toBe(false)
   })
 })

@@ -25,8 +25,11 @@ export function assembleIngestReviewReasons(
   }
   for (const r of dto.opsNotes ?? []) {
     if (!r || seen.has(r)) continue
+    // Subject-party pin/veto is silent success — never surface as review/Other reasons
+    if (/subject-party-pin|subject-party-veto/i.test(r)) continue
     seen.add(r)
     base.push(r)
   }
-  return base
+  // Strip any pin/veto strings already present in dto.reviewReasons (legacy rematches)
+  return base.filter((r) => !/subject-party-pin|subject-party-veto/i.test(r))
 }

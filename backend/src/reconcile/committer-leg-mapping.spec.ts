@@ -49,4 +49,8 @@ describe('mapFieldsToLegColumns — direct field→leg-column mapping (pure, no 
     expect(mapFieldsToLegColumns({ vendor_code: 'SOUOCE' }).vendorRaw).toBe('SOUOCE')
     expect(mapFieldsToLegColumns({}).vendorRaw).toBeNull()
   })
+  it('maps warehouse_so → warehouseSo', () => {
+    expect(mapFieldsToLegColumns({ warehouse_so: '  B1261611448  ' }).warehouseSo).toBe('B1261611448')
+    expect(mapFieldsToLegColumns({}).warehouseSo).toBeNull()
+  })
 })

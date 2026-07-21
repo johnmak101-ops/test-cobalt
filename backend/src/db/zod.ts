@@ -18,6 +18,7 @@ export const ParsedFields = z
     item_style_no: nullishStr,
     booking_no: nullishStr,
     so_no: nullishStr,
+    warehouse_so: nullishStr, // 入仓/订仓号 — never alias of so_no / booking_no
     hbl_awb_fcr_no: nullishStr,
     mbl: nullishStr,
     container_no: nullishStr,

@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest'
-import { categorizeReason, categoriesOf, humanizeReason, humanizeReasons } from './review-reasons'
+import {
+  categorizeReason,
+  categoriesOf,
+  humanizeReason,
+  humanizeReasons,
+  isSilentOpsReason,
+} from './review-reasons'
 
 // Real reason strings as produced by the committer hints, review policy labels, disposition
 // reasons, and the queue matcher gate. Categories drive the Review Queue filter chips (#133).
@@ -83,6 +89,40 @@ describe('categorizeReason (#133 filter chips)', () => {
         '1 field(s) received different values from different emails — see the conflict table for which fields and values',
       ),
     ).toBe('conflict')
+  })
+})
+
+describe('subject-party-pin silent ops (no UI surface)', () => {
+  it('isSilentOpsReason matches pin and veto', () => {
+    expect(
+      isSilentOpsReason("auto: subject-party-pin: vendor_code kept 'ROKNFT' over 'SOUOCE'"),
+    ).toBe(true)
+    expect(isSilentOpsReason("subject-party-veto: vendor_code: kept 'ROKNFT'")).toBe(true)
+    expect(isSilentOpsReason('Cannot match "X" in the forwarder list')).toBe(false)
+  })
+
+  it('humanizeReasons drops pin strings', () => {
+    const out = humanizeReasons([
+      "auto: subject-party-pin: vendor_code kept 'ROKNFT' over 'SOUOCE'",
+      'backend conflict on qty',
+    ])
+    expect(out.some((r) => /subject-party|ROKNFT/i.test(r.raw))).toBe(false)
+    expect(out.length).toBe(1)
+  })
+
+  it('humanizeReasons drops identity_fallback; rephrases schedule policy for UX', () => {
+    const out = humanizeReasons([
+      "etd: aligned to ATD 2026-02-17 after sail (was booking/pre-sail '2026-02-16')",
+      'warehouse_end_date: next CFS 2026-03-02 18:00 (cross-day cutoffs; kept over older 2026-02-02 18:00)',
+      'identity_fallback: subject/filename spine present but zero p',
+      'backend conflict on qty',
+    ])
+    expect(out.some((r) => /identity_fallback/i.test(r.raw))).toBe(false)
+    expect(out.some((r) => /ETD set to departure date 2026-02-17/.test(r.text))).toBe(true)
+    expect(out.some((r) => /Warehouse \/ CFS cut-off updated to 2026-03-02 18:00/.test(r.text))).toBe(
+      true,
+    )
+    expect(out.some((r) => /backend conflict/.test(r.raw))).toBe(true)
   })
 })
 

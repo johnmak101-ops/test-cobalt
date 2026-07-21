@@ -11,7 +11,7 @@ import { coerceLegField, DATE_FIELDS } from './coerce-field'
 
 /** A human-entered new-shipment form. Every field optional; at least one identity OR a PO is required. */
 export interface ManualShipmentInput {
-  bookingNo?: string; soNo?: string; hblAwbFcrNo?: string; mbl?: string; containerNo?: string; scacCode?: string
+  bookingNo?: string; soNo?: string; warehouseSo?: string; hblAwbFcrNo?: string; mbl?: string; containerNo?: string; scacCode?: string
   customerCode?: string; vendorCode?: string; forwarderName?: string; pol?: string; pod?: string; mode?: string
   qty?: number | string; qtyUnit?: string; grossWeight?: number | string; measurement?: number | string
   itemStyleNo?: string; htsCode?: string; consigneeName?: string; consigneeAddress?: string
@@ -25,6 +25,7 @@ export interface ManualShipmentInput {
 const CREATE_FIELD_MAP: { dto: keyof ManualShipmentInput; parser: string; leg: string | null }[] = [
   { dto: 'bookingNo', parser: 'booking_no', leg: 'bookingNo' },
   { dto: 'soNo', parser: 'so_no', leg: 'soNo' },
+  { dto: 'warehouseSo', parser: 'warehouse_so', leg: 'warehouseSo' },
   { dto: 'hblAwbFcrNo', parser: 'hbl_awb_fcr_no', leg: 'hblAwbFcrNo' },
   { dto: 'mbl', parser: 'mbl', leg: 'mbl' },
   { dto: 'containerNo', parser: 'container_no', leg: 'containerNo' },
@@ -71,7 +72,7 @@ const PARSER_TO_LEG: Record<string, string> = Object.fromEntries(
 // Mesh write (#183). customer/vendorRaw are the stand-in when no master resolves — Mesh syncs ~every 2
 // months, so the raw column holds the correct party until then (a resolved master still wins display).
 const EDITABLE_FIELDS = new Set([
-  'bookingNo', 'soNo', 'hblAwbFcrNo', 'mbl', 'containerNo', 'scacCode',
+  'bookingNo', 'soNo', 'warehouseSo', 'hblAwbFcrNo', 'mbl', 'containerNo', 'scacCode',
   'qty', 'qtyUnit', 'grossWeight', 'measurement', 'itemStyleNo', 'htsCode',
   'mode', 'polRaw', 'podRaw', 'forwarderRaw', 'customerRaw', 'vendorRaw',
   'consigneeName', 'consigneeAddress', 'vesselName', 'voyageNo', 'flightNo', 'mawb',

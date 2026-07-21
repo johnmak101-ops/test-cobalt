@@ -30,6 +30,7 @@ import {
 } from './mappers/shipment.mapper'
 import { filterPortMissReasons } from './mappers/port-miss-reasons'
 import type { CriticReview } from '../decisions/critic-review.types'
+import { isHighBandAutoEligible } from '../decisions/band-routing'
 import { toUiAlert } from './mappers/alert.mapper'
 import { toUiAlertRule } from './mappers/alert-rule.mapper'
 import { toUiHistoryEntry } from './mappers/history.mapper'
@@ -578,11 +579,15 @@ export class PresentationService {
   /**
    * The Review Queue: Active (`pending`), Rejected (`dismissed`), or Approved (`approved` confirmed
    * with criticReview). Same customer/route resolution as the shipments() list.
+   * High-band auto-eligible legs never surface (Active or Approved) — silent auto-confirm path.
    */
   async reviewQueue(view: 'pending' | 'dismissed' | 'approved' = 'pending') {
     const rows = await this.shipmentRepo.reviewQueue(view)
+    const visible = rows.filter(
+      (r) => !isHighBandAutoEligible(r.criticReview as CriticReview | null | undefined),
+    )
     return {
-      shipments: rows.map((r) => ({
+      shipments: visible.map((r) => ({
         id: r.id,
         bookingNo: r.bookingNo ?? null,
         soNo: r.soNo ?? null,
@@ -611,8 +616,18 @@ export class PresentationService {
 
   /** Nav badge count of provisional shipments awaiting review (+ dismissed for the queue tab). */
   async reviewQueueCounts() {
-    const c = await this.shipmentRepo.reviewQueueCounts()
-    return { provisional: c.pending, dismissed: c.dismissed }
+    // Exclude high-band auto-eligible from Active badge (same filter as reviewQueue pending).
+    const [pendingRows, dismissedRows] = await Promise.all([
+      this.shipmentRepo.reviewQueue('pending'),
+      this.shipmentRepo.reviewQueue('dismissed'),
+    ])
+    const pending = pendingRows.filter(
+      (r) => !isHighBandAutoEligible(r.criticReview as CriticReview | null | undefined),
+    ).length
+    const dismissed = dismissedRows.filter(
+      (r) => !isHighBandAutoEligible(r.criticReview as CriticReview | null | undefined),
+    ).length
+    return { provisional: pending, dismissed }
   }
 
   /** Human "approve": accept a provisional shipment as-is (review_status → confirmed). */

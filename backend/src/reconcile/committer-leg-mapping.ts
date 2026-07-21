@@ -22,6 +22,7 @@ export function mapFieldsToLegColumns(f: Record<string, unknown>): Record<string
     podRaw: str(f.pod),
     bookingNo: str(f.booking_no),
     soNo: str(f.so_no),
+    warehouseSo: str(f.warehouse_so), // 入仓/订仓号 — never alias of so_no
     hblAwbFcrNo: str(f.hbl_awb_fcr_no),
     mbl: str(f.mbl),
     containerNo: str(f.container_no),
