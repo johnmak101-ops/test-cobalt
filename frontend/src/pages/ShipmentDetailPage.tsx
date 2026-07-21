@@ -22,6 +22,7 @@ import { NeedsAttentionMeshMiss } from '../components/review/NeedsAttentionMeshM
 import { EDITABLE_FIELDS, fieldLabel, numericFieldWarn, dateOrderWarn, type EditableField } from '../lib/review-fields'
 import { toast } from '../components/ui/Toast'
 import { interactiveProps } from '../lib/interactive'
+import { Pagination, usePagination, PageSizeSelect } from '../components/ui/Pagination'
 import { ArrowLeft, Mail, Clock, ClipboardList, Package, Ship, Calendar, AlertTriangle, AlertCircle, Info, Pencil, Check, X, NotebookPen } from 'lucide-react'
 
 // The human-editable leg fields, grouped like the read-only card. `db` = the backend column the PATCH writes
@@ -159,6 +160,25 @@ export default function ShipmentDetailPage() {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState<Record<string, string>>({})
   const [note, setNote] = useState('')
+  /** Related Emails list pagination (client-side; threads can be 30–100+). */
+  const [emailPage, setEmailPage] = useState(1)
+  const [emailPerPage, setEmailPerPage] = useState(10)
+  // Reset page when navigating to another shipment.
+  const [emailPageShipId, setEmailPageShipId] = useState(id)
+  if (id !== emailPageShipId) {
+    setEmailPageShipId(id)
+    setEmailPage(1)
+  }
+  const relatedEmails = shipment?.emails ?? []
+  const {
+    totalItems: emailTotal,
+    totalPages: emailTotalPages,
+    pageSize: emailPageSize,
+    getPage: getEmailPage,
+  } = usePagination(relatedEmails, emailPerPage)
+  // Clamp when the list shrinks (e.g. after navigation / filter).
+  const safeEmailPage = Math.min(emailPage, emailTotalPages)
+  const pageEmails = getEmailPage(safeEmailPage)
 
   if (isLoading) {
     return (
@@ -796,59 +816,85 @@ export default function ShipmentDetailPage() {
 
           {/* Related Emails — always shown so orphan links (body wiped) are not invisible */}
           <Card>
-            <h4 className="mb-4 text-base font-semibold text-text-primary">Related Emails</h4>
-            {(shipment.emails ?? []).length === 0 ? (
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+              <h4 className="text-base font-semibold text-text-primary">
+                Related Emails
+                {emailTotal > 0 && (
+                  <span className="ml-2 text-sm font-normal text-text-muted">({emailTotal})</span>
+                )}
+              </h4>
+              {emailTotal > 0 && (
+                <PageSizeSelect
+                  value={emailPerPage}
+                  onChange={(size) => {
+                    setEmailPerPage(size)
+                    setEmailPage(1)
+                  }}
+                />
+              )}
+            </div>
+            {emailTotal === 0 ? (
               <p className="text-sm text-text-muted">No related emails linked to this shipment.</p>
             ) : (
-              <div className="space-y-2">
-                {(shipment.emails ?? []).map((email) => {
-                  const openable = email.id != null && !email.bodyMissing
-                  const emailKey = email.id ?? `orphan-${email.subject}-${email.receivedAt ?? ''}-${email.sender ?? ''}`
-                  return (
-                    <div
-                      key={emailKey}
-                      {...(openable
-                        ? interactiveProps(() => {
-                            const hl = shipment.criticReview?.multiBookingOrigin?.bookingNo?.trim()
-                            const q = new URLSearchParams()
-                            if (email.emailType) q.set('type', email.emailType)
-                            if (hl) q.set('hl', hl) // Hybrid-C E3: highlight booking token in body
-                            const qs = q.toString()
-                            window.open(
-                              `/email/${email.id}${qs ? `?${qs}` : ''}`,
-                              `email_${email.id}`,
-                              'popup,width=880,height=940,resizable=yes,scrollbars=yes',
-                            )
-                          })
-                        : {})}
-                      className={
-                        openable
-                          ? 'flex cursor-pointer items-center gap-3 rounded-lg bg-surface-900 p-3 transition-colors hover:bg-surface-700'
-                          : 'flex cursor-default items-center gap-3 rounded-lg bg-surface-900/60 p-3 opacity-80'
-                      }
-                      title={openable ? undefined : 'Email body is not in the store (link only)'}
-                    >
-                      <Mail size={14} className="shrink-0 text-text-muted" />
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm text-text-primary">{email.subject}</p>
-                        <p className="text-xs text-text-muted">
-                          {email.bodyMissing || email.id == null
-                            ? 'Body not stored — re-ingest to open'
-                            : (
-                                <>
-                                  {email.sender} ·{' '}
-                                  <span className="font-mono">{formatDateTime(email.receivedAt)}</span>
-                                </>
-                              )}
-                        </p>
+              <>
+                <div className="space-y-2">
+                  {pageEmails.map((email) => {
+                    const openable = email.id != null && !email.bodyMissing
+                    const emailKey =
+                      email.id ?? `orphan-${email.subject}-${email.receivedAt ?? ''}-${email.sender ?? ''}`
+                    return (
+                      <div
+                        key={emailKey}
+                        {...(openable
+                          ? interactiveProps(() => {
+                              const hl = shipment.criticReview?.multiBookingOrigin?.bookingNo?.trim()
+                              const q = new URLSearchParams()
+                              if (email.emailType) q.set('type', email.emailType)
+                              if (hl) q.set('hl', hl) // Hybrid-C E3: highlight booking token in body
+                              const qs = q.toString()
+                              window.open(
+                                `/email/${email.id}${qs ? `?${qs}` : ''}`,
+                                `email_${email.id}`,
+                                'popup,width=880,height=940,resizable=yes,scrollbars=yes',
+                              )
+                            })
+                          : {})}
+                        className={
+                          openable
+                            ? 'flex cursor-pointer items-center gap-3 rounded-lg bg-surface-900 p-3 transition-colors hover:bg-surface-700'
+                            : 'flex cursor-default items-center gap-3 rounded-lg bg-surface-900/60 p-3 opacity-80'
+                        }
+                        title={openable ? undefined : 'Email body is not in the store (link only)'}
+                      >
+                        <Mail size={14} className="shrink-0 text-text-muted" />
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm text-text-primary">{email.subject}</p>
+                          <p className="text-xs text-text-muted">
+                            {email.bodyMissing || email.id == null ? (
+                              'Body not stored — re-ingest to open'
+                            ) : (
+                              <>
+                                {email.sender} ·{' '}
+                                <span className="font-mono">{formatDateTime(email.receivedAt)}</span>
+                              </>
+                            )}
+                          </p>
+                        </div>
+                        {/* No type tag: the timestamp is what tells you which mail supersedes which, and
+                            the classification is overloaded — 'Other' means the agent judged it chatter,
+                            OR the model returned nothing, OR a deterministic path never classified it. */}
                       </div>
-                      {/* No type tag: the timestamp is what tells you which mail supersedes which, and
-                          the classification is overloaded — 'Other' means the agent judged it chatter,
-                          OR the model returned nothing, OR a deterministic path never classified it. */}
-                    </div>
-                  )
-                })}
-              </div>
+                    )
+                  })}
+                </div>
+                <Pagination
+                  currentPage={safeEmailPage}
+                  totalPages={emailTotalPages}
+                  totalItems={emailTotal}
+                  pageSize={emailPageSize}
+                  onPageChange={setEmailPage}
+                />
+              </>
             )}
           </Card>
         </>
