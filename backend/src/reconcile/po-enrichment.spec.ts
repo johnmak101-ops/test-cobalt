@@ -3,6 +3,7 @@ import { normKey } from './match-keys'
 import {
   STYLE_NESTED_UNION_MAX_TOKENS,
   styleTokenSet,
+  isStyleTokenSuperset,
   stylesAreNested,
   formatStyleUnion,
   pickItemStyleNo,
@@ -477,6 +478,12 @@ describe('pickItemStyleNo — nested subset union (Set1) vs T1a large multi (IZA
   it('stylesAreNested true for subset pairs', () => {
     expect(stylesAreNested(['A, B', 'B'])).toBe(true)
     expect(stylesAreNested(['111', '222'])).toBe(false)
+  })
+
+  it('isStyleTokenSuperset: both styles upgrades single', () => {
+    expect(isStyleTokenSuperset('56571/SS26SW022, 56572/SS26SW023', '56572/SS26SW023')).toBe(true)
+    expect(isStyleTokenSuperset('56572/SS26SW023', '56571/SS26SW022, 56572/SS26SW023')).toBe(false)
+    expect(isStyleTokenSuperset('AAA', 'BBB')).toBe(false)
   })
 
   it('formatStyleUnion preserves first-seen display order oldest→newest', () => {

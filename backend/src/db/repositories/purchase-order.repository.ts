@@ -2,6 +2,7 @@ import { Inject, Injectable } from '@nestjs/common'
 import { sql, type Kysely } from 'kysely'
 import type { DB } from '../kysely/db'
 import { KYSELY } from '../kysely.provider'
+import { isStyleTokenSuperset } from '../../lib/style-tokens'
 
 export type PoEnrichInput = Partial<{ brand: string | null; itemStyleNo: string | null; totalQuantity: number | null; quantityUnit: string | null }>
 
@@ -143,7 +144,17 @@ export class PurchaseOrderRepository {
     if (enrich) {
       const patch: PoEnrichInput = {}
       if (existing.brand == null && enrich.brand != null) patch.brand = enrich.brand
-      if (existing.itemStyleNo == null && enrich.itemStyleNo != null) patch.itemStyleNo = enrich.itemStyleNo
+      // itemStyleNo: fill-if-null, or upgrade when enrich is a proper token superset
+      // (incomplete single on PO must not block a fuller multi-style list). Never shrink.
+      if (existing.itemStyleNo == null && enrich.itemStyleNo != null) {
+        patch.itemStyleNo = enrich.itemStyleNo
+      } else if (
+        existing.itemStyleNo != null &&
+        enrich.itemStyleNo != null &&
+        isStyleTokenSuperset(enrich.itemStyleNo, existing.itemStyleNo)
+      ) {
+        patch.itemStyleNo = enrich.itemStyleNo
+      }
       if (existing.totalQuantity == null && enrich.totalQuantity != null) patch.totalQuantity = enrich.totalQuantity
       if (existing.quantityUnit == null && enrich.quantityUnit != null) patch.quantityUnit = enrich.quantityUnit
       if (Object.keys(patch).length) {

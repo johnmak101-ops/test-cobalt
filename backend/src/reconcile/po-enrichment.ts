@@ -1,5 +1,9 @@
 import { normKey, str, num } from './match-keys'
 import { QTY_UNIT } from '../db/enums'
+import { styleTokenSet, isStyleTokenSuperset } from '../lib/style-tokens'
+
+// Re-export for callers that already import style helpers from this module.
+export { styleTokenSet, isStyleTokenSuperset }
 
 /** The per-PO facts pulled from parsed evidence, ready to enrich purchase_orders. The first four fields
  *  are the enrichment payload (consumed by upsertPo); the trailing flags are de-correction review-signals
@@ -53,17 +57,6 @@ export function styleCommaCount(raw: string): number {
  * must not erase a two-style telex). Above this → classic T1a (IZAC 5-token stamp).
  */
 export const STYLE_NESTED_UNION_MAX_TOKENS = 3
-
-/** Normalized token set (upper, trimmed) for set ops. */
-export function styleTokenSet(raw: string): Set<string> {
-  return new Set(
-    String(raw ?? '')
-      .split(',')
-      .map((x) => x.trim())
-      .filter(Boolean)
-      .map((x) => x.toUpperCase()),
-  )
-}
 
 /** True if every pair of statements is nested (A⊆B or B⊆A or equal). */
 export function stylesAreNested(styles: string[]): boolean {
