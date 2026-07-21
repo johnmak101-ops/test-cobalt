@@ -665,7 +665,10 @@ export class PresentationService {
       if (!id) continue
       const patch: Record<string, unknown> = {}
       if (typeof r.thresholdDays === 'number') patch.thresholdHours = Math.round(r.thresholdDays * 24)
-      if (typeof r.severity === 'string') patch.severity = r.severity
+      // Product pair severities are fixed: A1/A3 WARNING, A2/A4 CRITICAL (UI "Critical — days after ETD").
+      if (id === 'A1' || id === 'A3') patch.severity = 'WARNING'
+      else if (id === 'A2' || id === 'A4') patch.severity = 'CRITICAL'
+      else if (typeof r.severity === 'string') patch.severity = r.severity
       if (typeof r.enabled === 'boolean') patch.enabled = r.enabled
       const raw = r.countryThresholds
       const ct = typeof raw === 'string' ? (raw ? JSON.parse(raw) : null) : (raw ?? null)

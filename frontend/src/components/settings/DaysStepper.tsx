@@ -101,10 +101,12 @@ export function DaysStepper({
         'inline-flex shrink-0 items-center justify-between gap-1 rounded-2xl border border-border',
         'bg-surface-800 px-1 shadow-sm',
         'ring-offset-bg focus-within:ring-2 focus-within:ring-cobalt-primary/40 focus-within:ring-offset-1',
+        'outline-none focus-visible:ring-2 focus-visible:ring-cobalt-primary/40',
         disabled && 'pointer-events-none opacity-50',
       )}
       role="group"
       aria-label={ariaLabel}
+      tabIndex={disabled ? -1 : 0}
       onKeyDown={(e) => {
         if (disabled || editing) return
         if (e.key === 'ArrowUp' || e.key === 'ArrowRight') {

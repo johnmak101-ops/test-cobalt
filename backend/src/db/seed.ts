@@ -167,7 +167,7 @@ async function main() {
     {
       id: 'A2',
       name: 'No Draft BOL received',
-      description: 'Severe when Draft B/L is still missing after ETD + N calendar days',
+      description: 'Critical when Draft B/L is still missing after ETD + N calendar days',
       state: null,
       triggerType: 'days_after',
       triggerReference: 'etd',
@@ -197,7 +197,7 @@ async function main() {
     {
       id: 'A4',
       name: 'No Final BOL received',
-      description: 'Severe when Final B/L is still missing after ETD + N calendar days',
+      description: 'Critical when Final B/L is still missing after ETD + N calendar days',
       state: null,
       triggerType: 'days_after',
       triggerReference: 'etd',
