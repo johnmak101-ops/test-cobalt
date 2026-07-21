@@ -102,12 +102,6 @@ function houseBillLabel(mode: string | null | undefined): string {
   return isAirMode(mode) ? 'HAWB' : fieldLabel('hblAwbFcrNo')
 }
 
-/** HTS/HS codes are digits, optionally dotted (6110.20.2020). Flag anything else (e.g. "6110test") as a
- *  soft warning only — HTS is never blocked on save, since its forms vary too much to hard-reject. */
-function htsLooksOff(value: string | undefined): boolean {
-  return !!value && !/^[\d.\s]*$/.test(value)
-}
-
 /**
  * Turn the "see conflict table" clause into a deep-link to this shipment's focused review view.
  * The conflict comparison UI lives on ReviewCard (rendered by that view), not shipment detail.
@@ -573,11 +567,6 @@ export default function ShipmentDetailPage() {
                           {numErr}
                         </p>
                       )}
-                      {f.db === 'htsCode' && htsLooksOff(cur) && (
-                        <p className="col-start-2 mt-1 text-xs text-status-warning">
-                          HTS looks off — expected digits, e.g. 6110.20.2020
-                        </p>
-                      )}
                     </div>
                       )]
                   })}
@@ -689,9 +678,7 @@ export default function ShipmentDetailPage() {
           <DetailSection title="Cargo & Logistics" icon={<Package size={14} className="text-text-muted" />}>
             <DetailRow historyKey="qty" label={fieldLabel('qty')} value={shipment.quantityShipped != null ? String(shipment.quantityShipped) : null} />
             <DetailRow historyKey="qtyUnit" label={fieldLabel('qtyUnit')} value={shipment.quantityUnit ?? null} />
-            <DetailRow historyKey="grossWeight" label={fieldLabel('grossWeight')} value={shipment.grossWeight != null ? `${shipment.grossWeight} KGS` : null} />
             <DetailRow historyKey="measurement" label={fieldLabel('measurement')} value={shipment.measurement != null ? `${shipment.measurement} CBM` : null} />
-            <DetailRow historyKey="htsCode" label={fieldLabel('htsCode')} value={shipment.htsCode?.replace(/,/g, ', ') ?? null} />
             <DetailRow
               historyKey="containerNo"
               label={fieldLabel('containerNo')}
