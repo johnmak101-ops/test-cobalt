@@ -77,6 +77,7 @@ const leg = (over: Partial<ShipmentLegRow> = {}): ShipmentLegRow => ({
   riskLevel: 'ON_TRACK',
   bookingNo: 'BK-100',
   soNo: 'SO-200',
+  warehouseSo: null,
   itemStyleNo: 'STY-9',
   consigneeName: 'ACME Importers',
   consigneeAddress: '1 Dock Rd',
@@ -130,6 +131,7 @@ describe('toUiShipment — flat active-leg projection', () => {
     const s = toUiShipment(fullInput())
     expect(s.id).toBe('leg-1')
     expect(s.soNumber).toBe('SO-200')
+    expect(s.warehouseSo).toBeNull()
     expect(s.mblNumber).toBe('MBL-555')
     expect(s.hblNumber).toBe('HBL-777')
     expect(s.voyageNumber).toBe('V42')
@@ -140,6 +142,15 @@ describe('toUiShipment — flat active-leg projection', () => {
     expect(s.containerNo).toBe('MSKU1234567')
     expect(s.vesselName).toBe('EVER GLOBE')
     expect(s.itemStyleNo).toBe('STY-9')
+  })
+
+  it('maps warehouseSo (入仓/订仓) without aliasing soNumber', () => {
+    const s = toUiShipment({
+      ...fullInput(),
+      leg: leg({ soNo: 'SO-200', warehouseSo: 'WH-SO-入仓-1' }),
+    })
+    expect(s.soNumber).toBe('SO-200')
+    expect(s.warehouseSo).toBe('WH-SO-入仓-1')
   })
 
   it('maps state -> UI status and passes risk through', () => {
@@ -227,7 +238,7 @@ describe('toUiShipment — flat active-leg projection', () => {
   it('is null-safe: empty leg, no booking, no ports, no POs', () => {
     const s = toUiShipment({
       leg: leg({
-        state: null, soNo: null, mbl: null, hblAwbFcrNo: null, voyageNo: null, qty: null,
+        state: null, soNo: null, warehouseSo: null, mbl: null, hblAwbFcrNo: null, voyageNo: null, qty: null,
         qtyUnit: null, etd: null, atd: null, cargoReadyDate: null, scacCode: null,
       }),
       booking: null,

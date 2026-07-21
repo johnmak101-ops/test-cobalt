@@ -20,6 +20,9 @@ const EXTRA_LABELS: Record<string, string> = {
   // the value carries the unit ("214.238"), so the label omits (KGS)/(CBM)
   grossWeight: 'Gross Weight',
   measurement: 'Measurement',
+  // 入仓/订仓 SO — distinct from soNo (SO#); never dual-written into so_no / booking_no
+  warehouseSo: 'Warehouse SO',
+  warehouse_so: 'Warehouse SO',
   // routing / parties — email-replay tokens + the committer's resolved/raw columns
   forwarder: 'Forwarder',
   forwarderId: 'Forwarder',

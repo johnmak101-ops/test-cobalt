@@ -5,11 +5,16 @@ describe('fieldLabel — Change History field keys → human labels', () => {
   it('maps editable leg columns to the Review page labels', () => {
     expect(fieldLabel('bookingNo')).toBe('Booking No.')
     expect(fieldLabel('soNo')).toBe('SO#')
-    expect(fieldLabel('hblAwbFcrNo')).toBe('HBL / AWB / FCR No.')
+    expect(fieldLabel('hblAwbFcrNo')).toBe('HBL / HAWB / FCR No.')
     expect(fieldLabel('scacCode')).toBe('SCAC Code')
     expect(fieldLabel('cargoReadyDate')).toBe('Cargo Ready Date')
     expect(fieldLabel('inDcDate')).toBe('In DC Date')
     expect(fieldLabel('itemStyleNo')).toBe('Item / Style No.')
+  })
+
+  it('maps warehouseSo (入仓/订仓) to Warehouse SO', () => {
+    expect(fieldLabel('warehouseSo')).toBe('Warehouse SO')
+    expect(fieldLabel('warehouse_so')).toBe('Warehouse SO')
   })
 
   it('drops the unit suffix for weight/measure (the value carries the unit)', () => {

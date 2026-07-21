@@ -664,6 +664,16 @@ export default function ShipmentDetailPage() {
               }
             />
             <DetailRow
+              historyKey="warehouseSo"
+              label={fieldLabel('warehouseSo')}
+              value={shipment.warehouseSo ?? null}
+              hint={
+                shipment.warehouseSo
+                  ? undefined
+                  : 'not stated in this shipment’s email(s)'
+              }
+            />
+            <DetailRow
               historyKey="itemStyleNo"
               label={fieldLabel('itemStyleNo')}
               value={shipment.itemStyleNo?.replace(/,/g, ', ') ?? null}

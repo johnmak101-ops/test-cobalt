@@ -50,6 +50,8 @@ export interface Shipment {
   legCount?: number
   bookingNo: string | null
   soNumber: string | null
+  /** 入仓/订仓 SO — distinct from soNumber; optional until older responses catch up. */
+  warehouseSo?: string | null
   itemStyleNo: string | null
   consigneeName: string | null
   consigneeAddress: string | null
