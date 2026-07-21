@@ -259,19 +259,37 @@ function isRedundantRawNameMasterNote(raw: string): boolean {
  * Humanize merge-adjustment notes for ops — no snake_case DB columns, no "Merge note:" prefix.
  * Returns null when the note should be hidden (weight/measurement spam).
  */
+/** Successful schedule/identity policy already applied — never show under Incomplete data / Other. */
+function isSilentScheduleSuccessNote(raw: string): boolean {
+  const s = raw ?? ''
+  return (
+    /etd:\s*aligned to ATD/i.test(s) ||
+    /aligned to ATD .+ after sail/i.test(s) ||
+    /warehouse_end_date:\s*next CFS/i.test(s) ||
+    /next CFS .+\(cross-day cutoffs/i.test(s) ||
+    /warehouse_end_date:\s*binding cutoff/i.test(s) ||
+    /earliest same-day stated/i.test(s) ||
+    /earliest current stated/i.test(s) ||
+    /cargo cut-off \(WH end\):\s*next CFS/i.test(s) ||
+    /subject-party-pin|subject-party-veto/i.test(s) ||
+    /identity_fallback/i.test(s)
+  )
+}
+
 function humanizeMergeNote(raw: string): string | null {
   const s = raw.replace(/^Merge note:\s*/i, '').trim()
   if (!s) return null
   if (isWeightMeasurementMergeNote(s) || isWeightMeasurementMergeNote(raw)) return null
+  // Happy-path schedule policy (ETD←ATD, next CFS) — values are already on the leg; hide engineering chatter.
+  if (isSilentScheduleSuccessNote(s) || isSilentScheduleSuccessNote(raw)) return null
 
   // warehouse_end_date: binding cutoff 2026-07-15 16:00 (earliest current stated) — newest doc said 2026-07-20 12:00
   const bind = s.match(
     /warehouse_end_date:\s*binding cutoff\s+(.+?)\s*\(earliest current stated\)\s*[—–-]\s*newest doc said\s+(.+)/i,
   )
   if (bind) {
-    const kept = bind[1]!.trim()
-    const newer = bind[2]!.trim()
-    return `Cargo cut-off kept as ${kept} (earliest across emails) — a newer email said ${newer}`
+    // Legacy path — also suppressed by isSilentScheduleSuccessNote above; keep null for clarity
+    return null
   }
   // Fallback phrasing if wording drifts slightly
   const bindLoose = s.match(
@@ -986,13 +1004,21 @@ function lineFromReason(raw: string, humanized: string): LineHit | null {
     }
   }
 
-  // Incomplete data
-  if (/vision_pending|output_truncated|input_truncated|content_filter/i.test(raw)) {
+  // Incomplete data — only real incomplete extract (not identity_fallback / schedule success audits)
+  if (/vision_pending|output_truncated|input_truncated|content_filter|split_parse/i.test(raw)) {
     return {
       lineId: 'i-parse',
       text: 'Parse incomplete — key information may be missing',
       category: 'extraction',
     }
+  }
+  // identity_fallback is spine recovery, not "parse incomplete" — suppress
+  if (/identity_fallback/i.test(raw)) {
+    return null
+  }
+  // Schedule merge success (ETD align, next CFS) — suppress (values already on leg)
+  if (isSilentScheduleSuccessNote(raw) || isSilentScheduleSuccessNote(humanized)) {
+    return null
   }
   // Desk membership band-low reason (exact string from queue AI_CONFIDENCE_LOW_REASON)
   if (raw.trim() === AI_CONFIDENCE_LOW_REASON || new RegExp(`^${AI_CONFIDENCE_LOW_REASON.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i').test(raw.trim())) {

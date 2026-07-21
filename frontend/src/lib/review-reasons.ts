@@ -327,7 +327,19 @@ const TRANSLATIONS: Translation[] = [
 
 /** Silent auto-success audits — never show in Review / Other reasons. */
 export function isSilentOpsReason(reason: string): boolean {
-  return /subject-party-pin|subject-party-veto/i.test(reason ?? '')
+  const r = reason ?? ''
+  return (
+    /subject-party-pin|subject-party-veto/i.test(r) ||
+    /etd:\s*aligned to ATD/i.test(r) ||
+    /aligned to ATD .+ after sail/i.test(r) ||
+    /warehouse_end_date:\s*next CFS/i.test(r) ||
+    /next CFS .+\(cross-day cutoffs/i.test(r) ||
+    /warehouse_end_date:\s*binding cutoff/i.test(r) ||
+    /earliest same-day stated|earliest current stated/i.test(r) ||
+    /cargo cut-off \(WH end\):\s*next CFS/i.test(r) ||
+    // Not parse-incomplete: subject/filename spine recovery
+    /identity_fallback/i.test(r)
+  )
 }
 
 /** Plain-language version of a review reason; never surfaces raw DB field names. */

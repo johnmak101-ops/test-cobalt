@@ -109,6 +109,17 @@ describe('subject-party-pin silent ops (no UI surface)', () => {
     expect(out.some((r) => /subject-party|ROKNFT/i.test(r.raw))).toBe(false)
     expect(out.length).toBe(1)
   })
+
+  it('humanizeReasons drops schedule success and identity_fallback', () => {
+    const out = humanizeReasons([
+      "etd: aligned to ATD 2026-02-17 after sail (was booking/pre-sail '2026-02-16')",
+      'warehouse_end_date: next CFS 2026-03-02 18:00 (cross-day cutoffs; kept over older 2026-02-02 18:00)',
+      'identity_fallback: subject/filename spine present but zero p',
+      'backend conflict on qty',
+    ])
+    expect(out).toHaveLength(1)
+    expect(out[0]!.raw).toMatch(/backend conflict/)
+  })
 })
 
 // Restored 2026-07-14: this coverage predates #133 and was dropped when the #133 filter-chip tests

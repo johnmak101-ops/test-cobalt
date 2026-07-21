@@ -273,6 +273,21 @@ describe('buildNeedsAttention / groups', () => {
     )
   })
 
+  it('does not show Incomplete data for identity_fallback or schedule success notes alone', () => {
+    const items = buildNeedsAttention({
+      conflictsCount: 0,
+      riskFlags: [],
+      reviewReasons: [
+        'identity_fallback: subject/filename spine present but zero p',
+        "etd: aligned to ATD 2026-02-17 after sail (was booking/pre-sail '2026-02-16')",
+        'warehouse_end_date: next CFS 2026-03-02 18:00 (cross-day cutoffs; kept over older 2026-02-02 18:00)',
+      ],
+    })
+    expect(items.some((i) => i.groupId === 'incomplete_data')).toBe(false)
+    expect(items.some((i) => /Parse incomplete/i.test(i.text))).toBe(false)
+    expect(items.some((i) => /aligned to ATD|next CFS|identity_fallback/i.test(i.text))).toBe(false)
+  })
+
   it('hides gross_weight / measurement not-summed merge notes', () => {
     const items = buildNeedsAttention({
       conflictsCount: 0,
@@ -302,13 +317,8 @@ describe('buildNeedsAttention / groups', () => {
     expect(items.some((i) => /not summed|per-PO sum|gross_weight|measurement/i.test(i.text))).toBe(
       false,
     )
-    // Binding cut-off is humanized — no DB column, no "Merge note:" prefix
-    const cutoff = items.find((i) => /cut-off|cutoff/i.test(i.text))
-    expect(cutoff).toBeTruthy()
-    expect(cutoff!.text).toBe(
-      'Cargo cut-off kept as 2026-07-15 16:00 (earliest across emails) — a newer email said 2026-07-20 12:00',
-    )
-    expect(cutoff!.text).not.toMatch(/warehouse_end_date|Merge note:/i)
+    // Schedule policy already applied (binding / next CFS) — silent success, not Incomplete data / Other
+    expect(items.some((i) => /cut-off|cutoff|CFS|earliest/i.test(i.text))).toBe(false)
   })
 
   it('PO-only and multi-destination copy', () => {
