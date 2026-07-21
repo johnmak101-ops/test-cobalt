@@ -19,12 +19,12 @@ function isUniqueViolation(e: unknown): boolean {
   return /2627|unique|duplicate/i.test(msg)
 }
 
-/** Admin Mesh-miss worklist (structured criticReview.masterMisses aggregation). */
+/** Superadmin Mesh-miss worklist (structured criticReview.masterMisses aggregation). */
 @Controller('admin/mesh-misses')
 export class MeshMissesController {
   constructor(private readonly meshMisses: MeshMissesService) {}
 
-  @Roles('ADMIN')
+  @Roles('SUPERADMIN')
   @Get()
   list(
     @Query('days') daysRaw?: string,
@@ -36,7 +36,7 @@ export class MeshMissesController {
     return this.meshMisses.list(days, includeAcked)
   }
 
-  @Roles('ADMIN')
+  @Roles('SUPERADMIN')
   @Post('ack')
   async ack(@Body() dto: AckDto, @CurrentUser() actor: AuthUser) {
     try {

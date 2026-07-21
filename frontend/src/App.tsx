@@ -56,17 +56,10 @@ function RequireAuth({ children }: { children: ReactNode }) {
   return <>{children}</>
 }
 
-/** ADMIN+ (incl. SUPERADMIN) — Mesh misses admin report. */
-function AdminRoute({ children }: { children: ReactNode }) {
+/** SUPERADMIN only — Users, Access Control, Mesh misses. Everyone else lands on dashboard. */
+function SuperadminRoute({ children }: { children: ReactNode }) {
   const { user, loading } = useAuth()
   if (loading) return <FullScreenSpinner />
-  if (user?.role === 'ADMIN' || user?.role === 'SUPERADMIN') return <>{children}</>
-  return <Navigate to="/" replace />
-}
-
-/** Settings (and alert-rules config) are superadmin-only; everyone else lands back on the dashboard. */
-function SuperadminRoute({ children }: { children: ReactNode }) {
-  const { user } = useAuth()
   if (user && user.role !== 'SUPERADMIN') {
     return <Navigate to="/" replace />
   }
@@ -149,7 +142,7 @@ function AppRoutes() {
         {/* Review Policy settings removed (#124) — redirect bookmarks. */}
         <Route path="/settings/review-policy" element={<Navigate to="/settings" replace />} />
         <Route path="/settings/access" element={<SuperadminRoute><SettingsPage /></SuperadminRoute>} />
-        <Route path="/settings/mesh-misses" element={<AdminRoute><SettingsPage /></AdminRoute>} />
+        <Route path="/settings/mesh-misses" element={<SuperadminRoute><SettingsPage /></SuperadminRoute>} />
         <Route path="/admin/mesh-misses" element={<Navigate to="/settings/mesh-misses" replace />} />
       </Route>
     </Routes>

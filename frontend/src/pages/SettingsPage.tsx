@@ -12,7 +12,6 @@ export default function SettingsPage() {
   const { user } = useAuth()
   const { canView } = usePageAccess()
   const isSuper = user?.role === 'SUPERADMIN'
-  const isAdmin = isSuper || user?.role === 'ADMIN'
   const isAlertsSettings = location.pathname.includes('/settings/alerts')
   const isUsersSettings = location.pathname.includes('/settings/users')
   const isAccess = location.pathname.includes('/settings/access')
@@ -20,11 +19,12 @@ export default function SettingsPage() {
 
   // No empty "General" tab — only real config panels. Superadmin-only vs access-matrix tabs.
   // Vendors (#127), Review Policy (#124), and Resolution Rules settings UIs removed.
+  // Users / Access Control / Mesh misses: SUPERADMIN only (not ADMIN).
   const navItems = [
     { to: '/settings/alerts', label: 'Alert Rules', end: false, show: canView('alert_rules') },
     { to: '/settings/users', label: 'Users', end: false, show: isSuper },
     { to: '/settings/access', label: 'Access Control', end: false, show: isSuper },
-    { to: '/settings/mesh-misses', label: 'Mesh misses', end: false, show: isAdmin },
+    { to: '/settings/mesh-misses', label: 'Mesh misses', end: false, show: isSuper },
   ].filter((i) => i.show)
 
   // /settings alone had no content — send to the first tab the user can open.
