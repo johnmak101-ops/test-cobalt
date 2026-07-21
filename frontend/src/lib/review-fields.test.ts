@@ -391,11 +391,13 @@ describe('fieldLabel — the one vocabulary, used by every surface that names a 
       expect(fieldLabel(c)).not.toBe(c)
     }
     expect(fieldLabel('qty')).toBe('Total Quantity')
-    // Gross weight / HTS / separate Warehouse SO row removed from Order Details form
+    // Gross weight / HTS / separate Warehouse SO / bag Item·Style removed from Order Details form
     expect(EDITABLE_FIELDS.some((f) => f.column === 'grossWeight')).toBe(false)
     expect(EDITABLE_FIELDS.some((f) => f.column === 'htsCode')).toBe(false)
     expect(EDITABLE_FIELDS.some((f) => f.column === 'warehouseSo')).toBe(false)
+    expect(EDITABLE_FIELDS.some((f) => f.column === 'itemStyleNo')).toBe(false)
     expect(fieldLabel('warehouseSo')).toBe('Warehouse SO')
+    expect(fieldLabel('itemStyleNo')).toBe('Item / Style No.')
   })
 
   it('falls back to the column name rather than rendering a blank label', () => {

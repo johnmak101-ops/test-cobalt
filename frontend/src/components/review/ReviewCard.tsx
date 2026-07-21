@@ -233,21 +233,15 @@ export function ReviewCard({
     [criticReview],
   )
   /**
-   * When per-PO styles are available, drop the bag-level item/style conflict — membership + style
-   * live on ReviewPoStylesSection, not the leg-level conflict table.
-   * Gross weight / HTS Code are hidden from Order Details — also hide from this conflict table.
+   * Bag-level item/style, gross weight, and HTS are hidden from Order Details — also hide from this
+   * conflict table. Per-PO styles live on ReviewPoStylesSection / the PO card.
    */
   const conflicts = useMemo(() => {
-    let list = rawConflicts
-    if (linkedPOs.length > 0) {
-      list = list.filter((c) => mapCriticFieldToColumn(c.field) !== 'itemStyleNo')
-    }
-    list = list.filter((c) => {
+    return rawConflicts.filter((c) => {
       const col = mapCriticFieldToColumn(c.field) ?? c.field
-      return col !== 'grossWeight' && col !== 'htsCode'
+      return col !== 'itemStyleNo' && col !== 'grossWeight' && col !== 'htsCode'
     })
-    return list
-  }, [rawConflicts, linkedPOs.length])
+  }, [rawConflicts])
   /** Newest first: "which statement is the latest?" is the question a reviewer actually has, and a
    *  date they must compare by hand only half-answers it. Undated mail sorts last, not first. */
   const sortedEmails = useMemo(

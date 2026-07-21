@@ -701,9 +701,7 @@ describe('conflict table — read-only by default, Edit to change values', () =>
     expect(screen.getByRole('radio', { name: /SE26061400006/i })).not.toBeChecked()
   })
 
-  it('Item / Style No. edits as one field per style, not a comma string', async () => {
-    const user = userEvent.setup()
-    const onSave = vi.fn().mockResolvedValue(undefined)
+  it('hides bag-level Item / Style No. conflict (styles are per-PO, not Order Details)', () => {
     const conflictStyles: CriticConflict = {
       field: 'item_style_no',
       label: 'Item / Style No.',
@@ -723,29 +721,13 @@ describe('conflict table — read-only by default, Edit to change values', () =>
           criticReview={baseReview({ conflicts: [conflictStyles] })}
           compact={compact}
           defaultExpanded
-          onSaveAndApprove={onSave}
         />
       </MemoryRouter>,
     )
-    // Existing: one row per style (not one mid-wrapped comma blob)
-    const existingList = screen.getAllByTestId('style-list-display')[0]!
-    expect(within(existingList).getByText('26-HMIGHLE-0293-1')).toBeInTheDocument()
-    expect(within(existingList).getByText('26-HMIGHLE-0280-1')).toBeInTheDocument()
-
-    // Copy all works from Existing without a prior Edit click (enters edit + fills Resolution)
-    await user.click(screen.getByTestId('style-copy-all-existing'))
-    const editor = screen.getByTestId('style-list-editor')
-    expect(within(editor).getByDisplayValue('26-HMIGHLE-0293-1')).toBeInTheDocument()
-    expect(within(editor).getByDisplayValue('26-HMIGHLE-0280-1')).toBeInTheDocument()
-    // Paste multi-line Excel-style list replaces all
-    const firstInput = within(editor).getAllByPlaceholderText(/Style \/ item no/)[0]!
-    await user.click(firstInput)
-    await user.paste('STYLE-A\nSTYLE-B\nSTYLE-C')
-    expect(within(editor).getByDisplayValue('STYLE-A')).toBeInTheDocument()
-    expect(within(editor).getByDisplayValue('STYLE-C')).toBeInTheDocument()
-    await user.type(screen.getByRole('textbox', { name: /note/i }), 'Pasted full style list')
-    await user.click(screen.getByRole('button', { name: /approve 1 change/i }))
-    expect(onSave.mock.calls[0][0].fields.itemStyleNo).toBe('STYLE-A, STYLE-B, STYLE-C')
+    // Only bag style conflict → no decision grid (same as GW/HTS hide)
+    expect(screen.queryByTestId('review-decision-grid')).toBeNull()
+    expect(screen.queryByTestId('style-list-editor')).toBeNull()
+    expect(screen.getByTestId('review-judgment-only')).toBeInTheDocument()
   })
 
   it('column header becomes Edited after a value is changed from the AI proposal', async () => {
@@ -1102,8 +1084,9 @@ describe('source emails — identify WHICH email, and which is newer', () => {
         />
       </MemoryRouter>,
     )
-    expect(screen.queryByText('Item / Style No.')).toBeNull()
-    expect(screen.getByText('Total Quantity')).toBeInTheDocument()
+    const grid = screen.getByTestId('review-decision-grid')
+    expect(within(grid).queryByText('Item / Style No.')).toBeNull()
+    expect(within(grid).getByText('Total Quantity')).toBeInTheDocument()
   })
 })
 

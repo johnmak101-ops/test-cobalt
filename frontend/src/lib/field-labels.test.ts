@@ -9,7 +9,11 @@ describe('fieldLabel — Change History field keys → human labels', () => {
     expect(fieldLabel('scacCode')).toBe('SCAC Code')
     expect(fieldLabel('cargoReadyDate')).toBe('Cargo Ready Date')
     expect(fieldLabel('inDcDate')).toBe('In DC Date')
+  })
+
+  it('maps bag Item / Style No. (hidden from Order Details form; history still labels it)', () => {
     expect(fieldLabel('itemStyleNo')).toBe('Item / Style No.')
+    expect(fieldLabel('item_style_no')).toBe('Item / Style No.')
   })
 
   it('maps warehouseSo (入仓/订仓) to Warehouse SO', () => {
