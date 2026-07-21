@@ -644,13 +644,6 @@ export default function ShipmentDetailPage() {
               historyKey="soNo"
               label={fieldLabel('soNo')}
               value={shipment.soNumber}
-              hint={
-                shipment.soNumber
-                  ? undefined
-                  : shipment.status === 'CANCELLED'
-                    ? 'cancelled before an SO was issued'
-                    : 'assigned once the booking is confirmed'
-              }
             />
             <DetailRow
               historyKey="warehouseSo"
