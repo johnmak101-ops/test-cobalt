@@ -2,8 +2,9 @@
  * Detect packing-line / LC / invoice tokens that the extract put in customer_po slots.
  * Defense-in-depth for planPoReconcile — queue validate should demote at source too.
  *
- * Patterns from DEMO Set6 gold miss: ASNE* (export LC), DF* (invoice/style), and
- * long pure-digit packing-line ids (9+) co-occurring with a shorter real PO (e.g. 1570988).
+ * Patterns from DEMO Set6 gold: ASNE* (export LC), DF* (invoice/style), and
+ * pure 9+ digit packing-line ids (e.g. 319001345) — always non-customer, even alone
+ * (standalone groups were minting incomplete "1 PO" shells with Booking —).
  */
 
 /** LC / declaration / invoice-style tokens that are never a Cobalt customer PO. */
@@ -15,6 +16,8 @@ export function isLikelyNonCustomerPo(po: string | null | undefined): boolean {
   if (/^ASNE\d{8,}$/i.test(s)) return true
   // Invoice / style codes (e.g. DF2026G031)
   if (/^DF\d{4}[A-Z0-9]+$/i.test(s)) return true
+  // Packing-line pure-digit ids (Set6 31900… family). Always demote — never mint PO masters/shells.
+  if (/^\d{9,}$/.test(s)) return true
   return false
 }
 
