@@ -37,49 +37,109 @@ const D = (s: string) => new Date(s)
 const hasOf = (over: Partial<LegFacts['has']>) => ({ ...facts().has, ...over })
 
 describe('isFiring — Pillar-4 rule logic', () => {
-  it('A3 POC: cut-off passed, no Draft B/L → Critical', () => {
+  it('A1: No Draft BOL — fires ETD+1 when draft still missing', () => {
     const r = rule({
-      id: 'A3',
-      state: 'CONFIRMED',
-      triggerReference: 'cutoff',
+      id: 'A1',
+      state: null,
+      triggerType: 'days_after',
+      triggerReference: 'etd',
       watchFor: 'draft_bl',
-      thresholdHours: 0,
-      severity: 'CRITICAL',
+      thresholdHours: 24,
+      severity: 'WARNING',
     })
-    expect(isFiring(r, facts({ state: 'CONFIRMED', cfsCutoff: D('2026-02-01') }), D('2026-02-02'))).toBe(true)
+    expect(
+      isFiring(r, facts({ etd: D('2026-02-01T00:00:00Z') }), D('2026-02-02T01:00:00Z')),
+    ).toBe(true)
   })
 
-  it('A3: does NOT fire once Draft B/L is received', () => {
+  it('A1: does NOT fire once Draft B/L is received', () => {
     const r = rule({
-      id: 'A3',
-      state: 'CONFIRMED',
-      triggerReference: 'cutoff',
+      id: 'A1',
+      state: null,
+      triggerReference: 'etd',
       watchFor: 'draft_bl',
-      thresholdHours: 0,
+      thresholdHours: 24,
     })
     expect(
       isFiring(
         r,
-        facts({ state: 'CONFIRMED', cfsCutoff: D('2026-02-01'), has: hasOf({ draftBl: true }) }),
-        D('2026-02-02'),
+        facts({ etd: D('2026-02-01T00:00:00Z'), has: hasOf({ draftBl: true }) }),
+        D('2026-02-03T00:00:00Z'),
       ),
     ).toBe(false)
   })
 
-  it('A3: does NOT fire before the cut-off', () => {
-    const r = rule({
-      id: 'A3',
-      state: 'CONFIRMED',
-      triggerReference: 'cutoff',
-      watchFor: 'draft_bl',
-      thresholdHours: 0,
-    })
-    expect(isFiring(r, facts({ cfsCutoff: D('2026-02-10') }), D('2026-02-02'))).toBe(false)
-  })
-
-  it('A1 POC: no SO within 2 days of booking → fires after the window', () => {
+  it('A1: does NOT fire before ETD+1', () => {
     const r = rule({
       id: 'A1',
+      state: null,
+      triggerReference: 'etd',
+      watchFor: 'draft_bl',
+      thresholdHours: 24,
+    })
+    expect(isFiring(r, facts({ etd: D('2026-02-10T00:00:00Z') }), D('2026-02-10T12:00:00Z'))).toBe(
+      false,
+    )
+  })
+
+  it('A2 critical: No Draft BOL at ETD+2', () => {
+    const r = rule({
+      id: 'A2',
+      state: null,
+      triggerReference: 'etd',
+      watchFor: 'draft_bl',
+      thresholdHours: 48,
+      severity: 'CRITICAL',
+    })
+    expect(
+      isFiring(r, facts({ etd: D('2026-02-01T00:00:00Z') }), D('2026-02-03T01:00:00Z')),
+    ).toBe(true)
+    expect(
+      isFiring(r, facts({ etd: D('2026-02-01T00:00:00Z') }), D('2026-02-02T12:00:00Z')),
+    ).toBe(false)
+  })
+
+  it('A3: No Final BOL — fires ETD+3 when final still missing', () => {
+    const r = rule({
+      id: 'A3',
+      state: null,
+      triggerReference: 'etd',
+      watchFor: 'final_bl',
+      thresholdHours: 72,
+      severity: 'WARNING',
+    })
+    expect(
+      isFiring(r, facts({ etd: D('2026-02-01T00:00:00Z') }), D('2026-02-04T01:00:00Z')),
+    ).toBe(true)
+    expect(
+      isFiring(
+        r,
+        facts({ etd: D('2026-02-01T00:00:00Z'), has: hasOf({ finalBl: true }) }),
+        D('2026-02-10T00:00:00Z'),
+      ),
+    ).toBe(false)
+  })
+
+  it('A4 critical: No Final BOL at ETD+7', () => {
+    const r = rule({
+      id: 'A4',
+      state: null,
+      triggerReference: 'etd',
+      watchFor: 'final_bl',
+      thresholdHours: 168,
+      severity: 'CRITICAL',
+    })
+    expect(
+      isFiring(r, facts({ etd: D('2026-02-01T00:00:00Z') }), D('2026-02-08T01:00:00Z')),
+    ).toBe(true)
+    expect(
+      isFiring(r, facts({ etd: D('2026-02-01T00:00:00Z') }), D('2026-02-07T00:00:00Z')),
+    ).toBe(false)
+  })
+
+  it('legacy: no SO within 2 days of booking still computable', () => {
+    const r = rule({
+      id: 'AX',
       state: 'BOOKED',
       triggerReference: 'booking_request',
       watchFor: 'so',

@@ -25,9 +25,6 @@ const COUNTRY_LIST = [
   { code: 'CN', label: 'China' },
   { code: 'BD', label: 'Bangladesh' },
   { code: 'KH', label: 'Cambodia' },
-  { code: 'VN', label: 'Vietnam' },
-  { code: 'IN', label: 'India' },
-  { code: 'LK', label: 'Sri Lanka' },
 ]
 
 const STATE_LABELS: Record<string, string> = {
@@ -76,9 +73,9 @@ export default function AlertRulesPage() {
     setServerSnap(serverRules)
     setDraft(null)
   }
-  // Only A1/A2 are configurable day-threshold rules. Built-ins (A7 LOCKED, etc.) stay off this page.
+  // A1–A4 ETD Draft/Final BOL staircase. A5/A6 retired, A7 locked — off this page.
   // Save still sends the full rule list so other rules are not wiped.
-  const CONFIGURABLE_RULE_IDS = new Set(['A1', 'A2'])
+  const CONFIGURABLE_RULE_IDS = new Set(['A1', 'A2', 'A3', 'A4'])
   const allRules = draft ?? serverRules ?? []
   const localRules = allRules.filter((r) => CONFIGURABLE_RULE_IDS.has(r.id))
   const dirty = draft !== null

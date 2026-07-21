@@ -144,19 +144,20 @@ async function main() {
     }
   }
 
-  // ---- Pillar-4 alert rules (ALWAYS) — POC §2.4.2 / §2.4.3 A1–A6 ----
-  // Overwrites any prior ETD-based A1/A2. Country overrides are UI-only (A2/A3); seed defaults null.
-  // country_thresholds is a JSON nvarchar(max) column → stringified on insert (parsed back on select).
+  // ---- Alert rules (ALWAYS) — customer: 2 product rules × warn/severe = A1–A4 ----
+  // UI shows 2 cards; engine stores WARNING + CRITICAL rows so both can fire.
+  // Country overrides (CN/BD/KH only) set in Settings. state null = any lifecycle once ETD exists.
+  // Delete/disable every other rule (legacy SO/cutoff/telex/ETA/A7).
   const ALERT_RULE_ROWS: Insertable<DB['alertRules']>[] = [
     {
       id: 'A1',
-      name: 'No SO after booking',
-      description: 'Awaiting booking confirmation from forwarder',
-      state: 'BOOKED',
+      name: 'No Draft BOL received',
+      description: 'Warning when Draft B/L is still missing after ETD + N calendar days',
+      state: null,
       triggerType: 'days_after',
-      triggerReference: 'booking_request',
-      watchFor: 'so',
-      thresholdHours: 48, // 2 days
+      triggerReference: 'etd',
+      watchFor: 'draft_bl',
+      thresholdHours: 24, // ETD+1 warning
       countryThresholds: null,
       severity: 'WARNING',
       computeTz: 'server',
@@ -165,43 +166,28 @@ async function main() {
     },
     {
       id: 'A2',
-      name: 'Draft B/L before cut-off',
-      description: 'Cut-off tomorrow — confirm cargo delivery status',
-      state: 'CONFIRMED',
-      triggerType: 'days_before',
-      triggerReference: 'cutoff',
+      name: 'No Draft BOL received',
+      description: 'Severe when Draft B/L is still missing after ETD + N calendar days',
+      state: null,
+      triggerType: 'days_after',
+      triggerReference: 'etd',
       watchFor: 'draft_bl',
-      thresholdHours: 24, // 1 day before
+      thresholdHours: 48, // ETD+2 severe
       countryThresholds: null,
-      severity: 'WARNING',
-      computeTz: 'vessel',
+      severity: 'CRITICAL',
+      computeTz: 'server',
       enabled: true,
       locked: false,
     },
     {
       id: 'A3',
-      name: 'Cut-off passed, no Draft B/L',
-      description: 'Cut-off passed — cargo may have missed the vessel',
-      state: 'CONFIRMED',
+      name: 'No Final BOL received',
+      description: 'Warning when Final B/L is still missing after ETD + N calendar days',
+      state: null,
       triggerType: 'days_after',
-      triggerReference: 'cutoff',
-      watchFor: 'draft_bl',
-      thresholdHours: 0, // immediate
-      countryThresholds: null,
-      severity: 'CRITICAL',
-      computeTz: 'vessel',
-      enabled: true,
-      locked: false,
-    },
-    {
-      id: 'A4',
-      name: 'No Final B/L after Draft',
-      description: 'Awaiting departure confirmation',
-      state: 'AT_WAREHOUSE',
-      triggerType: 'days_after',
-      triggerReference: 'draft_bl',
+      triggerReference: 'etd',
       watchFor: 'final_bl',
-      thresholdHours: 120, // 5 days
+      thresholdHours: 72, // ETD+3 warning
       countryThresholds: null,
       severity: 'WARNING',
       computeTz: 'server',
@@ -209,46 +195,37 @@ async function main() {
       locked: false,
     },
     {
-      id: 'A5',
-      name: 'No Telex after Final B/L',
-      description: 'Awaiting telex release — check freight payment status',
-      state: 'SAILED',
+      id: 'A4',
+      name: 'No Final BOL received',
+      description: 'Severe when Final B/L is still missing after ETD + N calendar days',
+      state: null,
       triggerType: 'days_after',
-      triggerReference: 'final_bl',
-      watchFor: 'telex',
-      thresholdHours: 168, // 7 days
+      triggerReference: 'etd',
+      watchFor: 'final_bl',
+      thresholdHours: 168, // ETD+7 severe
       countryThresholds: null,
-      severity: 'INFO',
-      computeTz: 'server',
-      enabled: true,
-      locked: false,
-    },
-    {
-      id: 'A6',
-      name: 'No delivery after ETA',
-      description: 'Vessel should have arrived — confirm delivery status',
-      state: 'RELEASED',
-      triggerType: 'days_after',
-      triggerReference: 'eta',
-      watchFor: 'delivered',
-      thresholdHours: 72, // 3 days
-      countryThresholds: null,
-      severity: 'INFO',
+      severity: 'CRITICAL',
       computeTz: 'server',
       enabled: true,
       locked: false,
     },
   ]
+  const KEEP_IDS = new Set(ALERT_RULE_ROWS.map((r) => r.id))
+  // Disable anything not in the customer set (A5/A6/A7/legacy).
+  await db
+    .updateTable('alertRules')
+    .set({ enabled: false, locked: false, updatedAt: new Date() })
+    .where('id', 'not in', [...KEEP_IDS])
+    .execute()
   const haveRules = new Set((await db.selectFrom('alertRules').select('id').execute()).map((r) => r.id))
   const newRules = ALERT_RULE_ROWS.filter((r) => !haveRules.has(r.id))
   if (newRules.length) {
     try {
       await db.insertInto('alertRules').values(newRules).execute()
     } catch (e) {
-      if (!isUniqueViolation(e)) throw e // concurrent seed won the race — idempotent
+      if (!isUniqueViolation(e)) throw e
     }
   }
-  // Always align A1–A6 to POC semantics (replaces old ETD A1/A2 and fills missing A3–A6).
   for (const row of ALERT_RULE_ROWS) {
     await db
       .updateTable('alertRules')
@@ -260,12 +237,12 @@ async function main() {
         triggerReference: row.triggerReference,
         watchFor: row.watchFor,
         thresholdHours: row.thresholdHours,
-        // Drop stale ETD country maps; ops re-enter on A2/A3 in Settings.
-        countryThresholds: null,
         severity: row.severity,
         computeTz: row.computeTz,
         enabled: true,
         locked: false,
+        // Clear non-CN/BD/KH keys on reseed of structure; keep map if already only allowed codes
+        countryThresholds: null,
       })
       .where('id', '=', row.id)
       .execute()

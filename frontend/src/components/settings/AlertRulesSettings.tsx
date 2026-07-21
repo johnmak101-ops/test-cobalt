@@ -11,52 +11,45 @@ interface AlertRule {
   id: string
   name: string
   description: string | null
-  /** Backend may return null when the rule has no mapped staircase state. */
   state: string | null
   triggerType: string
   triggerReference: string
   thresholdDays: number
-  /** Absolute days per origin country (as stored by the API). Empty/null = use default. */
   countryThresholds: Record<string, number> | null
   severity: string
   enabled: boolean
   locked: boolean
 }
 
-/** POC A1–A6 configurable threshold rules. A7 is built-in and hidden here. */
-const CONFIGURABLE_RULE_IDS = new Set(['A1', 'A2', 'A3', 'A4', 'A5', 'A6'])
-/** Country absolute-day overrides only for cut-off / Draft B/L rules. */
-const COUNTRY_OVERRIDE_RULE_IDS = new Set(['A2', 'A3'])
+/** Customer product rules — each card is warn + severe pair in the API (A1/A2, A3/A4). */
+const PRODUCT_RULES = [
+  {
+    key: 'draft_bol',
+    title: 'No Draft BOL received',
+    description: 'Fires after ETD when Draft B/L is still missing.',
+    warnId: 'A1',
+    severeId: 'A2',
+    warnDefault: 1,
+    severeDefault: 2,
+  },
+  {
+    key: 'final_bol',
+    title: 'No Final BOL received',
+    description: 'Fires after ETD when Final B/L is still missing.',
+    warnId: 'A3',
+    severeId: 'A4',
+    warnDefault: 3,
+    severeDefault: 7,
+  },
+] as const
+
+const PAIR_IDS = new Set(PRODUCT_RULES.flatMap((p) => [p.warnId, p.severeId]))
 
 const ALERT_COUNTRY_LIST = [
   { code: 'CN', label: 'China' },
   { code: 'BD', label: 'Bangladesh' },
   { code: 'KH', label: 'Cambodia' },
-  { code: 'VN', label: 'Vietnam' },
-  { code: 'IN', label: 'India' },
-  { code: 'LK', label: 'Sri Lanka' },
 ]
-
-/** Human label for the default days control. */
-function thresholdLabel(rule: AlertRule): string {
-  const before = rule.triggerType === 'days_before'
-  switch (rule.triggerReference) {
-    case 'booking_request':
-      return before ? 'Days before booking' : 'Days after booking'
-    case 'cutoff':
-      return before ? 'Days before cut-off' : 'Days after cut-off'
-    case 'draft_bl':
-      return before ? 'Days before Draft B/L' : 'Days after Draft B/L'
-    case 'final_bl':
-      return before ? 'Days before Final B/L' : 'Days after Final B/L'
-    case 'eta':
-      return before ? 'Days before ETA' : 'Days after ETA'
-    case 'etd':
-      return before ? 'Days before ETD' : 'Days after ETD'
-    default:
-      return before ? 'Days before' : 'Days after'
-  }
-}
 
 function normalizeRules(rules: AlertRule[]): AlertRule[] {
   return rules.map((r) => ({
@@ -67,6 +60,10 @@ function normalizeRules(rules: AlertRule[]): AlertRule[] {
         : r.countryThresholds
       : null,
   }))
+}
+
+function byId(rules: AlertRule[], id: string): AlertRule | undefined {
+  return rules.find((r) => r.id === id)
 }
 
 export function AlertRulesSettings() {
@@ -88,24 +85,24 @@ export function AlertRulesSettings() {
     setServerSnap(serverRules)
     setDraft(null)
   }
-  // Keep full list for save so we never drop A7 from the API payload.
+  // Full list for save (includes locked A7 if present — we never drop it).
   const allRules = draft ?? serverRules ?? []
   const allRulesRef = useRef(allRules)
   allRulesRef.current = allRules
-  const localRules = allRules
-    .filter((r) => CONFIGURABLE_RULE_IDS.has(r.id))
-    .sort((a, b) => a.id.localeCompare(b.id))
   const dirty = draft !== null
 
   const saveRules = useMutation({
     mutationFn: (rules: AlertRule[]) =>
       api.put('/alert-rules', {
         rules: rules.map((rule) => {
+          const allowed = new Set(ALERT_COUNTRY_LIST.map((c) => c.code))
           const ct = rule.countryThresholds
           const cleaned =
             ct && Object.keys(ct).length > 0
               ? Object.fromEntries(
-                  Object.entries(ct).filter(([, days]) => typeof days === 'number' && days > 0),
+                  Object.entries(ct).filter(
+                    ([code, days]) => allowed.has(code) && typeof days === 'number' && days > 0,
+                  ),
                 )
               : null
           return {
@@ -136,13 +133,25 @@ export function AlertRulesSettings() {
     )
   }
 
-  const updateCountryDays = (ruleId: string, code: string, days: number | '') => {
+  /**
+   * Country absolute days after ETD for the warning tier; severe = warning + (severeDefault − warnDefault)
+   * so CN=4 with Draft (1/2) → warn@4 severe@5; Final (3/7) → warn@3 severe@7 when D=3.
+   */
+  const updateCountryDays = (
+    product: (typeof PRODUCT_RULES)[number],
+    code: string,
+    days: number | '',
+  ) => {
+    const delta = product.severeDefault - product.warnDefault
     setDraft((prev) =>
       (prev ?? serverRules ?? []).map((r) => {
-        if (r.id !== ruleId) return r
+        if (r.id !== product.warnId && r.id !== product.severeId) return r
         const ct = { ...(r.countryThresholds ?? {}) }
-        if (days === '' || days === 0) delete ct[code]
-        else ct[code] = days
+        if (days === '' || days === 0) {
+          delete ct[code]
+        } else {
+          ct[code] = r.id === product.warnId ? days : days + delta
+        }
         return { ...r, countryThresholds: Object.keys(ct).length > 0 ? ct : null }
       }),
     )
@@ -152,11 +161,18 @@ export function AlertRulesSettings() {
     return <div className="text-sm text-text-muted">Loading alert rules…</div>
   }
 
+  const missingPair = PRODUCT_RULES.some(
+    (p) => !byId(allRules, p.warnId) || !byId(allRules, p.severeId),
+  )
+
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <h2 className="text-lg font-semibold text-text-primary">Alert rules</h2>
+          <p className="mt-0.5 text-sm text-text-secondary">
+            Two customer rules — warning and severe thresholds after ETD.
+          </p>
         </div>
         <div className="flex shrink-0 items-center gap-2">
           <button
@@ -170,7 +186,6 @@ export function AlertRulesSettings() {
           <button
             type="button"
             onClick={() => {
-              // Flush focused DaysStepper input, then save latest draft (ref avoids stale closure).
               ;(document.activeElement as HTMLElement | null)?.blur?.()
               window.setTimeout(() => saveRules.mutate(allRulesRef.current), 0)
             }}
@@ -186,146 +201,151 @@ export function AlertRulesSettings() {
         <p className="text-xs text-text-muted">You have view-only access to Alert Rules.</p>
       )}
 
+      {missingPair && (
+        <p className="rounded-lg border border-status-warning/40 bg-status-warning/10 px-4 py-3 text-sm text-status-warning">
+          Draft/Final BOL rules are not seeded yet. Run backend seed or rematch deploy, then reload.
+        </p>
+      )}
+
       <div className="space-y-4">
-        {localRules.map((rule) => {
-          const showCountry = COUNTRY_OVERRIDE_RULE_IDS.has(rule.id)
+        {PRODUCT_RULES.map((product) => {
+          const warn = byId(allRules, product.warnId)
+          const severe = byId(allRules, product.severeId)
+          if (!warn || !severe) return null
+          const enabled = warn.enabled || severe.enabled
+          // Country map from warn row (both kept in sync on edit)
+          const countryMap = warn.countryThresholds ?? severe.countryThresholds ?? null
+
           return (
-            <Card key={rule.id} className="overflow-hidden">
+            <Card key={product.key} className="overflow-hidden">
               <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/60 pb-4">
-                <div className="flex min-w-0 flex-wrap items-center gap-2.5">
-                  <span className="rounded-md bg-surface-700 px-2 py-0.5 font-mono text-[11px] font-semibold text-text-muted">
-                    {rule.id}
-                  </span>
-                  <h3 className="text-sm font-semibold text-text-primary">{rule.name}</h3>
+                <div className="min-w-0">
+                  <h3 className="text-sm font-semibold text-text-primary">{product.title}</h3>
+                  <p className="mt-1 text-xs leading-relaxed text-text-muted">{product.description}</p>
                 </div>
                 <button
                   type="button"
-                  aria-label={`Toggle ${rule.name} enabled`}
-                  onClick={() => !rule.locked && canEdit && updateRule(rule.id, 'enabled', !rule.enabled)}
-                  disabled={rule.locked || !canEdit}
+                  aria-label={`Toggle ${product.title} enabled`}
+                  onClick={() => {
+                    if (!canEdit) return
+                    const next = !enabled
+                    updateRule(product.warnId, 'enabled', next)
+                    updateRule(product.severeId, 'enabled', next)
+                  }}
+                  disabled={!canEdit}
                   className={cn(
                     'relative h-6 w-11 shrink-0 rounded-full transition-colors',
-                    rule.enabled ? 'bg-cobalt-primary' : 'bg-surface-600',
-                    (rule.locked || !canEdit) && 'cursor-not-allowed opacity-50',
+                    enabled ? 'bg-cobalt-primary' : 'bg-surface-600',
+                    !canEdit && 'cursor-not-allowed opacity-50',
                   )}
                 >
                   <span
                     className={cn(
                       'absolute top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform',
-                      rule.enabled ? 'left-[22px]' : 'left-0.5',
+                      enabled ? 'left-[22px]' : 'left-0.5',
                     )}
                   />
                 </button>
               </div>
 
-              {rule.description && (
-                <p className="mt-3 text-xs leading-relaxed text-text-muted">{rule.description}</p>
-              )}
-
-              {!rule.locked && (
-                <div className="mt-4 flex flex-wrap items-end gap-6">
-                  <div>
-                    <label
-                      htmlFor={`${id}-${rule.id}-threshold`}
-                      className="mb-2 block text-[11px] font-medium uppercase tracking-wide text-text-muted"
-                    >
-                      {thresholdLabel(rule)} (default)
-                    </label>
-                    <DaysStepper
-                      id={`${id}-${rule.id}-threshold`}
-                      aria-label={thresholdLabel(rule)}
-                      value={rule.thresholdDays}
-                      min={0}
-                      max={30}
-                      disabled={!canEdit}
-                      onChange={(next) => updateRule(rule.id, 'thresholdDays', next ?? 0)}
-                    />
-                  </div>
-                  <div className="min-w-[10rem]">
-                    <label
-                      htmlFor={`${id}-${rule.id}-severity`}
-                      className="mb-2 block text-[11px] font-medium uppercase tracking-wide text-text-muted"
-                    >
-                      Severity
-                    </label>
-                    <select
-                      id={`${id}-${rule.id}-severity`}
-                      value={rule.severity}
-                      onChange={(e) => updateRule(rule.id, 'severity', e.target.value)}
-                      disabled={!canEdit}
-                      className="h-12 w-full rounded-2xl border border-border bg-surface-700 px-3 text-sm text-text-primary disabled:opacity-50"
-                    >
-                      <option value="CRITICAL">Critical</option>
-                      <option value="WARNING">Warning</option>
-                      <option value="INFO">Info</option>
-                    </select>
-                  </div>
-                </div>
-              )}
-
-              {showCountry && !rule.locked && (
-                <div className="mt-5 rounded-xl border border-border bg-surface-900/40 p-4">
-                  <div className="mb-3">
-                    <p className="text-xs font-semibold text-text-secondary">Days by origin country</p>
-                    <p className="mt-0.5 text-[11px] text-text-muted">
-                      Absolute days for that origin (overrides the default of {rule.thresholdDays}).
-                      Tap − until <span className="font-medium">Default</span> to inherit the rule
-                      default.
-                    </p>
-                  </div>
-                  <div
-                    id={`${id}-${rule.id}-country`}
-                    className="grid grid-cols-1 gap-3 sm:grid-cols-2"
+              <div className="mt-4 flex flex-wrap items-end gap-8">
+                <div>
+                  <label
+                    htmlFor={`${id}-${product.key}-warn`}
+                    className="mb-2 block text-[11px] font-medium uppercase tracking-wide text-status-warning"
                   >
-                    {ALERT_COUNTRY_LIST.map((country) => {
-                      const raw = rule.countryThresholds?.[country.code]
-                      const days = typeof raw === 'number' && raw > 0 ? raw : null
-                      const active = days != null
-                      return (
-                        <div
-                          key={country.code}
-                          className={cn(
-                            'flex items-center justify-between gap-4 rounded-2xl border px-4 py-3 transition-colors',
-                            active
-                              ? 'border-cobalt-primary/40 bg-cobalt-primary/10'
-                              : 'border-border bg-surface-800/50',
-                          )}
-                        >
-                          <span className="min-w-0 truncate">
-                            <span className="block text-sm font-semibold text-text-primary">
-                              {country.code}
-                            </span>
-                            <span className="block text-xs text-text-muted">{country.label}</span>
-                          </span>
-                          <DaysStepper
-                            size="sm"
-                            optional
-                            emptyLabel="Default"
-                            aria-label={`${country.label} days`}
-                            value={days}
-                            min={1}
-                            max={30}
-                            disabled={!canEdit}
-                            onChange={(next) =>
-                              updateCountryDays(rule.id, country.code, next == null ? '' : next)
-                            }
-                          />
-                        </div>
-                      )
-                    })}
-                  </div>
+                    Warning — days after ETD
+                  </label>
+                  <DaysStepper
+                    id={`${id}-${product.key}-warn`}
+                    aria-label={`${product.title} warning days after ETD`}
+                    value={warn.thresholdDays}
+                    min={0}
+                    max={30}
+                    disabled={!canEdit}
+                    onChange={(next) => updateRule(product.warnId, 'thresholdDays', next ?? product.warnDefault)}
+                  />
                 </div>
-              )}
+                <div>
+                  <label
+                    htmlFor={`${id}-${product.key}-severe`}
+                    className="mb-2 block text-[11px] font-medium uppercase tracking-wide text-status-critical"
+                  >
+                    Severe — days after ETD
+                  </label>
+                  <DaysStepper
+                    id={`${id}-${product.key}-severe`}
+                    aria-label={`${product.title} severe days after ETD`}
+                    value={severe.thresholdDays}
+                    min={0}
+                    max={30}
+                    disabled={!canEdit}
+                    onChange={(next) =>
+                      updateRule(product.severeId, 'thresholdDays', next ?? product.severeDefault)
+                    }
+                  />
+                </div>
+              </div>
+
+              <div className="mt-5 rounded-xl border border-border bg-surface-900/40 p-4">
+                <div className="mb-3">
+                  <p className="text-xs font-semibold text-text-secondary">
+                    Country of origin (custom days)
+                  </p>
+                  <p className="mt-0.5 text-[11px] text-text-muted">
+                    Absolute days after ETD for that origin — overrides both warning and severe
+                    defaults when set. China, Bangladesh, Cambodia only. Tap − until{' '}
+                    <span className="font-medium">Default</span> to inherit.
+                  </p>
+                </div>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                  {ALERT_COUNTRY_LIST.map((country) => {
+                    const raw = countryMap?.[country.code]
+                    const days = typeof raw === 'number' && raw > 0 ? raw : null
+                    const active = days != null
+                    return (
+                      <div
+                        key={country.code}
+                        className={cn(
+                          'flex items-center justify-between gap-4 rounded-2xl border px-4 py-3 transition-colors',
+                          active
+                            ? 'border-cobalt-primary/40 bg-cobalt-primary/10'
+                            : 'border-border bg-surface-800/50',
+                        )}
+                      >
+                        <span className="min-w-0 truncate">
+                          <span className="block text-sm font-semibold text-text-primary">
+                            {country.code}
+                          </span>
+                          <span className="block text-xs text-text-muted">{country.label}</span>
+                        </span>
+                        <DaysStepper
+                          size="sm"
+                          optional
+                          emptyLabel="Default"
+                          aria-label={`${country.label} days after ETD`}
+                          value={days}
+                          min={1}
+                          max={30}
+                          disabled={!canEdit}
+                          onChange={(next) =>
+                            updateCountryDays(product, country.code, next == null ? '' : next)
+                          }
+                        />
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
             </Card>
           )
         })}
       </div>
 
-      {localRules.length === 0 && (
-        <p className="rounded-lg border border-border bg-surface-800/40 px-4 py-8 text-center text-sm text-text-muted">
-          No configurable alert rules (A1–A6) available.
-        </p>
-      )}
+      {/* Ensure unused pair ids stay in save payload (no-op when already present). */}
+      <span className="sr-only" aria-hidden>
+        {Array.from(PAIR_IDS).join(',')}
+      </span>
     </div>
   )
 }
