@@ -71,12 +71,31 @@ describe('mergeShipment — Critic merge policy', () => {
     expect(r.conflicts).toHaveLength(0)
   })
 
-  it('schedule: the latest email wins (dates get re-quoted)', () => {
+  it('schedule: higher DOC_RANK wins over later low-rank Invoice', () => {
+    const r = mergeShipment([
+      e('2026-01-01', 'SO', { etd: '2026-05-04', eta: '2026-05-27' }),
+      e('2026-01-05', 'Invoice/Billing', { etd: '2026-05-03', eta: '2026-06-03' }),
+    ])
+    expect(r.fields.etd).toBe('2026-05-04')
+    expect(r.fields.eta).toBe('2026-05-27')
+  })
+
+  it('schedule: equal rank → latest wins (dates re-quoted)', () => {
     const r = mergeShipment([
       e('2026-01-01', 'Booking Request', { etd: '2026-02-10' }),
       e('2026-01-05', 'SO', { etd: '2026-02-14' }),
     ])
     expect(r.fields.etd).toBe('2026-02-14')
+  })
+
+  it('forwarder: thread majority beats one-off equal-rank Final courier', () => {
+    const r = mergeShipment([
+      e('2026-01-01', 'SO', { forwarder_name: 'LOGWIN' }),
+      e('2026-01-02', 'Draft B/L', { forwarder_name: 'LOGWIN' }),
+      e('2026-01-03', 'Final B/L', { forwarder_name: 'Leadway Freight Limited' }),
+      e('2026-01-04', 'Final B/L', { forwarder_name: 'LOGWIN' }),
+    ])
+    expect(String(r.fields.forwarder_name)).toMatch(/LOGWIN/i)
   })
 
   it('quantity/text: the most authoritative document wins', () => {

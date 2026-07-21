@@ -6,6 +6,7 @@
 import { keysOverlap, strongKeys, normKey, str, num } from './match-keys'
 import { type PoEnrichment, type UnattributedStatement, summarizeStyleConflict } from './po-enrichment'
 import { poQtyIssue, describePoQtyIssue } from './po-qty-consistency'
+import { demotePackingLinePos } from './non-customer-po'
 
 export interface PoLinkPlan {
   poNo: string
@@ -42,12 +43,18 @@ export function planPoReconcile(args: {
    */
   siblingPoHbls?: SiblingPoHbl[]
 }): PoReconcilePlan {
-  const { pos, fields, poQty, poEnrichment, unattributed, gk } = args
+  const { fields, poQty, poEnrichment, unattributed, gk } = args
   const poQtyIssues: string[] = []
   const poFlagReasons: string[] = []
   const links: PoLinkPlan[] = []
   const myHbl = normKey(fields.hbl_awb_fcr_no)
   const siblings = args.siblingPoHbls ?? []
+
+  // Defense-in-depth: packing-line / LC / invoice tokens must not mint PO masters (DEMO Set6 ASNE/31900/DF).
+  const { keep: pos, demoted } = demotePackingLinePos(args.pos)
+  for (const poNo of demoted) {
+    poFlagReasons.push(`PO ${poNo}: demoted — packing-line/LC/invoice token, not a customer PO`)
+  }
 
   for (const poNo of pos) {
     // Defense-in-depth: queue matcher prunes cross-HAWB POs; committer also skips if a sibling
@@ -128,6 +135,8 @@ export function isRecomputedDataIssueReason(reason: string): boolean {
   if (/^PO\s+\S+:\s*shipped .+ exceeds ordered\b/i.test(r)) return true
   // cross-HAWB PO exclusivity (planPoReconcile sibling skip)
   if (/^PO\s+\S+:\s*exclusive to sibling HAWB\b/i.test(r)) return true
+  // packing-line / LC demote
+  if (/^PO\s+\S+:\s*demoted — packing-line/i.test(r)) return true
   // empty cargo escalation (committer)
   if (/booked shipment missing cargo detail/i.test(r)) return true
   return false

@@ -118,6 +118,18 @@ describe('planPoReconcile (PoQtyReconciler pure plan)', () => {
     })
     expect(plan.links.map((l) => l.poNo)).toEqual(['28739'])
   })
+
+  it('demotes ASNE/packing-line tokens — only real PO is linked (DEMO Set6)', () => {
+    const plan = planPoReconcile({
+      pos: ['1570988', 'ASNE24054844907', '319001345', '319001552', 'DF2026G031'],
+      fields: { so_no: 'S2600144827' },
+      poEnrichment: null,
+      unattributed: [],
+      gk: new Set(),
+    })
+    expect(plan.links.map((l) => l.poNo)).toEqual(['1570988'])
+    expect(plan.poFlagReasons.some((r) => /demoted — packing-line/i.test(r))).toBe(true)
+  })
 })
 
 describe('mergeReviewReasonsWithDataIssues (recompute, do not accumulate)', () => {

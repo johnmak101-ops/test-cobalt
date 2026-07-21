@@ -22,7 +22,8 @@
  *            tokens ('001') are dropped. warehouse_so is 入仓/订仓 — not dual-written to so_no.
  *   entity   CODES (customer/vendor) match exactly, any clash = conflict. NAMES (forwarder/consignee)
  *            match by containment; higher-rank wins cleanly; only an EQUAL-rank name clash conflicts.
- *   schedule (cargo_ready/warehouse/etd/atd/eta/ata/in_dc) — LATEST email wins (schedules re-quoted).
+ *   schedule (cargo_ready/warehouse/etd/atd/eta/ata/in_dc) — highest DOC_RANK wins; equal rank → latest.
+ *            (Invoice must not clobber SO/Draft/Final when both state a date.)
  *   quantity (qty) + text (address/pol/pod/vessel/voyage/scac/…) — most authoritative doc wins, ties→newest.
  *            pol/pod: on equal rank, a clean UN/LOCODE beats a free-text country blob.
  *   list     (item_style_no/hts_code) — UNION of every stated comma-list across the thread (deduped).
@@ -125,7 +126,11 @@ export function mergeShipment(emails: CriticEmail[]): MergeResult {
 
     let kept = stated[0]
     if (cls === 'schedule') {
-      kept = stated[stated.length - 1] // latest statement supersedes
+      // Higher doc rank wins (Final/Telex > SO > Invoice); equal rank → latest (stated is chrono).
+      for (const c of stated.slice(1)) {
+        if (c.rank > kept.rank) kept = c
+        else if (c.rank === kept.rank) kept = c
+      }
     } else if (cls === 'list') {
       // union EVERY stated comma-list across records (styles/HTS pile up per PO sheet + B/L rider);
       // order-preserving, case-insensitive dedup. Keeping one record's value lost the rest.
@@ -159,7 +164,43 @@ export function mergeShipment(emails: CriticEmail[]): MergeResult {
       //   · entity codes → any distinct = conflict
       //   · entity names → equal-rank clash only = conflict
       const same = cls === 'identity' ? sameId : field === 'forwarder_name' || field === 'consignee_name' ? sameName : sameVal
-      for (const c of stated.slice(1)) {
+      // Forwarder equal-rank clash (e.g. Final courier "Leadway" vs Final "LOGWIN"): prefer the
+      // name that appears most often across the whole thread (booking forwarder beats one-off agent).
+      if (field === 'forwarder_name' && stated.length > 1) {
+        const freq = new Map<string, { value: unknown; emailType: string; rank: number; n: number }>()
+        for (const c of stated) {
+          let hitKey: string | null = null
+          for (const [k, v] of freq) {
+            if (sameName(c.value, v.value)) {
+              hitKey = k
+              break
+            }
+          }
+          if (hitKey) {
+            const cur = freq.get(hitKey)!
+            cur.n++
+            if (c.rank > cur.rank || (c.rank === cur.rank && alnum(c.value).length > alnum(cur.value).length)) {
+              cur.value = c.value
+              cur.emailType = c.emailType
+              cur.rank = c.rank
+            }
+          } else {
+            freq.set(alnum(c.value), { value: c.value, emailType: c.emailType, rank: c.rank, n: 1 })
+          }
+        }
+        let best = [...freq.values()][0]!
+        for (const v of freq.values()) {
+          if (v.rank > best.rank) best = v
+          else if (v.rank === best.rank && v.n > best.n) best = v
+          else if (v.rank === best.rank && v.n === best.n && alnum(v.value).length > alnum(best.value).length) best = v
+        }
+        if (!sameName(kept.value, best.value)) {
+          notes.push(
+            `forwarder_name: kept '${best.value}' (rank ${best.rank}, n=${best.n}) over thread variants — majority/rank`,
+          )
+        }
+        kept = { value: best.value, emailType: best.emailType, rank: best.rank }
+      } else for (const c of stated.slice(1)) {
         if (same(c.value, kept.value)) {
           if (alnum(c.value).length > alnum(kept.value).length) kept = c // keep the fuller form
           continue
