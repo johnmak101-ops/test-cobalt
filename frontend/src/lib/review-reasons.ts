@@ -50,7 +50,7 @@ const fieldLabel = (raw: string): string =>
  * Fields removed from Order Details + review conflict table — never list them in flag / reason copy.
  * Operators cannot "choose" these values on the card anymore.
  */
-const HIDDEN_OPS_FIELDS = new Set(['gross_weight', 'hts_code'])
+const HIDDEN_OPS_FIELDS = new Set(['gross_weight', 'measurement', 'hts_code'])
 
 /** Normalize "Gross Weight" / "gross_weight" / "gross-weight" → gross_weight for hidden checks. */
 function normalizeFieldToken(raw: string): string {
@@ -61,14 +61,14 @@ function normalizeFieldToken(raw: string): string {
     .replace(/_+/g, '_')
 }
 
-/** True when this token is a hidden ops field (GW / HTS). */
+/** True when this token is a hidden ops field (GW / Measurement / HTS). */
 export function isHiddenOpsField(raw: string): boolean {
   const n = normalizeFieldToken(raw)
   return HIDDEN_OPS_FIELDS.has(n)
 }
 
 /**
- * Split a field list, drop GW/HTS, map to ops labels. Empty when only hidden fields remain.
+ * Split a field list, drop GW / Measurement / HTS, map to ops labels. Empty when only hidden fields remain.
  * Accepts snake_case ("qty, gross_weight") or title case ("Qty, Gross Weight").
  */
 export function prettifyVisibleFields(list: string): string {

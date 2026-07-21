@@ -248,14 +248,19 @@ export function ReviewCard({
     [linkedPOs],
   )
   /**
-   * Bag-level item/style, gross weight, and HTS are hidden from Order Details — also hide from this
-   * conflict table. Per-PO styles live on ReviewPoStylesSection / the PO card.
+   * Bag-level item/style, gross weight, measurement, and HTS are hidden from Order Details — also
+   * hide from this conflict table. Per-PO styles live on ReviewPoStylesSection / the PO card.
    * Qty conflicts that already match the live leg (or PO shipment total) are settled and dropped.
    */
   const conflicts = useMemo(() => {
     const base = rawConflicts.filter((c) => {
       const col = mapCriticFieldToColumn(c.field) ?? c.field
-      return col !== 'itemStyleNo' && col !== 'grossWeight' && col !== 'htsCode'
+      return (
+        col !== 'itemStyleNo' &&
+        col !== 'grossWeight' &&
+        col !== 'measurement' &&
+        col !== 'htsCode'
+      )
     })
     return filterActionableConflicts(base, { liveQty, poShipmentTotal })
   }, [rawConflicts, liveQty, poShipmentTotal])
