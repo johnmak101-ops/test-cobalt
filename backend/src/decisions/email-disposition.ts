@@ -57,17 +57,26 @@ export function resolveEmailDisposition(dto: CreateDecisionDto): DispositionResu
   }
   if (reasons.length) return { disposition: 'review', reasons }
 
-  // Explicit agent disposition after review-signal check.
-  if (dto.disposition === 'skip' || dto.disposition === 'auto' || dto.disposition === 'review') {
-    return { disposition: dto.disposition, reasons: dto.reviewReasons ?? [] }
-  }
-
   const pos = dto.pos ?? []
   const mk = dto.matchKey ?? {}
   const hasPo = pos.length > 0
   const strong = hasStrong(mk)
   const statusUpdate = ctx.statusUpdate === true
   const knownCustomer = ctx.knownCustomer === true
+
+  // Force skip when agent flagged too-weak create — never open empty provisional shells (Booking ID "—").
+  const agentReasons = dto.reviewReasons ?? []
+  const agentSaysTooWeak = agentReasons.some((r) =>
+    /too weak to auto-create|neither a strong identity key nor a PO/i.test(r),
+  )
+  if (agentSaysTooWeak && !hasPo && !strong) {
+    return { disposition: 'skip', reasons: agentReasons }
+  }
+
+  // Explicit agent disposition after review-signal check (and after too-weak force-skip).
+  if (dto.disposition === 'skip' || dto.disposition === 'auto' || dto.disposition === 'review') {
+    return { disposition: dto.disposition, reasons: dto.reviewReasons ?? [] }
+  }
 
   // 不需處理: no PO, no strong id, no status update — not actionable as a shipment commit.
   if (!hasPo && !strong && !statusUpdate) {
