@@ -57,3 +57,24 @@ frontend/_vite.*.log
 # local git worktrees used for branch isolation
 .worktrees/
 
+# Agent / loop scratch — never commit (local only)
+.pr-body*.md
+LOOP.md
+loop-budget.md
+loop-constraints.md
+loop-run-log.md
+july-hardening-state.md
+doctor-sweeper-state.md
+gate.yaml
+tmp-*.ts
+tmp-*.js
+tmp-*.mjs
+backend/_boot*.log
+backend/_q*.js
+backend/_dismiss*.js
+backend/_patch*.js
+_be-doctor*.json
+_fe-doctor*.json
+_fe-verbose.txt
+_dev.log
+

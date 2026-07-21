@@ -72,6 +72,16 @@ Orientation for AI coding agents working in this repo.
 - Lint: `pnpm lint` (ESLint flat config, `eslint.config.mjs`) — enforced in CI, keep it at 0 errors.
   `pnpm format` (Prettier) is advisory (the repo isn't fully Prettier-formatted).
 - CI (`.github/workflows/ci.yml`) runs all of the above on push to `main` and every PR.
+- Docker smoke: `docker compose up --build` → `GET /api/health` → SPA login. Checklist:
+  `backend/docs/docker-deploy.md`. Demo walkthrough: `DEMO-SCRIPT.md` (gold = **5** spines).
+
+## Invariants (do not break)
+
+1. **Decision ingest is the only write path from the agent.** No shared DB with cobalt-queue.
+2. **Packing-line POs are noise.** `backend/src/reconcile/non-customer-po.ts` demotes `ASNE*`,
+   `DF*`, and pure **9+ digit** tokens — keep in lockstep with queue `non-customer-po.ts`.
+3. **Incomplete shells** (no strong key ∧ no master) are filterable in the UI; do not hide them silently.
+4. **Sibling HAWB PO exclusivity** — same PO on two air HAWBs links to one leg only (Set6 air).
 
 ## Conventions
 
