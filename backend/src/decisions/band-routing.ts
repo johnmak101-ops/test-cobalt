@@ -32,6 +32,14 @@ export function hasHardStopFlags(critic: CriticReview | null | undefined): boole
 }
 
 /**
+ * High confidence without hard-stop risk flags: auto-confirm and hide from Review Queue
+ * (Active + Approved). Hard-stop high still needs a human look.
+ */
+export function isHighBandAutoEligible(critic: CriticReview | null | undefined): boolean {
+  return critic?.confidence?.band === 'high' && !hasHardStopFlags(critic)
+}
+
+/**
  * Band-routing reviewStatus from queue recommendedRouting (preferred) or critic band fallback.
  * Returns null when band routing is N/A (no critic and no recommendedRouting).
  */
