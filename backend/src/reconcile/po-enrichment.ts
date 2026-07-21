@@ -47,6 +47,88 @@ export function styleCommaCount(raw: string): number {
     .filter(Boolean).length
 }
 
+/**
+ * Max comma-tokens for nested-subset union. When styles nest (A⊆B or B⊆A) and the
+ * largest list has ≤ this many tokens, keep the union (incomplete INV/PL single
+ * must not erase a two-style telex). Above this → classic T1a (IZAC 5-token stamp).
+ */
+export const STYLE_NESTED_UNION_MAX_TOKENS = 3
+
+/** Normalized token set (upper, trimmed) for set ops. */
+export function styleTokenSet(raw: string): Set<string> {
+  return new Set(
+    String(raw ?? '')
+      .split(',')
+      .map((x) => x.trim())
+      .filter(Boolean)
+      .map((x) => x.toUpperCase()),
+  )
+}
+
+/** True if every pair of statements is nested (A⊆B or B⊆A or equal). */
+export function stylesAreNested(styles: string[]): boolean {
+  const sets = styles.map(styleTokenSet).filter((s) => s.size > 0)
+  if (sets.length <= 1) return true
+  for (let i = 0; i < sets.length; i++) {
+    for (let j = i + 1; j < sets.length; j++) {
+      const a = sets[i]!
+      const b = sets[j]!
+      const aSubB = [...a].every((t) => b.has(t))
+      const bSubA = [...b].every((t) => a.has(t))
+      if (!aSubB && !bSubA) return false
+    }
+  }
+  return true
+}
+
+/**
+ * Union of tokens; display order = first appearance scanning styles oldest → newest.
+ * Input is newest-first (existing enrich order); reversed for chronological scan.
+ */
+export function formatStyleUnion(stylesNewestFirst: string[]): string {
+  const chronological = [...stylesNewestFirst].reverse()
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const raw of chronological) {
+    for (const part of String(raw)
+      .split(',')
+      .map((x) => x.trim())
+      .filter(Boolean)) {
+      const k = part.toUpperCase()
+      if (seen.has(k)) continue
+      seen.add(k)
+      out.push(part)
+    }
+  }
+  return out.join(', ')
+}
+
+/**
+ * stylesNewestFirst: non-empty list, newest first (existing enrich order).
+ * Nested + maxTok<=STYLE_NESTED_UNION_MAX_TOKENS → union;
+ * else T1a min-token newest + #124 family pick among specifics.
+ */
+export function pickItemStyleNo(stylesNewestFirst: string[]): string | null {
+  const styles = stylesNewestFirst.map((s) => String(s ?? '').trim()).filter(Boolean)
+  if (!styles.length) return null
+  const counts = styles.map(styleCommaCount)
+  const maxTok = Math.max(...counts)
+  const minTok = Math.min(...counts)
+  if (stylesAreNested(styles) && maxTok <= STYLE_NESTED_UNION_MAX_TOKENS) {
+    return formatStyleUnion(styles)
+  }
+  // Classic T1a
+  const specific = styles.filter((s) => styleCommaCount(s) === minTok)
+  let picked = specific[0] ?? styles[0] ?? null
+  if (picked && specific.length >= 2) {
+    const fam0 = styleFamilyKey(specific[0]!)
+    if (fam0.length >= 8 && specific.every((s) => styleFamilyKey(s) === fam0)) {
+      picked = specific.reduce((a, b) => (styleLetterScore(b) > styleLetterScore(a) ? b : a))
+    }
+  }
+  return picked
+}
+
 /** The PO this record speaks for: its own po_no, else the customer_po match-key. Neither → belongs to no PO. */
 const poKeyOf = (r: PoEvidenceInput): string => normKey(r.poNo) || normKey(r.matchKeys?.customer_po)
 
@@ -57,9 +139,12 @@ const poKeyOf = (r: PoEvidenceInput): string => normKey(r.poNo) || normKey(r.mat
  * TOGETHER from the newest record with a qty. qty broadcast guard (same value ≥3 POs) is de-correction
  * flag-only.
  *
- * item_style_no (table-truth T1a): **fewest comma-tokens first**, newest among ties — a specific single
- * beats a broadcast multi-list even when the list is newer. #124 OCR family pick still applies among
- * the specific (min-token) candidates only.
+ * item_style_no: when all statements are **nested subsets** and the largest has
+ * ≤ STYLE_NESTED_UNION_MAX_TOKENS (3) tokens → **token union** (incomplete INV/PL
+ * single must not erase a two-style telex). Else classic **T1a**: fewest
+ * comma-tokens first, newest among ties — a specific single still beats a large
+ * multi-token packing stamp (IZAC). #124 OCR family pick applies among the
+ * specific (min-token) candidates only.
  *
  * style broadcast (T1b): multi-token style identical across ≥3 POs of the same email → flag, keep value.
  *
@@ -153,19 +238,9 @@ export function resolvePoEnrichment(rows: PoEvidenceInput[]): Map<string, PoEnri
         }
       }
     }
-    // T1a: fewest comma-tokens first (specific single beats broadcast list), newest among ties.
-    // styles[] is already newest-first; among min-token candidates the first is newest.
+    // Nested subset union (≤3 tokens) or classic T1a; styles[] is newest-first.
     if (styles.length) {
-      const minTok = Math.min(...styles.map(styleCommaCount))
-      const specific = styles.filter((s) => styleCommaCount(s) === minTok)
-      enr.itemStyleNo = specific[0] ?? styles[0] ?? null
-      // #124 OCR family: among the specific (min-token) candidates only, prefer letter-suffix form
-      if (specific.length >= 2) {
-        const fam0 = styleFamilyKey(specific[0]!)
-        if (fam0.length >= 8 && specific.every((s) => styleFamilyKey(s) === fam0)) {
-          enr.itemStyleNo = specific.reduce((a, b) => (styleLetterScore(b) > styleLetterScore(a) ? b : a))
-        }
-      }
+      enr.itemStyleNo = pickItemStyleNo(styles)
     }
     // No genuine per-PO qty found, only a broadcast total: keep it (fill purchase_orders.total_quantity)
     // and flag it for review — the raw model value stays visible instead of being silently nulled.
