@@ -49,6 +49,8 @@ export interface EditableField {
 export const EDITABLE_FIELDS: EditableField[] = [
   { section: 'Order Info', label: 'Booking No.', uiKey: 'bookingNo', column: 'bookingNo', type: 'text' },
   { section: 'Order Info', label: 'SO#', uiKey: 'soNumber', column: 'soNo', type: 'text' },
+  // 入仓/订仓 SO — distinct from soNo; never dual-written into so_no / booking_no
+  { section: 'Order Info', label: 'Warehouse SO', uiKey: 'warehouseSo', column: 'warehouseSo', type: 'text' },
   { section: 'Order Info', label: 'Item / Style No.', uiKey: 'itemStyleNo', column: 'itemStyleNo', type: 'text' },
   { section: 'Cargo & Logistics', label: 'Total Quantity', uiKey: 'quantityShipped', column: 'qty', type: 'number' },
   { section: 'Cargo & Logistics', label: 'UOM', uiKey: 'quantityUnit', column: 'qtyUnit', type: 'text', options: UOM_OPTIONS },

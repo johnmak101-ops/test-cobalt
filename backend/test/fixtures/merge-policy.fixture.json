@@ -7,6 +7,7 @@
     "mbl": "identity",
     "booking_no": "identity",
     "container_no": "identity",
+    "warehouse_so": "identity",
     "customer_code": "entity",
     "vendor_code": "entity",
     "forwarder_name": "entity",

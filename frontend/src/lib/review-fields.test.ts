@@ -378,7 +378,7 @@ describe('fieldLabel — the one vocabulary, used by every surface that names a 
     // Pins the read view to EDITABLE_FIELDS: rename a label there and this stays green, but a
     // renamed/removed COLUMN fails here instead of silently rendering the raw column name.
     const rendered = [
-      'bookingNo', 'soNo',
+      'bookingNo', 'soNo', 'warehouseSo',
       'qty', 'qtyUnit', 'grossWeight', 'measurement', 'htsCode', 'containerNo', 'hblAwbFcrNo', 'mbl', 'mawb', 'scacCode',
       'mode', 'polRaw', 'podRaw', 'forwarderRaw',
       'consigneeName', 'consigneeAddress', 'vesselName', 'voyageNo', 'flightNo',

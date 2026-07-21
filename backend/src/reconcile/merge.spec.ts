@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { mergeShipment, type CriticEmail } from './merge'
+import { FIELD_CLASS, mergeShipment, type CriticEmail } from './merge'
 
 const e = (receivedAt: string, emailType: string, fields: Record<string, unknown>, pos: string[] = []): CriticEmail => ({
   receivedAt,
@@ -119,6 +119,16 @@ describe('mergeShipment — Critic merge policy', () => {
     expect(r.fields.scac_code).toBe('EGLV')
     expect(r.fields.gross_weight).toBe('120')
     expect(r.fields.pol).toBe('CNYTN')
+  })
+
+  it('identity: warehouse_so merges (best doc wins) and stays distinct from so_no', () => {
+    const r = mergeShipment([
+      e('2026-01-01', 'SO', { so_no: 'FEL-GZ-OSA-2842', warehouse_so: 'B1261611448' }),
+      e('2026-01-02', 'Final B/L', { so_no: 'FEL-GZ-OSA-2842', hbl_awb_fcr_no: 'GZOSA2600021' }),
+    ])
+    expect(r.fields.so_no).toBe('FEL-GZ-OSA-2842')
+    expect(r.fields.warehouse_so).toBe('B1261611448')
+    expect(FIELD_CLASS.warehouse_so).toBe('identity')
   })
 
   it('list: item_style_no / hts_code UNION across records (deduped, order-preserving)', () => {
