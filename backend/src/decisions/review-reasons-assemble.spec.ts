@@ -49,4 +49,18 @@ describe('assembleIngestReviewReasons (#166)', () => {
     const out = assembleIngestReviewReasons(d, disp)
     expect(out).toEqual(['r1', 'Cannot match "X" in the forwarder list'])
   })
+
+  it('strips subject-party-pin / veto from opsNotes and reviewReasons (silent success)', () => {
+    const d = dto({
+      reviewReasons: [
+        "auto: subject-party-pin: vendor_code kept 'ROKNFT' over 'SOUOCE'",
+        'identity_fallback: subject/filename spine present but zero p',
+      ],
+      opsNotes: ["auto: subject-party-pin: customer_code kept 'DOCC' over ''"],
+    })
+    const disp: DispositionResult = { disposition: 'review', reasons: [] }
+    const out = assembleIngestReviewReasons(d, disp)
+    expect(out.some((r) => /subject-party/i.test(r))).toBe(false)
+    expect(out).toContain('identity_fallback: subject/filename spine present but zero p')
+  })
 })

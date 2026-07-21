@@ -325,6 +325,11 @@ const TRANSLATIONS: Translation[] = [
   },
 ]
 
+/** Silent auto-success audits — never show in Review / Other reasons. */
+export function isSilentOpsReason(reason: string): boolean {
+  return /subject-party-pin|subject-party-veto/i.test(reason ?? '')
+}
+
 /** Plain-language version of a review reason; never surfaces raw DB field names. */
 export function humanizeReason(reason: string, opts?: HumanizeOpts): string {
   for (const t of TRANSLATIONS) {
@@ -346,6 +351,7 @@ export function humanizeReasons(reasons: string[], opts?: HumanizeOpts): Humaniz
   const out: HumanizedReason[] = []
   const seen = new Set<string>()
   for (const raw of reasons) {
+    if (isSilentOpsReason(raw)) continue
     const text = humanizeReason(raw, opts)
     if (seen.has(text)) continue
     seen.add(text)
@@ -436,6 +442,9 @@ export function categorizeReason(raw: string): ReasonCategory {
 /** A shipment's category set = union over its reasons; a reason-less row files under 'other'. */
 export function categoriesOf(reasons: string[]): Set<ReasonCategory> {
   const s = new Set<ReasonCategory>()
-  for (const r of reasons) s.add(categorizeReason(r))
+  for (const r of reasons) {
+    if (isSilentOpsReason(r)) continue
+    s.add(categorizeReason(r))
+  }
   return s.size ? s : new Set<ReasonCategory>(['other'])
 }
