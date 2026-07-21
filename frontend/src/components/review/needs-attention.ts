@@ -130,15 +130,12 @@ const DESK_DECISION_LINE_IDS = new Set([
   'g-pages',
 ])
 
-/** Must be fyi (spec §3.4 + T2-1). */
+/**
+ * Quiet desk only — schedule noise, brand leak FYI, backfill stamps.
+ * Master-miss (party/port Mesh) is decision: Review queue asks the operator to resolve
+ * unmatched vendor/customer/forwarder (conflict table alone is not enough of a desk).
+ */
 const DESK_FYI_LINE_IDS = new Set([
-  MESH_PARTY_COLLAPSED_LINE_ID,
-  MESH_PORT_COLLAPSED_LINE_ID,
-  'm-mesh',
-  'm-party',
-  'm-customer',
-  'm-vendor',
-  'm-consignee',
   'g-repaired',
   'g-evidence-trunc',
   'i-backfill-rematch',
@@ -149,9 +146,9 @@ const BRAND_FYI_NOTE =
   /^brand '[^']{1,80}' appears across \d+ distinct buyer families\s*(?:—|–|-)\s*possible house\/agent leak/i
 
 /**
- * Tag an item for Review vs detail (rule A). Order (T2-1):
- * must-decision → must-fyi → f-* prefix → m-* prefixes → brand anchor →
- * group default → severity≥high valve → fyi.
+ * Tag an item for Review vs detail (rule A). Order:
+ * must-decision → must-fyi → f-* / master_miss / m-* Mesh → brand FYI →
+ * which/real shipment → severity≥high valve → fyi.
  */
 export function tagDesk(
   item: Pick<NeedsAttentionItem, 'lineId' | 'groupId' | 'text' | 'severity'>,
@@ -160,14 +157,19 @@ export function tagDesk(
   if (DESK_FYI_LINE_IDS.has(item.lineId)) return 'fyi'
   // Field-disagree residual lines (f-count, f-backend, f-lock, f-mode, …)
   if (item.lineId.startsWith('f-')) return 'decision'
+  // Mesh party/port misses — decision on Review (operator must pick raw / add master / rematch).
   if (
+    item.groupId === 'master_miss' ||
     item.lineId.startsWith('m-party') ||
     item.lineId.startsWith('m-mesh') ||
     item.lineId.startsWith('m-port') ||
     item.lineId.startsWith('m-vendor') ||
-    item.lineId.startsWith('m-consignee')
+    item.lineId.startsWith('m-consignee') ||
+    item.lineId.startsWith('m-customer') ||
+    item.lineId === MESH_PARTY_COLLAPSED_LINE_ID ||
+    item.lineId === MESH_PORT_COLLAPSED_LINE_ID
   ) {
-    return 'fyi'
+    return 'decision'
   }
   if (BRAND_FYI_NOTE.test(item.text)) return 'fyi'
   if (item.groupId === 'which_shipment' || item.groupId === 'real_shipment') return 'decision'

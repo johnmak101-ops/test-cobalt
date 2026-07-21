@@ -769,7 +769,7 @@ describe('countryOnlyPortMissText', () => {
 })
 
 describe('desk filter (decision vs fyi, rule A)', () => {
-  it('Review decision build hides mesh party FYI; detail all shows both', () => {
+  it('Review decision desk shows Mesh party master-miss (operator must resolve vendor/customer)', () => {
     const base = {
       conflictsCount: 0,
       reviewReasons: [] as string[],
@@ -789,19 +789,32 @@ describe('desk filter (decision vs fyi, rule A)', () => {
     }
     const allItems = buildNeedsAttention(base)
     const review = buildNeedsAttentionGroups({ ...base, desk: 'decision' })
-    const detail = buildNeedsAttentionGroups({ ...base, desk: 'all' })
     const reviewLines = review.flatMap((g) => g.items.map((i) => i.lineId))
-    const detailLines = detail.flatMap((g) => g.items.map((i) => i.lineId))
     expect(allItems.some((i) => i.desk === 'decision')).toBe(true)
-    expect(allItems.some((i) => i.desk === 'fyi')).toBe(true)
     expect(reviewLines).toContain('w-po-only')
+    // Master miss is decision — blank Needs attention while asking for vendor pick is wrong
     expect(reviewLines.some((id) => id.startsWith('m-party') || id === 'm-party:collapsed')).toBe(
-      false,
-    )
-    expect(detailLines.some((id) => id.startsWith('m-party') || id === 'm-party:collapsed')).toBe(
       true,
     )
-    expect(detailLines.length).toBeGreaterThan(reviewLines.length)
+    expect(review.some((g) => g.groupId === 'master_miss')).toBe(true)
+  })
+
+  it('Mesh party miss still on Review when conflict table is present', () => {
+    const groups = buildNeedsAttentionGroups({
+      conflictsCount: 2,
+      riskFlags: [],
+      reviewReasons: [
+        '3 field conflict(s)',
+        'forwarder_name "TCI" did not exact-match a master (LLM matcher owns fuzzy; left unlinked)',
+        'Cannot match "广州纯通国际货运代理有限公司" in the forwarder list. Please add it in Cobalt Fashion Data Mesh System, then rematch.',
+      ],
+      desk: 'decision',
+    })
+    // Field conflicts suppressed (table owns them); master miss must still headline Needs attention
+    const ids = groups.flatMap((g) => g.items.map((i) => i.lineId))
+    expect(ids.some((id) => id.startsWith('f-count') || id.startsWith('f-backend'))).toBe(false)
+    expect(ids.some((id) => id.startsWith('m-party') || id === 'm-party:collapsed')).toBe(true)
+    expect(groups.some((g) => g.groupId === 'master_miss')).toBe(true)
   })
 
   it('T2-1: f-backend residual (no conflict table) stays decision on Review', () => {
