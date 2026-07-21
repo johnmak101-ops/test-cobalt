@@ -36,6 +36,9 @@ describe('deriveState — 6-state staircase', () => {
   it('actual departure → SAILED', () => {
     expect(deriveState(new Set(['Draft B/L']), { atd: '2026-02-10' })).toBe('SAILED')
   })
+  it('Departure Notice email type (On-board / Departure date keywords) → SAILED', () => {
+    expect(deriveState(new Set(['Departure Notice']), {})).toBe('SAILED')
+  })
   it('Invoice/Billing with a PAST ETD + a carrier doc (MBL or HBL/FCR) → SAILED (invoices are post-departure)', () => {
     const now = new Date('2026-07-13T00:00:00Z')
     // MBL (the original BUG-7 case)
@@ -59,6 +62,7 @@ describe('deriveState — 6-state staircase', () => {
   })
   it('Telex / Final B/L → RELEASED', () => {
     expect(deriveState(new Set(['Telex Release']), {})).toBe('RELEASED')
+    expect(deriveState(new Set(['Final B/L']), {})).toBe('RELEASED')
   })
   it('in-DC date alone does NOT reach DELIVERED without a departure signal', () => {
     // a delivery cannot precede departure — in_dc with no atd/Final B/L/Telex stays at the prior stage
@@ -66,6 +70,15 @@ describe('deriveState — 6-state staircase', () => {
   })
   it('in-DC date + departure (atd) → DELIVERED (highest reached wins)', () => {
     expect(deriveState(new Set(['SO']), { in_dc_date: '2026-03-01', atd: '2026-02-20' })).toBe('DELIVERED')
+  })
+  it('ETD calendar day equals today → DELIVERED (ops rule)', () => {
+    const now = new Date('2026-07-21T15:00:00Z')
+    expect(deriveState(new Set(['SO']), { etd: '2026-07-21' }, now)).toBe('DELIVERED')
+    expect(deriveState(new Set(['SO']), { etd: '2026-07-21T00:00:00.000Z' }, now)).toBe('DELIVERED')
+  })
+  it('ETD on another day does not alone promote to DELIVERED', () => {
+    const now = new Date('2026-07-21T15:00:00Z')
+    expect(deriveState(new Set(['SO']), { etd: '2026-07-20' }, now)).toBe('CONFIRMED')
   })
 })
 
