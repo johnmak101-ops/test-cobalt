@@ -1092,6 +1092,103 @@ describe('source emails — identify WHICH email, and which is newer', () => {
   })
 })
 
+describe('qty live-leg settle on decision table', () => {
+  it('hides qty conflict when live leg already matches AI proposed (GZL-class)', () => {
+    const shipment = baseShipment({
+      quantityShipped: 16,
+      quantityUnit: 'cartons',
+      linkedPOs: [
+        {
+          id: 'po1',
+          linkId: 'l1',
+          poNumber: '28739',
+          quantity: 10,
+          totalQuantity: null,
+          quantityUnit: 'cartons',
+          itemStyleNo: 'RED STRIPE',
+        },
+        {
+          id: 'po2',
+          linkId: 'l2',
+          poNumber: '28740',
+          quantity: 6,
+          totalQuantity: null,
+          quantityUnit: 'cartons',
+          itemStyleNo: 'X',
+        },
+      ],
+    } as never)
+    const conflictQty: CriticConflict = {
+      field: 'qty',
+      label: 'Total Quantity',
+      candidates: [
+        { value: '5', source: 'system' },
+        { value: '16', source: 'Final B/L' },
+      ],
+      rationale: 'stale system vs email',
+    }
+    const conflictVendor: CriticConflict = {
+      field: 'vendor_code',
+      label: 'Vendor',
+      candidates: [
+        { value: '', source: 'system' },
+        { value: 'MACAU FUNG TAI LIMITED', source: 'SO' },
+      ],
+      rationale: 'vendor',
+    }
+    render(
+      <MemoryRouter>
+        <ReviewCard
+          shipment={shipment}
+          criticReview={baseReview({ conflicts: [conflictQty, conflictVendor] })}
+          compact={null}
+          defaultExpanded
+          onSaveAndApprove={vi.fn()}
+        />
+      </MemoryRouter>,
+    )
+    const grid = screen.getByTestId('review-decision-grid')
+    expect(within(grid).queryByText('Total Quantity')).toBeNull()
+    expect(within(grid).getByText('Vendor')).toBeInTheDocument()
+    // Qty settled — Approve must not double-count it as a second change
+    expect(screen.queryByRole('button', { name: /approve 2 changes/i })).toBeNull()
+  })
+
+  it('still shows qty when live differs from all non-system candidates', () => {
+    const shipment = baseShipment({
+      quantityShipped: 16,
+      quantityUnit: 'cartons',
+      linkedPOs: [],
+    } as never)
+    render(
+      <MemoryRouter>
+        <ReviewCard
+          shipment={shipment}
+          criticReview={baseReview({
+            conflicts: [
+              {
+                field: 'qty',
+                label: 'Total Quantity',
+                candidates: [
+                  { value: '5', source: 'system' },
+                  { value: '100', source: 'SO' },
+                ],
+                rationale: 'real fight',
+              },
+            ],
+          })}
+          compact={null}
+          defaultExpanded
+        />
+      </MemoryRouter>,
+    )
+    const grid = screen.getByTestId('review-decision-grid')
+    expect(within(grid).getByText('Total Quantity')).toBeInTheDocument()
+    // Current column shows live leg qty, not stale system candidate
+    expect(within(grid).getByText('16')).toBeInTheDocument()
+  })
+})
+
 /** Detail-shaped keys for critical sailing fields (crd / etd / actualDeparture). */
 function shipmentWithCriticals(over: Record<string, unknown> = {}): ReviewShipment {
   return {
