@@ -78,6 +78,46 @@ describe('planPoReconcile (PoQtyReconciler pure plan)', () => {
     })
     expect(plan.links[0]).toMatchObject({ perPoQty: 12, perPoUnit: 'cartons' })
   })
+
+  it('skips PO already on sibling shipment with different HAWB', () => {
+    const plan = planPoReconcile({
+      pos: ['28739', '28642'],
+      fields: { qty: 29, customer_code: 'WYSE', hbl_awb_fcr_no: 'GZL26258522' },
+      poQty: {},
+      poEnrichment: null,
+      unattributed: [],
+      gk: new Set(),
+      siblingPoHbls: [{ po: '28739', hbl: 'GZL26261147' }],
+    })
+    const linked = plan.links.map((l) => l.poNo)
+    expect(linked).toContain('28642')
+    expect(linked).not.toContain('28739')
+    expect(plan.poFlagReasons.some((r) => /PO 28739: exclusive to sibling HAWB/i.test(r))).toBe(true)
+  })
+
+  it('empty siblingPoHbls does not skip any PO (Set1 single-leg)', () => {
+    const plan = planPoReconcile({
+      pos: ['28739', '28642'],
+      fields: { hbl_awb_fcr_no: 'GZL26258522' },
+      poEnrichment: null,
+      unattributed: [],
+      gk: new Set(),
+      siblingPoHbls: [],
+    })
+    expect(plan.links.map((l) => l.poNo)).toEqual(['28739', '28642'])
+  })
+
+  it('does not skip PO when sibling claim is same HAWB', () => {
+    const plan = planPoReconcile({
+      pos: ['28739'],
+      fields: { hbl_awb_fcr_no: 'GZL-2625-8522' },
+      poEnrichment: null,
+      unattributed: [],
+      gk: new Set(),
+      siblingPoHbls: [{ po: '28739', hbl: 'GZL26258522' }],
+    })
+    expect(plan.links.map((l) => l.poNo)).toEqual(['28739'])
+  })
 })
 
 describe('mergeReviewReasonsWithDataIssues (recompute, do not accumulate)', () => {
@@ -104,6 +144,9 @@ describe('mergeReviewReasonsWithDataIssues (recompute, do not accumulate)', () =
       isRecomputedDataIssueReason(
         'booked shipment missing cargo detail (qty/weight/volume) — source attachment likely not ingested',
       ),
+    ).toBe(true)
+    expect(
+      isRecomputedDataIssueReason('PO 28739: exclusive to sibling HAWB — not linked'),
     ).toBe(true)
     expect(isRecomputedDataIssueReason(masterMiss)).toBe(false)
     expect(isRecomputedDataIssueReason(gateConflict)).toBe(false)

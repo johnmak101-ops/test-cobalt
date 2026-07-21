@@ -24,6 +24,9 @@ export interface PoReconcilePlan {
  * Build the per-PO link plan + review-flag reasons for one commit group.
  * Semantics match the previous inline loop in CommitterService.apply (byte-stable reason strings).
  */
+/** Other legs' PO↔HAWB claims used as defense-in-depth against cross-HAWB PO linking. */
+export type SiblingPoHbl = { po: string; hbl: string }
+
 export function planPoReconcile(args: {
   pos: string[]
   fields: Record<string, unknown>
@@ -32,13 +35,32 @@ export function planPoReconcile(args: {
   unattributed: UnattributedStatement[]
   /** strongKeys(g.matchKeys) — unattributed statements only flag when they share identity with the group */
   gk: Set<string>
+  /**
+   * POs already linked on sibling shipments with a different HAWB. Empty / omitted → no filter
+   * (Set1 single-leg unchanged). When this leg has an HBL and a PO is claimed by a different HBL,
+   * skip linking that PO and flag for review.
+   */
+  siblingPoHbls?: SiblingPoHbl[]
 }): PoReconcilePlan {
   const { pos, fields, poQty, poEnrichment, unattributed, gk } = args
   const poQtyIssues: string[] = []
   const poFlagReasons: string[] = []
   const links: PoLinkPlan[] = []
+  const myHbl = normKey(fields.hbl_awb_fcr_no)
+  const siblings = args.siblingPoHbls ?? []
 
   for (const poNo of pos) {
+    // Defense-in-depth: queue matcher prunes cross-HAWB POs; committer also skips if a sibling
+    // shipment already owns this PO under a different HBL (multi-HAWB split / Set5).
+    if (
+      myHbl &&
+      siblings.some(
+        (s) => normKey(s.po) === normKey(poNo) && normKey(s.hbl) && normKey(s.hbl) !== myHbl,
+      )
+    ) {
+      poFlagReasons.push(`PO ${poNo}: exclusive to sibling HAWB — not linked`)
+      continue
+    }
     const mapped = num(poQty?.[normKey(poNo)])
     const perPoQty = mapped ?? (pos.length === 1 ? num(fields.qty) : null)
     const perPoUnit = str(fields.qty_unit) // no code-side default — a missing unit stays null
@@ -104,6 +126,8 @@ export function isRecomputedDataIssueReason(reason: string): boolean {
   // per-PO qty vs ERP order (planPoReconcile poQtyIssues)
   if (/^PO\s+\S+:\s*unit differs:/i.test(r)) return true
   if (/^PO\s+\S+:\s*shipped .+ exceeds ordered\b/i.test(r)) return true
+  // cross-HAWB PO exclusivity (planPoReconcile sibling skip)
+  if (/^PO\s+\S+:\s*exclusive to sibling HAWB\b/i.test(r)) return true
   // empty cargo escalation (committer)
   if (/booked shipment missing cargo detail/i.test(r)) return true
   return false

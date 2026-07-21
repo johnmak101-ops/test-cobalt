@@ -459,6 +459,26 @@ export class CommitterService {
     // de-correction (b2 no-PO): brand/style stated with no PO to attach to — surfaced, never silently dropped.
     const unattributed = g.pos.length ? unattributedBrandStyle(allEvidence) : []
 
+    // Defense-in-depth for multi-HAWB splits: other candidate legs' shipment_pos + HBL. One bulk
+    // query over already-indexed candidates — empty when no siblings (Set1 single-leg unchanged).
+    let siblingPoHbls: { po: string; hbl: string }[] = []
+    if (g.pos.length && legs.length) {
+      const otherIds = legs.filter((l) => l.id !== shipmentId).map((l) => l.id)
+      if (otherIds.length) {
+        const posByShipment = await this.shipments.linkedPosForShipments(otherIds)
+        for (const leg of legs) {
+          if (leg.id === shipmentId) continue
+          const mk = (leg.matchKeys ?? {}) as Record<string, unknown>
+          const hbl =
+            str((leg as { hblAwbFcrNo?: unknown }).hblAwbFcrNo) ?? str(mk.hbl_awb_fcr_no)
+          if (!hbl) continue
+          for (const p of posByShipment.get(leg.id) ?? []) {
+            if (p.poNumber) siblingPoHbls.push({ po: p.poNumber, hbl })
+          }
+        }
+      }
+    }
+
     // PoQtyReconciler: pure plan (qty/unit/enrichment flags) then side-effect links. Reasons stay byte-stable
     // with the pre-extract loop (see committer-po-reconciler.spec).
     const { links, poQtyIssues, poFlagReasons } = planPoReconcile({
@@ -468,6 +488,7 @@ export class CommitterService {
       poEnrichment,
       unattributed,
       gk,
+      siblingPoHbls,
     })
     for (const link of links) {
       const poId = await this.purchaseOrders.upsertPo(link.poNo, customerId, effVendorId, link.enr ?? undefined)
