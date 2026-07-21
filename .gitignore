@@ -57,6 +57,11 @@ frontend/_vite.*.log
 # local git worktrees used for branch isolation
 .worktrees/
 
+# Local doctor / process tooling
+**/doctor.config.json
+**/nestjs-doctor.config.json
+**/nestjs-doctor.config.README.md
+
 # Agent / loop scratch — never commit (local only)
 .pr-body*.md
 LOOP.md

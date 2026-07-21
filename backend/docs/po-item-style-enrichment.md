@@ -33,5 +33,4 @@ pnpm exec tsx src/dev/run-matcher.ts --all --force
 ```
 
 **Spec / plan (queue):**  
-`docs/superpowers/specs/2026-07-21-po-item-style-subset-union-design.md`  
-`docs/superpowers/plans/2026-07-21-po-item-style-subset-union-plan.md`
+(Original design/plan lived under `docs/superpowers/` — removed from tree; recover via git history if needed.)

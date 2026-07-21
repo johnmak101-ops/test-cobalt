@@ -15,7 +15,7 @@ Optional agent payload on decisions; **does not change** confirmed/provisional r
 | Queue UI | Review Queue tabs **Active** / **Rejected** / **Approved**; **Band** badge (Low/Medium); expandable **conflict-only** card (Existing / Proposed / Recommended / Resolution); no **Why review?** column |
 | Fixture (agent) | cobalt-queue `test/fixtures/critic-review.sample.json` (`CRITIC_REVIEW=deterministic\|openpave`); includes `conflicts[]` for contested fields |
 
-Legacy decisions without `criticReview` render as before (no band, no conflict expand). Design: `docs/superpowers/specs/2026-07-14-critic-review-ui-design.md`.
+Legacy decisions without `criticReview` render as before (no band, no conflict expand).
 
 ## Stack
 

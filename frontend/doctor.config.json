@@ -1,9 +1,0 @@
-{
-  "$schema": "https://react.doctor/schema/config.json",
-  "ignore": {
-    "rules": [
-      "react-doctor/no-giant-component",
-      "react-doctor/only-export-components"
-    ]
-  }
-}
