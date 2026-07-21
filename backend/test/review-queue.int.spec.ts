@@ -14,7 +14,8 @@ beforeAll(async () => {
   const r = repos(db)
   // editFields/applyExtractionCorrection don't touch the committer (only createManual does), so omit it —
   // same construction the shipment-edit spec uses.
-  const shipments = new ShipmentsService(r.shipment, r.booking, r.fieldLock, r.audit)
+  const queueLearning = { postCorrection: async () => undefined } as never
+  const shipments = new ShipmentsService(r.shipment, r.booking, r.fieldLock, r.audit, null as never, queueLearning)
   review = new ReviewQueueService(new ReviewEmailRepository(db), shipments, r.masters)
 })
 afterAll(closeTestDb)
