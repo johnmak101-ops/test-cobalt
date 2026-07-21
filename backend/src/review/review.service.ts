@@ -153,6 +153,20 @@ export class ReviewService {
     return leg
   }
 
+  /**
+   * Graph message id for queue learning attribution (queue resolves it to the parsed record).
+   * When no source email is linked, return null and log loud — NEVER fall back to the shipment UUID
+   * (#236 P2): the queue cannot resolve a leg id → dead / poison TRAIN fuel.
+   */
+  private async resolveLearningMessageId(shipmentId: string): Promise<string | null> {
+    const graphId = await this.shipments.sourceGraphIdFor(shipmentId)
+    if (graphId) return graphId
+    this.logger.error(
+      `QUEUE LEARNING SKIPPED — no source graph message id for shipment=${shipmentId}; refusing shipment UUID as messageId (would poison the queue)`,
+    )
+    return null
+  }
+
   /** Accept a provisional shipment as-is. An optional reviewer note is audited (soul feedback). A "looks
    *  right" acceptance also vouches for every parse-derived field, so we emit a confirm-sentinel per field
    *  to the queue's learning feed (guards its held-out eval — a soul that starts mis-parsing a confirmed
@@ -165,7 +179,7 @@ export class ReviewService {
       oldValue: leg.reviewStatus, newValue: 'confirmed', changeType: 'update',
       sourceType: 'manual', actorUserId: actorId, note: note?.trim() || 'review: confirmed as-is',
     })
-    const messageId = (await this.shipments.sourceGraphIdFor(shipmentId)) ?? shipmentId
+    const messageId = await this.resolveLearningMessageId(shipmentId)
     const forwarder = ((leg as Record<string, unknown>).forwarderRaw as string | null) ?? null
     await this.emitConfirms(leg as Record<string, unknown>, new Set(), messageId, forwarder)
     await this.recordCalibration({
@@ -178,8 +192,10 @@ export class ReviewService {
   /** Emit a "looks right" confirm-sentinel to the queue learning feed for every confirmable parse field that
    *  is non-null and was NOT just edited. Each is one POST with kind:'confirm', agentSaid == humanCorrected
    *  == the frozen value the reviewer saw (dates as YYYY-MM-DD, the parser's format, so a later soul re-parse
-   *  compares equal). Best-effort — postCorrection swallows its own errors and never breaks the review save. */
-  private async emitConfirms(leg: Record<string, unknown>, edited: Set<string>, messageId: string, forwarder: string | null) {
+   *  compares equal). Best-effort — postCorrection swallows its own errors and never breaks the review save.
+   *  Skips entirely when messageId is null (no resolvable source graph id — do not poison the queue). */
+  private async emitConfirms(leg: Record<string, unknown>, edited: Set<string>, messageId: string | null, forwarder: string | null) {
+    if (messageId == null) return
     for (const { column, isDate } of CONFIRMABLE_FIELDS) {
       if (edited.has(column)) continue
       const frozen = confirmValue(isDate, leg[column])
@@ -198,7 +214,7 @@ export class ReviewService {
     raw: unknown,
     actorId: string,
     note: string,
-    messageId: string,
+    messageId: string | null,
     forwarder: string | null,
     learningNote: string | null = note,
   ): Promise<unknown> {
@@ -215,11 +231,14 @@ export class ReviewService {
     })
     // Feed the correction to the queue learning loop (best-effort; never breaks the review save). Post the
     // queue's snake_case parse-field name — the leg column `soNo` is the parser's `so_no`, and the queue
-    // scores on the parse field, so a camelCase name would silently never match.
-    await this.queueLearning.postCorrection({
-      messageId, field: toQueueField(field), agentSaid: toStr(current[field]), humanCorrected: toStr(value),
-      forwarder, note: learningNote, kind: 'correction',
-    })
+    // scores on the parse field, so a camelCase name would silently never match. Skip when no graph id
+    // (#236 P2) — shipment UUID is not a valid messageId for the queue.
+    if (messageId != null) {
+      await this.queueLearning.postCorrection({
+        messageId, field: toQueueField(field), agentSaid: toStr(current[field]), humanCorrected: toStr(value),
+        forwarder, note: learningNote, kind: 'correction',
+      })
+    }
     return value
   }
 
@@ -234,9 +253,9 @@ export class ReviewService {
       coerceLegField(field, raw)
     }
     const corrected: string[] = []
-    // Attribute the corrections to a source email (graph id → the queue resolves it to the parsed record);
-    // fall back to the shipment id so the correction is still captured when no source email is linked.
-    const messageId = (await this.shipments.sourceGraphIdFor(shipmentId)) ?? shipmentId
+    // Attribute learning to a source email graph id (queue resolves it to the parsed record). When none
+    // is linked, skip queue emits rather than posting the shipment UUID (#236 P2).
+    const messageId = await this.resolveLearningMessageId(shipmentId)
     const forwarder = ((leg as Record<string, unknown>).forwarderRaw as string | null) ?? null
 
     const correctedValues: Record<string, unknown> = {}
@@ -284,7 +303,7 @@ export class ReviewService {
 
     const leg = await this.loadLegForReview(shipmentId, undefined)
     const current = leg as Record<string, unknown>
-    const messageId = (await this.shipments.sourceGraphIdFor(shipmentId)) ?? shipmentId
+    const messageId = await this.resolveLearningMessageId(shipmentId)
     const forwarder = (current.forwarderRaw as string | null) ?? null
     const col = KEY_TO_LEG_COLUMN[dto.field]
     const value = await this.applyHumanFieldWrite(
@@ -321,7 +340,7 @@ export class ReviewService {
       coerceLegField(field, raw)
     }
 
-    const messageId = (await this.shipments.sourceGraphIdFor(shipmentId)) ?? shipmentId
+    const messageId = await this.resolveLearningMessageId(shipmentId)
     const forwarder = ((source as Record<string, unknown>).forwarderRaw as string | null) ?? null
     const note = dto.reason?.trim() || 'review: linked into existing shipment'
     let correctedFieldCount = 0
