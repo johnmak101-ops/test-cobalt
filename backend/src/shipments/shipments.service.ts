@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common'
+import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common'
 import { ShipmentRepository } from '../db/repositories/shipment.repository'
 import { BookingRepository } from '../db/repositories/booking.repository'
 import { FieldLockRepository } from '../db/repositories/field-lock.repository'
@@ -8,6 +8,7 @@ import { strongKeys, keysOverlap, normKey, str } from '../reconcile/match-keys'
 import { deriveRoute } from '../presentation/adapters/derive'
 import { syncIdentityMatchKeys } from './identity-keys'
 import { coerceLegField, DATE_FIELDS } from './coerce-field'
+import { QueueLearningClient } from '../review/queue-learning.client'
 
 /** A human-entered new-shipment form. Every field optional; at least one identity OR a PO is required. */
 export interface ManualShipmentInput {
@@ -80,14 +81,36 @@ const EDITABLE_FIELDS = new Set([
 ])
 const asStr = (v: unknown): string | null => (v == null ? null : v instanceof Date ? v.toISOString() : String(v))
 
+/**
+ * #236 P3 — identity-class columns from the Order Details edit form that feed the queue learning loop.
+ * Dates / qty / free-text parties stay out until an explicit intent marker (noise firewall).
+ * Must stay a subset of EDITABLE_FIELDS.
+ */
+const LEARNING_IDENTITY_FIELDS = new Set([
+  'bookingNo',
+  'soNo',
+  'warehouseSo',
+  'hblAwbFcrNo',
+  'mbl',
+  'containerNo',
+  'mawb',
+  'scacCode',
+])
+
+/** Leg camelCase → queue parse-field snake_case (same as ReviewService.toQueueField). */
+const toQueueField = (col: string): string => col.replace(/([a-z0-9])([A-Z])/g, '$1_$2').toLowerCase()
+
 @Injectable()
 export class ShipmentsService {
+  private readonly logger = new Logger(ShipmentsService.name)
+
   constructor(
     private readonly shipments: ShipmentRepository,
     private readonly bookings: BookingRepository,
     private readonly fieldLocks: FieldLockRepository,
     private readonly audit: AuditRepository,
     private readonly committer: CommitterService,
+    private readonly queueLearning: QueueLearningClient,
   ) {}
 
   /**
@@ -185,7 +208,42 @@ export class ShipmentsService {
       editedValues[field] = value
     }
     await syncIdentityMatchKeys(this.shipments, id, editedValues)
+    // #236 P3: feed identity-class detail edits to the queue Iterator (best-effort). Dates/qty excluded.
+    await this.emitIdentityLearning(id, current, editedValues, feedback)
     return { id, edited }
+  }
+
+  /**
+   * Push identity-class Order Details edits to queue POST /review/correction.
+   * Skips when no source graph message id (never ship UUID — #236 P2) or field not identity-class.
+   */
+  private async emitIdentityLearning(
+    shipmentId: string,
+    before: Record<string, unknown>,
+    editedValues: Record<string, unknown>,
+    note: string,
+  ): Promise<void> {
+    const identityEdits = Object.entries(editedValues).filter(([f]) => LEARNING_IDENTITY_FIELDS.has(f))
+    if (!identityEdits.length) return
+    const messageId = await this.shipments.sourceGraphIdFor(shipmentId)
+    if (!messageId) {
+      this.logger.error(
+        `QUEUE LEARNING SKIPPED (detail edit) — no source graph message id for shipment=${shipmentId}; identity fields=[${identityEdits.map(([f]) => f).join(',')}]`,
+      )
+      return
+    }
+    const forwarder = (before.forwarderRaw as string | null | undefined) ?? null
+    for (const [field, value] of identityEdits) {
+      await this.queueLearning.postCorrection({
+        messageId,
+        field: toQueueField(field),
+        agentSaid: asStr(before[field]),
+        humanCorrected: asStr(value),
+        forwarder,
+        note: note || 'edited on shipment detail',
+        kind: 'correction',
+      })
+    }
   }
 
   /**
