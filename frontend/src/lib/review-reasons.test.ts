@@ -139,20 +139,21 @@ describe('humanizeReason — engineering audit strings → ops language', () => 
     )
   })
 
-  it('names the disputed fields in plain words', () => {
+  it('names the disputed fields in plain words (omits Gross Weight / HTS — not on Order Details)', () => {
     expect(humanizeReason('backend conflict on qty, gross_weight, measurement')).toBe(
-      'Emails disagree about: Qty, Gross Weight, Measurement — check the highlighted fields below',
+      'Emails disagree about: Qty, Measurement — check the highlighted fields below',
     )
   })
 
   it("never shows db field names — John's exact case plus the long-tail fields", () => {
     expect(humanizeReason('backend conflict on qty, item_style_no, gross_weight, measurement')).toBe(
-      'Emails disagree about: Qty, Item/Style, Gross Weight, Measurement — check the highlighted fields below',
+      'Emails disagree about: Qty, Item/Style, Measurement — check the highlighted fields below',
     )
     const out = humanizeReason(
       'backend conflict on customer_po, customer_code, vendor_code, forwarder_name, pol, pod, flight_no, mawb, scac_code, hts_code, in_dc_date',
     )
     expect(out).not.toMatch(/_/)
+    expect(out).not.toMatch(/Gross Weight|HTS/i)
     expect(out).toContain('PO#')
     expect(out).toContain('Port of Loading')
     expect(out).toContain('SCAC')
@@ -253,7 +254,7 @@ describe('humanizeReason — engineering audit strings → ops language', () => 
     expect(
       humanizeReason('backend conflict on qty, gross_weight, measurement', { fieldDetailAvailable: false }),
     ).toBe(
-      'Emails disagree about: Qty, Gross Weight, Measurement — open the full shipment to compare values (no field breakdown on this card)',
+      'Emails disagree about: Qty, Measurement — open the full shipment to compare values (no field breakdown on this card)',
     )
     expect(humanizeReason('3 unresolved field conflict(s)', { fieldDetailAvailable: false })).toBe(
       '3 field(s) received different values from different emails — open the full shipment to compare',

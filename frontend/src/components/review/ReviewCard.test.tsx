@@ -304,7 +304,9 @@ describe('ReviewCard', () => {
       />,
     )
     const why = screen.getByTestId('why-review')
-    expect(why.textContent).toMatch(/Email and system differ on qty, gross_weight — choose which values to keep/)
+    // gross_weight omitted from flag copy (not on Order Details)
+    expect(why.textContent).toMatch(/Email and system differ on Qty — choose which values to keep/)
+    expect(why.textContent).not.toMatch(/gross_weight|Gross Weight|HTS/i)
     expect(why.textContent).not.toMatch(/below|highlighted fields/)
     expect(why.textContent).toMatch(/Fields disagree/)
   })
