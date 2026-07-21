@@ -683,7 +683,6 @@ export default function ShipmentDetailPage() {
               historyKey="containerNo"
               label={fieldLabel('containerNo')}
               value={shipment.containerNo}
-              hint={shipment.containerNo ? undefined : 'assigned at loading (Draft/Final B/L stage)'}
             />
             <DetailRow historyKey="hblAwbFcrNo" label={houseBillLabel(shipment.mode)} value={shipment.hblNumber} />
             {shippingFieldVisible('mbl', shipment.mode) && (
