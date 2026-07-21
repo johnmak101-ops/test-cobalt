@@ -224,6 +224,78 @@ describe('ReviewService.correct — coercion + human-wins locks', () => {
   })
 })
 
+describe('ReviewService — skip queue learning when sourceGraphIdFor is null (#236 P2)', () => {
+  it('confirm: does NOT call postCorrection (never uses shipment UUID as messageId); still confirms the leg', async () => {
+    const { svc, shipments, queueLearning } = makeService({ soNo: 'COSU123', grossWeight: 5 })
+    shipments.sourceGraphIdFor.mockResolvedValue(null)
+    const res = await svc.confirm('leg-1', 'user-1')
+    expect(res).toEqual({ shipmentId: 'leg-1', reviewStatus: 'confirmed' })
+    expect(queueLearning.postCorrection).not.toHaveBeenCalled()
+    expect(shipments.updateLeg).toHaveBeenCalledWith(
+      'leg-1',
+      expect.objectContaining({ reviewStatus: 'confirmed' }),
+    )
+  })
+
+  it('correct: does NOT call postCorrection with shipment UUID; still writes fields + confirms', async () => {
+    const { svc, shipments, queueLearning, locks } = makeService({ soNo: 'OLD' })
+    shipments.sourceGraphIdFor.mockResolvedValue(null)
+    const res = await svc.correct('leg-1', { fields: { soNo: 'FIXED-SO' }, reason: 'typo' }, 'user-1')
+    expect(res.reviewStatus).toBe('confirmed')
+    expect(res.corrected).toEqual(['soNo'])
+    expect(queueLearning.postCorrection).not.toHaveBeenCalled()
+    // Local review path still applies
+    expect(shipments.updateLeg).toHaveBeenCalledWith('leg-1', { soNo: 'FIXED-SO' })
+    expect(locks.lock).toHaveBeenCalled()
+    // Guard: if anything ever did post, it must not be the leg id
+    for (const call of queueLearning.postCorrection.mock.calls) {
+      expect(call[0].messageId).not.toBe('leg-1')
+    }
+  })
+
+  it('identify set path: skips learning when graph id is missing; still sets the field', async () => {
+    const { svc, shipments, queueLearning } = makeService({ id: 'SRC', matchKeys: {} })
+    shipments.candidateLegs.mockResolvedValue([])
+    shipments.sourceGraphIdFor.mockResolvedValue(null)
+    const r = await svc.identify('SRC', { field: 'booking_no', value: 'BXNEW1' }, 'user-1')
+    expect(r).toEqual({ outcome: 'set', field: 'booking_no', value: 'BXNEW1' })
+    expect(shipments.updateLeg).toHaveBeenCalledWith('SRC', { bookingNo: 'BXNEW1' })
+    expect(queueLearning.postCorrection).not.toHaveBeenCalled()
+  })
+
+  it('link with fields: skips learning when graph id is missing; still folds', async () => {
+    const { svc, shipments, queueLearning } = makeService()
+    shipments.sourceGraphIdFor.mockResolvedValue(null)
+    shipments.findById.mockImplementation(async (id: string) => {
+      if (id === 'SRC') {
+        return {
+          id: 'SRC',
+          kind: 'SHIPMENT',
+          reviewStatus: 'provisional',
+          dismissedAt: null,
+          matchKeys: { conversation_id: 'CONV-1' },
+          soNo: 'OLD',
+        }
+      }
+      if (id === 'TARGET') return { id: 'TARGET', kind: 'SHIPMENT', matchKeys: { booking_no: 'BX1' }, soNo: null }
+      return null
+    })
+    const r = await svc.link('SRC', { targetShipmentId: 'TARGET', fields: { soNo: 'FROM-SRC' } }, 'user-1')
+    expect(r).toEqual({ ok: true, targetShipmentId: 'TARGET' })
+    expect(shipments.linkProvisionalLeg).toHaveBeenCalledWith('SRC', 'TARGET')
+    expect(queueLearning.postCorrection).not.toHaveBeenCalled()
+  })
+
+  it('correct: still posts with graph-1 when sourceGraphIdFor resolves', async () => {
+    const { svc, queueLearning, shipments } = makeService({ soNo: 'OLD-SO' })
+    expect(await shipments.sourceGraphIdFor('leg-1')).toBe('graph-1')
+    await svc.correct('leg-1', { fields: { soNo: 'COSU123' }, reason: 'wrong SO' }, 'user-1')
+    expect(queueLearning.postCorrection).toHaveBeenCalledWith(expect.objectContaining({
+      messageId: 'graph-1', field: 'so_no', kind: 'correction',
+    }))
+  })
+})
+
 describe('ReviewService — "looks right" confirm-sentinels feed the queue eval', () => {
   it('confirm() emits a confirm-sentinel for each non-null parse field (agentSaid == humanCorrected == frozen value)', async () => {
     const { svc, queueLearning } = makeService({ soNo: 'COSU123', grossWeight: 5 })
