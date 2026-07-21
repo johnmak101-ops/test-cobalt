@@ -93,10 +93,14 @@ describe('ShipmentRepository (SQL Server)', () => {
     await seedLeg({ bookingId: b, legNo: 13, legStatus: 'SUPERSEDED', reviewStatus: 'confirmed' })
     await seedLeg({ bookingId: b, legNo: 14, legStatus: 'ACTIVE', reviewStatus: 'provisional', confidence: 30 })
     await seedLeg({ bookingId: b, legNo: 15, legStatus: 'ACTIVE', reviewStatus: 'provisional', confidence: 10 })
+    const dismissed = await seedLeg({
+      bookingId: b, legNo: 16, legStatus: 'ACTIVE', reviewStatus: 'provisional', dismissedAt: new Date(),
+    })
 
     const active = await repo.activeLegs()
     expect(active.filter((l) => l.legStatus === 'SUPERSEDED').length).toBe(0) // superseded hidden
     expect(active.filter((l) => l.legStatus === 'CANCELLED').length).toBeGreaterThanOrEqual(1) // cancelled surfaces
+    expect(active.find((l) => l.id === dismissed.id)).toBeUndefined() // dismissed husks leave tracker/dashboard
     const confirmed = await repo.activeConfirmedLegs()
     expect(confirmed.every((l) => l.legStatus === 'ACTIVE' && l.reviewStatus === 'confirmed')).toBe(true)
     const prov = await repo.provisionalLegs()
@@ -223,14 +227,16 @@ describe('ShipmentRepository (SQL Server)', () => {
     expect(linked[0].poNumber).toBeTruthy()
   })
 
-  it('legsForTracker (ACTIVE only) + optional state filter', async () => {
+  it('legsForTracker (ACTIVE, not dismissed) + optional state filter', async () => {
     const b = await seedBooking()
     const c = await seedCustomer(`TR${mark}`)
     await db.updateTable('bookings').set({ customerId: c }).where('id', '=', b).execute()
     const a = await seedLeg({ bookingId: b, legNo: 31, state: 'BOOKED' })
     await seedLeg({ bookingId: b, legNo: 32, legStatus: 'SUPERSEDED' }) // excluded (not ACTIVE)
+    const dismissed = await seedLeg({ bookingId: b, legNo: 33, state: 'BOOKED', dismissedAt: new Date() })
     const all = await repo.legsForTracker()
     expect(all.find((l) => l.id === a.id)).toBeTruthy()
+    expect(all.find((l) => l.id === dismissed.id)).toBeUndefined() // dismissed husks leave the tracker
     const onlySailed = await repo.legsForTracker('SAILED')
     expect(onlySailed.every((l) => l.status === 'SAILED')).toBe(true)
   })

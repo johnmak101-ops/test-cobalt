@@ -137,9 +137,17 @@ export class ShipmentRepository {
       .execute()
   }
 
-  /** Legs for the tracker/dashboard: ACTIVE plus CANCELLED. Only SUPERSEDED legs are hidden. */
+  /**
+   * Legs for the tracker/dashboard: ACTIVE plus CANCELLED.
+   * SUPERSEDED and dismissed husks are hidden (review ruled "not trackable").
+   */
   activeLegs() {
-    return this.db.selectFrom('shipments').where('legStatus', 'in', ['ACTIVE', 'CANCELLED']).selectAll().execute()
+    return this.db
+      .selectFrom('shipments')
+      .where('legStatus', 'in', ['ACTIVE', 'CANCELLED'])
+      .where('dismissedAt', 'is', null)
+      .selectAll()
+      .execute()
   }
   /** Active AND confirmed — provisional (low-confidence) legs are excluded from alerts/automation. */
   activeConfirmedLegs() {
@@ -276,7 +284,11 @@ export class ShipmentRepository {
     return row ?? null
   }
 
-  /** Active legs enriched with booking + customer + forwarder + route, for the Shipment Tracker list. */
+  /**
+   * Active legs enriched with booking + customer + forwarder + route, for the Shipment Tracker list.
+   * Dismissed provisional husks stay out of the list (review ruled "not trackable"); matching still
+   * sees them via candidateLegs so re-ingest does not mint duplicates.
+   */
   legsForTracker(status?: string) {
     let q = this.db
       .selectFrom('shipments')
@@ -286,6 +298,7 @@ export class ShipmentRepository {
       .leftJoin('ports as pol', 'shipments.polId', 'pol.id')
       .leftJoin('ports as pod', 'shipments.podId', 'pod.id')
       .where('shipments.legStatus', '=', 'ACTIVE')
+      .where('shipments.dismissedAt', 'is', null)
       .orderBy('shipments.updatedAt', 'desc')
       .select([
         'shipments.id as id', 'shipments.bookingId as bookingId', 'bookings.jobNo as jobNo',
