@@ -906,10 +906,10 @@ describe('units — a bare number is unreadable, but a fabricated unit is worse'
     candidates: [{ value: '260', source: 'System' }, { value: '13516', source: 'Booking Request' }],
     rationale: 'Email states a different quantity.',
   }
-  const conflictGw: CriticConflict = {
-    field: 'gross_weight',
-    label: 'Gross weight',
-    candidates: [{ value: '23', source: 'System' }, { value: '87', source: 'SO' }],
+  const conflictMeas: CriticConflict = {
+    field: 'measurement',
+    label: 'Measurement',
+    candidates: [{ value: '1.26', source: 'System' }, { value: '4.252', source: 'SO' }],
     rationale: '',
   }
   const conflictUom: CriticConflict = {
@@ -920,14 +920,46 @@ describe('units — a bare number is unreadable, but a fabricated unit is worse'
   }
   const withUom = (over = {}) => ({ ...baseShipment(over), quantityUnit: 'cartons' })
 
-  it('renders the fixed unit on both sides of an invariant field', () => {
+  it('renders the fixed unit on both sides of an invariant field (measurement CBM)', () => {
     render(
       <MemoryRouter>
-        <ReviewCard shipment={withUom()} criticReview={baseReview({ conflicts: [conflictGw] })} compact={compact} defaultExpanded />
+        <ReviewCard shipment={withUom()} criticReview={baseReview({ conflicts: [conflictMeas] })} compact={compact} defaultExpanded />
       </MemoryRouter>,
     )
-    const row = screen.getByText('Gross Weight').closest('tr')!
-    expect(within(row).getAllByText('KGS')).toHaveLength(2)
+    const row = screen.getByText('Measurement').closest('tr')!
+    expect(within(row).getAllByText('CBM')).toHaveLength(2)
+  })
+
+  it('does not show Gross Weight or HTS Code conflict rows (hidden from Order Details)', () => {
+    render(
+      <MemoryRouter>
+        <ReviewCard
+          shipment={withUom()}
+          criticReview={baseReview({
+            conflicts: [
+              {
+                field: 'gross_weight',
+                label: 'Gross weight',
+                candidates: [{ value: '23', source: 'System' }, { value: '87', source: 'SO' }],
+                rationale: '',
+              },
+              {
+                field: 'hts_code',
+                label: 'HTS Code',
+                candidates: [{ value: '6110', source: 'System' }, { value: '6110 11', source: 'SO' }],
+                rationale: '',
+              },
+              conflictMeas,
+            ],
+          })}
+          compact={compact}
+          defaultExpanded
+        />
+      </MemoryRouter>,
+    )
+    expect(screen.queryByText('Gross Weight')).toBeNull()
+    expect(screen.queryByText('HTS Code')).toBeNull()
+    expect(screen.getByText('Measurement')).toBeTruthy()
   })
 
   it("carries the leg's UOM onto qty when the email does not dispute the unit", () => {
