@@ -134,6 +134,34 @@ export function AlertRulesSettings() {
   }
 
   /**
+   * Keep severe strictly after warning (customer: warn then severe).
+   * Raising warn past severe bumps severe; lowering severe below warn bumps warn down.
+   */
+  const updatePairDays = (
+    product: (typeof PRODUCT_RULES)[number],
+    which: 'warn' | 'severe',
+    next: number,
+  ) => {
+    setDraft((prev) => {
+      const base = prev ?? serverRules ?? []
+      const warn = byId(base, product.warnId)
+      const severe = byId(base, product.severeId)
+      if (!warn || !severe) return base
+      let w = which === 'warn' ? next : warn.thresholdDays
+      let s = which === 'severe' ? next : severe.thresholdDays
+      w = Math.max(0, Math.min(30, Math.round(w)))
+      s = Math.max(0, Math.min(30, Math.round(s)))
+      if (which === 'warn' && s <= w) s = Math.min(30, w + 1)
+      if (which === 'severe' && s <= w) w = Math.max(0, s - 1)
+      return base.map((r) => {
+        if (r.id === product.warnId) return { ...r, thresholdDays: w }
+        if (r.id === product.severeId) return { ...r, thresholdDays: s }
+        return r
+      })
+    })
+  }
+
+  /**
    * Country absolute days after ETD for the warning tier; severe = warning + (severeDefault − warnDefault)
    * so CN=4 with Draft (1/2) → warn@4 severe@5; Final (3/7) → warn@3 severe@7 when D=3.
    */
@@ -261,9 +289,11 @@ export function AlertRulesSettings() {
                     aria-label={`${product.title} warning days after ETD`}
                     value={warn.thresholdDays}
                     min={0}
-                    max={30}
+                    max={29}
                     disabled={!canEdit}
-                    onChange={(next) => updateRule(product.warnId, 'thresholdDays', next ?? product.warnDefault)}
+                    onChange={(next) =>
+                      updatePairDays(product, 'warn', next ?? product.warnDefault)
+                    }
                   />
                 </div>
                 <div>
@@ -277,11 +307,11 @@ export function AlertRulesSettings() {
                     id={`${id}-${product.key}-severe`}
                     aria-label={`${product.title} severe days after ETD`}
                     value={severe.thresholdDays}
-                    min={0}
+                    min={1}
                     max={30}
                     disabled={!canEdit}
                     onChange={(next) =>
-                      updateRule(product.severeId, 'thresholdDays', next ?? product.severeDefault)
+                      updatePairDays(product, 'severe', next ?? product.severeDefault)
                     }
                   />
                 </div>

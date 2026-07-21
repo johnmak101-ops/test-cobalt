@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { AlertRulesSettings } from './AlertRulesSettings'
 
@@ -93,5 +94,24 @@ describe('AlertRulesSettings — 2 customer rules', () => {
     expect(screen.getAllByText('Cambodia')).toHaveLength(2)
     expect(screen.queryByText('Vietnam')).toBeNull()
     expect(screen.queryByText('India')).toBeNull()
+  })
+
+  it('+/− buttons raise warning and keep severe strictly after warning', async () => {
+    const user = userEvent.setup()
+    renderWithClient(<AlertRulesSettings />)
+    await screen.findByText('No Draft BOL received')
+    // Draft warning stepper is first "Increase days" among draft controls
+    const increases = screen.getAllByRole('button', { name: /increase days/i })
+    // First product: warn +, severe +  → indices 0,1 then country steppers...
+    await user.click(increases[0]!) // warn 1 → 2; severe was 2 → bumps to 3
+    // Values appear as textbox values
+    const warnInput = screen.getByRole('textbox', {
+      name: /No Draft BOL received warning days after ETD value/i,
+    })
+    const severeInput = screen.getByRole('textbox', {
+      name: /No Draft BOL received severe days after ETD value/i,
+    })
+    expect(warnInput).toHaveValue('2')
+    expect(severeInput).toHaveValue('3')
   })
 })
