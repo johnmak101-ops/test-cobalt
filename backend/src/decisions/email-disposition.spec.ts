@@ -58,4 +58,31 @@ describe('resolveEmailDisposition', () => {
       resolveEmailDisposition(base({ disposition: 'auto', lookupContext: { modeChange: true } })).disposition,
     ).toBe('review')
   })
+
+  it('force-skip agent review that is too weak to create (no id, no PO)', () => {
+    const r = resolveEmailDisposition(
+      base({
+        matchKey: {},
+        pos: [],
+        fields: { customer_code: 'ELGC', eta: '2026-03-01' },
+        disposition: 'review',
+        reviewReasons: [
+          'new shipment with neither a strong identity key nor a PO — too weak to auto-create',
+        ],
+      }),
+    )
+    expect(r.disposition).toBe('skip')
+  })
+
+  it('does not force-skip review when PO anchors the create', () => {
+    const r = resolveEmailDisposition(
+      base({
+        matchKey: {},
+        pos: ['PO-1'],
+        disposition: 'review',
+        reviewReasons: ['new shipment for an unknown / unresolved customer'],
+      }),
+    )
+    expect(r.disposition).toBe('review')
+  })
 })
