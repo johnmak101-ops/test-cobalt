@@ -259,51 +259,50 @@ function isRedundantRawNameMasterNote(raw: string): boolean {
  * Humanize merge-adjustment notes for ops — no snake_case DB columns, no "Merge note:" prefix.
  * Returns null when the note should be hidden (weight/measurement spam).
  */
-/** Successful schedule/identity policy already applied — never show under Incomplete data / Other. */
+/** Subject-party / identity_fallback only — schedule notes are shown with UX copy below. */
 function isSilentScheduleSuccessNote(raw: string): boolean {
   const s = raw ?? ''
-  return (
-    /etd:\s*aligned to ATD/i.test(s) ||
-    /aligned to ATD .+ after sail/i.test(s) ||
-    /warehouse_end_date:\s*next CFS/i.test(s) ||
-    /next CFS .+\(cross-day cutoffs/i.test(s) ||
-    /warehouse_end_date:\s*binding cutoff/i.test(s) ||
-    /earliest same-day stated/i.test(s) ||
-    /earliest current stated/i.test(s) ||
-    /cargo cut-off \(WH end\):\s*next CFS/i.test(s) ||
-    /subject-party-pin|subject-party-veto/i.test(s) ||
-    /identity_fallback/i.test(s)
-  )
+  return /subject-party-pin|subject-party-veto/i.test(s) || /identity_fallback/i.test(s)
 }
 
 function humanizeMergeNote(raw: string): string | null {
   const s = raw.replace(/^Merge note:\s*/i, '').trim()
   if (!s) return null
   if (isWeightMeasurementMergeNote(s) || isWeightMeasurementMergeNote(raw)) return null
-  // Happy-path schedule policy (ETD←ATD, next CFS) — values are already on the leg; hide engineering chatter.
   if (isSilentScheduleSuccessNote(s) || isSilentScheduleSuccessNote(raw)) return null
 
-  // warehouse_end_date: binding cutoff 2026-07-15 16:00 (earliest current stated) — newest doc said 2026-07-20 12:00
+  // ETD set to sail day after booking estimate
+  const etdAlign = s.match(
+    /etd:\s*aligned to ATD\s+(.+?)\s+after sail\s*\(was booking\/pre-sail\s*'?([^')]+)'?\)/i,
+  )
+  if (etdAlign) {
+    return `ETD set to departure date ${etdAlign[1]!.trim()} (booking estimate was ${etdAlign[2]!.trim()})`
+  }
+  const etdAlignShort = s.match(/etd:\s*aligned to ATD\s+(.+)/i)
+  if (etdAlignShort) {
+    return `ETD set to departure date ${etdAlignShort[1]!.trim()}`
+  }
+
+  // Next CFS after vessel miss / reschedule (cross-day)
+  const nextCfs = s.match(
+    /(?:warehouse_end_date|cargo cut-off \(WH end\)):\s*next CFS\s+(.+?)\s*\(cross-day cutoffs[^)]*kept over older\s+(.+?)\)/i,
+  )
+  if (nextCfs) {
+    return `Warehouse / CFS cut-off updated to ${nextCfs[1]!.trim()} (replaces earlier ${nextCfs[2]!.trim()})`
+  }
+
+  // Same-day earliest binding cutoff
   const bind = s.match(
-    /warehouse_end_date:\s*binding cutoff\s+(.+?)\s*\(earliest current stated\)\s*[—–-]\s*newest doc said\s+(.+)/i,
+    /warehouse_end_date:\s*binding cutoff\s+(.+?)\s*\(earliest (?:current|same-day) stated\)\s*[—–-]\s*newest doc said\s+(.+)/i,
   )
   if (bind) {
-    // Legacy path — also suppressed by isSilentScheduleSuccessNote above; keep null for clarity
-    return null
+    return `Warehouse cut-off kept at ${bind[1]!.trim()} (earliest stated; a later email said ${bind[2]!.trim()})`
   }
-  // Fallback phrasing if wording drifts slightly
   const bindLoose = s.match(
     /warehouse_end_date:.*binding cutoff\s+(\d{4}-\d{2}-\d{2}[^\s—–-]*(?:\s+\d{1,2}:\d{2})?).*newest doc said\s+(\d{4}-\d{2}-\d{2}[^\s—–.]*(?:\s+\d{1,2}:\d{2})?)/i,
   )
   if (bindLoose) {
-    return `Cargo cut-off kept as ${bindLoose[1]!.trim()} (earliest across emails) — a newer email said ${bindLoose[2]!.trim()}`
-  }
-  if (/binding cutoff/i.test(s) && /warehouse_end/i.test(s)) {
-    return s
-      .replace(/warehouse_end_date/gi, 'Cargo cut-off (WH end)')
-      .replace(/\bbinding cutoff\b/gi, 'kept earliest cut-off')
-      .replace(/\bearliest current stated\b/gi, 'earliest across emails')
-      .replace(/\bnewest doc said\b/gi, 'newer email said')
+    return `Warehouse cut-off kept at ${bindLoose[1]!.trim()} (earliest stated; a later email said ${bindLoose[2]!.trim()})`
   }
 
   // Generic: replace known snake_case fields with labels (warehouse_end_date → WH End)
@@ -318,7 +317,6 @@ function humanizeMergeNote(raw: string): string | null {
     [/\bitem_style_no\b/gi, 'item/style'],
   ]
   for (const [re, label] of fieldMap) out = out.replace(re, label)
-  // Drop engineering "Merge note:" style leftover
   out = out.replace(/^Merge note:\s*/i, '').trim()
   return out || null
 }
@@ -579,7 +577,7 @@ function lineFromFlag(code: string, message: string): LineHit | null {
     case 'EXTRACTION_INCOMPLETE':
       return {
         lineId: 'i-parse',
-        text: 'Parse incomplete — key information may be missing',
+        text: 'Parse incomplete — a document or scan was not fully read',
         category: 'extraction',
       }
     case 'MISSING_ATTACHMENT':
@@ -1004,11 +1002,11 @@ function lineFromReason(raw: string, humanized: string): LineHit | null {
     }
   }
 
-  // Incomplete data — only real incomplete extract (not identity_fallback / schedule success audits)
+  // Incomplete data — only real document extract failures (unread scan, truncated JSON, content filter)
   if (/vision_pending|output_truncated|input_truncated|content_filter|split_parse/i.test(raw)) {
     return {
       lineId: 'i-parse',
-      text: 'Parse incomplete — key information may be missing',
+      text: 'Parse incomplete — a document or scan was not fully read',
       category: 'extraction',
     }
   }
@@ -1016,9 +1014,23 @@ function lineFromReason(raw: string, humanized: string): LineHit | null {
   if (/identity_fallback/i.test(raw)) {
     return null
   }
-  // Schedule merge success (ETD align, next CFS) — suppress (values already on leg)
+  // Subject-party silent; schedule policy notes rephrased under Other (not Incomplete data)
   if (isSilentScheduleSuccessNote(raw) || isSilentScheduleSuccessNote(humanized)) {
     return null
+  }
+  {
+    const sched = humanizeMergeNote(raw) ?? humanizeMergeNote(humanized)
+    if (
+      sched &&
+      (/ETD set to departure|Warehouse \/ CFS cut-off updated|Warehouse cut-off kept/i.test(sched) ||
+        /etd:\s*aligned|next CFS|binding cutoff/i.test(raw))
+    ) {
+      return {
+        lineId: `o-sched:${sched.slice(0, 64)}`,
+        text: sched,
+        category: 'other',
+      }
+    }
   }
   // Desk membership band-low reason (exact string from queue AI_CONFIDENCE_LOW_REASON)
   if (raw.trim() === AI_CONFIDENCE_LOW_REASON || new RegExp(`^${AI_CONFIDENCE_LOW_REASON.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i').test(raw.trim())) {

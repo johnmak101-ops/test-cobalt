@@ -110,15 +110,19 @@ describe('subject-party-pin silent ops (no UI surface)', () => {
     expect(out.length).toBe(1)
   })
 
-  it('humanizeReasons drops schedule success and identity_fallback', () => {
+  it('humanizeReasons drops identity_fallback; rephrases schedule policy for UX', () => {
     const out = humanizeReasons([
       "etd: aligned to ATD 2026-02-17 after sail (was booking/pre-sail '2026-02-16')",
       'warehouse_end_date: next CFS 2026-03-02 18:00 (cross-day cutoffs; kept over older 2026-02-02 18:00)',
       'identity_fallback: subject/filename spine present but zero p',
       'backend conflict on qty',
     ])
-    expect(out).toHaveLength(1)
-    expect(out[0]!.raw).toMatch(/backend conflict/)
+    expect(out.some((r) => /identity_fallback/i.test(r.raw))).toBe(false)
+    expect(out.some((r) => /ETD set to departure date 2026-02-17/.test(r.text))).toBe(true)
+    expect(out.some((r) => /Warehouse \/ CFS cut-off updated to 2026-03-02 18:00/.test(r.text))).toBe(
+      true,
+    )
+    expect(out.some((r) => /backend conflict/.test(r.raw))).toBe(true)
   })
 })
 
