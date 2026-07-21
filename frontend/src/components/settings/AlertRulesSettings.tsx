@@ -21,7 +21,10 @@ interface AlertRule {
   locked: boolean
 }
 
-/** Customer product rules — each card is warn + severe pair in the API (A1/A2, A3/A4). */
+/**
+ * Customer product rules — each card is warn + critical pair in the API (A1/A2, A3/A4).
+ * API row for the second tier is still id A2/A4 with severity CRITICAL (not a free-text “severe”).
+ */
 const PRODUCT_RULES = [
   {
     key: 'draft_bol',
@@ -105,8 +108,13 @@ export function AlertRulesSettings() {
                   ),
                 )
               : null
+          // Pin product-pair severities so a stale client never demotes A2/A4 off CRITICAL.
+          let severity = rule.severity
+          if (rule.id === 'A1' || rule.id === 'A3') severity = 'WARNING'
+          if (rule.id === 'A2' || rule.id === 'A4') severity = 'CRITICAL'
           return {
             ...rule,
+            severity,
             countryThresholds: cleaned && Object.keys(cleaned).length > 0 ? cleaned : null,
           }
         }),
@@ -134,8 +142,9 @@ export function AlertRulesSettings() {
   }
 
   /**
-   * Keep severe strictly after warning (customer: warn then severe).
-   * Raising warn past severe bumps severe; lowering severe below warn bumps warn down.
+   * Keep critical strictly after warning (customer: warn then critical).
+   * Raising warn past critical bumps critical; lowering critical below warn bumps warn down.
+   * Severity strings are never edited here — A2/A4 stay CRITICAL in the payload.
    */
   const updatePairDays = (
     product: (typeof PRODUCT_RULES)[number],
@@ -154,16 +163,16 @@ export function AlertRulesSettings() {
       if (which === 'warn' && s <= w) s = Math.min(30, w + 1)
       if (which === 'severe' && s <= w) w = Math.max(0, s - 1)
       return base.map((r) => {
-        if (r.id === product.warnId) return { ...r, thresholdDays: w }
-        if (r.id === product.severeId) return { ...r, thresholdDays: s }
+        if (r.id === product.warnId) return { ...r, thresholdDays: w, severity: 'WARNING' }
+        if (r.id === product.severeId) return { ...r, thresholdDays: s, severity: 'CRITICAL' }
         return r
       })
     })
   }
 
   /**
-   * Country absolute days after ETD for the warning tier; severe = warning + (severeDefault − warnDefault)
-   * so CN=4 with Draft (1/2) → warn@4 severe@5; Final (3/7) → warn@3 severe@7 when D=3.
+   * Country absolute days after ETD for the warning tier; critical = warning + (severeDefault − warnDefault)
+   * so CN=4 with Draft (1/2) → warn@4 critical@5; Final (3/7) → warn@3 critical@7 when D=3.
    */
   const updateCountryDays = (
     product: (typeof PRODUCT_RULES)[number],
@@ -199,7 +208,7 @@ export function AlertRulesSettings() {
         <div className="min-w-0">
           <h2 className="text-lg font-semibold text-text-primary">Alert rules</h2>
           <p className="mt-0.5 text-sm text-text-secondary">
-            Two customer rules — warning and severe thresholds after ETD.
+            Two customer rules — warning and critical thresholds after ETD.
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-2">
@@ -298,14 +307,14 @@ export function AlertRulesSettings() {
                 </div>
                 <div>
                   <label
-                    htmlFor={`${id}-${product.key}-severe`}
+                    htmlFor={`${id}-${product.key}-critical`}
                     className="mb-2 block text-[11px] font-medium uppercase tracking-wide text-status-critical"
                   >
-                    Severe — days after ETD
+                    Critical — days after ETD
                   </label>
                   <DaysStepper
-                    id={`${id}-${product.key}-severe`}
-                    aria-label={`${product.title} severe days after ETD`}
+                    id={`${id}-${product.key}-critical`}
+                    aria-label={`${product.title} critical days after ETD`}
                     value={severe.thresholdDays}
                     min={1}
                     max={30}
@@ -323,7 +332,7 @@ export function AlertRulesSettings() {
                     Country of origin (custom days)
                   </p>
                   <p className="mt-0.5 text-[11px] text-text-muted">
-                    Absolute days after ETD for that origin — overrides both warning and severe
+                    Absolute days after ETD for that origin — overrides both warning and critical
                     defaults when set. China, Bangladesh, Cambodia only. Tap − until{' '}
                     <span className="font-medium">Default</span> to inherit.
                   </p>
