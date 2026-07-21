@@ -41,7 +41,7 @@ const CARGO: Field[] = [
   { key: 'qty' },
   { key: 'qtyUnit', options: UOM_OPTIONS },
   { key: 'grossWeight' },
-  { key: 'measurement' },
+  // Measurement (CBM) removed from create form — same as Order Details / review flags
   { key: 'itemStyleNo', wide: true },
   { key: 'consigneeName', wide: true },
 ]
@@ -52,7 +52,7 @@ const DATES: Field[] = [
 
 const STRONG: (keyof CreateShipmentInput)[] = ['bookingNo', 'soNo', 'hblAwbFcrNo', 'mbl', 'containerNo']
 /** Rendered as number inputs with min=0 (the backend rejects negatives / bad counts regardless). */
-const NUMERIC: (keyof CreateShipmentInput)[] = ['qty', 'grossWeight', 'measurement']
+const NUMERIC: (keyof CreateShipmentInput)[] = ['qty', 'grossWeight']
 
 const controlClass =
   'h-9 rounded-lg border border-border bg-surface-900 px-3 text-sm text-text-primary placeholder:text-text-muted focus:border-cobalt-primary focus:outline-none'

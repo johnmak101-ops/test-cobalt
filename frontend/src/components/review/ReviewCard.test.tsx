@@ -313,8 +313,8 @@ describe('ReviewCard', () => {
 
   // The queue's riskFlags and ShipTrack's committer reviewReasons are two DIFFERENT sources, not a
   // primary + backup: master-data misses exist only on the ShipTrack side. Real leg 31DFB19C.
-  // Rule A (2026-07-20): Master miss is FYI — detail-only; Review shows decision lines only.
-  it('why-review shows decision field conflict; master miss is FYI (rule A — detail only)', () => {
+  // Rule A (2026-07-20, updated): Master miss is decision on Review — operator must resolve Mesh.
+  it('why-review shows decision field conflict and master miss (Mesh resolve on Review desk)', () => {
     render(
       <ReviewCard
         shipment={baseShipment({
@@ -339,11 +339,9 @@ describe('ReviewCard', () => {
     )
     const why = screen.getByTestId('why-review')
     expect(within(why).getByText(/Field values disagree|field\(s\) disagree/i)).toBeInTheDocument()
-    // Master miss group hidden on Review desk (rule A)
-    expect(within(why).queryByText(/Master miss/)).toBeNull()
-    expect(
-      within(why).queryByText(/A\.P\. Moller - Maersk.*Mesh Database|Mesh Database.*A\.P\. Moller/i),
-    ).toBeNull()
+    // Master miss is decision on Review (tagDesk → operator resolves Mesh party/port)
+    expect(within(why).getByText(/Master miss/)).toBeInTheDocument()
+    expect(within(why).getByText(/A\.P\. Moller - Maersk|Mesh Database/i)).toBeInTheDocument()
   })
 
   it('why-review does not repeat a reason a risk flag already explains', () => {
@@ -904,17 +902,7 @@ describe('units — a bare number is unreadable, but a fabricated unit is worse'
   }
   const withUom = (over = {}) => ({ ...baseShipment(over), quantityUnit: 'cartons' })
 
-  it('renders the fixed unit on both sides of an invariant field (measurement CBM)', () => {
-    render(
-      <MemoryRouter>
-        <ReviewCard shipment={withUom()} criticReview={baseReview({ conflicts: [conflictMeas] })} compact={compact} defaultExpanded />
-      </MemoryRouter>,
-    )
-    const row = screen.getByText('Measurement').closest('tr')!
-    expect(within(row).getAllByText('CBM')).toHaveLength(2)
-  })
-
-  it('does not show Gross Weight or HTS Code conflict rows (hidden from Order Details)', () => {
+  it('does not show Gross Weight, Measurement, or HTS Code conflict rows (hidden from Order Details)', () => {
     render(
       <MemoryRouter>
         <ReviewCard
@@ -934,6 +922,7 @@ describe('units — a bare number is unreadable, but a fabricated unit is worse'
                 rationale: '',
               },
               conflictMeas,
+              conflictQty,
             ],
           })}
           compact={compact}
@@ -943,7 +932,9 @@ describe('units — a bare number is unreadable, but a fabricated unit is worse'
     )
     expect(screen.queryByText('Gross Weight')).toBeNull()
     expect(screen.queryByText('HTS Code')).toBeNull()
-    expect(screen.getByText('Measurement')).toBeTruthy()
+    expect(screen.queryByText('Measurement')).toBeNull()
+    // Still shows a visible cargo conflict so the table is not empty
+    expect(screen.getByText('Total Quantity')).toBeTruthy()
   })
 
   it("carries the leg's UOM onto qty when the email does not dispute the unit", () => {

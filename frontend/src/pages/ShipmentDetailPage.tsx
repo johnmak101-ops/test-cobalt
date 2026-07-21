@@ -687,7 +687,6 @@ export default function ShipmentDetailPage() {
           <DetailSection title="Cargo & Logistics" icon={<Package size={14} className="text-text-muted" />}>
             <DetailRow historyKey="qty" label={fieldLabel('qty')} value={shipment.quantityShipped != null ? String(shipment.quantityShipped) : null} />
             <DetailRow historyKey="qtyUnit" label={fieldLabel('qtyUnit')} value={shipment.quantityUnit ?? null} />
-            <DetailRow historyKey="measurement" label={fieldLabel('measurement')} value={shipment.measurement != null ? `${shipment.measurement} CBM` : null} />
             <DetailRow
               historyKey="containerNo"
               label={fieldLabel('containerNo')}

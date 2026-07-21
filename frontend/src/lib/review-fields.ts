@@ -53,7 +53,7 @@ export const EDITABLE_FIELDS: EditableField[] = [
   // Item / Style No. lives on Customer Purchase Orders (per-PO), not Order Details — see HIDDEN_FIELD_LABELS.
   { section: 'Cargo & Logistics', label: 'Total Quantity', uiKey: 'quantityShipped', column: 'qty', type: 'number' },
   { section: 'Cargo & Logistics', label: 'UOM', uiKey: 'quantityUnit', column: 'qtyUnit', type: 'text', options: UOM_OPTIONS },
-  { section: 'Cargo & Logistics', label: 'Measurement', uiKey: 'measurement', column: 'measurement', type: 'number', unit: 'CBM' },
+  // Measurement (CBM) removed from Order Details + review conflict table — same as gross weight / HTS.
   { section: 'Cargo & Logistics', label: 'Container No.', uiKey: 'containerNo', column: 'containerNo', type: 'text' },
   { section: 'Cargo & Logistics', label: 'HBL / HAWB / FCR No.', uiKey: 'hblNumber', column: 'hblAwbFcrNo', type: 'text' },
   { section: 'Cargo & Logistics', label: 'MBL', uiKey: 'mblNumber', column: 'mbl', type: 'text' },
@@ -247,6 +247,7 @@ const CRITIC_EXTRA_COLUMNS: Record<string, string> = {
   // Still map for critic/history labels; not on Order Details form (HIDDEN_FIELD_LABELS)
   gross_weight: 'grossWeight',
   grossWeight: 'grossWeight',
+  measurement: 'measurement',
   hts_code: 'htsCode',
   htsCode: 'htsCode',
   warehouse_so: 'warehouseSo',
@@ -346,6 +347,7 @@ export function reviewGroupOf(field: string): ReviewGroup {
  */
 const HIDDEN_FIELD_LABELS: Record<string, string> = {
   grossWeight: 'Gross Weight',
+  measurement: 'Measurement',
   htsCode: 'HTS Code',
   // Combined into SO# on Order Details (soNo ?? warehouseSo)
   warehouseSo: 'Warehouse SO',

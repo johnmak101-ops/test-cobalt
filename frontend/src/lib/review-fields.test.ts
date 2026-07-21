@@ -165,9 +165,9 @@ describe('conflictColumns — parse "why review?" reasons into column names', ()
   it('extracts snake_case field tokens and maps to leg columns', () => {
     const cols = conflictColumns(['backend conflict on qty, gross_weight, measurement'])
     expect(cols).toContain('qty')
-    expect(cols).toContain('measurement')
-    // grossWeight is no longer on the Order Details form (COLUMN_SET) — not highlighted there
+    // grossWeight / measurement no longer on the Order Details form (COLUMN_SET) — not highlighted there
     expect(cols).not.toContain('grossWeight')
+    expect(cols).not.toContain('measurement')
   })
 
   it('ignores reasons that name no known fields', () => {
@@ -336,10 +336,10 @@ describe('groupConflictFields — only conflict rows, grouped, empty groups omit
   })
 
   it('groups conflicts in REVIEW_GROUP_ORDER and omits groups with no conflicts', () => {
-    const groups = groupConflictFields([conflict('qty', 'Qty'), conflict('measurement', 'Measurement')])
+    const groups = groupConflictFields([conflict('qty', 'Qty'), conflict('container_no', 'Container No.')])
     expect(groups).toHaveLength(1)
     expect(groups[0]!.group).toBe('Cargo & Logistics')
-    expect(groups[0]!.conflicts.map((c) => c.field)).toEqual(['qty', 'measurement'])
+    expect(groups[0]!.conflicts.map((c) => c.field)).toEqual(['qty', 'container_no'])
   })
 
   it('orders groups by REVIEW_GROUP_ORDER regardless of conflict order', () => {
@@ -380,7 +380,7 @@ describe('fieldLabel — the one vocabulary, used by every surface that names a 
     // renamed/removed COLUMN fails here instead of silently rendering the raw column name.
     const rendered = [
       'bookingNo', 'soNo',
-      'qty', 'qtyUnit', 'measurement', 'containerNo', 'hblAwbFcrNo', 'mbl', 'mawb', 'scacCode',
+      'qty', 'qtyUnit', 'containerNo', 'hblAwbFcrNo', 'mbl', 'mawb', 'scacCode',
       'mode', 'polRaw', 'podRaw', 'forwarderRaw',
       'consigneeName', 'consigneeAddress', 'vesselName', 'voyageNo', 'flightNo',
       'cargoReadyDate', 'warehouseStartDate', 'warehouseEndDate', 'cfsCutoff',
@@ -391,13 +391,15 @@ describe('fieldLabel — the one vocabulary, used by every surface that names a 
       expect(fieldLabel(c)).not.toBe(c)
     }
     expect(fieldLabel('qty')).toBe('Total Quantity')
-    // Gross weight / HTS / separate Warehouse SO / bag Item·Style removed from Order Details form
+    // Gross weight / Measurement / HTS / separate Warehouse SO / bag Item·Style removed from Order Details form
     expect(EDITABLE_FIELDS.some((f) => f.column === 'grossWeight')).toBe(false)
+    expect(EDITABLE_FIELDS.some((f) => f.column === 'measurement')).toBe(false)
     expect(EDITABLE_FIELDS.some((f) => f.column === 'htsCode')).toBe(false)
     expect(EDITABLE_FIELDS.some((f) => f.column === 'warehouseSo')).toBe(false)
     expect(EDITABLE_FIELDS.some((f) => f.column === 'itemStyleNo')).toBe(false)
     expect(fieldLabel('warehouseSo')).toBe('Warehouse SO')
     expect(fieldLabel('itemStyleNo')).toBe('Item / Style No.')
+    expect(fieldLabel('measurement')).toBe('Measurement')
   })
 
   it('falls back to the column name rather than rendering a blank label', () => {
@@ -406,8 +408,8 @@ describe('fieldLabel — the one vocabulary, used by every surface that names a 
 })
 
 describe('fieldUnit — the Order Details convention: unit lives in the VALUE', () => {
-  it('gives the fixed physical units still on the form', () => {
-    expect(fieldUnit('measurement')).toBe('CBM')
+  it('gives NO unit for measurement — removed from Order Details (CBM no longer shown)', () => {
+    expect(fieldUnit('measurement')).toBeNull()
   })
 
   it('gives NO unit for qty — it is the leg UOM, not a constant', () => {
