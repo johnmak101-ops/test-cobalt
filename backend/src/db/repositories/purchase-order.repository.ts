@@ -146,7 +146,15 @@ export class PurchaseOrderRepository {
       if (existing.brand == null && enrich.brand != null) patch.brand = enrich.brand
       // itemStyleNo: fill-if-null, or upgrade when enrich is a proper token superset
       // (incomplete single on PO must not block a fuller multi-style list). Never shrink.
-      // Exception: existing is entirely PO-shaped garbage (P028642) → replace or clear.
+      // Exceptions:
+      //  - existing entirely PO-shaped garbage (P028642) → replace or clear
+      //  - packing form Code/Description (C193/FERN JUMPER) upgrades bare name or bare code
+      const isPackingFormStyle = (s: string | null | undefined): boolean => {
+        if (!s || !s.includes('/')) return false
+        const [code, ...rest] = s.split('/')
+        const desc = rest.join('/').trim()
+        return Boolean(code && /[A-Z]/i.test(code) && /\d/.test(code) && desc.length >= 2)
+      }
       if (existing.itemStyleNo == null && enrich.itemStyleNo != null) {
         patch.itemStyleNo = enrich.itemStyleNo
       } else if (
@@ -154,6 +162,14 @@ export class PurchaseOrderRepository {
         enrich.itemStyleNo != null &&
         isStyleTokenSuperset(enrich.itemStyleNo, existing.itemStyleNo)
       ) {
+        patch.itemStyleNo = enrich.itemStyleNo
+      } else if (
+        existing.itemStyleNo != null &&
+        enrich.itemStyleNo != null &&
+        isPackingFormStyle(enrich.itemStyleNo) &&
+        !isPackingFormStyle(existing.itemStyleNo)
+      ) {
+        // Packing form Code/Description beats bare description or bare style code
         patch.itemStyleNo = enrich.itemStyleNo
       } else if (
         existing.itemStyleNo != null &&
