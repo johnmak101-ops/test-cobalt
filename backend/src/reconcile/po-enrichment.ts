@@ -5,10 +5,19 @@ import {
   isStyleTokenSuperset,
   scrubPoShapedStyles,
   isEntirelyPoShapedStyle,
+  preferStyleCodeCandidates,
+  isWeakStyleLabel,
 } from '../lib/style-tokens'
 
 // Re-export for callers that already import style helpers from this module.
-export { styleTokenSet, isStyleTokenSuperset, scrubPoShapedStyles, isEntirelyPoShapedStyle }
+export {
+  styleTokenSet,
+  isStyleTokenSuperset,
+  scrubPoShapedStyles,
+  isEntirelyPoShapedStyle,
+  preferStyleCodeCandidates,
+  isWeakStyleLabel,
+}
 
 /** The per-PO facts pulled from parsed evidence, ready to enrich purchase_orders. The first four fields
  *  are the enrichment payload (consumed by upsertPo); the trailing flags are de-correction review-signals
@@ -103,12 +112,16 @@ export function formatStyleUnion(stylesNewestFirst: string[]): string {
 
 /**
  * stylesNewestFirst: non-empty list, newest first (existing enrich order).
+ * Prefer packing-list style **codes** (C198, PUH26…) over later free-text color
+ * ("RED STRIPE") or CJK product names when both appear on the same PO.
  * Nested + maxTok<=STYLE_NESTED_UNION_MAX_TOKENS → union;
  * else T1a min-token newest + #124 family pick among specifics.
  */
 export function pickItemStyleNo(stylesNewestFirst: string[]): string | null {
-  const styles = stylesNewestFirst.map((s) => String(s ?? '').trim()).filter(Boolean)
-  if (!styles.length) return null
+  const raw = stylesNewestFirst.map((s) => String(s ?? '').trim()).filter(Boolean)
+  if (!raw.length) return null
+  // Prefer real style codes when any exist (packing 款号 beats air-booking color column).
+  const styles = preferStyleCodeCandidates(raw)
   const counts = styles.map(styleCommaCount)
   const maxTok = Math.max(...counts)
   const minTok = Math.min(...counts)
@@ -137,12 +150,12 @@ const poKeyOf = (r: PoEvidenceInput): string => normKey(r.poNo) || normKey(r.mat
  * TOGETHER from the newest record with a qty. qty broadcast guard (same value ≥3 POs) is de-correction
  * flag-only.
  *
- * item_style_no: when all statements are **nested subsets** and the largest has
- * ≤ STYLE_NESTED_UNION_MAX_TOKENS (3) tokens → **token union** (incomplete INV/PL
- * single must not erase a two-style telex). Else classic **T1a**: fewest
- * comma-tokens first, newest among ties — a specific single still beats a large
- * multi-token packing stamp (IZAC). #124 OCR family pick applies among the
- * specific (min-token) candidates only.
+ * item_style_no: prefer style-**code** statements (C198, PUH26…) over weak labels
+ * (colorway "RED STRIPE", CJK product description). Then when all remaining
+ * statements are **nested subsets** and the largest has
+ * ≤ STYLE_NESTED_UNION_MAX_TOKENS (3) tokens → **token union**. Else classic
+ * **T1a**: fewest comma-tokens first, newest among ties. #124 OCR family pick
+ * among the specific (min-token) candidates only.
  *
  * style broadcast (T1b): multi-token style identical across ≥3 POs of the same email → flag, keep value.
  *

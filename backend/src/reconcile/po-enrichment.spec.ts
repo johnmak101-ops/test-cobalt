@@ -475,6 +475,21 @@ describe('pickItemStyleNo — nested subset union (Set1) vs T1a large multi (IZA
     expect(pickItemStyleNo(['BBB', 'AAA'])).toBe('BBB')
   })
 
+  it('Set5 packing: C198 beats later RED STRIPE color from air booking / Final B/L', () => {
+    // newest first
+    expect(pickItemStyleNo(['RED STRIPE', 'C198', 'C198'])).toBe('C198')
+    expect(pickItemStyleNo(['RED STRIPE', 'C201'])).toBe('C201')
+  })
+
+  it('Set5 packing: C200 beats CJK product description', () => {
+    expect(
+      pickItemStyleNo([
+        '女装针织长袖套头衫, 女装针织短袖开襟衫, 女装针织中袖套头衫',
+        'C200',
+      ]),
+    ).toBe('C200')
+  })
+
   it('stylesAreNested true for subset pairs', () => {
     expect(stylesAreNested(['A, B', 'B'])).toBe(true)
     expect(stylesAreNested(['111', '222'])).toBe(false)
