@@ -29,32 +29,51 @@ The backend exposes a REST API under `/api` and, in a single-image deploy (`STAT
 the built SPA from the same origin. The upstream AI agent (**cobalt-queue**, a separate service) posts to
 `POST /api/decisions` over HTTP — this app is the system of record + UI and does **not** parse email itself.
 
-## Getting started
+## Getting started (dev)
 
 ```bash
-pnpm install                      # one clean workspace install
-# start SQL Server on :1433, e.g.:
+pnpm install                      # one clean workspace install at repo root
+# SQL Server on :1433, e.g.:
 #   docker run -d --name mssql-2022 -e ACCEPT_EULA=Y -e 'MSSQL_SA_PASSWORD=YourStrong!Passw0rd' -p 1433:1433 mcr.microsoft.com/mssql/server:2022-latest
-pnpm --filter backend db:migrate  # create the `cobalt` DB (if missing) + apply the T-SQL schema
+pnpm --filter backend db:migrate  # create the `cobalt` DB (if missing) + apply T-SQL migrations
 pnpm dev                          # frontend (:5173) + backend (:3000)
 ```
 
-- Frontend: <http://localhost:5173> (Vite dev server; proxies `/api` → backend)
+- Frontend: <http://localhost:5173> (Vite; proxies `/api` → backend)
 - Backend API: <http://localhost:3000/api>
+- Default login (seed): `admin@cobalt.hk` / `cobalt` (or agent service account used by cobalt-queue)
 
-Backend env (`backend/.env`): `SQL_SERVER_URL`, `JWT_SECRET` (≥ 32 chars), plus optional `CORS_ORIGINS`,
-`SESSION_TTL_HOURS`, `STATIC_ROOT` (prod SPA serving), and `GRAPH_*` (Microsoft Graph email ingestion).
+Backend env (`backend/.env`): `SQL_SERVER_URL`, `JWT_SECRET` (≥ 32 chars), optional `CORS_ORIGINS`,
+`SESSION_TTL_HOURS`, `STATIC_ROOT`, `MESH_*`, `GRAPH_*` (optional mailbox helpers).
+
+## Docker (test deploy)
+
+Full checklist: **[docs/ops is gitignored for client materials — use `backend/docs/docker-deploy.md`](backend/docs/docker-deploy.md)**.
+
+```bash
+docker compose up --build -d
+# App: http://localhost:3000  (API + SPA)
+# Health: curl -sf http://127.0.0.1:3000/api/health
+# Login: admin@cobalt.hk / cobalt  (SEED_ON_START=1 on first volume)
+```
+
+Compose starts **SQL Server + app** (migrate + optional seed on boot). Point cobalt-queue
+`TRACKING_API_BASE=http://host.docker.internal:3000/api` at this stack.
+
+**DEMO gold (with queue rematch):** expect **5** shipment spines (Set1 sea, two Set5 air HAWBs,
+Set6 sea + Set6 air). Packing-line ids (`31900…`) must not appear as incomplete shells.
+See [DEMO-SCRIPT.md](DEMO-SCRIPT.md).
 
 ## Project structure
 
 ```
 .
 ├── frontend/            # React SPA (Vite)
-│   └── src/
-├── backend/             # NestJS API (serves /api; serves the SPA in prod)
-│   └── src/
-│       └── db/kysely-migrations/   # T-SQL migrations (Kysely Migrator modules)
-├── .github/workflows/   # CI: lint + typecheck + tests + build
+├── backend/             # NestJS API (+ SPA when STATIC_ROOT set)
+│   ├── src/db/kysely-migrations/
+│   └── docs/            # ops notes (Fabric SQL, booking gap, docker)
+├── DEMO-SCRIPT.md       # customer walkthrough
+├── docker-compose.yml   # SQL + app image
 └── package.json         # pnpm workspace root
 ```
 
@@ -65,12 +84,11 @@ Backend env (`backend/.env`): `SQL_SERVER_URL`, `JWT_SECRET` (≥ 32 chars), plu
 - `pnpm lint` — ESLint (workspace, enforced in CI)
 - `pnpm format` / `pnpm format:check` — Prettier
 - `pnpm --filter backend run test` / `pnpm --filter frontend run test` — vitest
-- `pnpm --filter backend db:migrate` — create DB (if missing) + apply the T-SQL migrations
-- `pnpm --filter backend db:codegen` — regenerate Kysely row types from the live schema
+- `pnpm --filter backend db:migrate` — create DB + apply migrations
+- `pnpm --filter backend db:codegen` — regenerate Kysely types from live schema
 
 ## Tests & CI
 
-Vitest. The backend integration specs (`backend/test/*.int.spec.ts`) need SQL Server on `localhost:1433` —
-they create and migrate a `cobalt_test` database on first connect (`backend/test/setup-db.ts`). CI runs
-lint + both typechecks + both suites + both builds on push to `main` and every PR
-(`.github/workflows/ci.yml`, with an `mssql-2022` service container).
+Vitest. Backend integration specs need SQL Server on `localhost:1433` (`cobalt_test` via
+`backend/test/setup-db.ts`). CI: lint + typecheck + tests + build on `main` and every PR
+(`.github/workflows/ci.yml`, `mssql-2022` service).
