@@ -1,9 +1,14 @@
 import { normKey, str, num } from './match-keys'
 import { QTY_UNIT } from '../db/enums'
-import { styleTokenSet, isStyleTokenSuperset } from '../lib/style-tokens'
+import {
+  styleTokenSet,
+  isStyleTokenSuperset,
+  scrubPoShapedStyles,
+  isEntirelyPoShapedStyle,
+} from '../lib/style-tokens'
 
 // Re-export for callers that already import style helpers from this module.
-export { styleTokenSet, isStyleTokenSuperset }
+export { styleTokenSet, isStyleTokenSuperset, scrubPoShapedStyles, isEntirelyPoShapedStyle }
 
 /** The per-PO facts pulled from parsed evidence, ready to enrich purchase_orders. The first four fields
  *  are the enrichment payload (consumed by upsertPo); the trailing flags are de-correction review-signals
@@ -216,7 +221,8 @@ export function resolvePoEnrichment(rows: PoEvidenceInput[]): Map<string, PoEnri
       const f = r.fields ?? {}
       const b = str(f.brand)
       if (b) brands.push(b)
-      const sty = str(f.item_style_no)
+      // Drop bare P0/PO-prefixed PO refs (Set5 Customs "P028642, P028630") before T1a pick
+      const sty = scrubPoShapedStyles(str(f.item_style_no))
       if (sty) styles.push(sty)
       if (enr.brand == null) enr.brand = b
       if (enr.totalQuantity == null) {

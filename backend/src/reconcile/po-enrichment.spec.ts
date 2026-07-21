@@ -522,3 +522,35 @@ describe('resolvePoEnrichment — Set1 PO 25312 shape', () => {
     expect(styleTokenSet(sty).has('56572/SS26SW023'.toUpperCase())).toBe(true)
   })
 })
+
+describe('resolvePoEnrichment — Set5 P0-shaped style scrub', () => {
+  it('drops Customs P028642 list and keeps real garment name from older mail', () => {
+    const map = resolvePoEnrichment([
+      row({
+        id: 'old',
+        poNo: '28631',
+        receivedAt: at('2026-01-16T14:23:00Z'),
+        fields: { item_style_no: 'FERN JUMPER' },
+      }),
+      row({
+        id: 'new',
+        poNo: '28631',
+        receivedAt: at('2026-01-31T08:53:00Z'),
+        fields: { item_style_no: 'P028642, P028630' },
+      }),
+    ])
+    expect(map.get(normKey('28631'))?.itemStyleNo).toBe('FERN JUMPER')
+  })
+
+  it('returns null when only P0-shaped styles exist', () => {
+    const map = resolvePoEnrichment([
+      row({
+        id: 'a',
+        poNo: '28642',
+        receivedAt: at('2026-01-31T08:53:00Z'),
+        fields: { item_style_no: 'P028642, P028630' },
+      }),
+    ])
+    expect(map.get(normKey('28642'))?.itemStyleNo).toBeNull()
+  })
+})

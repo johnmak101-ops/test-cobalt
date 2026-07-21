@@ -2,7 +2,7 @@ import { Inject, Injectable } from '@nestjs/common'
 import { sql, type Kysely } from 'kysely'
 import type { DB } from '../kysely/db'
 import { KYSELY } from '../kysely.provider'
-import { isStyleTokenSuperset } from '../../lib/style-tokens'
+import { isStyleTokenSuperset, isEntirelyPoShapedStyle } from '../../lib/style-tokens'
 
 export type PoEnrichInput = Partial<{ brand: string | null; itemStyleNo: string | null; totalQuantity: number | null; quantityUnit: string | null }>
 
@@ -146,6 +146,7 @@ export class PurchaseOrderRepository {
       if (existing.brand == null && enrich.brand != null) patch.brand = enrich.brand
       // itemStyleNo: fill-if-null, or upgrade when enrich is a proper token superset
       // (incomplete single on PO must not block a fuller multi-style list). Never shrink.
+      // Exception: existing is entirely PO-shaped garbage (P028642) → replace or clear.
       if (existing.itemStyleNo == null && enrich.itemStyleNo != null) {
         patch.itemStyleNo = enrich.itemStyleNo
       } else if (
@@ -154,6 +155,20 @@ export class PurchaseOrderRepository {
         isStyleTokenSuperset(enrich.itemStyleNo, existing.itemStyleNo)
       ) {
         patch.itemStyleNo = enrich.itemStyleNo
+      } else if (
+        existing.itemStyleNo != null &&
+        isEntirelyPoShapedStyle(existing.itemStyleNo) &&
+        enrich.itemStyleNo != null &&
+        !isEntirelyPoShapedStyle(enrich.itemStyleNo)
+      ) {
+        patch.itemStyleNo = enrich.itemStyleNo
+      } else if (
+        existing.itemStyleNo != null &&
+        isEntirelyPoShapedStyle(existing.itemStyleNo) &&
+        (enrich.itemStyleNo == null || isEntirelyPoShapedStyle(enrich.itemStyleNo))
+      ) {
+        // Clear garbage even when rematch has nothing better (null)
+        patch.itemStyleNo = null
       }
       if (existing.totalQuantity == null && enrich.totalQuantity != null) patch.totalQuantity = enrich.totalQuantity
       if (existing.quantityUnit == null && enrich.quantityUnit != null) patch.quantityUnit = enrich.quantityUnit
