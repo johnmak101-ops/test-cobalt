@@ -48,9 +48,8 @@ export interface EditableField {
 
 export const EDITABLE_FIELDS: EditableField[] = [
   { section: 'Order Info', label: 'Booking No.', uiKey: 'bookingNo', column: 'bookingNo', type: 'text' },
+  // Combined display: soNo ?? warehouseSo (see displaySoNumber). Warehouse SO stays writable via critic map.
   { section: 'Order Info', label: 'SO#', uiKey: 'soNumber', column: 'soNo', type: 'text' },
-  // 入仓/订仓 SO — distinct from soNo; never dual-written into so_no / booking_no
-  { section: 'Order Info', label: 'Warehouse SO', uiKey: 'warehouseSo', column: 'warehouseSo', type: 'text' },
   { section: 'Order Info', label: 'Item / Style No.', uiKey: 'itemStyleNo', column: 'itemStyleNo', type: 'text' },
   { section: 'Cargo & Logistics', label: 'Total Quantity', uiKey: 'quantityShipped', column: 'qty', type: 'number' },
   { section: 'Cargo & Logistics', label: 'UOM', uiKey: 'quantityUnit', column: 'qtyUnit', type: 'text', options: UOM_OPTIONS },
@@ -250,6 +249,8 @@ const CRITIC_EXTRA_COLUMNS: Record<string, string> = {
   grossWeight: 'grossWeight',
   hts_code: 'htsCode',
   htsCode: 'htsCode',
+  warehouse_so: 'warehouseSo',
+  warehouseSo: 'warehouseSo',
   // Voyage aliases (history + some critic payloads use voyage_number / voyageNumber)
   voyage_number: 'voyageNo',
   voyageNumber: 'voyageNo',
@@ -344,6 +345,8 @@ export function reviewGroupOf(field: string): ReviewGroup {
 const HIDDEN_FIELD_LABELS: Record<string, string> = {
   grossWeight: 'Gross Weight',
   htsCode: 'HTS Code',
+  // Combined into SO# on Order Details (soNo ?? warehouseSo)
+  warehouseSo: 'Warehouse SO',
 }
 
 /**

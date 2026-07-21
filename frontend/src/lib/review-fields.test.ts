@@ -379,7 +379,7 @@ describe('fieldLabel — the one vocabulary, used by every surface that names a 
     // Pins the read view to EDITABLE_FIELDS: rename a label there and this stays green, but a
     // renamed/removed COLUMN fails here instead of silently rendering the raw column name.
     const rendered = [
-      'bookingNo', 'soNo', 'warehouseSo',
+      'bookingNo', 'soNo',
       'qty', 'qtyUnit', 'measurement', 'containerNo', 'hblAwbFcrNo', 'mbl', 'mawb', 'scacCode',
       'mode', 'polRaw', 'podRaw', 'forwarderRaw',
       'consigneeName', 'consigneeAddress', 'vesselName', 'voyageNo', 'flightNo',
@@ -391,9 +391,11 @@ describe('fieldLabel — the one vocabulary, used by every surface that names a 
       expect(fieldLabel(c)).not.toBe(c)
     }
     expect(fieldLabel('qty')).toBe('Total Quantity')
-    // Gross weight / HTS Code removed from Order Details display + edit form
+    // Gross weight / HTS / separate Warehouse SO row removed from Order Details form
     expect(EDITABLE_FIELDS.some((f) => f.column === 'grossWeight')).toBe(false)
     expect(EDITABLE_FIELDS.some((f) => f.column === 'htsCode')).toBe(false)
+    expect(EDITABLE_FIELDS.some((f) => f.column === 'warehouseSo')).toBe(false)
+    expect(fieldLabel('warehouseSo')).toBe('Warehouse SO')
   })
 
   it('falls back to the column name rather than rendering a blank label', () => {

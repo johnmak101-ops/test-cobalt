@@ -103,6 +103,26 @@ function houseBillLabel(mode: string | null | undefined): string {
 }
 
 /**
+ * Single SO# display: forwarder SO if present, else warehouse (入仓) SO.
+ * When both exist and differ (Set1 FEL + B126), show both joined.
+ */
+function displaySoNumber(shipment: {
+  soNumber?: string | null
+  warehouseSo?: string | null
+}): string | null {
+  const so = shipment.soNumber?.trim() || null
+  const wh = shipment.warehouseSo?.trim() || null
+  if (!so && !wh) return null
+  if (so && wh) {
+    const a = so.toUpperCase().replace(/[^A-Z0-9]/g, '')
+    const b = wh.toUpperCase().replace(/[^A-Z0-9]/g, '')
+    if (a === b) return so
+    return `${so} · ${wh}`
+  }
+  return so ?? wh
+}
+
+/**
  * Turn the "see conflict table" clause into a deep-link to this shipment's focused review view.
  * The conflict comparison UI lives on ReviewCard (rendered by that view), not shipment detail.
  */
@@ -172,9 +192,10 @@ export default function ShipmentDetailPage() {
     ((shipment.legCount ?? 1) > 1
       ? `${shipment.bookingNo} · Leg ${shipment.legNo ?? 1}/${shipment.legCount}`
       : shipment.bookingNo)
+  const soDisplay = displaySoNumber(shipment)
   const titleIds = [
     bookingTitleValue && { label: 'Booking ID', value: bookingTitleValue },
-    shipment.soNumber && { label: 'SO', value: shipment.soNumber },
+    soDisplay && { label: 'SO', value: soDisplay },
   ].filter(Boolean) as { label: string; value: string }[]
   if (titleIds.length === 0 && linkedPOs[0]) titleIds.push({ label: 'PO', value: linkedPOs[0].poNumber })
   const activeAlerts = (shipment.alerts ?? []).filter((a) => a.status === 'ACTIVE')
@@ -635,7 +656,7 @@ export default function ShipmentDetailPage() {
               hint={
                 shipment.bookingNo
                   ? undefined
-                  : shipment.hblNumber || shipment.soNumber
+                  : shipment.hblNumber || shipment.soNumber || shipment.warehouseSo
                     ? 'not stated in this shipment’s email(s)'
                     : 'awaiting the forwarder booking'
               }
@@ -643,17 +664,7 @@ export default function ShipmentDetailPage() {
             <DetailRow
               historyKey="soNo"
               label={fieldLabel('soNo')}
-              value={shipment.soNumber}
-            />
-            <DetailRow
-              historyKey="warehouseSo"
-              label={fieldLabel('warehouseSo')}
-              value={shipment.warehouseSo ?? null}
-              hint={
-                shipment.warehouseSo
-                  ? undefined
-                  : 'not stated in this shipment’s email(s)'
-              }
+              value={displaySoNumber(shipment)}
             />
             <DetailRow
               historyKey="itemStyleNo"
