@@ -685,15 +685,16 @@ export class PresentationService {
 
       // Push severity/message onto existing ACTIVE alert rows NOW (do not wait for re-fire).
       // Alerts store a copy of severity at first fire; without this, Settings→Info leaves cards CRITICAL.
+      // Use the *pinned* severity from `patch` (not the raw client body) so A2/A4 always stay CRITICAL.
       if (r.enabled === false) {
         await this.alertRepo.resolveAllActiveForRule(id)
-      } else if (typeof r.severity === 'string') {
+      } else if (typeof patch.severity === 'string') {
         const message =
           (typeof r.description === 'string' && r.description) ||
           (typeof r.name === 'string' && r.name) ||
           id
         await this.alertRepo.syncActivePresentation(id, {
-          severity: r.severity,
+          severity: String(patch.severity),
           message,
         })
       }
