@@ -25,7 +25,9 @@ export function deriveState(
     const wsMs = Date.parse(`${day}T00:00:00Z`)
     if (!Number.isNaN(wsMs) && wsMs <= now.getTime()) bump('AT_WAREHOUSE')
   }
-  if (has(fields.atd)) bump('SAILED')
+  // Departure (SAILED): ATD field, Departure Notice email type (On-board / Departure date / ATD keywords),
+  // or Invoice/Billing post-sail path below.
+  if (has(fields.atd) || emailTypes.has('Departure Notice')) bump('SAILED')
   // BUG 7: an Invoice/Billing shipment carrying a cut carrier document (MBL, or the house HBL/AWB/FCR — the
   // carrier number often lands there, not in mbl) with a PAST ETD has demonstrably sailed even without an
   // explicit ATD (invoices are issued post-departure). Tightly gated to that exact combination — still
@@ -35,9 +37,22 @@ export function deriveState(
     const etd = new Date(String(fields.etd))
     if (!Number.isNaN(etd.getTime()) && etd.getTime() < now.getTime()) bump('SAILED')
   }
+  // Final BOL / Telex (RELEASED): Final B/L, Telex Release (incl. Surrendered / Original BOL classified upstream)
   if (emailTypes.has('Telex Release') || emailTypes.has('Final B/L')) bump('RELEASED')
-  // A delivery cannot precede departure: only bump to DELIVERED when there is also a departure signal.
-  if (has(fields.in_dc_date) && (has(fields.atd) || emailTypes.has('Final B/L') || emailTypes.has('Telex Release'))) bump('DELIVERED')
+  // Delivered: in-DC date + departure signal, OR ETD calendar day equals today (ops rule).
+  if (has(fields.in_dc_date) && (has(fields.atd) || emailTypes.has('Final B/L') || emailTypes.has('Telex Release') || emailTypes.has('Departure Notice'))) {
+    bump('DELIVERED')
+  }
+  if (has(fields.etd)) {
+    const etdDay = String(fields.etd).slice(0, 10)
+    if (/^\d{4}-\d{2}-\d{2}$/.test(etdDay)) {
+      const y = now.getUTCFullYear()
+      const m = String(now.getUTCMonth() + 1).padStart(2, '0')
+      const d = String(now.getUTCDate()).padStart(2, '0')
+      const today = `${y}-${m}-${d}`
+      if (etdDay === today) bump('DELIVERED')
+    }
+  }
   return s
 }
 
@@ -60,7 +75,14 @@ export function deriveState(
 const IDENTITY_FIELDS = ['booking_no', 'so_no', 'hbl_awb_fcr_no', 'mbl', 'container_no'] as const
 /** Carrier-issued identities — booking_no EXCLUDED (the portal leaks an LPO into it, see (c)). */
 const CARRIER_IDENTITY = ['hbl_awb_fcr_no', 'mbl', 'container_no'] as const
-const LIFECYCLE_TYPES = new Set(['Booking Request', 'SO', 'Draft B/L', 'Final B/L', 'Telex Release'])
+const LIFECYCLE_TYPES = new Set([
+  'Booking Request',
+  'SO',
+  'Draft B/L',
+  'Final B/L',
+  'Telex Release',
+  'Departure Notice',
+])
 /**
  * Classification rule:
  *   invoice_so_ref → DOCUMENT (Invoice/Billing-only, no booking_no)
@@ -108,6 +130,7 @@ export const MILESTONE_OF: Record<string, string> = {
   'Draft B/L': 'DRAFT_BL_RECEIVED',
   'Final B/L': 'FINAL_BL_RECEIVED',
   'Telex Release': 'TELEX_RELEASED',
+  'Departure Notice': 'SAILED',
   'Invoice/Billing': 'INVOICE_RECEIVED',
 }
 
