@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useParams, useNavigate, useLocation, Link } from 'react-router-dom'
+import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import { ArrowLeft, AlertTriangle } from 'lucide-react'
 import { useShipment } from '../hooks/use-shipments'
@@ -162,14 +162,10 @@ export default function ShipmentReviewFocusPage() {
               {shipment.route && ` · ${shipment.route}`}
             </p>
           </div>
+          {/* No "Open full shipment" here — the review card below carries its own Open shipment
+              link, and the header duplicated it two clicks from the same place. */}
           <div className="flex shrink-0 items-center gap-2">
             <Badge variant="status" value={shipment.status} />
-            <Link
-              to={backToShipment}
-              className="inline-flex items-center rounded-lg border border-border bg-surface-700 px-3 py-1.5 text-xs font-medium text-text-secondary hover:bg-surface-600 hover:text-text-primary"
-            >
-              Open full shipment
-            </Link>
           </div>
         </div>
       </div>
