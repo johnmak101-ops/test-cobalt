@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest'
+﻿import { describe, it, expect, vi } from 'vitest'
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
@@ -458,7 +458,8 @@ describe('ReviewCard', () => {
     // Pre-filled with the agent's proposal — the operator accepts or edits it.
     expect(resolution.value).toBe('2026-07-23')
 
-    const saveBtn = screen.getByRole('button', { name: /approve 1 change/i })
+    // in edit mode the primary button is Submit
+    const saveBtn = screen.getByRole('button', { name: /^submit$/i })
     // Enter a value that differs from the stored (Existing) value → a note becomes mandatory.
     await user.clear(resolution)
     await user.type(resolution, '2026-07-25')
@@ -755,7 +756,7 @@ describe('conflict table — read-only by default, Edit to change values', () =>
     expect(screen.getByTestId('review-judgment-only')).toBeInTheDocument()
   })
 
-  it('column header becomes Edited after a value is changed from the AI proposal', async () => {
+  it('Cancel leaves edit mode AND backs the edit out', async () => {
     const user = userEvent.setup()
     render(
       <MemoryRouter>
@@ -772,8 +773,42 @@ describe('conflict table — read-only by default, Edit to change values', () =>
     const eta = screen.getByLabelText(/proposed value for eta/i)
     await user.clear(eta)
     await user.type(eta, '2026-07-25')
-    await user.click(screen.getByRole('button', { name: /done editing/i }))
-    expect(screen.getByTestId('proposed-column-header')).toHaveTextContent('Edited')
+    // mid-edit the column reads Resolution
+    expect(screen.getByTestId('proposed-column-header')).toHaveTextContent('Resolution')
+    await user.click(screen.getByRole('button', { name: /^cancel$/i }))
+    // discarded → back to the agent's proposal, not a lingering "Edited" state
+    expect(screen.getByTestId('proposed-column-header')).toHaveTextContent('AI Proposed')
+    expect(screen.getByRole('button', { name: /^edit$/i })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^submit$/i })).toBeNull()
+  })
+
+  it('Edit swaps the idle actions for Cancel + Submit', async () => {
+    const user = userEvent.setup()
+    render(
+      <MemoryRouter>
+        <ReviewCard
+          shipment={baseShipment()}
+          criticReview={baseReview({ conflicts: [conflictEta] })}
+          compact={compact}
+          defaultExpanded
+          onApprove={vi.fn().mockResolvedValue(undefined)}
+          onSaveAndApprove={vi.fn().mockResolvedValue(undefined)}
+        />
+      </MemoryRouter>,
+    )
+    // idle
+    expect(screen.getByRole('button', { name: /^edit$/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /keep current/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /^approve$/i })).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: /^edit$/i }))
+
+    // editing — only the two ways out
+    expect(screen.getByRole('button', { name: /^cancel$/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /^submit$/i })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^edit$/i })).toBeNull()
+    expect(screen.queryByRole('button', { name: /keep current/i })).toBeNull()
+    expect(screen.queryByRole('button', { name: /^approve$/i })).toBeNull()
   })
 
   it('the approve button names how many stored values it will overwrite', async () => {
@@ -791,7 +826,7 @@ describe('conflict table — read-only by default, Edit to change values', () =>
       </MemoryRouter>,
     )
     // One click, but a click that states what it accepts — not a bare "Approve".
-    const approve = screen.getByRole('button', { name: /approve 1 change/i })
+    const approve = screen.getByRole('button', { name: /^approve$/i })
     expect(approve).not.toBeDisabled()
     await user.click(approve)
     expect(onSave.mock.calls[0][0].fields).toMatchObject({ eta: '2026-07-23' })
@@ -816,7 +851,8 @@ describe('conflict table — read-only by default, Edit to change values', () =>
     await user.clear(eta)
     await user.type(eta, '2026-07-25')
 
-    const approve = screen.getByRole('button', { name: /approve 1 change/i })
+    // still in edit mode → the primary button is Submit
+    const approve = screen.getByRole('button', { name: /^submit$/i })
     expect(approve).toBeDisabled()
     await user.type(screen.getByRole('textbox', { name: /note/i }), 'Carrier confirmed the 25th')
     expect(approve).not.toBeDisabled()
@@ -868,13 +904,13 @@ describe('embedded in the queue table — the row above already states identity'
     // ...but the detail the row cannot show is still here
     expect(screen.getByRole('table')).toBeInTheDocument()
     expect(screen.getByTestId('why-review')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /approve 2 changes/i })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /keep existing/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /^approve$/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /keep current/i })).toBeInTheDocument()
     // Not shipment is Documents-only (unlinked docs). Review queue has no dismiss path.
     expect(screen.queryByRole('button', { name: /not shipment/i })).toBeNull()
   })
 
-  it('Keep Existing confirms without applying AI Proposed field changes', async () => {
+  it('Keep current confirms without applying AI Proposed field changes', async () => {
     const user = userEvent.setup()
     const onApprove = vi.fn().mockResolvedValue(undefined)
     const onSave = vi.fn().mockResolvedValue(undefined)
@@ -891,7 +927,7 @@ describe('embedded in the queue table — the row above already states identity'
         />
       </MemoryRouter>,
     )
-    await user.click(screen.getByRole('button', { name: /keep existing/i }))
+    await user.click(screen.getByRole('button', { name: /keep current/i }))
     expect(onApprove).toHaveBeenCalledTimes(1)
     expect(onSave).not.toHaveBeenCalled()
   })
@@ -1166,8 +1202,12 @@ describe('qty live-leg settle on decision table', () => {
     const grid = screen.getByTestId('review-decision-grid')
     expect(within(grid).queryByText('Total Quantity')).toBeNull()
     expect(within(grid).getByText('Vendor')).toBeInTheDocument()
-    // Qty settled — Approve must not double-count it as a second change
-    expect(screen.queryByRole('button', { name: /approve 2 changes/i })).toBeNull()
+    // Qty settled — Approve must not double-count it as a second change. The label is now a plain
+    // verb, so the count lives in the tooltip; assert there rather than losing the guard.
+    expect(screen.getByRole('button', { name: /^approve$/i })).toHaveAttribute(
+      'title',
+      'Apply 1 change and confirm',
+    )
   })
 
   it('still shows qty when live differs from all non-system candidates', () => {
