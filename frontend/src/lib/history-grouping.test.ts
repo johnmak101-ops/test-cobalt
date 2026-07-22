@@ -72,6 +72,7 @@ describe('historyCategoryOf — field → one of five categories', () => {
 
 describe('groupHistoryByCategory — fixed order, empty omitted', () => {
   it('returns only non-empty categories in HISTORY_CATEGORY_ORDER', () => {
+    // grossWeight is not in EDITABLE_FIELDS → Status & Lifecycle catch-all (not Cargo).
     const groups = groupHistoryByCategory([
       entry('status'),
       entry('qty'),
@@ -84,7 +85,9 @@ describe('groupHistoryByCategory — fixed order, empty omitted', () => {
       'Status & Lifecycle',
     ])
     const cargo = groups.find((g) => g.category === 'Cargo & Logistics')!
-    expect(cargo.entries.map((e) => e.field)).toEqual(['qty', 'grossWeight'])
+    expect(cargo.entries.map((e) => e.field)).toEqual(['qty'])
+    const status = groups.find((g) => g.category === 'Status & Lifecycle')!
+    expect(status.entries.map((e) => e.field).sort()).toEqual(['grossWeight', 'status'].sort())
   })
 
   it('returns [] for empty history', () => {

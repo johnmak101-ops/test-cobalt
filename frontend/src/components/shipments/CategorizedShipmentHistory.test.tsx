@@ -23,13 +23,14 @@ function entry(field: string, over: Partial<HistoryEntry> = {}): HistoryEntry {
 
 describe('CategorizedShipmentHistory', () => {
   it('groups into category sections with counts, omitting empty categories', () => {
+    // qty → Cargo; grossWeight + status → Status (grossWeight not in EDITABLE_FIELDS)
     render(
       <CategorizedShipmentHistory
         history={[entry('qty', { newValue: '350' }), entry('grossWeight'), entry('status')]}
       />,
     )
-    expect(screen.getByRole('button', { name: /Cargo & Logistics/ })).toHaveTextContent('2')
-    expect(screen.getByRole('button', { name: /Status & Lifecycle/ })).toHaveTextContent('1')
+    expect(screen.getByRole('button', { name: /Cargo & Logistics/ })).toHaveTextContent('1')
+    expect(screen.getByRole('button', { name: /Status & Lifecycle/ })).toHaveTextContent('2')
     // Order Info has no entries → its header is not rendered
     expect(screen.queryByRole('button', { name: /Order Info/ })).toBeNull()
   })
