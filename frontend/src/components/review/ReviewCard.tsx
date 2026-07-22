@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { CheckCircle, ChevronDown, ChevronRight, ExternalLink, Loader2, Mail, NotebookPen, Pencil, Save } from 'lucide-react'
+import { CheckCircle, ChevronDown, ChevronRight, ExternalLink, Loader2, Mail, NotebookPen, Pencil, Save, X } from 'lucide-react'
 import { Badge } from '../ui/Badge'
 import {
   ConflictRow,
@@ -313,9 +313,11 @@ export function ReviewCard({
 
   const startEditing = () => setEditing(true)
 
-  const toggleEditing = () => {
-    if (editing) setEditing(false)
-    else startEditing()
+  /** Cancel = leave edit mode AND drop the edits, back to the agent's proposal. Leaving them applied
+   *  after "Cancel" would silently arm Submit with values the operator just backed out of. */
+  const cancelEditing = () => {
+    setResolutions(initialResolutions(conflicts))
+    setEditing(false)
   }
 
   /**
@@ -1021,19 +1023,36 @@ export function ReviewCard({
               Open shipment
             </a>
             {!readOnly && (
+              /* Two states, two button sets:
+                   idle    Edit · Keep current · Approve
+                   editing Cancel · Submit
+                 Editing hides the idle actions so the only ways out are backing the edits out
+                 (Cancel) or committing them (Submit). */
               <div className="flex flex-wrap items-center justify-end gap-2">
-                {showEdit && (
+                {editing && (
                   <button
                     type="button"
-                    onClick={toggleEditing}
+                    onClick={cancelEditing}
+                    disabled={busy}
+                    data-testid="cancel-editing"
+                    className={cn(ACTION_BTN, ACTION_VARIANT.secondary)}
+                  >
+                    <X size={13} />
+                    Cancel
+                  </button>
+                )}
+                {!editing && showEdit && (
+                  <button
+                    type="button"
+                    onClick={startEditing}
                     disabled={busy}
                     className={cn(ACTION_BTN, ACTION_VARIANT.secondary)}
                   >
                     <Pencil size={13} />
-                    {editing ? 'Done editing' : 'Edit'}
+                    Edit
                   </button>
                 )}
-                {(onApprove || multiCandNeedsTarget) && changeCount > 0 && (
+                {!editing && (onApprove || multiCandNeedsTarget) && changeCount > 0 && (
                   <button
                     type="button"
                     onClick={() => {
@@ -1053,7 +1072,7 @@ export function ReviewCard({
                     className={cn(ACTION_BTN, ACTION_VARIANT.success)}
                   >
                     {busy ? <Loader2 size={13} className="animate-spin" /> : <CheckCircle size={13} />}
-                    {multiCandNeedsTarget ? 'Link without field changes' : 'Keep Existing'}
+                    {multiCandNeedsTarget ? 'Link without field changes' : 'Keep current'}
                   </button>
                 )}
                 {(onSaveAndApprove || onApprove || multiCandNeedsTarget) && (
@@ -1061,31 +1080,35 @@ export function ReviewCard({
                     type="button"
                     onClick={handleSaveAndApprove}
                     disabled={!canSave}
+                    /* The label is a plain verb, so the COUNT of stored values this overwrites lives
+                       here — it is the whole reason the leg is queued, and it stays assertable. */
                     title={
                       multiCandNeedsTarget
                         ? linkTargetReady
                           ? `Link into ${selectedJobLabel ?? 'selected shipment'} and apply field decisions`
                           : 'Select a shipment above first'
                         : changeCount > 0
-                          ? 'Apply Resolution / AI Proposed values and confirm'
+                          ? `Apply ${changeCount} change${changeCount === 1 ? '' : 's'} and confirm`
                           : 'Confirm shipment'
                     }
                     className={cn(ACTION_BTN, ACTION_VARIANT.primary)}
                   >
                     {busy ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />}
-                    {multiCandNeedsTarget
-                      ? changeCount > 0
-                        ? `Link & apply ${changeCount} change${changeCount === 1 ? '' : 's'}`
-                        : 'Link & apply'
-                      : changeCount > 0
-                        ? `Approve ${changeCount} change${changeCount === 1 ? '' : 's'}`
-                        : onApprove
-                          ? 'Keep Existing'
-                          : 'Approve'}
+                    {editing
+                      ? 'Submit'
+                      : multiCandNeedsTarget
+                        ? changeCount > 0
+                          ? `Link & apply ${changeCount} change${changeCount === 1 ? '' : 's'}`
+                          : 'Link & apply'
+                        : changeCount > 0
+                          ? 'Approve'
+                          : onApprove
+                            ? 'Keep current'
+                            : 'Approve'}
                   </button>
                 )}
                 {/* F11: multi-candidate escape hatch — genuinely new shipment (e.g. 拼櫃) without linking */}
-                {multiCandNeedsTarget && onApprove && (
+                {!editing && multiCandNeedsTarget && onApprove && (
                   <button
                     type="button"
                     data-testid="confirm-as-separate"
