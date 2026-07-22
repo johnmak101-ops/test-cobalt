@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { ShipmentTable } from './ShipmentTable'
@@ -137,6 +137,44 @@ describe('ShipmentTable — column layout (#119)', () => {
     expect(screen.getByText('SZA26050003')).toBeInTheDocument()
     // pure keyless shell still —
     expect(screen.getAllByText('—').length).toBeGreaterThan(0)
+  })
+
+  // JSDOM applies no CSS, so these assert the class contract; real rendering is measured in-browser.
+  it('pins the Booking ID column for horizontal scroll (sticky left, opaque bg)', () => {
+    renderTable([baseShipment()])
+
+    const th = screen.getByRole('columnheader', { name: /booking id/i })
+    expect(th).toHaveClass('sticky', 'left-0', 'bg-surface-850')
+
+    const td = screen.getByText('BY058417').closest('td')!
+    expect(td).toHaveClass('sticky', 'left-0', 'bg-surface-800', 'group-hover:bg-surface-700')
+    // the pinned cell mirrors row hover via the row being a Tailwind group
+    expect(td.closest('tr')!).toHaveClass('group')
+  })
+
+  it('drops low-priority columns on narrow screens, keeping the identity ones', () => {
+    renderTable([baseShipment()])
+
+    for (const name of [/^etd$/i, /^eta$/i, /^last activity$/i]) {
+      expect(screen.getByRole('columnheader', { name })).toHaveClass('hidden', 'lg:table-cell')
+    }
+    expect(screen.getByRole('columnheader', { name: /^forwarder$/i })).toHaveClass('hidden', 'md:table-cell')
+
+    for (const name of [/booking id/i, /customer po#/i, /^customer$/i, /^route$/i, /^status$/i, /^risk$/i]) {
+      expect(screen.getByRole('columnheader', { name })).not.toHaveClass('hidden')
+    }
+
+    // body cells hide in lockstep with their headers (0-indexed 3, 6, 7, 8)
+    const bodyRow = screen.getByText('BY058417').closest('tr')!
+    const cells = within(bodyRow).getAllByRole('cell')
+    expect(cells[3]).toHaveClass('hidden', 'md:table-cell')
+    for (const i of [6, 7, 8]) expect(cells[i]).toHaveClass('hidden', 'lg:table-cell')
+  })
+
+  it('tiers the table min-width so a narrow viewport fits the visible columns', () => {
+    renderTable([baseShipment()])
+    const table = screen.getByRole('table')
+    expect(table).toHaveClass('min-w-[560px]', 'md:min-w-[720px]', 'lg:min-w-[960px]')
   })
 
   it('puts the provisional awaiting-review icon in Risk, not next to Status', () => {

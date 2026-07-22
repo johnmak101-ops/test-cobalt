@@ -44,6 +44,10 @@
   --color-surface-800: #121212;
   --color-surface-700: #1A1A1A;
   --color-surface-600: #222222;
+  /* Opaque equivalent of surface-900 at 50% over a surface-800 card (table headers). A sticky cell
+     needs an opaque background or scrolled content shows through it; color-mix of the two vars
+     tracks BOTH themes automatically, since [data-theme="light"] overrides the inputs. */
+  --color-surface-850: color-mix(in srgb, var(--color-surface-900) 50%, var(--color-surface-800));
   --color-border: #222222;
   --color-border-light: #2A2A2A;
   --color-text-primary: #FFFFFF;
