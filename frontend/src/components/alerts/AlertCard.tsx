@@ -33,17 +33,6 @@ const severityBorder: Record<string, string> = {
   INFO: 'border-l-status-info',
 }
 
-/** POC operator next-step hints by rule id (frontend map; no DB column required). */
-const ACTION_BY_RULE: Record<string, string> = {
-  A1: 'Contact forwarder for SO / booking confirmation',
-  A2: 'Verify truck scheduled for warehouse delivery',
-  A3: 'Contact forwarder to confirm cargo status',
-  A4: 'Chase Final B/L with forwarder',
-  A5: 'Confirm freight payment / telex release',
-  A6: 'Confirm delivery / in-DC with consignee',
-  A7: 'Confirm cargo-ready revision with forwarder',
-}
-
 export function AlertCard({ alert, compact }: AlertCardProps) {
   const navigate = useNavigate()
   const markRead = useMarkAlertRead()
@@ -53,7 +42,6 @@ export function AlertCard({ alert, compact }: AlertCardProps) {
   const poHeader = alert.shipment ? formatPoHeader(parsePONumbers(alert.shipment.poNumbers)) : null
   const route = alert.shipment?.route?.trim() || null
   const consignee = alert.shipment?.consigneeName?.trim() || null
-  const action = ACTION_BY_RULE[alert.ruleId]
 
   const titleParts = [poHeader, route].filter(Boolean)
   const title = titleParts.length > 0 ? titleParts.join(' | ') : null
@@ -107,13 +95,9 @@ export function AlertCard({ alert, compact }: AlertCardProps) {
               isRead ? 'text-text-muted' : 'text-text-secondary',
             )}
           >
+            {/* Backend builds a live message from rule thresholds + leg facts (not a static seed blurb). */}
             {alert.message}
           </p>
-          {action && !compact && (
-            <p className="mt-2 text-xs text-text-muted">
-              <span className="font-semibold text-text-secondary">Action:</span> {action}
-            </p>
-          )}
           <p className="mt-1 text-xs text-text-muted">{formatRelativeTime(alert.triggeredAt)}</p>
         </div>
 

@@ -544,16 +544,23 @@ ShipTrack uses a 4-step AI pipeline to process incoming emails:
 
 ### 7.2 Alert Rules Engine
 
-| Rule ID | Current State | Trigger Condition | Severity | Default Threshold |
-|---------|---------------|-------------------|----------|-------------------|
-| A1 | BOOKED | Days since booking, no SO received | Warning | 2 days |
-| A2 | CONFIRMED | Cut-off approaching, no Draft B/L | Warning | 1 day before |
-| A3 | CONFIRMED | Cut-off passed, no Draft B/L | Critical | Immediate |
-| A4 | AT WAREHOUSE | Days since Draft B/L, no Final B/L | Warning | 5 days |
-| A5 | SAILED | Days since Final B/L, no Telex | Info | 7 days |
-| A6 | RELEASED | Days past ETA, no delivery confirmation | Info | 3 days |
+Customer product rules (Settings): **days after ETD**, Draft / Final B/L staircase.
 
-**Key insight:** Alerts are based on **"time since last milestone"** rather than "distance to known date" — because Cobalt only knows CRD upfront. All other dates come from forwarder emails.
+| Rule ID | Trigger condition | Severity | Default threshold |
+|---------|-------------------|----------|-------------------|
+| A1 | ETD + N days, no Draft B/L | Warning | **1 day** after ETD |
+| A2 | ETD + N days, no Draft B/L | Critical | **2 days** after ETD |
+| A3 | ETD + N days, no Final B/L | Warning | **3 days** after ETD |
+| A4 | ETD + N days, no Final B/L | Critical | **7 days** after ETD |
+
+Optional per-origin-country day overrides (e.g. CN / BD / KH) apply on top of the defaults.
+
+**Operator message:** stored `alert.message` is **generated at fire time** from the live rule
+threshold + leg facts (elapsed days after ETD, watch target, action hint) — not the static
+seed `description`. See [docs/reference/alert-rules-and-messages.md](../reference/alert-rules-and-messages.md).
+
+Legacy A5/A6 (telex / delivery) and built-in A7 (cargo-ready revision not reflected) exist in
+the engine but are outside the customer Settings cards.
 
 ---
 
@@ -660,20 +667,21 @@ type AlertStatus = 'ACTIVE' | 'DISMISSED' | 'SNOOZED' | 'RESOLVED';
 **AlertRule**
 ```typescript
 interface AlertRule {
-  id: string;                    // A1, A2, A3, etc.
+  id: string;                    // A1, A2, A3, A4 (product)
   name: string;                  // Human-readable name
-  description: string;           // Detailed description
+  description: string;           // Static Settings blurb only — not the fired alert text
   
   // Trigger configuration
-  state: ShipmentStatus;         // Which state this rule applies to
+  state: ShipmentStatus | null;  // Optional staircase gate; product rules use null
   trigger_type: 'days_after' | 'days_before';
-  trigger_reference: 'booking' | 'cutoff' | 'draft_bl' | 'final_bl' | 'eta';
-  threshold_days: number;        // Number of days
+  trigger_reference: 'etd' | 'booking_request' | 'cutoff' | 'draft_bl' | 'final_bl' | 'eta' | ...;
+  watch_for: 'draft_bl' | 'final_bl' | 'so' | ...;
+  threshold_days: number;        // Operator unit (API/UI); persisted as threshold_hours = days * 24
   
   // Alert settings
   severity: AlertSeverity;
   enabled: boolean;
-  locked: boolean;               // If true, cannot be disabled or changed
+  locked: boolean;
   
   // Metadata
   updated_at: Date;
@@ -683,82 +691,70 @@ interface AlertRule {
 
 ### 8.2 Default Alert Rules Configuration
 
+Settings and API speak **days**; the DB column is `threshold_hours` (days × 24).
+`description` is presentation-only; fired alerts use a live-formatted `message`.
+
 ```typescript
-const DEFAULT_ALERT_RULES: AlertRule[] = [
+// Product set — seed in backend/src/db/seed.ts (thresholdHours = days * 24)
+const DEFAULT_ALERT_RULES = [
   {
     id: 'A1',
-    name: 'No SO Received',
-    description: 'Booking sent but no Shipping Order received from forwarder',
-    state: 'BOOKED',
+    name: 'No Draft BOL received',
+    description: 'Warning when Draft B/L is still missing after ETD + N calendar days',
+    state: null, // any lifecycle once ETD exists
     trigger_type: 'days_after',
-    trigger_reference: 'booking',
-    threshold_days: 2,
-    severity: 'WARNING',
-    enabled: true,
-    locked: false
-  },
-  {
-    id: 'A2',
-    name: 'Cut-off Approaching',
-    description: 'CFS cut-off deadline is approaching, no Draft B/L received',
-    state: 'CONFIRMED',
-    trigger_type: 'days_before',
-    trigger_reference: 'cutoff',
+    trigger_reference: 'etd',
+    watch_for: 'draft_bl',
     threshold_days: 1,
     severity: 'WARNING',
     enabled: true,
-    locked: false
+    locked: false,
+  },
+  {
+    id: 'A2',
+    name: 'No Draft BOL received',
+    description: 'Critical when Draft B/L is still missing after ETD + N calendar days',
+    state: null,
+    trigger_type: 'days_after',
+    trigger_reference: 'etd',
+    watch_for: 'draft_bl',
+    threshold_days: 2,
+    severity: 'CRITICAL',
+    enabled: true,
+    locked: false,
   },
   {
     id: 'A3',
-    name: 'Cut-off Passed',
-    description: 'CFS cut-off has passed without Draft B/L — cargo may have missed vessel',
-    state: 'CONFIRMED',
+    name: 'No Final BOL received',
+    description: 'Warning when Final B/L is still missing after ETD + N calendar days',
+    state: null,
     trigger_type: 'days_after',
-    trigger_reference: 'cutoff',
-    threshold_days: 0,
-    severity: 'CRITICAL',
+    trigger_reference: 'etd',
+    watch_for: 'final_bl',
+    threshold_days: 3,
+    severity: 'WARNING',
     enabled: true,
-    locked: true  // Cannot be disabled
+    locked: false,
   },
   {
     id: 'A4',
-    name: 'No Final B/L',
-    description: 'Draft B/L received but no Final B/L — vessel may not have departed',
-    state: 'AT_WAREHOUSE',
+    name: 'No Final BOL received',
+    description: 'Critical when Final B/L is still missing after ETD + N calendar days',
+    state: null,
     trigger_type: 'days_after',
-    trigger_reference: 'draft_bl',
-    threshold_days: 5,
-    severity: 'WARNING',
-    enabled: true,
-    locked: false
-  },
-  {
-    id: 'A5',
-    name: 'No Telex Release',
-    description: 'Final B/L received but no Telex Release — check freight payment status',
-    state: 'SAILED',
-    trigger_type: 'days_after',
-    trigger_reference: 'final_bl',
+    trigger_reference: 'etd',
+    watch_for: 'final_bl',
     threshold_days: 7,
-    severity: 'INFO',
+    severity: 'CRITICAL',
     enabled: true,
-    locked: false
+    locked: false,
   },
-  {
-    id: 'A6',
-    name: 'No Delivery Confirmation',
-    description: 'ETA has passed but no delivery confirmation received',
-    state: 'RELEASED',
-    trigger_type: 'days_after',
-    trigger_reference: 'eta',
-    threshold_days: 3,
-    severity: 'INFO',
-    enabled: true,
-    locked: false
-  }
 ];
+// Example fired message (not description):
+// "No Draft B/L — 2 days after ETD (2026-02-01); threshold is ETD + 1 day. Contact forwarder for Draft B/L."
 ```
+
+See [docs/reference/alert-rules-and-messages.md](../reference/alert-rules-and-messages.md).
 
 ---
 
