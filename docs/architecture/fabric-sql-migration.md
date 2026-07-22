@@ -1,3 +1,5 @@
+> **Status: COMPLETE (2026-07).** Apps run Kysely + SQL Server / Fabric. This document is retained as decision record / migration diary — do not treat open "options A/B/C" as undecided.
+
 # Migration Plan — PostgreSQL → Microsoft Fabric SQL (ShipTrack + cobalt-queue)
 
 > **Status:** plan, ready to execute (Phase 0 decisions need the architect's sign-off). **Date:** 2026-07-09.

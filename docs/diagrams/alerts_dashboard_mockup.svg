@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 340">
+  <defs>
+    <filter id="shadow" x="-5%" y="-5%" width="110%" height="110%">
+      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-opacity="0.1"/>
+    </filter>
+    <linearGradient id="headerGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#1a1a2e"/>
+      <stop offset="100%" style="stop-color:#16213e"/>
+    </linearGradient>
+  </defs>
+  
+  <!-- Background -->
+  <rect width="800" height="340" fill="#f8fafc" rx="8"/>
+  
+  <!-- Header -->
+  <rect x="0" y="0" width="800" height="50" fill="url(#headerGrad)" rx="8"/>
+  <rect x="0" y="40" width="800" height="15" fill="url(#headerGrad)"/>
+  <text x="25" y="32" font-family="Arial, sans-serif" font-size="16" font-weight="bold" fill="white">Alerts Dashboard</text>
+  <text x="775" y="32" text-anchor="end" font-family="Arial, sans-serif" font-size="12" fill="#aaa">2 Active Alerts</text>
+  
+  <!-- Critical Alert Card -->
+  <rect x="20" y="65" width="760" height="125" rx="8" fill="white" filter="url(#shadow)" stroke="#dc2626" stroke-width="2"/>
+  
+  <!-- Critical header row -->
+  <rect x="35" y="80" width="80" height="26" rx="5" fill="#dc2626"/>
+  <text x="75" y="98" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" font-weight="bold" fill="white">CRITICAL</text>
+  
+  <rect x="125" y="80" width="30" height="26" rx="5" fill="#fecaca"/>
+  <text x="140" y="98" text-anchor="middle" font-family="Arial, sans-serif" font-size="13" font-weight="bold" fill="#dc2626">1</text>
+  
+  <!-- Alert details -->
+  <text x="35" y="135" font-family="Arial, sans-serif" font-size="14" font-weight="bold" fill="#1a1a2e">PO#6131180898 | TIKNHO &#8594; Hamburg</text>
+  <text x="35" y="158" font-family="Arial, sans-serif" font-size="12" fill="#666">Cut-off passed 2 days ago — no Draft B/L received</text>
+  
+  <!-- Action section -->
+  <rect x="35" y="170" width="730" height="1" fill="#fecaca"/>
+  <text x="35" y="186" font-family="Arial, sans-serif" font-size="10" font-weight="bold" fill="#b91c1c">Action:</text>
+  <text x="85" y="186" font-family="Arial, sans-serif" font-size="10" fill="#666">Contact forwarder (DSV) to confirm cargo status</text>
+  
+  <!-- Warning Alert Card -->
+  <rect x="20" y="200" width="760" height="125" rx="8" fill="white" filter="url(#shadow)" stroke="#f59e0b" stroke-width="2"/>
+  
+  <!-- Warning header row -->
+  <rect x="35" y="215" width="80" height="26" rx="5" fill="#f59e0b"/>
+  <text x="75" y="233" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" font-weight="bold" fill="white">WARNING</text>
+  
+  <rect x="125" y="215" width="30" height="26" rx="5" fill="#fef3c7"/>
+  <text x="140" y="233" text-anchor="middle" font-family="Arial, sans-serif" font-size="13" font-weight="bold" fill="#b45309">1</text>
+  
+  <!-- Alert details -->
+  <text x="35" y="270" font-family="Arial, sans-serif" font-size="14" font-weight="bold" fill="#1a1a2e">PO#22491 | Daniels &#8594; Frankfurt</text>
+  <text x="35" y="293" font-family="Arial, sans-serif" font-size="12" fill="#666">Cut-off is tomorrow (Apr 12 noon) — confirm cargo delivery</text>
+  
+  <!-- Action section -->
+  <rect x="35" y="305" width="730" height="1" fill="#fef3c7"/>
+  <text x="35" y="321" font-family="Arial, sans-serif" font-size="10" font-weight="bold" fill="#b45309">Action:</text>
+  <text x="85" y="321" font-family="Arial, sans-serif" font-size="10" fill="#666">Verify truck scheduled for warehouse delivery</text>
+</svg>

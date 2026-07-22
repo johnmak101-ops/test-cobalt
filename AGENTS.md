@@ -1,5 +1,7 @@
 # Agent guide — Cobalt ShipTrack
 
+Docs hub: `docs/README.md`.
+
 Orientation for AI coding agents working in this repo.
 
 > This replaces an earlier scaffold that described a **Cloudflare Workers / Hono / D1 (SQLite)** stack.
@@ -73,7 +75,7 @@ Orientation for AI coding agents working in this repo.
   `pnpm format` (Prettier) is advisory (the repo isn't fully Prettier-formatted).
 - CI (`.github/workflows/ci.yml`) runs all of the above on push to `main` and every PR.
 - Docker smoke: `docker compose up --build` → `GET /api/health` → SPA login. Checklist:
-  `backend/docs/docker-deploy.md`. Demo walkthrough: `DEMO-SCRIPT.md` (gold = **5** spines).
+  `docs/ops/docker-deploy.md`. Demo walkthrough: `docs/demo/DEMO-SCRIPT.md` (gold = **5** spines).
 
 ## Invariants (do not break)
 
