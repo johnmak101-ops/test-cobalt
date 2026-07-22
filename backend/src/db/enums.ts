@@ -1,6 +1,6 @@
 /**
- * Shared enum value arrays — the single source of truth for both Drizzle (`{ enum: ... }`)
- * and Zod. `as const` keeps them literal so column types and validators stay in lockstep.
+ * Shared enum value arrays — single source of truth for DB columns, DTOs, and UI.
+ * `as const` keeps them literal so TypeScript stays in lockstep with migrations.
  */
 
 // ---- Shipment leg (the volatile child) ----

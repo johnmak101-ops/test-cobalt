@@ -14,7 +14,6 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:unit": "vitest run src",
-    "doctor": "nestjs-doctor .",
     "smoke": "node test/smoke.mjs",
     "db:migrate": "ts-node -P tsconfig.json src/db/migrate-cli.ts",
     "db:migrate:prod": "node dist/db/migrate-cli.js",
