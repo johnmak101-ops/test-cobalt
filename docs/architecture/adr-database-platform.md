@@ -1,3 +1,5 @@
+> **Status: COMPLETE (2026-07).** Apps run Kysely + SQL Server / Fabric. This document is retained as decision record / migration diary — do not treat open "options A/B/C" as undecided.
+
 # ADR: Database platform — PostgreSQL vs Microsoft Fabric SQL (ShipTrack + cobalt-queue)
 
 > **Status:** Proposed — needs the architect's decision. **Date:** 2026-07-09.

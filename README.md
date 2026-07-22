@@ -48,7 +48,7 @@ Backend env (`backend/.env`): `SQL_SERVER_URL`, `JWT_SECRET` (≥ 32 chars), opt
 
 ## Docker (test deploy)
 
-Full checklist: **[docs/ops is gitignored for client materials — use `backend/docs/docker-deploy.md`](backend/docs/docker-deploy.md)**.
+Full checklist: **[docs/ops/docker-deploy.md](docs/ops/docker-deploy.md)**.
 
 ```bash
 docker compose up --build -d
@@ -62,7 +62,7 @@ Compose starts **SQL Server + app** (migrate + optional seed on boot). Point cob
 
 **DEMO gold (with queue rematch):** expect **5** shipment spines (Set1 sea, two Set5 air HAWBs,
 Set6 sea + Set6 air). Packing-line ids (`31900…`) must not appear as incomplete shells.
-See [DEMO-SCRIPT.md](DEMO-SCRIPT.md).
+See [docs/demo/DEMO-SCRIPT.md](docs/demo/DEMO-SCRIPT.md).
 
 ## Project structure
 
@@ -72,7 +72,7 @@ See [DEMO-SCRIPT.md](DEMO-SCRIPT.md).
 ├── backend/             # NestJS API (+ SPA when STATIC_ROOT set)
 │   ├── src/db/kysely-migrations/
 │   └── docs/            # ops notes (Fabric SQL, booking gap, docker)
-├── DEMO-SCRIPT.md       # customer walkthrough
+├── docs/demo/          # customer DEMO walkthrough
 ├── docker-compose.yml   # SQL + app image
 └── package.json         # pnpm workspace root
 ```
