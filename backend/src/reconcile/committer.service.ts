@@ -31,7 +31,7 @@ import {
   strongKeysConflict,
 } from './committer-match'
 import { aliasMapsFromFacts, MasterResolver } from './committer-master-resolver'
-import { planPoReconcile, mergeReviewReasonsWithDataIssues } from './committer-po-reconciler'
+import { planPoReconcile, mergeReviewReasonsWithDataIssues, type SiblingPoHbl } from './committer-po-reconciler'
 import { MilestoneSynchronizer } from './committer-milestones'
 import { isAuditedBookingFill } from './fill-booking-audit'
 import { collectSourceEvents } from './source-events'
@@ -461,7 +461,7 @@ export class CommitterService {
 
     // Defense-in-depth for multi-HAWB splits: other candidate legs' shipment_pos + HBL. One bulk
     // query over already-indexed candidates — empty when no siblings (Set1 single-leg unchanged).
-    const siblingPoHbls: { po: string; hbl: string }[] = []
+    const siblingPoHbls: SiblingPoHbl[] = []
     if (g.pos.length && legs.length) {
       const otherIds = legs.filter((l) => l.id !== shipmentId).map((l) => l.id)
       if (otherIds.length) {
@@ -472,8 +472,9 @@ export class CommitterService {
           const hbl =
             str((leg as { hblAwbFcrNo?: unknown }).hblAwbFcrNo) ?? str(mk.hbl_awb_fcr_no)
           if (!hbl) continue
+          const legMode = str((leg as { mode?: unknown }).mode) ?? str(mk.mode)
           for (const p of posByShipment.get(leg.id) ?? []) {
-            if (p.poNumber) siblingPoHbls.push({ po: p.poNumber, hbl })
+            if (p.poNumber) siblingPoHbls.push({ po: p.poNumber, hbl, mode: legMode })
           }
         }
       }
@@ -483,7 +484,11 @@ export class CommitterService {
     // with the pre-extract loop (see committer-po-reconciler.spec).
     const { links, poQtyIssues, poFlagReasons } = planPoReconcile({
       pos: g.pos,
-      fields: f,
+      // f (=g.fields) is the Matcher's consolidated field bag — it does NOT carry mode; mode is a
+      // separate top-level decision field (dto.mode / g.mode), applied to this leg's own shipment row
+      // via normMode() above (legValues.mode). Mirror that same normalization here so the cross-mode
+      // sibling guard compares this leg against siblingPoHbls' (already normMode'd) stored mode column.
+      fields: { ...f, mode: normMode(g.mode) },
       poQty: g.poQty,
       poEnrichment,
       unattributed,

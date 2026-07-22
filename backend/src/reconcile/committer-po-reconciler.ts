@@ -26,7 +26,13 @@ export interface PoReconcilePlan {
  * Semantics match the previous inline loop in CommitterService.apply (byte-stable reason strings).
  */
 /** Other legs' PO↔HAWB claims used as defense-in-depth against cross-HAWB PO linking. */
-export type SiblingPoHbl = { po: string; hbl: string }
+export type SiblingPoHbl = { po: string; hbl: string; mode?: string | null }
+
+/** SEA_FCL / SEA_LCL are one transport family; cross-family (SEA vs AIR) is a legitimate PO split. */
+const modeFamily = (m: unknown): string | null => {
+  const s = str(m)
+  return s ? s.toUpperCase().split('_')[0]! : null
+}
 
 export function planPoReconcile(args: {
   pos: string[]
@@ -56,17 +62,24 @@ export function planPoReconcile(args: {
     poFlagReasons.push(`PO ${poNo}: demoted — packing-line/LC/invoice token, not a customer PO`)
   }
 
+  const myMode = modeFamily(fields.mode)
   for (const poNo of pos) {
-    // Defense-in-depth: queue matcher prunes cross-HAWB POs; committer also skips if a sibling
-    // shipment already owns this PO under a different HBL (multi-HAWB split / Set5).
-    if (
-      myHbl &&
-      siblings.some(
-        (s) => normKey(s.po) === normKey(poNo) && normKey(s.hbl) && normKey(s.hbl) !== myHbl,
+    // Defense-in-depth: queue matcher prunes cross-HAWB POs; committer also guards when a sibling
+    // shipment already owns this PO under a different HBL (multi-HAWB split / Set5). Set6 exception:
+    // the SAME PO legitimately rides two legs of DIFFERENT transport modes (sea 207 pcs + air 3 pcs
+    // split) — cross-mode claims LINK and flag for verification instead of silently skipping.
+    const claim = siblings.find(
+      (s) => normKey(s.po) === normKey(poNo) && normKey(s.hbl) && myHbl && normKey(s.hbl) !== myHbl,
+    )
+    if (claim) {
+      const sibMode = modeFamily(claim.mode)
+      if (!myMode || !sibMode || myMode === sibMode) {
+        poFlagReasons.push(`PO ${poNo}: exclusive to sibling HAWB — not linked`)
+        continue
+      }
+      poFlagReasons.push(
+        `PO ${poNo}: also on sibling HAWB ${claim.hbl} (cross-mode split) — linked, verify qty split`,
       )
-    ) {
-      poFlagReasons.push(`PO ${poNo}: exclusive to sibling HAWB — not linked`)
-      continue
     }
     const mapped = num(poQty?.[normKey(poNo)])
     const perPoQty = mapped ?? (pos.length === 1 ? num(fields.qty) : null)
@@ -135,6 +148,8 @@ export function isRecomputedDataIssueReason(reason: string): boolean {
   if (/^PO\s+\S+:\s*shipped .+ exceeds ordered\b/i.test(r)) return true
   // cross-HAWB PO exclusivity (planPoReconcile sibling skip)
   if (/^PO\s+\S+:\s*exclusive to sibling HAWB\b/i.test(r)) return true
+  // cross-mode sibling PO link (Set6 sea+air split — linked, needs qty verification)
+  if (/^PO\s+\S+:\s*also on sibling HAWB\b/i.test(r)) return true
   // packing-line / LC demote
   if (/^PO\s+\S+:\s*demoted — packing-line/i.test(r)) return true
   // empty cargo escalation (committer)

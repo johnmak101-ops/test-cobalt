@@ -119,6 +119,48 @@ describe('planPoReconcile (PoQtyReconciler pure plan)', () => {
     expect(plan.links.map((l) => l.poNo)).toEqual(['28739'])
   })
 
+  it('cross-MODE sibling claim links the PO and flags for verification (Set6 sea+air split)', () => {
+    const plan = planPoReconcile({
+      pos: ['1570988'],
+      fields: { qty: 3, customer_code: 'ELGC', hbl_awb_fcr_no: 'SZA26050003', mode: 'AIR' },
+      poQty: {},
+      poEnrichment: null,
+      unattributed: [],
+      gk: new Set(),
+      siblingPoHbls: [{ po: '1570988', hbl: 'SNZ260004243', mode: 'SEA_LCL' }],
+    })
+    expect(plan.links.map((l) => l.poNo)).toContain('1570988')
+    expect(plan.poFlagReasons.some((r) => /PO 1570988: also on sibling HAWB SNZ260004243 \(cross-mode split\)/i.test(r))).toBe(true)
+    expect(plan.poFlagReasons.some((r) => /exclusive to sibling HAWB/i.test(r))).toBe(false)
+  })
+
+  it('same MODE FAMILY sibling claim still skips (SEA_FCL vs SEA_LCL are one family)', () => {
+    const plan = planPoReconcile({
+      pos: ['28739'],
+      fields: { qty: 29, customer_code: 'WYSE', hbl_awb_fcr_no: 'GZL26258522', mode: 'SEA_FCL' },
+      poQty: {},
+      poEnrichment: null,
+      unattributed: [],
+      gk: new Set(),
+      siblingPoHbls: [{ po: '28739', hbl: 'GZL26261147', mode: 'SEA_LCL' }],
+    })
+    expect(plan.links.map((l) => l.poNo)).not.toContain('28739')
+    expect(plan.poFlagReasons.some((r) => /PO 28739: exclusive to sibling HAWB/i.test(r))).toBe(true)
+  })
+
+  it('missing mode on either side stays conservative (skip)', () => {
+    const plan = planPoReconcile({
+      pos: ['28739'],
+      fields: { qty: 29, hbl_awb_fcr_no: 'GZL26258522' },
+      poQty: {},
+      poEnrichment: null,
+      unattributed: [],
+      gk: new Set(),
+      siblingPoHbls: [{ po: '28739', hbl: 'GZL26261147' }],
+    })
+    expect(plan.links.map((l) => l.poNo)).not.toContain('28739')
+  })
+
   it('demotes ASNE/packing-line tokens — only real PO is linked (DEMO Set6)', () => {
     const plan = planPoReconcile({
       pos: ['1570988', 'ASNE24054844907', '319001345', '319001552', 'DF2026G031'],
@@ -159,6 +201,9 @@ describe('mergeReviewReasonsWithDataIssues (recompute, do not accumulate)', () =
     ).toBe(true)
     expect(
       isRecomputedDataIssueReason('PO 28739: exclusive to sibling HAWB — not linked'),
+    ).toBe(true)
+    expect(
+      isRecomputedDataIssueReason('PO 1570988: also on sibling HAWB SNZ260004243 (cross-mode split) — linked, verify qty split'),
     ).toBe(true)
     expect(isRecomputedDataIssueReason(masterMiss)).toBe(false)
     expect(isRecomputedDataIssueReason(gateConflict)).toBe(false)
