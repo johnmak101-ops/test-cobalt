@@ -52,6 +52,41 @@ export const GROUP_TITLE: Record<NeedsAttentionGroupId, string> = {
   other: 'Other',
 }
 
+/**
+ * "What the system already decided" notes — a record of what happened, not something needing
+ * attention, so the panel does not render them: merge/rank picks ("kept 'FAIRATE' (rank 5, n=18)"),
+ * schedule realignments ("ETD set to departure date", "CFS cut-off updated"), cut-off notes and
+ * ETD-age observations.
+ *
+ * Deliberately a list of note families, NOT the whole 'other' group: that group also holds real
+ * checks — o-seaport ("Air mode but seaport code — check"), o-new-thread ("verify booking"),
+ * o-cancel ("Booking cancelled") — and any queue reason code not yet mapped to a category falls
+ * there too. Hiding the group wholesale would silently swallow all of those, including future ones.
+ *
+ * Filtered at the rendering layer only; buildNeedsAttention still classifies them, so the data and
+ * the history behind it stay intact.
+ */
+const SYSTEM_DECISION_NOTE_PREFIXES = ['o-merge:', 'o-sched:', 'o-cutoff:', 'o-etd:']
+
+/**
+ * Matched on the humanized TEXT as well as the lineId, because these notes do not all reach a
+ * dedicated o-* branch — the rank pick and the supersede note fall through to the generic
+ * `reason:*` fallback, which is also where an unmapped queue code lands. Keying on text keeps the
+ * unmapped codes visible while still dropping the notes.
+ */
+const SYSTEM_DECISION_NOTE_TEXT: RegExp[] = [
+  /kept '[^']*' \(rank \d+, n=\d+\)/i, // majority/rank field pick
+  /^ETD set to departure date /i, // schedule realigned onto the actual
+  /^Warehouse \/ CFS cut-off updated to /i, // cut-off replaced by a later one
+  /^Warehouse cut-off kept at /i, // earliest binding cut-off retained
+  /supersedes \d{4}-\d{2}-\d{2}/i, // a dated value replaced by a newer one
+]
+
+function isSystemDecisionNote(item: Pick<NeedsAttentionItem, 'lineId' | 'text'>): boolean {
+  if (SYSTEM_DECISION_NOTE_PREFIXES.some((p) => item.lineId.startsWith(p))) return true
+  return SYSTEM_DECISION_NOTE_TEXT.some((re) => re.test(item.text))
+}
+
 export const GROUP_ORDER: NeedsAttentionGroupId[] = [
   'which_shipment',
   'real_shipment',
@@ -1655,7 +1690,7 @@ export function buildNeedsAttentionGroups(opts: {
 }): NeedsAttentionGroup[] {
   const deskMode = opts.desk ?? 'all'
   const items = buildNeedsAttention(opts).filter(
-    (it) => deskMode === 'all' || it.desk === 'decision',
+    (it) => (deskMode === 'all' || it.desk === 'decision') && !isSystemDecisionNote(it),
   )
   const byGroup = new Map<NeedsAttentionGroupId, NeedsAttentionItem[]>()
   for (const it of items) {

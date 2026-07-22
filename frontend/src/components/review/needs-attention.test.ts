@@ -24,6 +24,52 @@ describe('isNonPartyName — Master miss must never advise adding a number to Me
   })
 })
 
+describe('Other group is not rendered', () => {
+  const otherReasons = [
+    "forwarder_name: kept 'FAIRATE' (rank 5, n=18) over thread variants — majority/rank",
+    "etd: aligned to ATD 2026-02-17 after sail (was booking/pre-sail '2026-02-13')",
+    'warehouse_end_date: 2026-03-02 18:00 supersedes 2026-02-02 18:00',
+  ]
+
+  it('omits the Other group from the rendered groups', () => {
+    const groups = buildNeedsAttentionGroups({ conflictsCount: 0, riskFlags: [], reviewReasons: otherReasons })
+    expect(groups.some((g) => g.groupId === 'other')).toBe(false)
+    expect(groups.some((g) => g.title === 'Other')).toBe(false)
+  })
+
+  it('still classifies them internally — only the rendering drops them', () => {
+    const items = buildNeedsAttention({ conflictsCount: 0, riskFlags: [], reviewReasons: otherReasons })
+    expect(items.some((i) => i.groupId === 'other')).toBe(true)
+  })
+
+  it('still surfaces a REAL check that lives in Other — the group is not hidden wholesale', () => {
+    const groups = buildNeedsAttentionGroups({
+      conflictsCount: 0,
+      riskFlags: [],
+      // o-seaport: "Air mode but seaport code — check airport vs seaport" is an action, not a note
+      reviewReasons: [...otherReasons, 'mode Air but pol is a seaport UN/LOCODE'],
+    })
+    const other = groups.find((g) => g.groupId === 'other')
+    expect(other).toBeTruthy()
+    expect(other!.items.map((i) => i.lineId)).toEqual(['o-seaport'])
+    // …and none of the three system-decision notes came with it
+    expect(other!.items.some((i) => /FAIRATE|ETD set to departure|cut-off updated/i.test(i.text))).toBe(false)
+  })
+
+  it('leaves every actionable group untouched', () => {
+    const groups = buildNeedsAttentionGroups({
+      conflictsCount: 0,
+      riskFlags: [
+        { code: 'AMBIGUOUS_MATCH', severity: 'high', message: 'This email matched more than one existing leg.' },
+      ],
+      reviewReasons: [...otherReasons, 'vendor "Rose Knit" did not exact-match a master'],
+    })
+    expect(groups.map((g) => g.groupId)).toContain('which_shipment')
+    expect(groups.map((g) => g.groupId)).toContain('master_miss')
+    expect(groups.map((g) => g.groupId)).not.toContain('other')
+  })
+})
+
 describe('Master miss — numeric party names are filtered out', () => {
   const miss = (name: string) => `vendor "${name}" did not exact-match a master`
 
