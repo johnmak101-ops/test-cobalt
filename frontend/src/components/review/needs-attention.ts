@@ -437,6 +437,28 @@ function meshPartyLineId(name: string): string {
   return `m-party:${normalizeMeshPartyKey(name)}`
 }
 
+/**
+ * A "party" carrying no letter in ANY script is not a company — it is a PO / booking / container
+ * number that leaked into a party field upstream. Master miss tells ops to "add in Mesh", which is
+ * unactionable for a number, so such values are dropped from that group rather than shown.
+ * `\p{L}` keeps CJK names (南海制衣) and letter+digit brands (3M, 7-Eleven).
+ * The value itself is untouched on the leg — this only filters the Mesh-add advice.
+ * Twin of isNonPartyName in backend/src/decisions/critic-review.types.ts — keep in step.
+ */
+export function isNonPartyName(raw: string | null | undefined): boolean {
+  return !/\p{L}/u.test(String(raw ?? ''))
+}
+
+/** Drop Mesh party misses whose name is a bare number, before single/collapsed lines are built. */
+function dropNumericMeshParties(byLine: Map<string, NeedsAttentionItem>): void {
+  for (const k of [...byLine.keys()]) {
+    if (!k.startsWith('m-party:')) continue
+    const item = byLine.get(k)!
+    const name = extractMeshDisplayName(item) ?? k.slice('m-party:'.length)
+    if (isNonPartyName(name)) byLine.delete(k)
+  }
+}
+
 /** Prefer mixed/title case over shouting ALL CAPS for display. */
 function preferMeshDisplayName(a: string, b: string): string {
   const aShout = a === a.toUpperCase() && /[A-Z]/.test(a)
@@ -1605,6 +1627,7 @@ export function buildNeedsAttention(opts: {
   }
 
   collapseGenericPort(byLine)
+  dropNumericMeshParties(byLine)
   collapseMeshParties(byLine)
   collapseMeshPorts(byLine)
   collapsePoOnlyAndReassign(byLine)

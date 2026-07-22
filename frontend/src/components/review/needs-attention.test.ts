@@ -7,7 +7,61 @@ import {
   looksLikeCountryToken,
   countryOnlyPortMissText,
   weakIdentityText,
+  isNonPartyName,
 } from './needs-attention'
+
+describe('isNonPartyName — Master miss must never advise adding a number to Mesh', () => {
+  it('rejects values with no letter in any script', () => {
+    for (const junk of ['12345', '123-456', '1234 5678', '2026-02-17', '  987  ', '#4412', '-', '']) {
+      expect(isNonPartyName(junk)).toBe(true)
+    }
+  })
+
+  it('keeps real company names, including CJK and letter+digit brands', () => {
+    for (const name of ['Expeditors', 'FAIRATE', '3M', '7-Eleven', 'Rose Knit', '南海制衣', '南海製衣']) {
+      expect(isNonPartyName(name)).toBe(false)
+    }
+  })
+})
+
+describe('Master miss — numeric party names are filtered out', () => {
+  const miss = (name: string) => `vendor "${name}" did not exact-match a master`
+
+  it('drops a numeric-only party instead of showing it as a Mesh miss', () => {
+    const items = buildNeedsAttention({
+      conflictsCount: 0,
+      riskFlags: [],
+      reviewReasons: [miss('4483262')],
+    })
+    expect(items.some((i) => i.groupId === 'master_miss')).toBe(false)
+  })
+
+  it('keeps the real party when a numeric one sits beside it (count excludes the number)', () => {
+    const items = buildNeedsAttention({
+      conflictsCount: 0,
+      riskFlags: [],
+      reviewReasons: [miss('4483262'), miss('Rose Knit')],
+    })
+    const master = items.filter((i) => i.groupId === 'master_miss')
+    expect(master).toHaveLength(1)
+    expect(master[0]!.text).toContain('Rose Knit')
+    expect(master[0]!.text).not.toContain('4483262')
+    // one real name left → stays a single line, never "2 parties not found"
+    expect(master[0]!.text).not.toMatch(/\d+ parties not found/)
+  })
+
+  it('collapses only the real parties when several numbers are mixed in', () => {
+    const items = buildNeedsAttention({
+      conflictsCount: 0,
+      riskFlags: [],
+      reviewReasons: [miss('4483262'), miss('Rose Knit'), miss('998877'), miss('Expeditors')],
+    })
+    const master = items.filter((i) => i.groupId === 'master_miss')
+    expect(master).toHaveLength(1)
+    expect(master[0]!.text).toBe('2 parties not found in Mesh Database — advise add in Mesh.')
+    expect(master[0]!.details).toEqual(['Expeditors', 'Rose Knit'])
+  })
+})
 
 describe('buildNeedsAttention / groups', () => {
   it('suppresses conflict lines when conflict table is present', () => {

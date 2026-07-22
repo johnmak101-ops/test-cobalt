@@ -40,6 +40,37 @@ describe('aggregateMisses', () => {
     expect(recurred[0]!.status).toBe('recurred')
   })
 
+  // A PO/booking number leaking into a party field is not a Mesh-add candidate — the worklist tells
+  // ops to add the name in Mesh, which is unactionable for a bare number.
+  it('drops numeric-only party names, keeping real ones from the same leg', () => {
+    const rows = aggregateMisses(
+      [
+        leg('s1', '2026-07-01T00:00:00Z', [
+          { type: 'vendor', rawName: '4483262', field: 'vendor' },
+          { type: 'vendor', rawName: '123-456', field: 'vendor' },
+          { type: 'vendor', rawName: '2026-02-17', field: 'vendor' },
+          { type: 'vendor', rawName: 'Rose Knit', field: 'vendor' },
+        ]),
+      ],
+      [],
+    )
+    expect(rows).toHaveLength(1)
+    expect(rows[0]!.rawName).toBe('Rose Knit')
+  })
+
+  it('keeps CJK and letter+digit brand names', () => {
+    const rows = aggregateMisses(
+      [
+        leg('s1', '2026-07-01T00:00:00Z', [
+          { type: 'vendor', rawName: '南海制衣', field: 'vendor' },
+          { type: 'forwarder', rawName: '3M', field: 'forwarder' },
+        ]),
+      ],
+      [],
+    )
+    expect(rows.map((r) => r.rawName).sort()).toEqual(['3M', '南海制衣'])
+  })
+
   it('ignores legs without masterMisses and unparsable JSON', () => {
     expect(
       aggregateMisses(
