@@ -8,9 +8,6 @@ export class AlertsService {
   list(status?: string) {
     return this.repo.list(status)
   }
-  rules() {
-    return this.repo.allRules()
-  }
   dismiss(id: string) {
     return this.setStatus(id, 'DISMISSED', { dismissedAt: new Date() })
   }

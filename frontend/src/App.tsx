@@ -10,7 +10,6 @@ import ShipmentTrackerPage from './pages/ShipmentTrackerPage'
 import ShipmentDetailPage from './pages/ShipmentDetailPage'
 import InboxPage from './pages/InboxPage'
 import AlertsPage from './pages/AlertsPage'
-import AlertRulesPage from './pages/AlertRulesPage'
 import SettingsPage from './pages/SettingsPage'
 import { PageAccessRoute } from './components/PageAccessRoute'
 import ReviewQueuePage from './pages/ReviewQueuePage'
@@ -129,10 +128,11 @@ function AppRoutes() {
         <Route path="/review-queue" element={<ReviewQueuePage />} />
         <Route path="/review-queue/:id" element={<ShipmentReviewFocusPage />} />
         <Route path="/alerts" element={<AlertsPage />} />
+        {/* Standalone /alerts/rules editor removed — Settings → Alert Rules is the single editor; redirect bookmarks. */}
+        <Route path="/alerts/rules" element={<Navigate to="/settings/alerts" replace />} />
+        <Route path="/settings" element={<SuperadminRoute><SettingsPage /></SuperadminRoute>} />
         {/* Alert Rules access (view + save) is governed by the Access Control matrix ('alert_rules');
             the backend @PageRead/@PageWrite guard is authoritative, this gates the UI + editability. */}
-        <Route path="/alerts/rules" element={<PageAccessRoute page="alert_rules"><AlertRulesPage /></PageAccessRoute>} />
-        <Route path="/settings" element={<SuperadminRoute><SettingsPage /></SuperadminRoute>} />
         <Route path="/settings/alerts" element={<PageAccessRoute page="alert_rules"><SettingsPage /></PageAccessRoute>} />
         {/* Vendors settings removed (#127) — Mesh mirror only; redirect bookmarks. */}
         <Route path="/settings/vendors" element={<Navigate to="/settings" replace />} />
