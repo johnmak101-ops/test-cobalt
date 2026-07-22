@@ -15,7 +15,7 @@ export interface Rule {
   /** so | draft_bl | final_bl | telex | sailed | invoice | delivered */
   watchFor: string
   thresholdHours: number // default fallback (hours)
-  countryThresholds?: Record<string, number> | null // per-origin-country hour overrides (CN/BD/KH/VN/IN)
+  countryThresholds?: Record<string, number> | null // per-origin-country hour overrides (CN/BD/KH)
   severity: string
   enabled: boolean
 }

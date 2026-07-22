@@ -89,14 +89,25 @@ describe('AlertRulesSettings — single-severity cards', () => {
     const user = userEvent.setup()
     renderWithClient(<AlertRulesSettings />)
     await screen.findByText('No Final BOL received')
-    const vn = screen.getByRole('group', { name: 'No Final BOL received — Vietnam days after ETD' })
-    await user.click(within(vn).getByRole('button', { name: /increase days/i }))
+    const kh = screen.getByRole('group', { name: 'No Final BOL received — Cambodia days after ETD' })
+    await user.click(within(kh).getByRole('button', { name: /increase days/i }))
     await user.click(screen.getByRole('button', { name: /save changes/i }))
     await waitFor(() => expect(api.put).toHaveBeenCalledOnce())
     const body = vi.mocked(api.put).mock.calls[0][1] as { rules: Array<Record<string, unknown>> }
-    expect(body.rules.find((r) => r.id === 'A3')!.countryThresholds).toEqual({ VN: 1 })
+    expect(body.rules.find((r) => r.id === 'A3')!.countryThresholds).toEqual({ KH: 1 })
     // the other rule keeps its own (empty) override map — overrides are per-rule
     expect(body.rules.find((r) => r.id === 'A1')!.countryThresholds).toBeNull()
+  })
+
+  it('offers China, Bangladesh and Cambodia only', async () => {
+    renderWithClient(<AlertRulesSettings />)
+    await screen.findByText('No Draft BOL received')
+    for (const country of ['China', 'Bangladesh', 'Cambodia']) {
+      expect(screen.getAllByRole('group', { name: new RegExp(`${country} days after ETD`) })).toHaveLength(2)
+    }
+    for (const dropped of ['Vietnam', 'India']) {
+      expect(screen.queryByText(dropped)).toBeNull()
+    }
   })
 
   it('Reset to defaults asks for confirmation then POSTs the reset endpoint', async () => {

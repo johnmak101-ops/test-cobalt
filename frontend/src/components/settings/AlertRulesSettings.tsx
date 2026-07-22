@@ -32,8 +32,6 @@ const ALERT_COUNTRY_LIST = [
   { code: 'CN', label: 'China' },
   { code: 'BD', label: 'Bangladesh' },
   { code: 'KH', label: 'Cambodia' },
-  { code: 'VN', label: 'Vietnam' },
-  { code: 'IN', label: 'India' },
 ]
 
 function normalizeRules(rules: AlertRule[]): AlertRule[] {
@@ -260,11 +258,12 @@ export function AlertRulesSettings() {
               <div className="mb-3">
                 <p className="text-xs font-semibold text-text-secondary">Country of origin (custom days)</p>
                 <p className="mt-0.5 text-[11px] text-text-muted">
-                  Overrides this rule’s days-after-ETD threshold when the shipment’s origin matches. Tap −
-                  until <span className="font-medium">Default</span> to inherit.
+                  Overrides this rule’s days-after-ETD threshold when the shipment’s origin matches.
+                  China, Bangladesh, Cambodia only. Tap − until{' '}
+                  <span className="font-medium">Default</span> to inherit.
                 </p>
               </div>
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                 {ALERT_COUNTRY_LIST.map((country) => {
                   const raw = rule.countryThresholds?.[country.code]
                   const days = typeof raw === 'number' && raw > 0 ? raw : null

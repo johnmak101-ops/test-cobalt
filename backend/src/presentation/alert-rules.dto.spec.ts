@@ -15,7 +15,7 @@ describe('SaveAlertRulesDto + global ValidationPipe(transform, whitelist)', () =
             thresholdDays: 2,
             severity: 'INFO',
             enabled: true,
-            countryThresholds: { CN: 3, VN: 4 },
+            countryThresholds: { CN: 3, BD: 4 },
             name: 'client junk',
             locked: false,
             state: 'BOOKED',
@@ -24,7 +24,7 @@ describe('SaveAlertRulesDto + global ValidationPipe(transform, whitelist)', () =
       },
       meta,
     )) as SaveAlertRulesDto
-    expect(out.rules[0].countryThresholds).toEqual({ CN: 3, VN: 4 })
+    expect(out.rules[0].countryThresholds).toEqual({ CN: 3, BD: 4 })
     expect(out.rules[0]).not.toHaveProperty('name')
     expect(out.rules[0]).not.toHaveProperty('locked')
     expect(out.rules[0]).not.toHaveProperty('state')

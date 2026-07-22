@@ -52,7 +52,8 @@ export const ALERT_RULE_FACTORY_DEFAULTS: AlertRuleFactoryRow[] = [
   },
 ]
 
-export const ALERT_COUNTRY_CODES = ['CN', 'BD', 'KH', 'VN', 'IN'] as const
+/** Origin countries that may carry a per-rule threshold override. Anything else is dropped on save. */
+export const ALERT_COUNTRY_CODES = ['CN', 'BD', 'KH'] as const
 
 /** The critical tiers of the old warn/critical pairs — retired (disabled + locked), never deleted. */
 export const RETIRED_ALERT_RULE_IDS = ['A2', 'A4'] as const

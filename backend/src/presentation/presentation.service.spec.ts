@@ -450,10 +450,14 @@ describe('PresentationService.alerts + alertRules', () => {
     expect(calls.updateRule).toHaveLength(0)
   })
 
-  it('saveAlertRules sanitizes country overrides (codes CN/BD/KH/VN/IN, 1-30 days, stored in hours)', async () => {
+  // Codes are CN/BD/KH only — VN/IN were dropped from the product. A valid-looking VN/IN value must
+  // still be rejected server-side, not just hidden by the UI.
+  it('saveAlertRules sanitizes country overrides (codes CN/BD/KH, 1-30 days, stored in hours)', async () => {
     const { svc, calls } = buildSaveHarness([serverRule()])
     await svc.saveAlertRules({
-      rules: [{ id: 'A1', countryThresholds: { CN: 3, BD: 7, XX: 5, VN: 0, IN: 31 } as Record<string, number> }],
+      rules: [
+        { id: 'A1', countryThresholds: { CN: 3, BD: 7, XX: 5, VN: 4, IN: 6, KH: 31 } as Record<string, number> },
+      ],
     })
     expect(JSON.parse(String(calls.updateRule[0].patch.countryThresholds))).toEqual({ CN: 72, BD: 168 })
   })
