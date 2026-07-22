@@ -87,3 +87,8 @@ _dev.log
 /docs/Materials from client/
 /docs/sample shiptrack emails/
 /docs/VM Spec/
+/docs/track-system-build-plan.md
+/docs/designs/
+/docs/diagrams/*mockup*
+/docs/diagrams/*.png
+/docs/diagrams/*.drawio*
