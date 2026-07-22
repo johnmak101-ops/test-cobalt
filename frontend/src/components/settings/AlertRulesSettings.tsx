@@ -263,7 +263,10 @@ export function AlertRulesSettings() {
                   <span className="font-medium">Default</span> to inherit.
                 </p>
               </div>
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              {/* auto-fit, not a breakpoint: a tile needs 32px padding + the 168px fixed-width
+                  DaysStepper + room for the label, so columns may only form at >=272px. sm:grid-cols-3
+                  split at 640px and the un-shrinkable stepper then overflowed onto the next tile. */}
+              <div className="grid grid-cols-[repeat(auto-fit,minmax(min(272px,100%),1fr))] gap-3">
                 {ALERT_COUNTRY_LIST.map((country) => {
                   const raw = rule.countryThresholds?.[country.code]
                   const days = typeof raw === 'number' && raw > 0 ? raw : null
