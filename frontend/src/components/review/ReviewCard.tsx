@@ -587,7 +587,11 @@ export function ReviewCard({
           no Action column — Approved/Rejected still keep row-level Open). */}
       {(expanded || embedded) && (
         <div className={cn('space-y-3 px-3 pb-3 pt-3', !embedded && 'border-t border-border')}>
-          {needsAttentionGroups.length > 0 && (
+          {/* Needs attention is a triage PROMPT — once the item is resolved (Approved/Rejected views,
+              or any non-provisional shipment) it has been answered, so it stops being shown rather
+              than following the leg around as history. The reasons stay on the leg and in the
+              shipment history; only the prompt goes. */}
+          {!readOnly && needsAttentionGroups.length > 0 && (
             <div
               className={cn(
                 REVIEW_PANEL,
