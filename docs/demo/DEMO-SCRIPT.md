@@ -33,5 +33,5 @@ Same PO `1570988` on sea **and** air is correct (mode split).
 
 ## Ops notes
 
-- Booking mail that never hit the Graph inbox cannot be recovered by poll alone — see `backend/docs/booking-ingestion-gap.md`.
-- Docker smoke: `backend/docs/docker-deploy.md`.
+- Booking mail that never hit the Graph inbox cannot be recovered by poll alone — see `docs/ops/booking-ingestion-gap.md`.
+- Docker smoke: `docs/ops/docker-deploy.md`.
