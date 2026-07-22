@@ -18,6 +18,10 @@ export default tseslint.config(
       'backend/drizzle/**',
       'backend/test/smoke.mjs',
       'eslint.config.mjs',
+      // local one-shot ops scripts (not part of the app package surface)
+      'backend/_*.js',
+      'backend/_*.ts',
+      'backend/src/dev/**',
     ],
   },
   js.configs.recommended,

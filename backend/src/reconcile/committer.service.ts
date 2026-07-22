@@ -461,7 +461,7 @@ export class CommitterService {
 
     // Defense-in-depth for multi-HAWB splits: other candidate legs' shipment_pos + HBL. One bulk
     // query over already-indexed candidates — empty when no siblings (Set1 single-leg unchanged).
-    let siblingPoHbls: { po: string; hbl: string }[] = []
+    const siblingPoHbls: { po: string; hbl: string }[] = []
     if (g.pos.length && legs.length) {
       const otherIds = legs.filter((l) => l.id !== shipmentId).map((l) => l.id)
       if (otherIds.length) {

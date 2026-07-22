@@ -3,7 +3,6 @@ import { describe, it, expect } from 'vitest'
 import type { CriticConflict } from './critic-review'
 import {
   normalizeQty,
-  isQtyConflict,
   isQtySettled,
   filterActionableConflicts,
   poShipmentTotalFromLinked,

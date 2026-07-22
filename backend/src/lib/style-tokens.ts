@@ -83,12 +83,12 @@ export function isStyleCodeToken(token: string): boolean {
     }
   }
   // Pure CJK product description (女装针织长袖套头衫) — no Latin/digit style code
-  if (/^[\u4e00-\u9fff\u3000-\u303f\uff00-\uffef\s、，,·\-]+$/u.test(t) && !/[A-Za-z0-9]/.test(t)) {
+  if (/^[\u4e00-\u9fff\u3000-\u303f\uff00-\uffef\s、，,·-]+$/u.test(t) && !/[A-Za-z0-9]/.test(t)) {
     return false
   }
   // Style-code shapes: letter+digit, digit+letter, C###, slash pairs with alnum
-  if (/^[A-Z]{1,6}\d{2,}[A-Z0-9\-\/]*$/i.test(t)) return true // C198, PUH26BHALE, C031AD13
-  if (/^\d{3,}[A-Z][A-Z0-9\-\/]*$/i.test(t)) return true
+  if (/^[A-Z]{1,6}\d{2,}[A-Z0-9/-]*$/i.test(t)) return true // C198, PUH26BHALE, C031AD13
+  if (/^\d{3,}[A-Z][A-Z0-9/-]*$/i.test(t)) return true
   if (/^[A-Z0-9]{2,}\/[A-Z0-9]{2,}/i.test(t)) return true // 56571/SS26SW022
   if (/\d/.test(t) && /[A-Za-z]/.test(t) && t.length >= 3 && t.length <= 32) return true
   // Pure multi-digit article (106454) often used as style on customs

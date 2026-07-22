@@ -111,8 +111,13 @@ export function ReviewPoStylesSection({
   const prevEditing = useRef(false)
   const draftsRef = useRef(drafts)
   const linkedRef = useRef(linkedPOs)
-  draftsRef.current = drafts
-  linkedRef.current = linkedPOs
+
+  useEffect(() => {
+    draftsRef.current = drafts
+  }, [drafts])
+  useEffect(() => {
+    linkedRef.current = linkedPOs
+  }, [linkedPOs])
 
   const busy =
     create.isPending || update.isPending || unlink.isPending || link.isPending

@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { useId, useMemo, useRef, useState } from 'react'
+import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { api } from '../../lib/api'
 import { Card } from '../ui/Card'
 import { cn } from '../../lib/utils'
@@ -91,7 +91,9 @@ export function AlertRulesSettings() {
   // Full list for save (includes locked A7 if present — we never drop it).
   const allRules = draft ?? serverRules ?? []
   const allRulesRef = useRef(allRules)
-  allRulesRef.current = allRules
+  useEffect(() => {
+    allRulesRef.current = allRules
+  }, [allRules])
   const dirty = draft !== null
 
   const saveRules = useMutation({
