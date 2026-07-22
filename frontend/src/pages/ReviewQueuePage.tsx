@@ -19,12 +19,6 @@ import { ReviewCard } from '../components/review/ReviewCard'
 import { Pagination, usePagination, PageSizeSelect } from '../components/ui/Pagination'
 import { toast } from '../components/ui/Toast'
 import { cn, formatRelativeTime } from '../lib/utils'
-import {
-  categoriesOf,
-  CATEGORY_LABEL,
-  CATEGORY_ORDER,
-  type ReasonCategory,
-} from '../lib/review-reasons'
 import { mapCriticFieldsToColumns } from '../lib/review-fields'
 import {
   decisionPhrase,
@@ -35,18 +29,16 @@ import { isShadowEligible } from '../lib/shadow-lane'
 
 
 
-/** Filter / expand state that often transitions together (view switch clears category, page). */
+/** Filter / expand state that often transitions together (a view switch resets page + expansion). */
 type QueueUiState = {
   view: ReviewQueueView
   page: number
-  category: ReasonCategory | 'all'
   expandedId: string | null
   staleBanner: string | null
 }
 
 type QueueUiAction =
   | { type: 'switchView'; view: ReviewQueueView }
-  | { type: 'pickCategory'; category: ReasonCategory | 'all' }
   | { type: 'setPage'; page: number }
   | { type: 'setExpandedId'; id: string | null }
   | { type: 'setStaleBanner'; msg: string | null }
@@ -57,12 +49,9 @@ function queueUiReducer(state: QueueUiState, action: QueueUiAction): QueueUiStat
       return {
         view: action.view,
         page: 1,
-        category: 'all',
         expandedId: null,
         staleBanner: null,
       }
-    case 'pickCategory':
-      return { ...state, category: action.category, page: 1 }
     case 'setPage':
       return { ...state, page: action.page }
     case 'setExpandedId':
@@ -160,11 +149,10 @@ export default function ReviewQueuePage() {
   const [ui, dispatch] = useReducer(queueUiReducer, {
     view: 'active' as ReviewQueueView,
     page: 1,
-    category: 'all' as ReasonCategory | 'all',
     expandedId: (location.state as { expandId?: string } | null)?.expandId ?? null,
     staleBanner: null as string | null,
   })
-  const { view, page, category, expandedId, staleBanner } = ui
+  const { view, page, expandedId, staleBanner } = ui
   const { data, isLoading, isError, refetch } = useReviewQueue(view)
   const { data: counts } = useReviewCounts()
   const confirmMutation = useConfirmShipment()
@@ -177,22 +165,10 @@ export default function ReviewQueuePage() {
 
   const shipments = useMemo(() => data?.shipments ?? [], [data?.shipments])
 
-  // Chip counts over the CURRENT view (a shipment counts once per category it carries).
-  const categoryCounts = useMemo(() => {
-    const m = new Map<ReasonCategory, number>()
-    for (const s of shipments) for (const c of categoriesOf(s.reviewReasons)) m.set(c, (m.get(c) ?? 0) + 1)
-    return m
-  }, [shipments])
-
-  const filtered = useMemo(
-    () => (category === 'all' ? shipments : shipments.filter((s) => categoriesOf(s.reviewReasons).has(category))),
-    [shipments, category],
-  )
-  const { totalItems, totalPages, pageSize, getPage } = usePagination(filtered, perPage)
+  const { totalItems, totalPages, pageSize, getPage } = usePagination(shipments, perPage)
   const pageShipments = getPage(page)
 
   const switchView = (v: ReviewQueueView) => dispatch({ type: 'switchView', view: v })
-  const pickCategory = (c: ReasonCategory | 'all') => dispatch({ type: 'pickCategory', category: c })
   const setPage = (p: number) => dispatch({ type: 'setPage', page: p })
   const setExpandedId = (id: string | null) => dispatch({ type: 'setExpandedId', id })
   const setStaleBanner = (msg: string | null) => dispatch({ type: 'setStaleBanner', msg })
@@ -272,11 +248,7 @@ export default function ReviewQueuePage() {
   const colSpan = isActiveView ? 5 : 6
 
   const emptyCopy = (): string => {
-    if (isActiveView) {
-      return category === 'all'
-        ? 'No shipments awaiting review.'
-        : `No active items in “${CATEGORY_LABEL[category as ReasonCategory]}”.`
-    }
+    if (isActiveView) return 'No shipments awaiting review.'
     if (isRejectedView) return 'No rejected items.'
     return 'No approved critic-reviewed shipments yet.'
   }
@@ -289,30 +261,6 @@ export default function ReviewQueuePage() {
           <h1 className="text-lg font-semibold text-text-primary">Review Queue</h1>
         </div>
         <div className="flex shrink-0 flex-wrap items-center gap-2">
-          {/* View tabs — Active | Rejected | Approved */}
-          <div className="flex overflow-hidden rounded-lg border border-border">
-            {(
-              [
-                { key: 'active' as const, label: `Active${counts ? ` (${counts.provisional})` : ''}` },
-                { key: 'rejected' as const, label: `Rejected${counts ? ` (${counts.dismissed})` : ''}` },
-                { key: 'approved' as const, label: 'Approved' },
-              ] as const
-            ).map((t) => (
-              <button
-                type="button"
-                key={t.key}
-                onClick={() => switchView(t.key)}
-                className={cn(
-                  'whitespace-nowrap px-3 py-1.5 text-xs font-medium transition-colors',
-                  view === t.key
-                    ? 'bg-cobalt-primary text-white'
-                    : 'bg-surface-800 text-text-secondary hover:bg-surface-700 hover:text-text-primary',
-                )}
-              >
-                {t.label}
-              </button>
-            ))}
-          </div>
           <PageSizeSelect value={perPage} onChange={(size) => { setPerPage(size); setPage(1) }} />
         </div>
       </div>
@@ -323,39 +271,31 @@ export default function ReviewQueuePage() {
         </div>
       )}
 
-      {/* Reason-category filter chips (degrade gracefully when reasons empty) */}
-      <div className="flex flex-wrap items-center gap-1.5">
-        <button
-          type="button"
-          onClick={() => pickCategory('all')}
-          className={cn(
-            'rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors',
-            category === 'all'
-              ? 'border-cobalt-primary bg-cobalt-primary/15 text-cobalt-primary-light'
-              : 'border-border bg-surface-800 text-text-secondary hover:text-text-primary',
-          )}
-        >
-          All ({shipments.length})
-        </button>
-        {CATEGORY_ORDER.flatMap((c) => {
-          const count = categoryCounts.get(c) ?? 0
-          if (count <= 0) return []
-          return [
-            <button
-              type="button"
-              key={c}
-              onClick={() => pickCategory(c)}
-              className={cn(
-                'rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors',
-                category === c
-                  ? 'border-cobalt-primary bg-cobalt-primary/15 text-cobalt-primary-light'
-                  : 'border-border bg-surface-800 text-text-secondary hover:text-text-primary',
-              )}
-            >
-              {CATEGORY_LABEL[c]} ({count})
-            </button>,
-          ]
-        })}
+      {/* View filter — Active | Rejected | Approved. These replaced the reason-category chips that
+          used to sit here; the reason breakdown is on each row's own Needs attention. */}
+      <div className="flex flex-wrap items-center gap-1.5" data-testid="review-view-filter">
+        {(
+          [
+            { key: 'active' as const, label: `Active${counts ? ` (${counts.provisional})` : ''}` },
+            { key: 'rejected' as const, label: `Rejected${counts ? ` (${counts.dismissed})` : ''}` },
+            { key: 'approved' as const, label: 'Approved' },
+          ] as const
+        ).map((t) => (
+          <button
+            type="button"
+            key={t.key}
+            onClick={() => switchView(t.key)}
+            aria-pressed={view === t.key}
+            className={cn(
+              'rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors',
+              view === t.key
+                ? 'border-cobalt-primary bg-cobalt-primary/15 text-cobalt-primary-light'
+                : 'border-border bg-surface-800 text-text-secondary hover:text-text-primary',
+            )}
+          >
+            {t.label}
+          </button>
+        ))}
       </div>
 
       {isLoading ? (
