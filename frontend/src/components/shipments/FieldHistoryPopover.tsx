@@ -7,10 +7,10 @@ import {
   type ReactNode,
 } from 'react'
 import { createPortal } from 'react-dom'
-import { Clock, ArrowRight } from 'lucide-react'
+import { Clock, ArrowRight, ExternalLink } from 'lucide-react'
 import { formatDateTime } from '../../lib/utils'
 import type { HistoryEntry } from '../../hooks/use-shipment-history'
-import { formatFieldValue, sourceLabels } from './ShipmentHistoryTimeline'
+import { formatFieldValue, openSourceEmail, sourceLabels } from './ShipmentHistoryTimeline'
 
 /**
  * Order Details reads a field's change history from here (indexed by canonical leg column) instead
@@ -127,6 +127,21 @@ export function FieldHistoryPopover({
                   <div className="mt-0.5 text-[11px] text-text-muted">
                     {sourceLabels[e.sourceType] ?? e.sourceType} · {formatDateTime(e.changedAt)}
                   </div>
+                  {/* Peek the email this value came from — same reading pane as the history timeline.
+                      The panel keeps itself open on hover, so the link is reachable from here. */}
+                  {e.sourceType === 'email' && e.sourceId && (
+                    <button
+                      type="button"
+                      data-testid="field-history-email-link"
+                      onClick={() => openSourceEmail(e.sourceId!)}
+                      title={e.notes ?? 'Open the source email'}
+                      className="mt-1 inline-flex max-w-full cursor-pointer items-center gap-1 text-left text-[11px] italic text-text-muted hover:text-cobalt-primary-light hover:underline"
+                    >
+                      {/* min-w-0: truncate only ellipsizes once the flex item may shrink */}
+                      <span className="min-w-0 truncate">{e.notes || 'View email'}</span>
+                      <ExternalLink size={10} className="shrink-0" />
+                    </button>
+                  )}
                 </div>
               ))}
             </div>

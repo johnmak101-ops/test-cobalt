@@ -25,6 +25,19 @@ export const sourceLabels = {
   system: 'System',
 }
 
+/**
+ * Open a history entry's source email in the chrome-less reading pane (/email/:id).
+ * Shared so the timeline and the Order Details field-history popover open the SAME window —
+ * the name keys the popup, so clicking the same email twice reuses one window.
+ */
+export function openSourceEmail(sourceId: string): void {
+  window.open(
+    `/email/${sourceId}?type=`,
+    `email_${sourceId}`,
+    'popup,width=880,height=940,resizable=yes,scrollbars=yes',
+  )
+}
+
 interface ShipmentHistoryTimelineProps {
   history: HistoryEntry[]
 }
@@ -101,13 +114,7 @@ export function ShipmentHistoryTimeline({ history }: ShipmentHistoryTimelineProp
               {entry.notes && entry.sourceType === 'email' && entry.sourceId ? (
                 <button
                   type="button"
-                  onClick={() =>
-                    window.open(
-                      `/email/${entry.sourceId}?type=`,
-                      `email_${entry.sourceId}`,
-                      'popup,width=880,height=940,resizable=yes,scrollbars=yes',
-                    )
-                  }
+                  onClick={() => openSourceEmail(entry.sourceId!)}
                   title="Open the source email"
                   className="mt-1 inline-flex max-w-full cursor-pointer items-center gap-1 text-left text-xs italic text-text-muted hover:text-cobalt-primary-light hover:underline"
                 >
