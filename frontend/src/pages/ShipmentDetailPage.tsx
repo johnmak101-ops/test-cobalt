@@ -13,12 +13,6 @@ import { FieldHistoryContext, FieldHistoryPopover } from '../components/shipment
 import { indexHistoryByField, historyForField } from '../lib/history-grouping'
 import { AlertCard } from '../components/alerts/AlertCard'
 import { formatDate, formatDateTime, formatDateMaybeTime, cn } from '../lib/utils'
-import {
-  buildNeedsAttentionGroups,
-  isExpandableMiss,
-  looksLikeLocode,
-} from '../components/review/needs-attention'
-import { NeedsAttentionMeshMiss } from '../components/review/NeedsAttentionMeshMiss'
 import { EDITABLE_FIELDS, fieldLabel, numericFieldWarn, dateOrderWarn, type EditableField } from '../lib/review-fields'
 import { toast } from '../components/ui/Toast'
 import { interactiveProps } from '../lib/interactive'
@@ -121,28 +115,6 @@ function displaySoNumber(shipment: {
     return `${so} · ${wh}`
   }
   return so ?? wh
-}
-
-/**
- * Turn the "see conflict table" clause into a deep-link to this shipment's focused review view.
- * The conflict comparison UI lives on ReviewCard (rendered by that view), not shipment detail.
- */
-function AttentionTextWithConflictLink({ text, shipmentId }: { text: string; shipmentId: string }) {
-  const m = text.match(/^(.*?)(see conflict table)(.*)$/i)
-  if (!m) return <>{text}</>
-  return (
-    <>
-      {m[1]}
-      <Link
-        to={`/review-queue/${shipmentId}`}
-        className="font-medium text-cobalt-primary underline-offset-2 hover:underline"
-        data-testid="conflict-table-link"
-      >
-        {m[2]}
-      </Link>
-      {m[3]}
-    </>
-  )
 }
 
 export default function ShipmentDetailPage() {
@@ -277,25 +249,6 @@ export default function ShipmentDetailPage() {
     : null
   const saveBlocked = (editedCount > 0 && !note.trim()) || hasNumericErrors || dateError != null
 
-  // Collapsed Needs attention groups (same builder as ReviewCard) — show for any shipment with items.
-  // Conflict table lives on ReviewCard (the focused review view at /review-queue/:id), not here — so
-  // we pass conflictsCount for suppress-on-card semantics, then re-surface a linked CTA below.
-  const fieldConflictCount = shipment.fieldConflicts?.length ?? 0
-  const hasPo = linkedPOs.some((p) => String(p.poNumber ?? '').trim().length > 0)
-  const attentionGroups = buildNeedsAttentionGroups({
-    reviewReasons: shipment.reviewReasons ?? [],
-    riskFlags: shipment.criticReview?.riskFlags ?? [],
-    conflictsCount: fieldConflictCount,
-    // LOCODE on polRaw/podRaw ⇒ auto-matched — hide country/city port-miss noise (VIETNAM, HCMC)
-    portsLinked: {
-      pol: looksLikeLocode(shipment.polRaw),
-      pod: looksLikeLocode(shipment.podRaw),
-    },
-    hasPo,
-  })
-  const showConflictTableCta = fieldConflictCount > 0
-  const showNeedsAttention = attentionGroups.length > 0 || showConflictTableCta
-
   return (
     <div className="space-y-6">
 
@@ -381,58 +334,9 @@ export default function ShipmentDetailPage() {
         </div>
       )}
 
-      {/* Needs attention — grouped/collapsed (same as ReviewCard); not limited to provisional.
-          "see conflict table" deep-links to this shipment's focused review view (/review-queue/:id). */}
-      {showNeedsAttention && (
-        <div
-          className="rounded-xl border border-border bg-surface-900/40 px-4 py-3"
-          data-testid="needs-attention-detail"
-        >
-          <p className="text-base font-semibold text-text-primary">Needs attention</p>
-          <div className="mt-2 space-y-3">
-            {showConflictTableCta && (
-              <div data-testid="needs-group-fields_disagree-cta">
-                <p className="text-sm font-semibold text-text-secondary">Fields disagree</p>
-                <ul className="mt-1 list-disc space-y-1.5 pl-5 text-sm leading-snug text-text-secondary">
-                  <li>
-                    {fieldConflictCount} field(s) disagree —{' '}
-                    <Link
-                      to={`/review-queue/${shipment.id}`}
-                      className="font-medium text-cobalt-primary underline-offset-2 hover:underline"
-                      data-testid="conflict-table-link"
-                    >
-                      see conflict table
-                    </Link>
-                  </li>
-                </ul>
-              </div>
-            )}
-            {attentionGroups.map((g) => (
-              <div key={g.groupId}>
-                <p className="text-sm font-semibold text-text-secondary">{g.title}</p>
-                <ul className="mt-1 list-disc space-y-1.5 pl-5 text-sm leading-snug text-text-secondary">
-                  {g.items.map((it) =>
-                    isExpandableMiss(it) ? (
-                      <NeedsAttentionMeshMiss
-                        key={it.lineId}
-                        item={it}
-                        className="-ml-5 list-none"
-                      />
-                    ) : (
-                      <li
-                        key={it.lineId}
-                        title={[it.key, ...(it.evidence ?? [])].filter(Boolean).join('\n')}
-                      >
-                        <AttentionTextWithConflictLink text={it.text} shipmentId={shipment.id} />
-                      </li>
-                    ),
-                  )}
-                </ul>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+      {/* Needs attention lives ONLY on the Review Queue (ReviewCard) — it is a triage surface, and
+          the shipment detail page is for reading and editing the shipment itself. The provisional
+          banner above still links through to the focused review view. */}
 
       {/* Alert banner */}
       {activeAlerts.length > 0 && (
