@@ -16,9 +16,7 @@ export class AlertsController {
   @Get() list(@Query('status') status?: string) {
     return this.ui.alerts(status)
   }
-  @Get('rules') rules() {
-    return this.alerts.rules()
-  }
+  // GET /alerts/rules removed — the governed GET /alert-rules (@PageRead) is the one read path.
 
   @Roles('EDITOR', 'ADMIN')
   @Post('evaluate') evaluate() {

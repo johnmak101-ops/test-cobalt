@@ -16,6 +16,8 @@ const fakeSvc = () => ({
   customers: vi.fn().mockResolvedValue({ customers: [] }),
   consignees: vi.fn().mockResolvedValue({ consignees: [] }),
   alertRules: vi.fn().mockResolvedValue({ rules: [] }),
+  saveAlertRules: vi.fn().mockResolvedValue({ rules: [], eval: null }),
+  resetAlertRules: vi.fn().mockResolvedValue({ rules: [], eval: null }),
   shipmentHistory: vi.fn().mockResolvedValue({ history: [] }),
 })
 
@@ -58,6 +60,17 @@ describe('UiAlertRulesController', () => {
   it('governs PUT /alert-rules with @PageWrite(alert_rules) and leaves no residual @Roles', () => {
     expect(new Reflector().get<string>(PAGE_WRITE_KEY, UiAlertRulesController.prototype.save)).toBe('alert_rules')
     expect(new Reflector().get(ROLES_KEY, UiAlertRulesController.prototype.save)).toBeUndefined()
+  })
+
+  it('delegates POST /alert-rules/reset to the service', async () => {
+    const svc = fakeSvc()
+    await new UiAlertRulesController(svc as any).reset()
+    expect(svc.resetAlertRules).toHaveBeenCalledOnce()
+  })
+
+  // Reset overwrites every tunable — it must sit behind the same Edit gate as save, not just JWT.
+  it('governs POST /alert-rules/reset with @PageWrite(alert_rules)', () => {
+    expect(new Reflector().get<string>(PAGE_WRITE_KEY, UiAlertRulesController.prototype.reset)).toBe('alert_rules')
   })
 })
 

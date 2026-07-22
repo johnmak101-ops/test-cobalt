@@ -33,6 +33,8 @@ import type { CriticReview } from '../decisions/critic-review.types'
 import { isHighBandAutoEligible } from '../decisions/band-routing'
 import { toUiAlert } from './mappers/alert.mapper'
 import { toUiAlertRule } from './mappers/alert-rule.mapper'
+import { SaveAlertRulesDto } from './alert-rules.dto'
+import { ALERT_COUNTRY_CODES, ALERT_RULE_FACTORY_DEFAULTS } from '../alerts/alert-rule-defaults'
 import { toUiHistoryEntry } from './mappers/history.mapper'
 import { deriveRoute, portLabel, poNumbersJson, isoOrNull } from './adapters/derive'
 import { computeFieldConflicts } from './field-conflicts'
@@ -128,6 +130,21 @@ export function buildShipmentSummary(
 // to sit at/above the 30s UI poll so repeated renders share one built maps object instead of rebuilding 24k
 // ports each time. Override with MASTER_MAPS_TTL_MS.
 const MASTER_MAPS_TTL_MS = Number(process.env.MASTER_MAPS_TTL_MS ?? 30_000)
+
+const ALERT_COUNTRY_CODE_SET = new Set<string>(ALERT_COUNTRY_CODES)
+
+/** UI days map -> stored hours map. Drops unknown codes and out-of-range values (1-30 days). */
+function sanitizeCountryThresholds(
+  ct: Record<string, number> | null | undefined,
+): Record<string, number> | null {
+  if (!ct || typeof ct !== 'object') return null
+  const out: Record<string, number> = {}
+  for (const [code, days] of Object.entries(ct)) {
+    const d = Math.round(Number(days))
+    if (ALERT_COUNTRY_CODE_SET.has(code) && Number.isFinite(d) && d >= 1 && d <= 30) out[code] = d * 24
+  }
+  return Object.keys(out).length > 0 ? out : null
+}
 
 @Injectable()
 export class PresentationService {
@@ -655,47 +672,36 @@ export class PresentationService {
     return { rules: rows.map(toUiAlertRule) }
   }
 
-  /** Persist edited alert rules. The UI works in DAYS; we store HOURS. Locked rules stay immutable.
-   *  After save, re-evaluate every active confirmed leg immediately so new thresholds apply now
+  /** Persist edited alert rules. The UI works in DAYS; we store HOURS. Locked rules stay immutable
+   *  (checked against the SERVER row — the client copy is never trusted). Severity is user-chosen
+   *  per rule (single-severity model; the old A1-A4 warn/critical pinning is gone). After save,
+   *  re-evaluate every active confirmed leg immediately so new thresholds apply now
    *  (scheduler still re-runs every ~15 minutes as a safety net). */
-  async saveAlertRules(input: { rules?: Array<Record<string, unknown>> }) {
+  async saveAlertRules(input: SaveAlertRulesDto) {
+    const existing = new Map((await this.alertRepo.allRules()).map((r) => [r.id, r]))
     for (const r of input?.rules ?? []) {
-      if (r.locked) continue // A7 etc. are locked — never mutate
-      const id = String(r.id ?? '')
-      if (!id) continue
+      const current = existing.get(r.id)
+      if (!current || current.locked) continue // retired A2/A4, built-in A7 — never mutate
       const patch: Record<string, unknown> = {}
       if (typeof r.thresholdDays === 'number') patch.thresholdHours = Math.round(r.thresholdDays * 24)
-      // Product pair severities are fixed: A1/A3 WARNING, A2/A4 CRITICAL (UI "Critical — days after ETD").
-      if (id === 'A1' || id === 'A3') patch.severity = 'WARNING'
-      else if (id === 'A2' || id === 'A4') patch.severity = 'CRITICAL'
-      else if (typeof r.severity === 'string') patch.severity = r.severity
+      if (typeof r.severity === 'string') patch.severity = r.severity
       if (typeof r.enabled === 'boolean') patch.enabled = r.enabled
-      const raw = r.countryThresholds
-      const ct = typeof raw === 'string' ? (raw ? JSON.parse(raw) : null) : (raw ?? null)
-      // country_thresholds is nvarchar(max) JSON — must stringify for tedious/MSSQL
-      // ("Validation failed for parameter … Invalid string" if an object is bound).
-      const hoursMap =
-        ct && typeof ct === 'object' && Object.keys(ct as object).length > 0
-          ? Object.fromEntries(
-              Object.entries(ct as Record<string, unknown>).map(([k, d]) => [k, Math.round(Number(d) * 24)]),
-            )
-          : null
-      patch.countryThresholds = hoursMap != null ? JSON.stringify(hoursMap) : null
-      await this.alertRepo.updateRule(id, patch)
+      if (r.countryThresholds !== undefined) {
+        // country_thresholds is nvarchar(max) JSON — must stringify for tedious/MSSQL
+        // ("Validation failed for parameter … Invalid string" if an object is bound).
+        const hoursMap = sanitizeCountryThresholds(r.countryThresholds)
+        patch.countryThresholds = hoursMap != null ? JSON.stringify(hoursMap) : null
+      }
+      await this.alertRepo.updateRule(r.id, patch)
 
       // Push severity/message onto existing ACTIVE alert rows NOW (do not wait for re-fire).
       // Alerts store a copy of severity at first fire; without this, Settings→Info leaves cards CRITICAL.
-      // Use the *pinned* severity from `patch` (not the raw client body) so A2/A4 always stay CRITICAL.
       if (r.enabled === false) {
-        await this.alertRepo.resolveAllActiveForRule(id)
+        await this.alertRepo.resolveAllActiveForRule(r.id)
       } else if (typeof patch.severity === 'string') {
-        const message =
-          (typeof r.description === 'string' && r.description) ||
-          (typeof r.name === 'string' && r.name) ||
-          id
-        await this.alertRepo.syncActivePresentation(id, {
+        await this.alertRepo.syncActivePresentation(r.id, {
           severity: String(patch.severity),
-          message,
+          message: current.description || current.name || r.id,
         })
       }
     }
@@ -713,6 +719,20 @@ export class PresentationService {
     }
     const { rules } = await this.alertRules()
     return { rules, eval: evalStats }
+  }
+
+  /** True factory reset for the customer rules — thresholds, severity, country overrides, enabled.
+   *  Reuses the save path so active-alert presentation sync + immediate re-eval apply here too. */
+  async resetAlertRules() {
+    return this.saveAlertRules({
+      rules: ALERT_RULE_FACTORY_DEFAULTS.map((d) => ({
+        id: d.id,
+        thresholdDays: Math.round(d.thresholdHours / 24),
+        severity: d.severity,
+        enabled: d.enabled,
+        countryThresholds: null,
+      })),
+    })
   }
 
   // ---- dashboard ----

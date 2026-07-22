@@ -196,7 +196,7 @@ export default function AlertsPage() {
         </div>
         <button
           type="button"
-          onClick={() => navigate('/alerts/rules')}
+          onClick={() => navigate('/settings/alerts')}
           className="inline-flex items-center gap-1.5 rounded-lg bg-surface-700 px-3 py-1.5 text-xs font-medium text-text-secondary hover:bg-surface-600 hover:text-text-primary"
         >
           <Settings size={14} />

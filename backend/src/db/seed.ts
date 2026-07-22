@@ -17,6 +17,7 @@ import { createKysely } from './kysely/mssql-dialect'
 import type { DB } from './kysely/db'
 import { normKey } from '../reconcile/match-keys'
 import { seedAuthUsers } from './seed-auth-users'
+import { ALERT_RULE_FACTORY_DEFAULTS } from '../alerts/alert-rule-defaults'
 
 const SQL_SERVER_URL =
   process.env.SQL_SERVER_URL ??
@@ -144,81 +145,21 @@ async function main() {
     }
   }
 
-  // ---- Alert rules (ALWAYS) — customer: 2 product rules × warn/severe = A1–A4 ----
-  // UI shows 2 cards; engine stores WARNING + CRITICAL rows so both can fire.
-  // Country overrides (CN/BD/KH only) set in Settings. state null = any lifecycle once ETD exists.
-  // Delete/disable every other rule (legacy SO/cutoff/telex/ETA/A7).
-  const ALERT_RULE_ROWS: Insertable<DB['alertRules']>[] = [
-    {
-      id: 'A1',
-      name: 'No Draft BOL received',
-      description: 'Warning when Draft B/L is still missing after ETD + N calendar days',
-      state: null,
-      triggerType: 'days_after',
-      triggerReference: 'etd',
-      watchFor: 'draft_bl',
-      thresholdHours: 24, // ETD+1 warning
-      countryThresholds: null,
-      severity: 'WARNING',
-      computeTz: 'server',
-      enabled: true,
-      locked: false,
-    },
-    {
-      id: 'A2',
-      name: 'No Draft BOL received',
-      description: 'Critical when Draft B/L is still missing after ETD + N calendar days',
-      state: null,
-      triggerType: 'days_after',
-      triggerReference: 'etd',
-      watchFor: 'draft_bl',
-      thresholdHours: 48, // ETD+2 severe
-      countryThresholds: null,
-      severity: 'CRITICAL',
-      computeTz: 'server',
-      enabled: true,
-      locked: false,
-    },
-    {
-      id: 'A3',
-      name: 'No Final BOL received',
-      description: 'Warning when Final B/L is still missing after ETD + N calendar days',
-      state: null,
-      triggerType: 'days_after',
-      triggerReference: 'etd',
-      watchFor: 'final_bl',
-      thresholdHours: 72, // ETD+3 warning
-      countryThresholds: null,
-      severity: 'WARNING',
-      computeTz: 'server',
-      enabled: true,
-      locked: false,
-    },
-    {
-      id: 'A4',
-      name: 'No Final BOL received',
-      description: 'Critical when Final B/L is still missing after ETD + N calendar days',
-      state: null,
-      triggerType: 'days_after',
-      triggerReference: 'etd',
-      watchFor: 'final_bl',
-      thresholdHours: 168, // ETD+7 severe
-      countryThresholds: null,
-      severity: 'CRITICAL',
-      computeTz: 'server',
-      enabled: true,
-      locked: false,
-    },
-  ]
-  const KEEP_IDS = new Set(ALERT_RULE_ROWS.map((r) => r.id))
-  // Disable anything not in the customer set (A5/A6/A7/legacy).
+  // ---- Alert rules (ALWAYS) — customer: 2 single-severity rules (A1 draft, A3 final) ----
+  // One threshold + user-chosen severity per rule; A2/A4 (old critical tiers) and everything
+  // else (A5/A6/A7/legacy) are retired: disabled + locked so the UI hides them and PUT skips them.
+  // Tunables (thresholdHours/severity/enabled/countryThresholds) are USER-OWNED after install —
+  // the structural sync below must never clobber them on redeploy.
+  const KEEP_RULE_IDS = new Set(ALERT_RULE_FACTORY_DEFAULTS.map((r) => r.id))
   await db
     .updateTable('alertRules')
-    .set({ enabled: false, locked: false, updatedAt: new Date() })
-    .where('id', 'not in', [...KEEP_IDS])
+    .set({ enabled: false, locked: true, updatedAt: new Date() })
+    .where('id', 'not in', [...KEEP_RULE_IDS])
     .execute()
   const haveRules = new Set((await db.selectFrom('alertRules').select('id').execute()).map((r) => r.id))
-  const newRules = ALERT_RULE_ROWS.filter((r) => !haveRules.has(r.id))
+  const newRules = ALERT_RULE_FACTORY_DEFAULTS.filter((r) => !haveRules.has(r.id)).map(
+    (r) => ({ ...r }) as Insertable<DB['alertRules']>,
+  )
   if (newRules.length) {
     try {
       await db.insertInto('alertRules').values(newRules).execute()
@@ -226,7 +167,8 @@ async function main() {
       if (!isUniqueViolation(e)) throw e
     }
   }
-  for (const row of ALERT_RULE_ROWS) {
+  // Structural identity sync only (names/descriptions/anchors) — never thresholds/severity/enabled/countries.
+  for (const row of ALERT_RULE_FACTORY_DEFAULTS) {
     await db
       .updateTable('alertRules')
       .set({
@@ -236,13 +178,8 @@ async function main() {
         triggerType: row.triggerType,
         triggerReference: row.triggerReference,
         watchFor: row.watchFor,
-        thresholdHours: row.thresholdHours,
-        severity: row.severity,
         computeTz: row.computeTz,
-        enabled: true,
         locked: false,
-        // Clear non-CN/BD/KH keys on reseed of structure; keep map if already only allowed codes
-        countryThresholds: null,
       })
       .where('id', '=', row.id)
       .execute()

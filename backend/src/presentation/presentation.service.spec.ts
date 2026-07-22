@@ -377,6 +377,118 @@ describe('PresentationService.alerts + alertRules', () => {
     expect(out[0].thresholdDays).toBe(2)
     expect(out[0].countryThresholds).toBeNull()
   })
+
+  // ---- single-severity save path (A1/A3) ----
+
+  const serverRule = (over: Record<string, unknown> = {}) => ({
+    id: 'A1',
+    name: 'No Draft BOL received',
+    description: 'Fires after ETD when Draft B/L is still missing',
+    state: null,
+    triggerType: 'days_after',
+    triggerReference: 'etd',
+    thresholdHours: 24,
+    countryThresholds: null,
+    severity: 'WARNING',
+    enabled: true,
+    locked: false,
+    ...over,
+  })
+
+  function buildSaveHarness(serverRules: Array<Record<string, unknown>>) {
+    const calls = {
+      updateRule: [] as Array<{ id: string; patch: Record<string, unknown> }>,
+      resolved: [] as string[],
+      synced: [] as Array<{ id: string; patch: { severity: string; message: string } }>,
+    }
+    const alertRepo = {
+      list: async () => [],
+      allRules: async () => serverRules,
+      updateRule: async (id: string, patch: Record<string, unknown>) => {
+        calls.updateRule.push({ id, patch })
+        return null
+      },
+      resolveAllActiveForRule: async (id: string) => {
+        calls.resolved.push(id)
+        return 0
+      },
+      syncActivePresentation: async (id: string, patch: { severity: string; message: string }) => {
+        calls.synced.push({ id, patch })
+      },
+    }
+    const svc = new PresentationService(
+      { activeLegs: async () => [], findByIds: async () => new Map(), poNumbersByShipment: async () => new Map(), linkedPosForBooking: async () => [] } as any,
+      { listOrdered: async () => [], findByIds: async () => new Map(), poNumbersByBooking: async () => new Map(), poNumbersFor: async () => [] } as any,
+      { listCustomers: async () => [], listVendors: async () => [], listForwarders: async () => [], listPorts: async () => [], listConsignees: async () => [] } as any,
+      alertRepo as any,
+      { listForEntity: async () => [] } as any,
+      { unreadCount: async () => 0, ingestionStatus: async () => ({ count: 0, lastAt: null }), ingestState: async () => null, emailsForShipment: async () => [] } as any,
+      { forMessages: async () => [], allWithMessage: async () => [] } as any,
+      { lookupByMatchKey: async () => ({ query: {}, candidates: [] }) } as any,
+      { evaluate: async () => ({ evaluated: 0, fired: 0, resolved: 0 }) } as any,
+    )
+    return { svc, calls }
+  }
+
+  it('saveAlertRules honors the client severity (pinning removed) and syncs active alerts', async () => {
+    const { svc, calls } = buildSaveHarness([serverRule()])
+    await svc.saveAlertRules({
+      rules: [{ id: 'A1', thresholdDays: 2, severity: 'INFO', enabled: true, countryThresholds: null }],
+    })
+    expect(calls.updateRule).toHaveLength(1)
+    expect(calls.updateRule[0].patch.severity).toBe('INFO')
+    expect(calls.updateRule[0].patch.thresholdHours).toBe(48)
+    expect(calls.synced[0]).toEqual({
+      id: 'A1',
+      patch: { severity: 'INFO', message: 'Fires after ETD when Draft B/L is still missing' },
+    })
+  })
+
+  it('saveAlertRules skips rules locked ON THE SERVER even if the client claims otherwise', async () => {
+    const { svc, calls } = buildSaveHarness([serverRule({ id: 'A2', locked: true })])
+    await svc.saveAlertRules({ rules: [{ id: 'A2', severity: 'INFO', enabled: true }] })
+    expect(calls.updateRule).toHaveLength(0)
+  })
+
+  // Codes are CN/BD/KH only — VN/IN were dropped from the product. A valid-looking VN/IN value must
+  // still be rejected server-side, not just hidden by the UI.
+  it('saveAlertRules sanitizes country overrides (codes CN/BD/KH, 1-30 days, stored in hours)', async () => {
+    const { svc, calls } = buildSaveHarness([serverRule()])
+    await svc.saveAlertRules({
+      rules: [
+        { id: 'A1', countryThresholds: { CN: 3, BD: 7, XX: 5, VN: 4, IN: 6, KH: 31 } as Record<string, number> },
+      ],
+    })
+    expect(JSON.parse(String(calls.updateRule[0].patch.countryThresholds))).toEqual({ CN: 72, BD: 168 })
+  })
+
+  it('saveAlertRules leaves stored overrides alone when countryThresholds is absent', async () => {
+    const { svc, calls } = buildSaveHarness([serverRule()])
+    await svc.saveAlertRules({ rules: [{ id: 'A1', thresholdDays: 1 }] })
+    expect(calls.updateRule[0].patch).not.toHaveProperty('countryThresholds')
+  })
+
+  it('saveAlertRules resolves all active alerts when a rule is disabled', async () => {
+    const { svc, calls } = buildSaveHarness([serverRule()])
+    await svc.saveAlertRules({ rules: [{ id: 'A1', enabled: false }] })
+    expect(calls.resolved).toEqual(['A1'])
+  })
+
+  it('resetAlertRules restores factory defaults for A1 and A3', async () => {
+    const { svc, calls } = buildSaveHarness([
+      serverRule(),
+      serverRule({
+        id: 'A3',
+        name: 'No Final BOL received',
+        description: 'Fires after ETD when Final B/L is still missing',
+        thresholdHours: 72,
+      }),
+    ])
+    await svc.resetAlertRules()
+    const byId = Object.fromEntries(calls.updateRule.map((c) => [c.id, c.patch]))
+    expect(byId.A1).toMatchObject({ thresholdHours: 24, severity: 'WARNING', enabled: true, countryThresholds: null })
+    expect(byId.A3).toMatchObject({ thresholdHours: 72, severity: 'WARNING', enabled: true, countryThresholds: null })
+  })
 })
 
 describe('legsSailedToday', () => {
