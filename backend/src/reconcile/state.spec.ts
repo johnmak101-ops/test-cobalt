@@ -33,22 +33,29 @@ describe('deriveState — 6-state staircase', () => {
       ),
     ).toBe('CONFIRMED')
   })
-  it('actual departure → SAILED', () => {
-    expect(deriveState(new Set(['Draft B/L']), { atd: '2026-02-10' })).toBe('SAILED')
+  // ---- Final BOL (SAILED) = the DOCUMENT stage. Badge label "Final BOL" (Badge.tsx statusLabels). ----
+  it('Final B/L or Telex Release → SAILED (badge "Final BOL")', () => {
+    expect(deriveState(new Set(['Final B/L']), {})).toBe('SAILED')
+    expect(deriveState(new Set(['Telex Release']), {})).toBe('SAILED')
   })
-  it('Departure Notice email type (On-board / Departure date keywords) → SAILED', () => {
-    expect(deriveState(new Set(['Departure Notice']), {})).toBe('SAILED')
+
+  // ---- Departure (RELEASED) = the goods physically left. Badge label "Departure". ----
+  it('actual departure (ATD) → RELEASED (badge "Departure"), not the Final BOL document stage', () => {
+    expect(deriveState(new Set(['Draft B/L']), { atd: '2026-02-10' })).toBe('RELEASED')
   })
-  it('Invoice/Billing with a PAST ETD + a carrier doc (MBL or HBL/FCR) → SAILED (invoices are post-departure)', () => {
+  it('Departure Notice email type (On-board / Departure date keywords) → RELEASED', () => {
+    expect(deriveState(new Set(['Departure Notice']), {})).toBe('RELEASED')
+  })
+  it('Invoice/Billing with a PAST ETD + a carrier doc (MBL or HBL/FCR) → RELEASED (invoices are post-departure)', () => {
     const now = new Date('2026-07-13T00:00:00Z')
     // MBL (the original BUG-7 case)
-    expect(deriveState(new Set(['Invoice/Billing']), { mbl: 'MEDU1', etd: '2026-05-31' }, now)).toBe('SAILED')
+    expect(deriveState(new Set(['Invoice/Billing']), { mbl: 'MEDU1', etd: '2026-05-31' }, now)).toBe('RELEASED')
     // HBL/FCR only (the carrier number lands here, not in mbl — the 270639828 invoice case)
     expect(deriveState(new Set(['Invoice/Billing']), { hbl_awb_fcr_no: '5548410963', etd: '2026-05-31' }, now)).toBe(
-      'SAILED',
+      'RELEASED',
     )
   })
-  it('Invoice/Billing with a FUTURE ETD does NOT promote to SAILED (not yet departed)', () => {
+  it('Invoice/Billing with a FUTURE ETD does NOT promote to RELEASED (not yet departed)', () => {
     const now = new Date('2026-05-01T00:00:00Z')
     expect(deriveState(new Set(['Invoice/Billing']), { hbl_awb_fcr_no: '5548410963', etd: '2026-05-31' }, now)).toBe(
       'BOOKED',
@@ -60,9 +67,13 @@ describe('deriveState — 6-state staircase', () => {
       'BOOKED',
     )
   })
-  it('Telex / Final B/L → RELEASED', () => {
-    expect(deriveState(new Set(['Telex Release']), {})).toBe('RELEASED')
-    expect(deriveState(new Set(['Final B/L']), {})).toBe('RELEASED')
+  it('a Final BOL that has also departed reaches Departure (highest reached wins)', () => {
+    expect(deriveState(new Set(['Final B/L']), { atd: '2026-02-10' })).toBe('RELEASED')
+  })
+
+  // ---- Delivered (ARRIVED) = arrival evidence, never a departure date. ----
+  it('actual arrival (ATA) → DELIVERED', () => {
+    expect(deriveState(new Set(['SO']), { ata: '2026-03-05' })).toBe('DELIVERED')
   })
   it('in-DC date alone does NOT reach DELIVERED without a departure signal', () => {
     // a delivery cannot precede departure — in_dc with no atd/Final B/L/Telex stays at the prior stage
@@ -71,14 +82,25 @@ describe('deriveState — 6-state staircase', () => {
   it('in-DC date + departure (atd) → DELIVERED (highest reached wins)', () => {
     expect(deriveState(new Set(['SO']), { in_dc_date: '2026-03-01', atd: '2026-02-20' })).toBe('DELIVERED')
   })
-  it('ETD calendar day equals today → DELIVERED (ops rule)', () => {
+  it('ETA that has passed + departure evidence → DELIVERED (estimated fallback)', () => {
     const now = new Date('2026-07-21T15:00:00Z')
-    expect(deriveState(new Set(['SO']), { etd: '2026-07-21' }, now)).toBe('DELIVERED')
-    expect(deriveState(new Set(['SO']), { etd: '2026-07-21T00:00:00.000Z' }, now)).toBe('DELIVERED')
+    // on the ETA day itself
+    expect(deriveState(new Set(['SO']), { eta: '2026-07-21', atd: '2026-07-01' }, now)).toBe('DELIVERED')
+    // and after it — an equality test would have missed this shipment forever
+    expect(deriveState(new Set(['SO']), { eta: '2026-07-18', atd: '2026-07-01' }, now)).toBe('DELIVERED')
   })
-  it('ETD on another day does not alone promote to DELIVERED', () => {
+  it('a passed ETA with NO departure evidence does not deliver (it never left)', () => {
     const now = new Date('2026-07-21T15:00:00Z')
-    expect(deriveState(new Set(['SO']), { etd: '2026-07-20' }, now)).toBe('CONFIRMED')
+    expect(deriveState(new Set(['SO']), { eta: '2026-07-18' }, now)).toBe('CONFIRMED')
+  })
+  it('a FUTURE ETA does not deliver', () => {
+    const now = new Date('2026-07-21T15:00:00Z')
+    expect(deriveState(new Set(['SO']), { eta: '2026-07-30', atd: '2026-07-01' }, now)).toBe('RELEASED')
+  })
+  it('a departure date is NEVER delivery evidence — ETD today only means it left today', () => {
+    const now = new Date('2026-07-21T15:00:00Z')
+    expect(deriveState(new Set(['SO']), { etd: '2026-07-21' }, now)).toBe('CONFIRMED')
+    expect(deriveState(new Set(['SO']), { etd: '2026-07-21', atd: '2026-07-21' }, now)).toBe('RELEASED')
   })
 })
 

@@ -25,35 +25,60 @@ export function deriveState(
     const wsMs = Date.parse(`${day}T00:00:00Z`)
     if (!Number.isNaN(wsMs) && wsMs <= now.getTime()) bump('AT_WAREHOUSE')
   }
-  // Departure (SAILED): ATD field, Departure Notice email type (On-board / Departure date / ATD keywords),
-  // or Invoice/Billing post-sail path below.
-  if (has(fields.atd) || emailTypes.has('Departure Notice')) bump('SAILED')
-  // BUG 7: an Invoice/Billing shipment carrying a cut carrier document (MBL, or the house HBL/AWB/FCR — the
-  // carrier number often lands there, not in mbl) with a PAST ETD has demonstrably sailed even without an
-  // explicit ATD (invoices are issued post-departure). Tightly gated to that exact combination — still
-  // Invoice/Billing + past ETD, NOT a broad has(carrier-doc)->SAILED nor vessel+past-etd->SAILED, both of
-  // which false-promote drafts / booking-requests.
-  if (emailTypes.has('Invoice/Billing') && (has(fields.mbl) || has(fields.hbl_awb_fcr_no)) && has(fields.etd)) {
-    const etd = new Date(String(fields.etd))
-    if (!Number.isNaN(etd.getTime()) && etd.getTime() < now.getTime()) bump('SAILED')
-  }
-  // Final BOL / Telex (RELEASED): Final B/L, Telex Release (incl. Surrendered / Original BOL classified upstream)
-  if (emailTypes.has('Telex Release') || emailTypes.has('Final B/L')) bump('RELEASED')
-  // Delivered: in-DC date + departure signal, OR ETD calendar day equals today (ops rule).
-  if (has(fields.in_dc_date) && (has(fields.atd) || emailTypes.has('Final B/L') || emailTypes.has('Telex Release') || emailTypes.has('Departure Notice'))) {
-    bump('DELIVERED')
-  }
-  if (has(fields.etd)) {
-    const etdDay = String(fields.etd).slice(0, 10)
-    if (/^\d{4}-\d{2}-\d{2}$/.test(etdDay)) {
-      const y = now.getUTCFullYear()
-      const m = String(now.getUTCMonth() + 1).padStart(2, '0')
-      const d = String(now.getUTCDate()).padStart(2, '0')
-      const today = `${y}-${m}-${d}`
-      if (etdDay === today) bump('DELIVERED')
-    }
-  }
+  // Final BOL (SAILED) — the DOCUMENT stage, badge label "Final BOL" (see Badge.tsx statusLabels and
+  // po-progress.ts: a cut B/L is paperwork, the goods have not necessarily moved). Final B/L, Telex
+  // Release, Surrendered / Original BOL — all classified into these two types upstream by the parser.
+  if (emailTypes.has('Final B/L') || emailTypes.has('Telex Release')) bump('SAILED')
+
+  // Departure (RELEASED) — the goods physically left, badge label "Departure". ATD field, or a Departure
+  // Notice email (On-board / Departure date / ATD keywords, resolved upstream).
+  const departed =
+    has(fields.atd) ||
+    emailTypes.has('Departure Notice') ||
+    // BUG 7: an Invoice/Billing shipment carrying a cut carrier document (MBL, or the house HBL/AWB/FCR — the
+    // carrier number often lands there, not in mbl) with a PAST ETD has demonstrably sailed even without an
+    // explicit ATD (invoices are issued post-departure). Tightly gated to that exact combination — still
+    // Invoice/Billing + past ETD, NOT a broad has(carrier-doc)->departed nor vessel+past-etd->departed, both
+    // of which false-promote drafts / booking-requests.
+    (emailTypes.has('Invoice/Billing') &&
+      (has(fields.mbl) || has(fields.hbl_awb_fcr_no)) &&
+      has(fields.etd) &&
+      isPast(fields.etd, now))
+  if (departed) bump('RELEASED')
+
+  // Delivered (ARRIVED) — arrival evidence only. A DEPARTURE date (etd/atd) is never delivery evidence:
+  // a 30-day ocean leg would otherwise read "Delivered" on the day it sailed.
+  //   1. ATA — the actual arrival, strongest signal (the arrival-side twin of ATD).
+  //   2. in-DC date + departure evidence — physically received at the DC.
+  //   3. ETA that has PASSED + departure evidence — the estimated fallback. `<= today`, not `== today`:
+  //      state is derived when an email is committed, so an equality test silently misses any shipment
+  //      with no mail that day. Requires departure evidence — an estimate cannot outrank never leaving.
+  if (has(fields.ata)) bump('DELIVERED')
+  if (has(fields.in_dc_date) && departed) bump('DELIVERED')
+  if (departed && has(fields.eta) && isPastOrToday(fields.eta, now)) bump('DELIVERED')
   return s
+}
+
+/** Calendar-day compare of a parsed date field against `now` (UTC day granularity). */
+function dayOf(value: unknown): string | null {
+  const day = String(value).slice(0, 10)
+  return /^\d{4}-\d{2}-\d{2}$/.test(day) ? day : null
+}
+
+function todayUtc(now: Date): string {
+  const m = String(now.getUTCMonth() + 1).padStart(2, '0')
+  const d = String(now.getUTCDate()).padStart(2, '0')
+  return `${now.getUTCFullYear()}-${m}-${d}`
+}
+
+function isPast(value: unknown, now: Date): boolean {
+  const t = new Date(String(value)).getTime()
+  return !Number.isNaN(t) && t < now.getTime()
+}
+
+function isPastOrToday(value: unknown, now: Date): boolean {
+  const day = dayOf(value)
+  return day != null && day <= todayUtc(now)
 }
 
 /**

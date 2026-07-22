@@ -13,7 +13,10 @@ import { ShipmentRepository } from '../db/repositories/shipment.repository'
 import { EmailRepository } from '../db/repositories/email.repository'
 import { EvidenceRepository } from '../db/repositories/evidence.repository'
 
-const SAILED_STATES = new Set(['SAILED', 'RELEASED', 'DELIVERED'])
+/** Past the point where a cargo-ready revision is still actionable (Final BOL cut or later). */
+const POST_DOCUMENT_STATES = new Set(['SAILED', 'RELEASED', 'DELIVERED'])
+/** Physically departed. RELEASED is the badge "Departure"; SAILED is only the "Final BOL" document stage. */
+const DEPARTED_STATES = new Set(['RELEASED', 'DELIVERED'])
 /** Threshold rules that participate in fire + auto-resolve (not A7 built-in). */
 const THRESHOLD_RULE_IDS = new Set(['A1', 'A2', 'A3', 'A4', 'A5', 'A6'])
 
@@ -127,7 +130,7 @@ export class AlertEvaluatorService {
     now: Date,
   ): Promise<number> {
     await this.alerts.ensureRule(A7_RULE as never)
-    const candidates = legs.filter((leg) => leg.cargoReadyDate && !SAILED_STATES.has(leg.state))
+    const candidates = legs.filter((leg) => leg.cargoReadyDate && !POST_DOCUMENT_STATES.has(leg.state))
     if (!candidates.length) return 0
     const emailsByShipment = await this.emails.emailsForShipments(candidates.map((l) => l.id))
     const evidenceRows = await this.evidence.forMessages([
@@ -214,7 +217,9 @@ export class AlertEvaluatorService {
         finalBl: !!finalBlAt,
         telex: !!at('TELEX_RELEASED'),
         invoice: !!at('INVOICE_RECEIVED'),
-        sailed: SAILED_STATES.has(leg.state),
+        // "Sailed" = physically departed, which is RELEASED (badge "Departure") and beyond — NOT the
+        // SAILED state, whose badge is "Final BOL" and which only means the B/L document was cut.
+        sailed: DEPARTED_STATES.has(leg.state) || !!leg.atd || !!at('SAILED'),
         delivered: leg.state === 'DELIVERED' || !!at('DELIVERED') || !!leg.inDcDate,
       },
     }
