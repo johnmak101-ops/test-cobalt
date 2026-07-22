@@ -124,24 +124,26 @@ export function FieldHistoryPopover({
                       {formatFieldValue(e.field, e.newValue)}
                     </span>
                   </div>
+                  {/* The timestamp IS the link to the email that set this value — the popover is
+                      only w-72, so a separate subject line cost a row and truncated to nothing
+                      useful anyway. The subject lives in the tooltip instead. */}
                   <div className="mt-0.5 text-[11px] text-text-muted">
-                    {sourceLabels[e.sourceType] ?? e.sourceType} · {formatDateTime(e.changedAt)}
+                    {sourceLabels[e.sourceType] ?? e.sourceType} ·{' '}
+                    {e.sourceType === 'email' && e.sourceId ? (
+                      <button
+                        type="button"
+                        data-testid="field-history-email-link"
+                        onClick={() => openSourceEmail(e.sourceId!)}
+                        title={e.notes ? `Open the source email — ${e.notes}` : 'Open the source email'}
+                        className="inline-flex cursor-pointer items-center gap-1 align-baseline text-text-muted hover:text-cobalt-primary-light hover:underline"
+                      >
+                        {formatDateTime(e.changedAt)}
+                        <ExternalLink size={9} className="shrink-0" />
+                      </button>
+                    ) : (
+                      formatDateTime(e.changedAt)
+                    )}
                   </div>
-                  {/* Peek the email this value came from — same reading pane as the history timeline.
-                      The panel keeps itself open on hover, so the link is reachable from here. */}
-                  {e.sourceType === 'email' && e.sourceId && (
-                    <button
-                      type="button"
-                      data-testid="field-history-email-link"
-                      onClick={() => openSourceEmail(e.sourceId!)}
-                      title={e.notes ?? 'Open the source email'}
-                      className="mt-1 inline-flex max-w-full cursor-pointer items-center gap-1 text-left text-[11px] italic text-text-muted hover:text-cobalt-primary-light hover:underline"
-                    >
-                      {/* min-w-0: truncate only ellipsizes once the flex item may shrink */}
-                      <span className="min-w-0 truncate">{e.notes || 'View email'}</span>
-                      <ExternalLink size={10} className="shrink-0" />
-                    </button>
-                  )}
                 </div>
               ))}
             </div>

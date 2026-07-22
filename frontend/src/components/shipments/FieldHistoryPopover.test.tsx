@@ -80,8 +80,16 @@ describe('FieldHistoryPopover', () => {
     await screen.findByTestId('field-history-popover')
 
     const link = screen.getByTestId('field-history-email-link')
-    // the subject is the label, so the user knows which email they are opening
-    expect(link).toHaveTextContent('FW: Booking confirmation GZOSA2600021')
+    // the timestamp IS the link; the subject rides along in the tooltip
+    expect(link.textContent).toMatch(/\d/)
+    expect(link).toHaveAttribute(
+      'title',
+      'Open the source email — FW: Booking confirmation GZOSA2600021',
+    )
+    // no separate subject row eating a line of a w-72 popover
+    expect(screen.getByTestId('field-history-popover').textContent).not.toContain(
+      'FW: Booking confirmation',
+    )
 
     await user.click(link)
     expect(open).toHaveBeenCalledWith(
@@ -92,7 +100,7 @@ describe('FieldHistoryPopover', () => {
     open.mockRestore()
   })
 
-  it('falls back to a generic label when the entry carries no subject', async () => {
+  it('still links when the entry carries no subject — the tooltip just drops it', async () => {
     const user = userEvent.setup()
     render(
       <FieldHistoryPopover
@@ -104,7 +112,26 @@ describe('FieldHistoryPopover', () => {
     )
     await user.hover(screen.getByTestId('field-history-anchor'))
     await screen.findByTestId('field-history-popover')
-    expect(screen.getByTestId('field-history-email-link')).toHaveTextContent('View email')
+    const link = screen.getByTestId('field-history-email-link')
+    expect(link).toHaveAttribute('title', 'Open the source email')
+    expect(link.textContent).toMatch(/\d/)
+  })
+
+  it('leaves the date as plain text when there is no email to open', async () => {
+    const user = userEvent.setup()
+    render(
+      <FieldHistoryPopover
+        label="ETD"
+        entries={[entry('etd', { sourceType: 'manual', sourceId: null, newValue: 'a' })]}
+      >
+        17 Feb 2026
+      </FieldHistoryPopover>,
+    )
+    await user.hover(screen.getByTestId('field-history-anchor'))
+    const popover = await screen.findByTestId('field-history-popover')
+    expect(screen.queryByTestId('field-history-email-link')).toBeNull()
+    // the timestamp is still shown, just not clickable
+    expect(popover.textContent).toMatch(/Manual edit ·\s*\S+/)
   })
 
   it('shows no email link for manual or system changes, or when the source id is missing', async () => {
