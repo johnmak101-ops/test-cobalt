@@ -163,34 +163,30 @@ export function ShipmentTable({ shipments }: ShipmentTableProps) {
 
   // Columns: Booking · Customer PO# · Customer · Forwarder · Route · Status · ETD · ETA · Last · Risk
   // SO No removed from tracker (#119); detail pages still show SO.
+  // Narrow screens: Forwarder hides <md, ETD/ETA/Last hide <lg (all on the shipment detail page);
+  // Booking ID stays pinned so a sideways scroll never loses which row you are reading.
   return (
     <div className="overflow-hidden rounded-xl border border-border bg-surface-800">
       <div className="overflow-x-auto">
-        <table className="w-full table-fixed min-w-[960px]">
-          <colgroup>
-            <col className="w-[12%]" />
-            <col className="w-[9%]" />
-            <col className="w-[12%]" />
-            <col className="w-[11%]" />
-            <col className="w-[12%]" />
-            <col className="w-[11%]" />
-            <col className="w-[8%]" />
-            <col className="w-[8%]" />
-            <col className="w-[10%]" />
-            <col className="w-14" />
-          </colgroup>
+        {/* Widths live on the header cells, not a <colgroup>: with table-fixed the header row defines
+            the columns, and responsive hiding needs width + visibility on the SAME element. */}
+        <table className="w-full table-fixed min-w-[560px] md:min-w-[720px] lg:min-w-[960px]">
           <thead>
-            <tr className="border-b border-border bg-surface-900/50">
-              <th className="px-3 py-3 text-left text-xs font-medium text-text-muted">Booking ID</th>
-              <th className="px-3 py-3 text-left text-xs font-medium text-text-muted">Customer PO#</th>
-              <th className="px-3 py-3 text-left text-xs font-medium text-text-muted">Customer</th>
-              <th className="px-3 py-3 text-left text-xs font-medium text-text-muted">Forwarder</th>
-              <th className="px-3 py-3 text-left text-xs font-medium text-text-muted">Route</th>
-              <th className="px-3 py-3 text-left text-xs font-medium text-text-muted">Status</th>
-              <th className="px-3 py-3 text-left text-xs font-medium text-text-muted">ETD</th>
-              <th className="px-3 py-3 text-left text-xs font-medium text-text-muted">ETA</th>
-              <th className="px-3 py-3 text-left text-xs font-medium text-text-muted">Last Activity</th>
-              <th className="px-2 py-3 text-left text-xs font-medium text-text-muted">Risk</th>
+            <tr className="border-b border-border bg-surface-850">
+              {/* Booking ID is pinned: once the table scrolls sideways, row identity must stay put.
+                  Opaque bg (not a /50 tint) so scrolled cells cannot show through, and the right-hand
+                  divider is an inset shadow — a border-r does not travel with a sticky cell once
+                  Tailwind's preflight collapses table borders. */}
+              <th className="sticky left-0 z-[1] w-[12%] bg-surface-850 px-3 py-3 text-left text-xs font-medium text-text-muted shadow-[inset_-1px_0_0_var(--color-border)]">Booking ID</th>
+              <th className="w-[9%] px-3 py-3 text-left text-xs font-medium text-text-muted">Customer PO#</th>
+              <th className="w-[12%] px-3 py-3 text-left text-xs font-medium text-text-muted">Customer</th>
+              <th className="hidden w-[11%] px-3 py-3 text-left text-xs font-medium text-text-muted md:table-cell">Forwarder</th>
+              <th className="w-[12%] px-3 py-3 text-left text-xs font-medium text-text-muted">Route</th>
+              <th className="w-[11%] px-3 py-3 text-left text-xs font-medium text-text-muted">Status</th>
+              <th className="hidden w-[8%] px-3 py-3 text-left text-xs font-medium text-text-muted lg:table-cell">ETD</th>
+              <th className="hidden w-[8%] px-3 py-3 text-left text-xs font-medium text-text-muted lg:table-cell">ETA</th>
+              <th className="hidden w-[10%] px-3 py-3 text-left text-xs font-medium text-text-muted lg:table-cell">Last Activity</th>
+              <th className="w-14 px-2 py-3 text-left text-xs font-medium text-text-muted">Risk</th>
             </tr>
           </thead>
           <tbody>
@@ -198,9 +194,11 @@ export function ShipmentTable({ shipments }: ShipmentTableProps) {
               <tr
                 key={s.id}
                 {...interactiveProps(() => navigate(`/shipments/${s.id}`))}
-                className="cursor-pointer border-b border-border last:border-0 hover:bg-surface-700 transition-colors"
+                className="group cursor-pointer border-b border-border last:border-0 hover:bg-surface-700 transition-colors"
               >
-                <td className="truncate px-3 py-3 font-mono text-sm font-medium text-cobalt-primary-light">
+                {/* group-hover mirrors the row's hover onto the pinned cell — without it the sticky
+                    column stays dark while the rest of the row lights up. */}
+                <td className="sticky left-0 z-[1] truncate bg-surface-800 px-3 py-3 font-mono text-sm font-medium text-cobalt-primary-light shadow-[inset_-1px_0_0_var(--color-border)] transition-colors group-hover:bg-surface-700">
                   {/* parse-identity D1: same spine fallthrough as ReviewQueue/TopBar (booking → SO → HBL/HAWB) */}
                   {s.bookingNo ?? s.soNumber ?? s.hblNumber ?? '—'}
                   {(s.legCount ?? 1) > 1 && (
@@ -221,20 +219,20 @@ export function ShipmentTable({ shipments }: ShipmentTableProps) {
                 <td className="truncate px-3 py-3 text-sm text-text-secondary">
                   {s.customer?.name ?? s.customerRaw ?? '—'}
                 </td>
-                <td className="truncate px-3 py-3 text-sm text-text-secondary">
+                <td className="hidden truncate px-3 py-3 text-sm text-text-secondary md:table-cell">
                   {s.forwarder?.name ?? s.forwarderRaw ?? '—'}
                 </td>
                 <td className="truncate px-3 py-3 text-sm text-text-secondary">{s.route ?? '—'}</td>
                 <td className="px-3 py-3">
                   <Badge variant="status" value={s.status} />
                 </td>
-                <td className="whitespace-nowrap px-3 py-3 text-sm text-text-secondary">
+                <td className="hidden whitespace-nowrap px-3 py-3 text-sm text-text-secondary lg:table-cell">
                   {formatShortDate(s.etd)}
                 </td>
-                <td className="whitespace-nowrap px-3 py-3 text-sm text-text-secondary">
+                <td className="hidden whitespace-nowrap px-3 py-3 text-sm text-text-secondary lg:table-cell">
                   {formatShortDate(s.eta)}
                 </td>
-                <td className="whitespace-nowrap px-3 py-3 text-sm text-text-muted">
+                <td className="hidden whitespace-nowrap px-3 py-3 text-sm text-text-muted lg:table-cell">
                   {formatRelativeTime(s.updatedAt)}
                 </td>
                 <td className="px-2 py-3">
