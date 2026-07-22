@@ -12,6 +12,7 @@ import { PurchaseOrderPresentationService } from './purchase-order-presentation.
 import { MasterDataPresentationService } from './master-data-presentation.service'
 import { CurrentUser, Roles } from '../auth/decorators'
 import { PageRead, PageWrite } from '../access/page-access.decorators'
+import { SaveAlertRulesDto } from './alert-rules.dto'
 
 @Controller('dashboard')
 export class UiDashboardController {
@@ -51,8 +52,13 @@ export class UiAlertRulesController {
   // Governed by the configurable Access Control matrix (page 'alert_rules'): reading needs View,
   // saving needs Edit; superadmin always passes. Paired with the frontend PageAccessRoute + canEdit.
   @PageWrite('alert_rules')
-  @Put() save(@Body() body: { rules?: Array<Record<string, unknown>> }) {
+  @Put() save(@Body() body: SaveAlertRulesDto) {
     return this.ui.saveAlertRules(body)
+  }
+  /** True factory reset (thresholds, severity, country overrides, enabled) — same Edit gate as save. */
+  @PageWrite('alert_rules')
+  @Post('reset') reset() {
+    return this.ui.resetAlertRules()
   }
 }
 
