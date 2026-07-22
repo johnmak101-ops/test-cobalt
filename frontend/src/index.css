@@ -28,7 +28,11 @@
   --color-state-confirmed: #67C23A;
   --color-state-warehouse: #409EFF;
   --color-state-sailed: #9B59B6;
-  --color-state-released: #909399;
+  /* Departure = the goods physically left — the most consequential milestone on the ladder. It was
+     grey, which everywhere else in this UI means inactive/unknown, so the badge undersold it. Teal
+     (= cobalt-teal, an existing brand colour) reads as in-transit and stays distinct from the Draft
+     BOL blue before it and the Delivered green after it. */
+  --color-state-released: #00A884;
   --color-state-delivered: #67C23A;
 
   /* Surface Colors (Dark Theme — Default) */
