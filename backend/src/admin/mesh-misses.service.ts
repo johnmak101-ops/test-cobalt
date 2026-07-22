@@ -2,7 +2,7 @@ import { Inject, Injectable } from '@nestjs/common'
 import { sql, type Kysely } from 'kysely'
 import { KYSELY } from '../db/kysely.provider'
 import type { DB } from '../db/kysely/db'
-import { normalizeMasterName, type MasterMiss } from '../decisions/critic-review.types'
+import { isNonPartyName, normalizeMasterName, type MasterMiss } from '../decisions/critic-review.types'
 
 export interface MeshMissRow {
   type: 'vendor' | 'forwarder' | 'customer'
@@ -69,6 +69,8 @@ export function aggregateMisses(legs: LegRow[], acks: AckRow[]): MeshMissRow[] {
     for (const m of misses) {
       if (!m?.type || !m?.rawName) continue
       if (m.type !== 'vendor' && m.type !== 'forwarder' && m.type !== 'customer') continue
+      // A bare number is a leaked PO/booking/container id, not a party to add in Mesh.
+      if (isNonPartyName(m.rawName)) continue
       const normalizedName = normalizeMasterName(m.rawName)
       if (!normalizedName) continue
       const key = `${m.type}:${normalizedName}`

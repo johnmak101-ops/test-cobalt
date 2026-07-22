@@ -56,6 +56,17 @@ export function normalizeMasterName(raw: string): string {
   return raw.toLowerCase().trim().replace(/\s+/g, ' ')
 }
 
+/**
+ * A "party" carrying no letter in ANY script is not a company — it is a PO / booking / container
+ * number that leaked into a party field upstream. The Mesh-miss worklist asks ops to add the name in
+ * Mesh, which is unactionable for a bare number, so such misses are excluded from that surface.
+ * `\p{L}` keeps CJK names (南海制衣) and letter+digit brands (3M, 7-Eleven).
+ * Twin of isNonPartyName in frontend/src/components/review/needs-attention.ts — keep in step.
+ */
+export function isNonPartyName(raw: string | null | undefined): boolean {
+  return !/\p{L}/u.test(String(raw ?? ''))
+}
+
 export interface CriticReview {
   confidence: { score: number; band: Band; label: string }
   summary: string
