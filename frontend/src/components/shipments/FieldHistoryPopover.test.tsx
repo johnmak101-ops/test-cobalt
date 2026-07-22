@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { FieldHistoryPopover } from './FieldHistoryPopover'
@@ -55,5 +55,74 @@ describe('FieldHistoryPopover', () => {
     expect(popover.textContent).toContain('Manual edit')
     // portaled to body so the card's overflow cannot clip it
     expect(popover.parentElement).toBe(document.body)
+  })
+
+  it('offers the source email, opening the same reading pane the timeline uses', async () => {
+    const user = userEvent.setup()
+    const open = vi.spyOn(window, 'open').mockReturnValue(null)
+    render(
+      <FieldHistoryPopover
+        label="Booking No."
+        entries={[
+          entry('booking_no', {
+            oldValue: null,
+            newValue: 'GZOSA2600021',
+            sourceType: 'email',
+            sourceId: 'msg-42',
+            notes: 'FW: Booking confirmation GZOSA2600021',
+          }),
+        ]}
+      >
+        GZOSA2600021
+      </FieldHistoryPopover>,
+    )
+    await user.hover(screen.getByTestId('field-history-anchor'))
+    await screen.findByTestId('field-history-popover')
+
+    const link = screen.getByTestId('field-history-email-link')
+    // the subject is the label, so the user knows which email they are opening
+    expect(link).toHaveTextContent('FW: Booking confirmation GZOSA2600021')
+
+    await user.click(link)
+    expect(open).toHaveBeenCalledWith(
+      '/email/msg-42?type=',
+      'email_msg-42',
+      expect.stringContaining('popup'),
+    )
+    open.mockRestore()
+  })
+
+  it('falls back to a generic label when the entry carries no subject', async () => {
+    const user = userEvent.setup()
+    render(
+      <FieldHistoryPopover
+        label="ETD"
+        entries={[entry('etd', { sourceType: 'email', sourceId: 'msg-7', notes: null })]}
+      >
+        17 Feb 2026
+      </FieldHistoryPopover>,
+    )
+    await user.hover(screen.getByTestId('field-history-anchor'))
+    await screen.findByTestId('field-history-popover')
+    expect(screen.getByTestId('field-history-email-link')).toHaveTextContent('View email')
+  })
+
+  it('shows no email link for manual or system changes, or when the source id is missing', async () => {
+    const user = userEvent.setup()
+    render(
+      <FieldHistoryPopover
+        label="ETD"
+        entries={[
+          entry('etd', { sourceType: 'manual', sourceId: 'msg-1', newValue: 'a' }),
+          entry('etd', { sourceType: 'system', sourceId: 'msg-2', newValue: 'b' }),
+          entry('etd', { sourceType: 'email', sourceId: null, newValue: 'c' }),
+        ]}
+      >
+        17 Feb 2026
+      </FieldHistoryPopover>,
+    )
+    await user.hover(screen.getByTestId('field-history-anchor'))
+    await screen.findByTestId('field-history-popover')
+    expect(screen.queryByTestId('field-history-email-link')).toBeNull()
   })
 })
