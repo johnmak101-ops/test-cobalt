@@ -542,6 +542,31 @@ describe('ReviewCard', () => {
     expect(screen.getByText('2026-07-20')).toBeInTheDocument()
     expect(screen.getAllByText('2026-07-23').length).toBeGreaterThanOrEqual(1)
   })
+
+  // Resolved = the Approved/Rejected queue views and any non-provisional shipment. Needs attention
+  // is a triage prompt; once the item is resolved it is answered, so it stops being shown.
+  it('readOnly: Needs attention is gone once the item is resolved', () => {
+    const props = {
+      shipment: baseShipment(),
+      criticReview: baseReview({
+        conflicts: [],
+        riskFlags: [
+          { code: 'AMBIGUOUS_MATCH', severity: 'high', message: 'This email matched more than one existing leg.' },
+        ],
+      }),
+      compact,
+      defaultExpanded: true,
+    }
+    const { rerender } = render(<ReviewCard {...props} />)
+    // unresolved → the prompt is there
+    expect(screen.getByTestId('needs-attention')).toBeInTheDocument()
+    expect(screen.getByText('Needs attention')).toBeInTheDocument()
+
+    rerender(<ReviewCard {...props} readOnly />)
+    expect(screen.queryByTestId('needs-attention')).toBeNull()
+    expect(screen.queryByText('Needs attention')).toBeNull()
+    expect(screen.queryByTestId('needs-group-which_shipment')).toBeNull()
+  })
 })
 
 const weakIdentityReview = () =>
