@@ -3,6 +3,23 @@ import { sql, type Kysely } from 'kysely'
 import type { DB } from '../kysely/db'
 import { KYSELY } from '../kysely.provider'
 
+/**
+ * Run multi-row inserts in sequential chunks so each statement stays under SQL Server /
+ * tedious' 2100-parameter hard cap (same class of fix as ports-sync MERGE_BATCH=400).
+ * No-ops on empty input (matches prior `if (rows.length)` guards).
+ */
+export async function insertInBatches<T>(
+  rows: readonly T[],
+  batchSize: number,
+  insertChunk: (chunk: T[]) => Promise<void>,
+): Promise<void> {
+  if (!rows.length) return
+  if (batchSize < 1) throw new Error(`insertInBatches: batchSize must be >= 1, got ${batchSize}`)
+  for (let i = 0; i < rows.length; i += batchSize) {
+    await insertChunk(rows.slice(i, i + batchSize) as T[])
+  }
+}
+
 /** Exact-only tiers. Fuzzy/containment removed 2026-07-12 — queue LLM Master Matcher owns free-text. */
 export type ForwarderLinkTier = 'code_exact' | 'norm_exact' | 'stripped_norm_exact'
 
@@ -46,20 +63,33 @@ export class MastersRepository {
   }
 
   // ---- masters sync (ERP mirror; insert new + fill-if-changed; NEVER deletes) ----
+  // SQL Server / tedious hard-cap 2100 parameters per statement (same issue ports-sync solves with MERGE_BATCH).
+  // Customers: 6 bound cols → 300×6=1800; vendors: 7 → 250×7=1750; forwarders: 2 → 500×2=1000.
+  // id / created_at / updated_at are server defaults (NEWID / SYSDATETIMEOFFSET), not client params.
+  static readonly CUSTOMER_INSERT_BATCH = 300
+  static readonly VENDOR_INSERT_BATCH = 250
+  static readonly FORWARDER_INSERT_BATCH = 500
+
   async insertCustomers(rows: { code: string; name: string; country: string | null; contactEmail: string | null; address: string | null; erpSyncedAt: Date }[]) {
-    if (rows.length) await this.db.insertInto('customers').values(rows).execute()
+    await insertInBatches(rows, MastersRepository.CUSTOMER_INSERT_BATCH, (chunk) =>
+      this.db.insertInto('customers').values(chunk).execute().then(() => undefined),
+    )
   }
   async updateCustomer(id: string, patch: { name?: string; country?: string | null; contactEmail?: string | null; address?: string | null; erpSyncedAt: Date }) {
     await this.db.updateTable('customers').set({ ...patch, updatedAt: new Date() }).where('id', '=', id).execute()
   }
   async insertVendors(rows: { code: string; name: string; type: 'factory' | 'agent'; location: string | null; contactEmail: string | null; contactPhone: string | null; erpSyncedAt: Date }[]) {
-    if (rows.length) await this.db.insertInto('vendors').values(rows).execute()
+    await insertInBatches(rows, MastersRepository.VENDOR_INSERT_BATCH, (chunk) =>
+      this.db.insertInto('vendors').values(chunk).execute().then(() => undefined),
+    )
   }
   async updateVendor(id: string, patch: { name?: string; type?: 'factory' | 'agent'; location?: string | null; contactEmail?: string | null; contactPhone?: string | null; erpSyncedAt: Date }) {
     await this.db.updateTable('vendors').set({ ...patch, updatedAt: new Date() }).where('id', '=', id).execute()
   }
   async insertForwarders(rows: { code: string; name: string }[]) {
-    if (rows.length) await this.db.insertInto('forwarders').values(rows).execute()
+    await insertInBatches(rows, MastersRepository.FORWARDER_INSERT_BATCH, (chunk) =>
+      this.db.insertInto('forwarders').values(chunk).execute().then(() => undefined),
+    )
   }
   async updateForwarder(id: string, patch: Record<string, unknown>) {
     await this.db.updateTable('forwarders').set({ ...patch, updatedAt: new Date() }).where('id', '=', id).execute()
