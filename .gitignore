@@ -33,7 +33,6 @@ build
 Thumbs.db
 
 # Documents — client materials, real shipping emails, VM specs (confidential / bulky binaries)
-/docs/
 
 # Logs
 pave.log
@@ -83,3 +82,8 @@ _fe-doctor*.json
 _fe-verbose.txt
 _dev.log
 
+# Client bulk / confidential (not product docs)
+/docs/Emails/
+/docs/Materials from client/
+/docs/sample shiptrack emails/
+/docs/VM Spec/
