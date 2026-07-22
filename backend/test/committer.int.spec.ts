@@ -148,10 +148,13 @@ describe('CommitterService (integration, real SQL Server)', () => {
     expect(c.action).toBe('create_booking') // PO 16068229 also on legB — conflicting HBL/container wins
     expect(new Set([a.shipmentId, b.shipmentId, c.shipmentId]).size).toBe(3)
 
-    // the shared PO is linked to BOTH bookings (one PO split across two containers)
+    // Cross-HAWB PO exclusivity: first claimant (legB) keeps PO 16068229; legC (different HBL)
+    // does not dual-link — planPoReconcile sibling skip (same policy as DEMO dual GZL).
     const po = await db.selectFrom('purchaseOrders').where('poNumber', '=', '16068229').selectAll().executeTakeFirstOrThrow()
     const links = await db.selectFrom('bookingPos').where('poId', '=', po.id).selectAll().execute()
-    expect(new Set(links.map((l) => l.bookingId))).toEqual(new Set([b.bookingId, c.bookingId]))
+    expect(new Set(links.map((l) => l.bookingId))).toEqual(new Set([b.bookingId]))
+    // legC still created as its own booking/leg (HBL conflict), just without that PO link
+    expect(c.bookingId).not.toBe(b.bookingId)
 
     // idempotency: re-applying legB amends legB — it never leaks onto legC via the shared PO
     const b2 = await committer.apply(asGroup(legB))

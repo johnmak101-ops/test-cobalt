@@ -257,7 +257,9 @@ describe('DecisionsService email disposition (integration)', () => {
 })
 
 describe('Phase 2 routing shadow + mode', () => {
-  it('default gate mode: autoApply false stays provisional even if recommendedRouting auto (shadow differs)', async () => {
+  it('high-band critic auto-confirms even when autoApply false (gate shadow still differs)', async () => {
+    // Product: isHighBandAutoEligible overrides gate provisional → confirmed.
+    // Shadow still records pre-override gate (provisional) vs band (confirmed).
     const res = await decisions.ingest(
       decision({
         confidence: 92,
@@ -267,7 +269,7 @@ describe('Phase 2 routing shadow + mode', () => {
         criticReview: criticHigh,
       }),
     )
-    expect(res.reviewStatus).toBe('provisional') // gate unchanged
+    expect(res.reviewStatus).toBe('confirmed')
     const shadows = await db.selectFrom('routingShadow').selectAll().execute()
     expect(shadows).toHaveLength(1)
     expect(shadows[0].gateRouting).toBe('provisional')
@@ -318,7 +320,8 @@ describe('Phase 2 routing shadow + mode', () => {
     expect(await db.selectFrom('routingShadow').selectAll().execute()).toHaveLength(0)
   })
 
-  it('shadow proof: default gate outcomes identical with vs without recommendedRouting present', async () => {
+  it('shadow proof: high-band outcomes identical with vs without recommendedRouting present', async () => {
+    // recommendedRouting only affects shadow bandRouting; high-band auto-confirm decides reviewStatus.
     const a = await decisions.ingest(
       decision({
         matchKey: { so_no: 'SO-A' },
@@ -338,8 +341,8 @@ describe('Phase 2 routing shadow + mode', () => {
         criticReview: criticHigh,
       }),
     )
-    expect(a.reviewStatus).toBe('provisional')
-    expect(b.reviewStatus).toBe('provisional')
+    expect(a.reviewStatus).toBe('confirmed')
+    expect(b.reviewStatus).toBe('confirmed')
   })
 
   it('cancel still forces provisional under band mode', async () => {
