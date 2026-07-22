@@ -10,6 +10,8 @@ export interface ReviewShipment {
   id: string
   bookingNo: string | null
   soNo: string | null
+  /** House B/L / HAWB / FCR when present on the provisional leg. */
+  hblAwbFcrNo?: string | null
   customer: string | null
   forwarder: string | null
   route: string | null

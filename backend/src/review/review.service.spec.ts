@@ -23,7 +23,7 @@ function makeService(legOverride: Record<string, unknown> | null = {}) {
     ),
     updateLeg: vi.fn(async () => undefined),
     replaceMatchKeys: vi.fn(async () => undefined),
-    sourceGraphIdFor: vi.fn(async () => 'graph-1'),
+    sourceGraphIdFor: vi.fn(async (_id: string): Promise<string | null> => 'graph-1'),
     candidateLegs: vi.fn(async () => [] as Record<string, unknown>[]),
     linkProvisionalLeg: vi.fn(async () => undefined),
   }

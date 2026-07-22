@@ -123,7 +123,7 @@ describe('AlertRulesSettings — each control takes effect', () => {
     expect(criticalInput).toHaveValue('2')
 
     // First product warn stepper is the first "Increase days" for that card
-    const draftCard = screen.getByText('No Draft BOL received').closest('.overflow-hidden')!
+    const draftCard = screen.getByText('No Draft BOL received').closest('.overflow-hidden') as HTMLElement
     const increases = within(draftCard).getAllByRole('button', { name: /increase days/i })
     await user.click(increases[0]!) // warn 1→2; critical was 2 → bumps to 3
 
@@ -135,7 +135,7 @@ describe('AlertRulesSettings — each control takes effect', () => {
     const user = userEvent.setup()
     renderWithClient(<AlertRulesSettings />)
     await screen.findByText('No Draft BOL received')
-    const draftCard = screen.getByText('No Draft BOL received').closest('.overflow-hidden')!
+    const draftCard = screen.getByText('No Draft BOL received').closest('.overflow-hidden') as HTMLElement
     const decreases = within(draftCard).getAllByRole('button', { name: /decrease days/i })
     // critical is second pair stepper (index 1)
     await user.click(decreases[1]!) // critical 2→1; warning was 1 → bumps to 0
@@ -188,7 +188,7 @@ describe('AlertRulesSettings — each control takes effect', () => {
     const user = userEvent.setup()
     renderWithClient(<AlertRulesSettings />)
     await screen.findByText('No Draft BOL received')
-    const draftCard = screen.getByText('No Draft BOL received').closest('.overflow-hidden')!
+    const draftCard = screen.getByText('No Draft BOL received').closest('.overflow-hidden') as HTMLElement
     // Scope to Draft card — Final card also has a China stepper.
     const cnGroup = within(draftCard).getByRole('group', { name: /China days after ETD/i })
     await user.click(within(cnGroup).getByRole('button', { name: /increase days/i }))
@@ -246,7 +246,7 @@ describe('AlertRulesSettings — each control takes effect', () => {
     const warnInput = screen.getByRole('textbox', {
       name: /No Draft BOL received warning days after ETD value/i,
     })
-    const draftCard = screen.getByText('No Draft BOL received').closest('.overflow-hidden')!
+    const draftCard = screen.getByText('No Draft BOL received').closest('.overflow-hidden') as HTMLElement
     await user.click(within(draftCard).getAllByRole('button', { name: /increase days/i })[0]!)
     expect(warnInput).toHaveValue('2')
     await user.click(screen.getByRole('button', { name: /Discard/i }))
@@ -265,7 +265,7 @@ describe('AlertRulesSettings — each control takes effect', () => {
     })
     expect(warnInput).toHaveValue('3')
     expect(criticalInput).toHaveValue('7')
-    const finalCard = screen.getByText('No Final BOL received').closest('.overflow-hidden')!
+    const finalCard = screen.getByText('No Final BOL received').closest('.overflow-hidden') as HTMLElement
     await user.click(within(finalCard).getAllByRole('button', { name: /increase days/i })[0]!)
     expect(warnInput).toHaveValue('4')
     expect(criticalInput).toHaveValue('7') // still > 4

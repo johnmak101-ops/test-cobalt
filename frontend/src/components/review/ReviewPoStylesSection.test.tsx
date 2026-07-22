@@ -11,8 +11,8 @@ const createMutate = vi.fn()
 const updateMutateAsync = vi.fn()
 const unlinkMutate = vi.fn()
 const linkMutate = vi.fn()
-const toastMock = vi.fn()
-toastMock.error = vi.fn()
+const toastError = vi.fn()
+const toastMock = Object.assign(vi.fn(), { error: toastError })
 
 vi.mock('../../hooks/use-purchase-orders', () => ({
   useCreatePurchaseOrder: () => ({ mutate: createMutate, isPending: false }),
@@ -27,7 +27,7 @@ vi.mock('../../hooks/use-purchase-orders', () => ({
 
 vi.mock('../ui/Toast', () => ({
   toast: Object.assign((msg: string) => toastMock(msg), {
-    error: (msg: string) => toastMock.error(msg),
+    error: (msg: string) => toastError(msg),
   }),
 }))
 
