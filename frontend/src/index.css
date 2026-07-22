@@ -33,7 +33,10 @@
      (= cobalt-teal, an existing brand colour) reads as in-transit and stays distinct from the Draft
      BOL blue before it and the Delivered green after it. */
   --color-state-released: #00A884;
-  --color-state-delivered: #67C23A;
+  /* Delivered was the SAME green as SO Received (#67C23A), so a finished shipment and one that had
+     just received its SO were indistinguishable in a status column. Uses the brighter success green
+     (= status-success) so the terminal state reads as completed, not as an early document stage. */
+  --color-state-delivered: #22C55E;
 
   /* Surface Colors (Dark Theme — Default) */
   --color-bg: #050505;
