@@ -1,7 +1,13 @@
 import { Injectable } from '@nestjs/common'
 import type { Selectable } from 'kysely'
 import type { DB } from '../db/kysely/db'
-import { isFiring, crdRevisionNotReflected, type LegFacts, type Rule } from './alert-rules'
+import {
+  isFiring,
+  crdRevisionNotReflected,
+  formatThresholdAlertMessage,
+  type LegFacts,
+  type Rule,
+} from './alert-rules'
 import { AlertRepository } from '../db/repositories/alert.repository'
 import { ShipmentRepository } from '../db/repositories/shipment.repository'
 import { EmailRepository } from '../db/repositories/email.repository'
@@ -60,7 +66,8 @@ export class AlertEvaluatorService {
       for (const rule of rules) {
         if (!THRESHOLD_RULE_IDS.has(rule.id)) continue
         if (!isFiring(rule, facts, now)) continue
-        const message = rule.description ?? rule.id
+        // Live facts + rule thresholds — not the static seed description.
+        const message = formatThresholdAlertMessage(rule, facts, now)
         const dedupKey = `${rule.id}:${leg.id}`
         const isNew = await this.alerts.insertDeduped({
           ruleId: rule.id,

@@ -111,6 +111,98 @@ export function isFiring(rule: Rule, f: LegFacts, now: Date): boolean {
   return now.getTime() > deadline(rule, ref, f.originCountry).getTime()
 }
 
+// ---- Flexible operator message (threshold rules A1–A6) ----
+
+const WATCH_LABELS: Record<string, string> = {
+  so: 'SO / booking confirmation',
+  draft_bl: 'Draft B/L',
+  final_bl: 'Final B/L',
+  telex: 'telex release',
+  invoice: 'invoice',
+  sailed: 'sailing confirmation',
+  delivered: 'delivery / in-DC',
+}
+
+const REF_LABELS: Record<string, string> = {
+  booking_request: 'booking request',
+  cutoff: 'CFS cut-off',
+  departure: 'ATD',
+  warehouse_in: 'warehouse-in',
+  final_bl: 'Final B/L receipt',
+  draft_bl: 'Draft B/L receipt',
+  etd: 'ETD',
+  eta: 'ETA',
+}
+
+/** Next-step hint derived from what is still missing — not from rule id. */
+const ACTION_BY_WATCH: Record<string, string> = {
+  so: 'Contact forwarder for SO / booking confirmation',
+  draft_bl: 'Contact forwarder for Draft B/L',
+  final_bl: 'Chase Final B/L with forwarder',
+  telex: 'Confirm freight payment / telex release',
+  invoice: 'Chase commercial invoice with forwarder',
+  sailed: 'Confirm sailing with forwarder',
+  delivered: 'Confirm delivery / in-DC with consignee',
+}
+
+/** Configured threshold: exact hours, or whole days when divisible by 24. */
+function formatDurationHours(hours: number): string {
+  const abs = Math.abs(hours)
+  if (abs % 24 === 0) {
+    const days = abs / 24
+    return days === 1 ? '1 day' : `${days} days`
+  }
+  return abs === 1 ? '1 hour' : `${abs} hours`
+}
+
+/** Elapsed time for operators: prefer calendar-day granularity once past a day. */
+function formatElapsedHours(hours: number): string {
+  const abs = Math.max(0, Math.floor(Math.abs(hours)))
+  if (abs < 24) return formatDurationHours(abs || 0)
+  const days = Math.floor(abs / 24)
+  return days === 1 ? '1 day' : `${days} days`
+}
+
+function dayStamp(d: Date): string {
+  return d.toISOString().slice(0, 10)
+}
+
+/**
+ * Build a live operator message from the rule shape + leg facts (not the static DB description).
+ * Threshold, reference date, elapsed window, and next-step action all come from configuration.
+ * Safe to call only when the rule is firing (reference present, watch still missing).
+ */
+export function formatThresholdAlertMessage(rule: Rule, f: LegFacts, now: Date): string {
+  const watch = WATCH_LABELS[rule.watchFor] ?? rule.watchFor
+  const refLabel = REF_LABELS[rule.triggerReference] ?? rule.triggerReference
+  const hours = resolveThresholdHours(rule, f.originCountry)
+  const thresholdPhrase = formatDurationHours(hours)
+  const ref = referenceTime(rule, f)
+  const action = ACTION_BY_WATCH[rule.watchFor]
+  const actionSuffix = action ? ` ${action}.` : ''
+
+  if (!ref) {
+    return `No ${watch} received — threshold ${thresholdPhrase} relative to ${refLabel}.${actionSuffix}`
+  }
+
+  const refDay = dayStamp(ref)
+  if (rule.triggerType === 'days_before') {
+    // Window is "within N of the anchor"; message focuses on the upcoming/passed anchor.
+    return (
+      `No ${watch} — ${refLabel} is ${refDay} (alert window: ${thresholdPhrase} before).` +
+      actionSuffix
+    )
+  }
+
+  // days_after: how long past the anchor, and the configured threshold.
+  const elapsedHours = Math.max(0, (now.getTime() - ref.getTime()) / 3_600_000)
+  const elapsedPhrase = formatElapsedHours(elapsedHours > 0 ? elapsedHours : hours)
+  return (
+    `No ${watch} — ${elapsedPhrase} after ${refLabel} (${refDay}); threshold is ${refLabel} + ${thresholdPhrase}.` +
+    actionSuffix
+  )
+}
+
 // ---- A7 (built-in): requested cargo-ready revision not reflected ----
 
 export interface CrdStatement {

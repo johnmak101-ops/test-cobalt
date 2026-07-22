@@ -1,5 +1,12 @@
 import { describe, it, expect } from 'vitest'
-import { isFiring, resolveThresholdHours, crdRevisionNotReflected, type Rule, type LegFacts } from './alert-rules'
+import {
+  isFiring,
+  resolveThresholdHours,
+  crdRevisionNotReflected,
+  formatThresholdAlertMessage,
+  type Rule,
+  type LegFacts,
+} from './alert-rules'
 
 const facts = (over: Partial<LegFacts> = {}): LegFacts => ({
   state: 'CONFIRMED',
@@ -307,6 +314,104 @@ describe('isFiring — A2 country override on cut-off (days before)', () => {
     expect(isFiring(a2(), facts({ cfsCutoff: cutoff, originCountry: 'BD' }), D('2026-02-09T12:00:00Z'))).toBe(true)
     expect(isFiring(a2(), facts({ cfsCutoff: cutoff, originCountry: 'CN' }), D('2026-02-08T12:00:00Z'))).toBe(false)
     expect(isFiring(a2(), facts({ cfsCutoff: cutoff, originCountry: 'BD' }), D('2026-02-08T12:00:00Z'))).toBe(true)
+  })
+})
+
+describe('formatThresholdAlertMessage — flexible (not seed description)', () => {
+  it('A1 days_after ETD: includes elapsed, threshold days, Draft B/L, and action', () => {
+    const r = rule({
+      id: 'A1',
+      triggerType: 'days_after',
+      triggerReference: 'etd',
+      watchFor: 'draft_bl',
+      thresholdHours: 24,
+      severity: 'WARNING',
+    })
+    const msg = formatThresholdAlertMessage(
+      r,
+      facts({ etd: D('2026-02-01T00:00:00Z') }),
+      D('2026-02-03T12:00:00Z'),
+    )
+    expect(msg).toContain('Draft B/L')
+    expect(msg).toContain('ETD')
+    expect(msg).toContain('2026-02-01')
+    expect(msg).toMatch(/2 days/)
+    expect(msg).toMatch(/threshold is ETD \+ 1 day/)
+    expect(msg).toMatch(/Contact forwarder for Draft B\/L/)
+    // Must not be the static seed blurb.
+    expect(msg).not.toMatch(/Warning when Draft B\/L is still missing after ETD \+ N/)
+  })
+
+  it('A4 days_after ETD Final B/L: uses configured 7-day threshold and chase action', () => {
+    const r = rule({
+      id: 'A4',
+      triggerType: 'days_after',
+      triggerReference: 'etd',
+      watchFor: 'final_bl',
+      thresholdHours: 168,
+      severity: 'CRITICAL',
+    })
+    const msg = formatThresholdAlertMessage(
+      r,
+      facts({ etd: D('2026-02-01T00:00:00Z') }),
+      D('2026-02-10T00:00:00Z'),
+    )
+    expect(msg).toContain('Final B/L')
+    expect(msg).toMatch(/threshold is ETD \+ 7 days/)
+    expect(msg).toMatch(/Chase Final B\/L with forwarder/)
+  })
+
+  it('days_before cutoff: window phrasing, not "after"', () => {
+    const r = rule({
+      id: 'A2',
+      triggerType: 'days_before',
+      triggerReference: 'cutoff',
+      watchFor: 'draft_bl',
+      thresholdHours: 24,
+    })
+    const msg = formatThresholdAlertMessage(
+      r,
+      facts({ cfsCutoff: D('2026-02-10T00:00:00Z') }),
+      D('2026-02-09T12:00:00Z'),
+    )
+    expect(msg).toContain('CFS cut-off')
+    expect(msg).toContain('2026-02-10')
+    expect(msg).toMatch(/1 day before/)
+    expect(msg).not.toMatch(/after/)
+  })
+
+  it('country override changes the threshold phrase in the message', () => {
+    const r = rule({
+      id: 'A2',
+      triggerType: 'days_after',
+      triggerReference: 'etd',
+      watchFor: 'draft_bl',
+      thresholdHours: 48,
+      countryThresholds: { BD: 96 },
+    })
+    const msg = formatThresholdAlertMessage(
+      r,
+      facts({ etd: D('2026-02-01T00:00:00Z'), originCountry: 'BD' }),
+      D('2026-02-06T00:00:00Z'),
+    )
+    expect(msg).toMatch(/threshold is ETD \+ 4 days/)
+  })
+
+  it('derives action from watchFor, not rule id (legacy SO rule)', () => {
+    const r = rule({
+      id: 'AX',
+      triggerType: 'days_after',
+      triggerReference: 'booking_request',
+      watchFor: 'so',
+      thresholdHours: 48,
+    })
+    const msg = formatThresholdAlertMessage(
+      r,
+      facts({ bookingRequestAt: D('2026-01-01T00:00:00Z') }),
+      D('2026-01-04T00:00:00Z'),
+    )
+    expect(msg).toMatch(/SO \/ booking confirmation/)
+    expect(msg).toMatch(/Contact forwarder for SO/)
   })
 })
 

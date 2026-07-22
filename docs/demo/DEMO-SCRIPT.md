@@ -24,7 +24,7 @@ Same PO `1570988` on sea **and** air is correct (mode split).
 
 ## Suggested walk (~10 min)
 
-1. **Dashboard** — counts, alerts, new emails.
+1. **Dashboard** — counts, alerts, new emails. Alert text is live (days after ETD + what is missing), not a static seed blurb — see `docs/reference/alert-rules-and-messages.md`.
 2. **Shipments list** — confirm **5** commercial rows (not 7).
 3. **Set5 GZL26261147** — multi-PO air; open email window (HTML body + attachment download after MIME handoff).
 4. **Set1 GZOSA** — sea HBL + SO on one leg; milestone / related emails.
