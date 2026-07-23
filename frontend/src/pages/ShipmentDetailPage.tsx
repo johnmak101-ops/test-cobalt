@@ -325,9 +325,13 @@ export default function ShipmentDetailPage() {
               This shipment is committed but unconfirmed. Resolve issues below, then approve in the review queue.
             </p>
           </div>
+          {/* self-center, not items-center on the row: the row must stay items-start so the
+              AlertTriangle keeps its mt-0.5 alignment with the "Awaiting Review" title. Centring
+              the whole row would drop the icon into the gap between the two text lines. This
+              centres only the button against the two-line block — it was sitting ~20px high. */}
           <Link
             to={`/review-queue/${shipment.id}`}
-            className="shrink-0 rounded-lg bg-status-warning/20 px-3 py-1.5 text-sm font-medium text-status-warning hover:bg-status-warning/30"
+            className="shrink-0 self-center rounded-lg bg-status-warning/20 px-3 py-1.5 text-sm font-medium text-status-warning hover:bg-status-warning/30"
           >
             Review & Approve →
           </Link>
