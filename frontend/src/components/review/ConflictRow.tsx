@@ -278,7 +278,7 @@ export function ConflictRow({
               onChange={onChange}
               ariaLabel={`Proposed value for ${label}`}
               placeholder="—"
-              className="h-8 w-full rounded-lg border border-border bg-surface-900 px-2.5 font-mono text-sm text-text-primary placeholder:text-text-muted"
+              className="h-8 w-full rounded-lg border border-border bg-surface-900 px-2.5 font-mono text-sm text-text-primary placeholder:text-text-muted focus:border-cobalt-primary focus:outline-none"
             />
           ) : (
             <span className="inline-flex w-full items-center">
@@ -287,7 +287,7 @@ export function ConflictRow({
                 value={value}
                 onChange={(e) => onChange(e.target.value)}
                 placeholder="—"
-                className="h-8 w-full rounded-lg border border-border bg-surface-900 px-2.5 font-mono text-sm text-text-primary placeholder:text-text-muted"
+                className="h-8 w-full rounded-lg border border-border bg-surface-900 px-2.5 font-mono text-sm text-text-primary placeholder:text-text-muted focus:border-cobalt-primary focus:outline-none"
               />
               {/* The unit is NOT part of the editable text — the operator types a number, not '87 KGS'. */}
               <Unit unit={proposedUnit} />
@@ -434,7 +434,7 @@ export function StyleListEditor({
                 value={r.po}
                 onChange={(e) => update(i, { po: e.target.value })}
                 placeholder="PO#"
-                className="h-8 w-[30%] min-w-[5rem] shrink-0 rounded-lg border border-border bg-surface-900 px-2 font-mono text-sm text-text-primary placeholder:text-text-muted"
+                className="h-8 w-[30%] min-w-[5rem] shrink-0 rounded-lg border border-border bg-surface-900 px-2 font-mono text-sm text-text-primary placeholder:text-text-muted focus:border-cobalt-primary focus:outline-none"
               />
             )}
             <input
@@ -444,7 +444,7 @@ export function StyleListEditor({
               value={r.style}
               onChange={(e) => update(i, { style: e.target.value })}
               placeholder="Style / item no. — or paste a list"
-              className="h-8 min-w-0 flex-1 rounded-lg border border-border bg-surface-900 px-2.5 font-mono text-sm text-text-primary placeholder:text-text-muted"
+              className="h-8 min-w-0 flex-1 rounded-lg border border-border bg-surface-900 px-2.5 font-mono text-sm text-text-primary placeholder:text-text-muted focus:border-cobalt-primary focus:outline-none"
             />
             <button
               type="button"
@@ -589,7 +589,7 @@ function MultiCandidateProposed({
               value={value}
               onChange={(e) => onChange(e.target.value)}
               placeholder="—"
-              className="h-8 w-full rounded-lg border border-border bg-surface-900 px-2.5 font-mono text-sm text-text-primary placeholder:text-text-muted"
+              className="h-8 w-full rounded-lg border border-border bg-surface-900 px-2.5 font-mono text-sm text-text-primary placeholder:text-text-muted focus:border-cobalt-primary focus:outline-none"
             />
             <Unit unit={proposedUnit} />
           </span>
