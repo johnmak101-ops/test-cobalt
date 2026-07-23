@@ -75,23 +75,30 @@ describe('deriveState — 6-state staircase', () => {
   it('actual arrival (ATA) → DELIVERED', () => {
     expect(deriveState(new Set(['SO']), { ata: '2026-03-05' })).toBe('DELIVERED')
   })
-  it('in-DC date alone does NOT reach DELIVERED without a departure signal', () => {
-    // a delivery cannot precede departure — in_dc with no atd/Final B/L/Telex stays at the prior stage
-    expect(deriveState(new Set(['SO']), { in_dc_date: '2026-03-01' })).toBe('CONFIRMED')
-  })
-  it('in-DC date + departure (atd) → DELIVERED (highest reached wins)', () => {
+  it('in-DC date → DELIVERED', () => {
+    expect(deriveState(new Set(['SO']), { in_dc_date: '2026-03-01' })).toBe('DELIVERED')
     expect(deriveState(new Set(['SO']), { in_dc_date: '2026-03-01', atd: '2026-02-20' })).toBe('DELIVERED')
   })
-  it('ETA that has passed + departure evidence → DELIVERED (estimated fallback)', () => {
+  it('ETA that has passed → DELIVERED (estimated fallback)', () => {
     const now = new Date('2026-07-21T15:00:00Z')
     // on the ETA day itself
     expect(deriveState(new Set(['SO']), { eta: '2026-07-21', atd: '2026-07-01' }, now)).toBe('DELIVERED')
     // and after it — an equality test would have missed this shipment forever
     expect(deriveState(new Set(['SO']), { eta: '2026-07-18', atd: '2026-07-01' }, now)).toBe('DELIVERED')
   })
-  it('a passed ETA with NO departure evidence does not deliver (it never left)', () => {
+  /**
+   * Ops decision 2026-07-23: a passed ETA delivers on its own. The rules used to demand departure
+   * evidence too, but the ATD and the Departure Notice are the signals most often MISSING from a
+   * leg — GZL26261147 sat at Departure with an ETA five months past because it had neither — so the
+   * gate withheld delivery from exactly the shipments that needed it, and the gate was the
+   * unreliable half. Accepted cost: a leg whose goods never shipped reads Delivered once its planned
+   * ETA passes.
+   */
+  it('a passed ETA delivers without any departure evidence', () => {
     const now = new Date('2026-07-21T15:00:00Z')
-    expect(deriveState(new Set(['SO']), { eta: '2026-07-18' }, now)).toBe('CONFIRMED')
+    expect(deriveState(new Set(['SO']), { eta: '2026-07-18' }, now)).toBe('DELIVERED')
+    // the shape that prompted the change: Final B/L cut, no ATD, ETA long past
+    expect(deriveState(new Set(['Final B/L']), { eta: '2026-02-11', etd: '2026-02-08' }, now)).toBe('DELIVERED')
   })
   it('a FUTURE ETA does not deliver', () => {
     const now = new Date('2026-07-21T15:00:00Z')
