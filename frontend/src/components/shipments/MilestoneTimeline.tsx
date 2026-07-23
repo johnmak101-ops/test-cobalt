@@ -245,37 +245,48 @@ export function MilestoneTimeline({
   )
 
   const horizontalView = (
-    <div className="flex items-stretch">
+    <div className="flex items-start">
       {stages.map((s) => (
-        <div key={s.type} className="flex min-w-0 flex-1 items-start">
-          <div className="flex w-full min-w-0 flex-col items-center">
-            <div
-              className={cn(
-                'z-10 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border-2',
-                s.isCurrent
-                  ? 'border-status-warning bg-status-warning/20 text-status-warning'
-                  : s.done
-                    ? 'border-cobalt-primary bg-cobalt-primary text-white'
-                    : s.isNext
-                      ? 'border-cobalt-primary bg-transparent'
-                      : 'border-border bg-transparent',
-              )}
-            >
-              {s.isCurrent ? transitIcon : s.done && <Check size={14} />}
-            </div>
-            <div className="mt-1.5 min-w-0 max-w-full px-0.5 text-center">
-              <p className={stageLabelClass(s, 'text-sm leading-tight')}>{s.label}</p>
-              {dateLine(s, 'text-xs')}
-            </div>
-          </div>
+        <div key={s.type} className="relative flex min-w-0 flex-1 flex-col items-center">
+          {/* The rule joins this node to the NEXT one, pinned to the icons' centre line and spanning
+              centre-to-centre across the gap.
+
+              All rem, never px: the node is h-7/w-7 (1.75rem) and the app's font-scale toggle moves
+              the root size, so a px offset drifts off-centre the moment a user scales the text.
+              top = 0.875rem (half the node) − 0.0625rem (half the 2px rule); the inset is the
+              0.875rem node radius plus a 0.25rem breather.
+
+              It used to be a flex sibling with `self-center`, which centred it on the whole column
+              INCLUDING the label and date — 31px too low, drawing straight through the labels — and
+              left it only the ~9px of width the text did not claim. Absolute positioning takes it
+              out of the flow entirely, so label length can no longer move or squeeze it. */}
           {!s.isLast && (
             <div
+              aria-hidden
               className={cn(
-                '-mx-1 h-0.5 flex-1 self-center',
+                'absolute left-[calc(50%+1.125rem)] right-[calc(-50%+1.125rem)] top-[0.8125rem] h-0.5',
                 s.idx < currentIndex ? 'bg-cobalt-primary' : s.isCurrent ? 'bg-status-warning' : 'bg-border',
               )}
             />
           )}
+          <div
+            className={cn(
+              'z-10 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border-2',
+              s.isCurrent
+                ? 'border-status-warning bg-status-warning/20 text-status-warning'
+                : s.done
+                  ? 'border-cobalt-primary bg-cobalt-primary text-white'
+                  : s.isNext
+                    ? 'border-cobalt-primary bg-transparent'
+                    : 'border-border bg-transparent',
+            )}
+          >
+            {s.isCurrent ? transitIcon : s.done && <Check size={14} />}
+          </div>
+          <div className="mt-1.5 min-w-0 max-w-full px-0.5 text-center">
+            <p className={stageLabelClass(s, 'text-sm leading-tight')}>{s.label}</p>
+            {dateLine(s, 'text-xs')}
+          </div>
         </div>
       ))}
     </div>
@@ -303,15 +314,17 @@ export function MilestoneTimeline({
     )
   }
 
-  // Six steps side by side crowd a phone (labels collide) — show the vertical stepper below md and
-  // the horizontal tracker from md up, where there is room for the labels.
+  // Six steps side by side crowd a narrow card (labels collide) — vertical stepper below 42rem,
+  // horizontal tracker above. Keyed on the CARD's width via @container, not the viewport: the
+  // sidebar and page padding mean a 1024px window can still leave this card under 700px, and a
+  // viewport-keyed `md:` was showing the crowded horizontal layout in exactly that gap.
   return (
-    <div data-testid="milestone-timeline">
+    <div data-testid="milestone-timeline" className="@container">
       <p className="mb-3 text-sm font-medium text-text-primary" data-testid="milestone-orientation">
         {orientation}
       </p>
-      <div className="md:hidden">{verticalView}</div>
-      <div className="hidden md:block">{horizontalView}</div>
+      <div className="@2xl:hidden">{verticalView}</div>
+      <div className="hidden @2xl:block">{horizontalView}</div>
     </div>
   )
 }

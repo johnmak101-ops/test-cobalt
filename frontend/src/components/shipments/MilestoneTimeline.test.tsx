@@ -76,6 +76,37 @@ describe('orientationLine', () => {
 })
 
 describe('MilestoneTimeline', () => {
+  // The horizontal connectors used to be flex siblings with `self-center`, which centred them on the
+  // whole stage column — icon AND label AND date — so they drew ~31px too low, straight through the
+  // label row, and were squeezed to whatever width the text left over (~9px). They are now absolute,
+  // pinned to the icons' centre line. All offsets in rem, because the app's font-scale toggle moves
+  // the root size and a px offset would drift off-centre the moment a user scales the text.
+  it('draws the connectors on the icon centre line, out of the label flow', () => {
+    const { container } = render(
+      <MilestoneTimeline horizontal milestones={[]} currentStatus="BOOKED" />,
+    )
+    const rules = [...container.querySelectorAll('div')].filter((d) => d.className.includes('h-0.5'))
+    expect(rules).toHaveLength(5) // six stages, five gaps
+    for (const rule of rules) {
+      expect(rule).toHaveClass('absolute', 'top-[0.8125rem]')
+      expect(rule.className).not.toContain('self-center')
+      expect(rule.className).not.toContain('flex-1')
+    }
+  })
+
+  // A `horizontal` prop on the caller forced six stages side by side however narrow the card was.
+  // The layout is chosen from the component's OWN container width — the viewport is the wrong
+  // yardstick when a sidebar and page padding sit between it and this card.
+  it('picks its layout from container width when horizontal is not forced', () => {
+    const { container } = render(
+      <MilestoneTimeline milestones={[]} currentStatus="BOOKED" />,
+    )
+    const root = container.querySelector('[data-testid="milestone-timeline"]')!
+    expect(root).toHaveClass('@container')
+    expect(root.querySelector('.\\@2xl\\:hidden')).not.toBeNull()
+    expect(root.querySelector('.hidden.\\@2xl\\:block')).not.toBeNull()
+  })
+
   it('shows lean stages: Booking Request → SO → Draft BOL → Final BOL → Departure → Delivered', () => {
     render(
       <MilestoneTimeline
