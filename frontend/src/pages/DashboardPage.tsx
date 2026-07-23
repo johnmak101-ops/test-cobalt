@@ -1,12 +1,18 @@
 import { useDashboard } from '../hooks/use-dashboard'
+import { useAlerts } from '../hooks/use-alerts'
+import { useShipments } from '../hooks/use-shipments'
 import { KPICard } from '../components/dashboard/KPICard'
-import { RecentActivityTable } from '../components/dashboard/RecentActivityTable'
-import { AlertCard } from '../components/alerts/AlertCard'
+import { ActiveAlertsPanel } from '../components/dashboard/ActiveAlertsPanel'
+import { ActiveShipmentsTable } from '../components/dashboard/ActiveShipmentsTable'
 import { Package, AlertTriangle, AlertCircle, Mail } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 
 export default function DashboardPage() {
   const { data, isLoading } = useDashboard()
+  // Both tables read the SAME endpoints the Alerts and Shipments pages use, filtered client-side.
+  // No new API: the dashboard should not be able to disagree with the page it links to.
+  const { data: alertsData } = useAlerts()
+  const { data: shipmentsData } = useShipments({ status: 'ALL' })
   const navigate = useNavigate()
 
   if (isLoading) {
@@ -53,31 +59,16 @@ export default function DashboardPage() {
         />
       </div>
 
-      {/* Alerts Requiring Attention */}
-      {data?.recentAlerts && data.recentAlerts.length > 0 && (
-        <div className="space-y-3">
-          <div className="flex items-center justify-between gap-2">
-            <h2 className="min-w-0 truncate text-sm font-semibold text-text-primary">
-              Alerts Requiring Attention
-            </h2>
-            <button
-              type="button"
-              onClick={() => navigate('/alerts')}
-              className="text-xs font-medium text-cobalt-primary-light hover:underline"
-            >
-              View All
-            </button>
-          </div>
-          <div className="space-y-2">
-            {data.recentAlerts.slice(0, 5).map((alert) => (
-              <AlertCard key={alert.id} alert={alert} compact />
-            ))}
-          </div>
-        </div>
-      )}
+      {/* Alerts stay the compact AlertCard stack (severity edge + unread dot + full message); what
+          changed is the source — live /alerts, ACTIVE-only, snoozed excluded, worst-first — instead
+          of the dashboard payload's recentAlerts. */}
+      <ActiveAlertsPanel alerts={alertsData?.alerts ?? []} />
 
-      {/* Today's cargo that set sail (empty state is handled inside the table). */}
-      <RecentActivityTable shipments={data?.recentActivity ?? []} />
+      <ActiveShipmentsTable shipments={shipmentsData?.shipments ?? []} />
+
+      {/* "Today's Cargo Set Sail" is parked, not deleted — it read "No cargo set sail today" on
+          most days, which is a whole card spent saying nothing. RecentActivityTable and the
+          dashboard's recentActivity payload are untouched; restore by rendering it again. */}
     </div>
   )
 }
