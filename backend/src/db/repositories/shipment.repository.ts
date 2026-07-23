@@ -158,6 +158,53 @@ export class ShipmentRepository {
       .selectAll()
       .execute()
   }
+  /**
+   * Candidates for the periodic state refresh: live SHIPMENT legs that are not already terminal.
+   *
+   * Unlike `activeConfirmedLegs` this does NOT require reviewStatus='confirmed' — a provisional leg's
+   * lifecycle is just as real, and its badge/timeline go just as stale. It is a derivation from the
+   * leg's own dates, not an automation acting on it. DELIVERED is excluded because nothing outranks
+   * it, and superseded/linked husks because they are no longer the leg anyone reads.
+   */
+  legsForStateRefresh() {
+    return this.db
+      .selectFrom('shipments')
+      .where('legStatus', '=', 'ACTIVE')
+      .where('kind', '=', 'SHIPMENT')
+      .where('supersededById', 'is', null)
+      .where('linkedShipmentId', 'is', null)
+      .where('state', '!=', 'DELIVERED')
+      .selectAll()
+      .execute()
+  }
+
+  /** Recorded email TYPES per shipment (shipment_emails) — the evidence half of deriveState. */
+  async emailTypesForShipments(shipmentIds: string[]): Promise<Map<string, Set<string>>> {
+    const byShipment = new Map<string, Set<string>>()
+    if (!shipmentIds.length) return byShipment
+    const rows = await this.db
+      .selectFrom('shipmentEmails')
+      .select(['shipmentId', 'emailType'])
+      .where('shipmentId', 'in', shipmentIds)
+      .execute()
+    for (const r of rows) {
+      if (!r.emailType) continue
+      const set = byShipment.get(r.shipmentId) ?? new Set<string>()
+      set.add(r.emailType)
+      byShipment.set(r.shipmentId, set)
+    }
+    return byShipment
+  }
+
+  /** Move a leg's lifecycle state. The caller owns the promote-only rule (see StateRefreshService). */
+  async setState(id: string, state: (typeof SHIPMENT_STATE)[number]): Promise<void> {
+    await this.db
+      .updateTable('shipments')
+      .set({ state, updatedAt: new Date() })
+      .where('id', '=', id)
+      .execute()
+  }
+
   /** Provisional legs awaiting human review (lowest confidence first). Dismissed rows are excluded —
    *  a human already ruled "not a trackable shipment" (see reviewQueue views). */
   provisionalLegs() {
