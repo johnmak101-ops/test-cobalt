@@ -55,11 +55,10 @@ export class UiAlertRulesController {
   @Put() save(@Body() body: SaveAlertRulesDto) {
     return this.ui.saveAlertRules(body)
   }
-  /** True factory reset (thresholds, severity, country overrides, enabled) — same Edit gate as save. */
-  @PageWrite('alert_rules')
-  @Post('reset') reset() {
-    return this.ui.resetAlertRules()
-  }
+  // POST /alert-rules/reset removed with the "Reset to Defaults" button (2026-07-23). It was the
+  // route's only caller, and a governed write endpoint nothing invokes is surface without a user.
+  // ALERT_RULE_FACTORY_DEFAULTS stays — seed.ts still owns fresh installs and structural sync, so
+  // `pnpm seed` remains the way back to factory thresholds.
 }
 
 @Controller('shipments')

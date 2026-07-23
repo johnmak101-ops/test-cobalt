@@ -134,8 +134,8 @@ export function AlertRulesSettings() {
           </p>
         </div>
         {/* No "Reset to Defaults" button: it did not work from the UI, and the two thresholds it
-            restored are quicker to retype than to trust. POST /alert-rules/reset still exists
-            server-side — nothing in the app calls it now. */}
+            restored are quicker to retype than to trust. POST /alert-rules/reset went with it —
+            `pnpm seed` is the way back to factory thresholds. */}
         <div className="flex shrink-0 items-center gap-2">
           <button
             type="button"
