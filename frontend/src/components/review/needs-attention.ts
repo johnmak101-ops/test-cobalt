@@ -80,12 +80,28 @@ const SYSTEM_DECISION_NOTE_TEXT: RegExp[] = [
   /^Warehouse \/ CFS cut-off updated to /i, // cut-off replaced by a later one
   /^Warehouse cut-off kept at /i, // earliest binding cut-off retained
   /supersedes \d{4}-\d{2}-\d{2}/i, // a dated value replaced by a newer one
+  // The vendor/forwarder guard reporting it ALREADY swapped a factory-looking name for the
+  // customer. A record of a decision taken, not a party anyone must go and add to Mesh. The same
+  // sentence also arrives as a riskFlag, where GUARD_ALREADY_ACTED_RE stops it earlier; this entry
+  // covers the reviewReasons copy, which falls through to a generic reason:* line under Other.
+  /^auto: factory\/vendor-like '[^']*' replaced with customer /i,
 ]
 
 function isSystemDecisionNote(item: Pick<NeedsAttentionItem, 'lineId' | 'text'>): boolean {
   if (SYSTEM_DECISION_NOTE_PREFIXES.some((p) => item.lineId.startsWith(p))) return true
   return SYSTEM_DECISION_NOTE_TEXT.some((re) => re.test(item.text))
 }
+
+/**
+ * The vendor/forwarder guard's "I already swapped it" note, matched on the RAW message.
+ *
+ * isSystemDecisionNote runs on the FINISHED item text, which is too late for this one: the PARTY_OPS
+ * branch would first pull `MACAU FUNG TAI LIMITED` out of the quotes and rewrite the text to
+ * "MACAU FUNG TAI LIMITED — not in Mesh", at which point the suppression regex no longer matches and
+ * ops are told to add a party that was deliberately replaced. Caught at the message, it never
+ * becomes an item at all.
+ */
+const GUARD_ALREADY_ACTED_RE = /^auto: factory\/vendor-like '[^']*' replaced with customer /i
 
 export const GROUP_ORDER: NeedsAttentionGroupId[] = [
   'which_shipment',
@@ -451,8 +467,13 @@ type LineHit = {
 }
 
 /** Quoted party name from matcher/ops prose, if any. */
+/**
+ * The quoted party in an ops note. Accepts single quotes as well as double: the queue writes both
+ * ("Cannot match "X" in the vendor list" vs "kept 'FAIRATE'"), and matching only `"` sent every
+ * single-quoted message into the fallback below.
+ */
 function extractQuotedParty(raw: string): string | null {
-  return raw.match(/"([^"]+)"/)?.[1]?.trim() || null
+  return raw.match(/"([^"]+)"/)?.[1]?.trim() || raw.match(/'([^']+)'/)?.[1]?.trim() || null
 }
 
 /**
@@ -622,18 +643,29 @@ function lineFromFlag(code: string, message: string): LineHit | null {
       // Never collapse to a blank "Party not linked" — reuse the same synonym/value lines as reviewReasons.
       // Drop "raw name used / no master code" prose — Master miss already has the Cannot-match line.
       if (isRedundantRawNameMasterNote(message)) return null
+      // A guard reporting it already acted is not a party anyone must add — see the constant.
+      if (GUARD_ALREADY_ACTED_RE.test(message.trim())) return null
       const hit = lineFromReason(message, message)
       if (hit && !hit.lineId.startsWith('reason:')) return hit
       // Fallback: still surface the raw message rather than a useless generic
       const snippet = message.trim()
       const quoted = extractQuotedParty(message)
+      if (quoted) {
+        return { lineId: meshPartyLineId(quoted), text: meshPartyMissText(quoted), category: 'master_miss' }
+      }
+      /**
+       * No party name in the message — so DO NOT invent one. This used to build an `m-party:` id
+       * from `snippet.slice(0, 48)`, which turned any unrecognised sentence into a company: the
+       * guard note "auto: factory/vendor-like 'MACAU FUNG TAI LIMITED' replaced with customer …"
+       * came out as the party "AUTO FACTORY VENDOR LIKE MACAU FUNG TAI LIMITE" (48 chars lands
+       * mid-word), was counted in "N parties not found in Mesh", and was offered to ops to add.
+       *
+       * `m-note:` keeps the message visible under Master miss but outside the party machinery —
+       * it is not counted, not collapsed into the name list, and not advertised as addable.
+       */
       return {
-        lineId: quoted ? meshPartyLineId(quoted) : `m-party:${normalizeMeshPartyKey(snippet.slice(0, 48))}`,
-        text: quoted
-          ? meshPartyMissText(quoted)
-          : snippet.length > 140
-            ? `${snippet.slice(0, 137)}…`
-            : snippet || 'Party not linked to master — left unlinked',
+        lineId: `m-note:${normalizeMeshPartyKey(snippet.slice(0, 48))}`,
+        text: snippet.length > 140 ? `${snippet.slice(0, 137)}…` : snippet || 'Party not linked to master — left unlinked',
         category: 'master_miss',
       }
     }
