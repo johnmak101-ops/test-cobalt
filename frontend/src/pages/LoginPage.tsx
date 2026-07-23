@@ -67,8 +67,6 @@ export default function LoginPage() {
             <LogIn size={14} /> {busy ? 'Signing in…' : 'Sign in'}
           </button>
         </form>
-
-        <p className="mt-6 text-center text-[11px] text-text-muted">Cobalt Fashion Holding Limited</p>
       </div>
     </div>
   )
