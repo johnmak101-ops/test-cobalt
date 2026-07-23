@@ -44,11 +44,11 @@ export type NeedsAttentionGroupId =
   | 'other'
 
 export const GROUP_TITLE: Record<NeedsAttentionGroupId, string> = {
-  which_shipment: 'Which shipment?',
-  real_shipment: 'Real shipment?',
-  fields_disagree: 'Fields disagree',
-  master_miss: 'Master miss',
-  incomplete_data: 'Incomplete data',
+  which_shipment: 'Which Shipment?',
+  real_shipment: 'Real Shipment?',
+  fields_disagree: 'Fields Disagree',
+  master_miss: 'Master Miss',
+  incomplete_data: 'Incomplete Data',
   other: 'Other',
 }
 

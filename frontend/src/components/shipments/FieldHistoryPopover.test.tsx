@@ -49,7 +49,7 @@ describe('FieldHistoryPopover', () => {
     await user.hover(anchor)
 
     const popover = await screen.findByTestId('field-history-popover')
-    expect(popover.textContent).toContain('Total Quantity — change history')
+    expect(popover.textContent).toContain('Total Quantity — Change History')
     expect(popover.textContent).toContain('300')
     expect(popover.textContent).toContain('350')
     expect(popover.textContent).toContain('Manual edit')

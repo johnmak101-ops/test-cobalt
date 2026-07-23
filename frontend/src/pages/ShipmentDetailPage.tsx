@@ -329,7 +329,7 @@ export default function ShipmentDetailPage() {
             to={`/review-queue/${shipment.id}`}
             className="shrink-0 rounded-lg bg-status-warning/20 px-3 py-1.5 text-sm font-medium text-status-warning hover:bg-status-warning/30"
           >
-            Review & approve →
+            Review & Approve →
           </Link>
         </div>
       )}
@@ -528,7 +528,7 @@ export default function ShipmentDetailPage() {
             <div className="mt-6 border-t border-border pt-4">
               <label htmlFor={`${fieldId}-note`} className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-text-primary">
                 <NotebookPen size={13} className="text-text-muted" />
-                Note for the agent
+                Note for the Agent
                 {editedCount > 0 && <span className="text-status-warning">· required</span>}
               </label>
               <p className="mb-2 text-xs text-text-muted">
@@ -817,7 +817,9 @@ function DetailSection({ title, icon, children }: { title: string; icon: React.R
     <div>
       <div className="mb-3 flex items-center gap-1.5">
         {icon}
-        <span className="text-xs font-semibold uppercase tracking-wider text-text-muted">{title}</span>
+        {/* Title Case as written, not uppercased in CSS — same rule as the review card's group
+            headers, so "Order Info" reads identically on both surfaces. */}
+        <span className="text-xs font-semibold text-text-muted">{title}</span>
       </div>
       <div className="space-y-3">{children}</div>
     </div>

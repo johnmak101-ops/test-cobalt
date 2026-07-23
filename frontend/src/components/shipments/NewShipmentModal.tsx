@@ -124,7 +124,7 @@ export function NewShipmentModal({ onClose }: { onClose: () => void }) {
 
   const section = (title: string, fields: Field[]) => (
     <div className="space-y-2">
-      <h4 className="text-xs font-semibold uppercase tracking-wide text-text-muted">{title}</h4>
+      <h4 className="text-xs font-semibold text-text-muted">{title}</h4>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">{fields.map(renderField)}</div>
     </div>
   )

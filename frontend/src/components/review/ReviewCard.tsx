@@ -623,7 +623,7 @@ export function ReviewCard({
                     earns its place on the COLLAPSED queue row, where nothing else summarises the
                     row. */}
                 <p className={`${REVIEW_FS.topic} font-semibold text-text-primary`}>
-                  Needs attention
+                  Needs Attention
                 </p>
                 <div className="mt-1.5 space-y-2">
                   {needsAttentionGroups.map((g) => (
@@ -1032,7 +1032,7 @@ export function ReviewCard({
               className={cn(ACTION_BTN, ACTION_VARIANT.secondary)}
               data-testid="open-shipment"
             >
-              Open shipment
+              Open Shipment
             </a>
             {!readOnly && (
               /* Two states, two button sets:
@@ -1084,7 +1084,7 @@ export function ReviewCard({
                     className={cn(ACTION_BTN, ACTION_VARIANT.success)}
                   >
                     {busy && <Loader2 size={13} className="animate-spin" />}
-                    {multiCandNeedsTarget ? 'Link without field changes' : 'Keep current'}
+                    {multiCandNeedsTarget ? 'Link Without Field Changes' : 'Keep Current'}
                   </button>
                 )}
                 {(onSaveAndApprove || onApprove || multiCandNeedsTarget) && (
@@ -1110,12 +1110,12 @@ export function ReviewCard({
                       ? 'Submit'
                       : multiCandNeedsTarget
                         ? changeCount > 0
-                          ? `Link & apply ${changeCount} change${changeCount === 1 ? '' : 's'}`
-                          : 'Link & apply'
+                          ? `Link & Apply ${changeCount} Change${changeCount === 1 ? '' : 's'}`
+                          : 'Link & Apply'
                         : changeCount > 0
                           ? 'Approve'
                           : onApprove
-                            ? 'Keep current'
+                            ? 'Keep Current'
                             : 'Approve'}
                   </button>
                 )}
@@ -1133,7 +1133,7 @@ export function ReviewCard({
                     className={cn(ACTION_BTN, ACTION_VARIANT.secondary)}
                   >
                     {busy && <Loader2 size={13} className="animate-spin" />}
-                    Confirm as separate shipment
+                    Confirm as Separate Shipment
                   </button>
                 )}
               </div>

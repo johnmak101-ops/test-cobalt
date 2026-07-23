@@ -108,7 +108,7 @@ function CustomerPoChip({
             onMouseEnter={clearClose}
             onMouseLeave={scheduleClose}
           >
-            <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-text-muted">
+            <p className="mb-2 text-[11px] font-semibold text-text-muted">
               Customer Purchase Orders
             </p>
             <div className="divide-y divide-border">

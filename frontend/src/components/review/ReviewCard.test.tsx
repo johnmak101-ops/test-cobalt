@@ -1,4 +1,4 @@
-﻿import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
@@ -173,7 +173,7 @@ describe('ReviewCard', () => {
 
     const why = screen.getByTestId('why-review')
     expect(within(why).getByText(/No booking, SO, B\/L, or PO — cannot place this email/)).toBeInTheDocument()
-    expect(within(why).getByText(/Real shipment\?/)).toBeInTheDocument()
+    expect(within(why).getByText(/Real Shipment\?/)).toBeInTheDocument()
     expect(screen.queryByText(/No field conflicts/i)).toBeNull()
     expect(screen.queryByRole('table')).toBeNull()
     expect(screen.queryByText('2026-08-01')).toBeNull()
@@ -308,7 +308,7 @@ describe('ReviewCard', () => {
     expect(why.textContent).toMatch(/Email and system differ on Qty — choose which values to keep/)
     expect(why.textContent).not.toMatch(/gross_weight|Gross Weight|HTS/i)
     expect(why.textContent).not.toMatch(/below|highlighted fields/)
-    expect(why.textContent).toMatch(/Fields disagree/)
+    expect(why.textContent).toMatch(/Fields Disagree/)
   })
 
   // The queue's riskFlags and ShipTrack's committer reviewReasons are two DIFFERENT sources, not a
@@ -340,7 +340,7 @@ describe('ReviewCard', () => {
     const why = screen.getByTestId('why-review')
     expect(within(why).getByText(/Field values disagree|field\(s\) disagree/i)).toBeInTheDocument()
     // Master miss is decision on Review (tagDesk → operator resolves Mesh party/port)
-    expect(within(why).getByText(/Master miss/)).toBeInTheDocument()
+    expect(within(why).getByText(/Master Miss/)).toBeInTheDocument()
     expect(within(why).getByText(/A\.P\. Moller - Maersk|Mesh Database/i)).toBeInTheDocument()
   })
 
@@ -629,11 +629,11 @@ describe('ReviewCard', () => {
     const { rerender } = render(<ReviewCard {...props} />)
     // unresolved → the prompt is there
     expect(screen.getByTestId('needs-attention')).toBeInTheDocument()
-    expect(screen.getByText('Needs attention')).toBeInTheDocument()
+    expect(screen.getByText('Needs Attention')).toBeInTheDocument()
 
     rerender(<ReviewCard {...props} readOnly />)
     expect(screen.queryByTestId('needs-attention')).toBeNull()
-    expect(screen.queryByText('Needs attention')).toBeNull()
+    expect(screen.queryByText('Needs Attention')).toBeNull()
     expect(screen.queryByTestId('needs-group-which_shipment')).toBeNull()
   })
 })
