@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Copy, Plus, X } from 'lucide-react'
+import { Copy, Mail, Plus, X } from 'lucide-react'
 import type { CriticConflict } from '../../lib/critic-review'
 import {
   reviewFieldLabel,
@@ -36,6 +36,8 @@ export interface ConflictRowProps {
   onRequestEdit?: () => void
   /** When true, field is a critical sailing column — light badge next to label. */
   critical?: boolean
+  /** Turns a candidate's queue-side sourceEmailId into an openable email; null → no icon. */
+  resolveSourceEmail?: ResolveSourceEmail
   /** When set, Current column shows this instead of critic system candidate (qty live-leg). */
   existingOverride?: string | null
 }
@@ -48,6 +50,42 @@ function Unit({ unit }: { unit?: string | null }) {
 
 function isSystemSource(source: string): boolean {
   return source.trim().toLowerCase() === 'system'
+}
+
+/**
+ * Resolve a candidate's queue-side `sourceEmailId` (a graphMessageId) to something openable.
+ * Returns null when the email is not among this shipment's related emails, or its body is gone —
+ * the icon then does not render at all. A link that opens the WRONG email is worse than no link,
+ * so nothing here guesses.
+ */
+export type ResolveSourceEmail = (
+  sourceEmailId: string | null | undefined,
+) => { open: () => void; title: string } | null
+
+/** Small mail affordance next to a proposed value — "which email said this?". */
+function SourceEmailIcon({
+  sourceEmailId,
+  resolve,
+}: {
+  sourceEmailId?: string | null
+  resolve?: ResolveSourceEmail
+}) {
+  const link = resolve?.(sourceEmailId) ?? null
+  if (!link) return null
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation()
+        link.open()
+      }}
+      title={link.title}
+      data-testid="candidate-source-email"
+      className="ml-1 inline-flex shrink-0 cursor-pointer items-center align-baseline text-text-muted hover:text-cobalt-primary-light"
+    >
+      <Mail size={11} aria-label="Open the source email" />
+    </button>
+  )
 }
 
 /** Split candidates into Existing (System) vs Proposed (everything else). */
@@ -102,6 +140,7 @@ export function ConflictRow({
   onRequestEdit,
   critical = false,
   existingOverride = null,
+  resolveSourceEmail,
 }: ConflictRowProps) {
   const { existing, proposed } = splitCandidates(conflict)
   const changed = changesStoredValue(conflict, value)
@@ -230,6 +269,7 @@ export function ConflictRow({
             editing={editing}
             proposedUnit={proposedUnit}
             changed={changed}
+            resolveSourceEmail={resolveSourceEmail}
           />
         ) : editing ? (
           isPort ? (
@@ -462,11 +502,13 @@ function MultiCandidateProposed({
   editing,
   proposedUnit,
   changed,
+  resolveSourceEmail,
 }: {
   label: string
-  proposed: { value: string; source: string }[]
+  proposed: { value: string; source: string; sourceEmailId?: string | null }[]
   value: string
   onChange: (v: string) => void
+  resolveSourceEmail?: ResolveSourceEmail
   editing: boolean
   proposedUnit?: string | null
   changed: boolean
@@ -504,6 +546,7 @@ function MultiCandidateProposed({
                   <span className="field-value font-mono text-sm leading-snug text-text-primary">
                     {c.value}
                     <Unit unit={proposedUnit} />
+                    <SourceEmailIcon sourceEmailId={c.sourceEmailId} resolve={resolveSourceEmail} />
                   </span>
                 </label>
               ) : (
@@ -529,6 +572,7 @@ function MultiCandidateProposed({
                   >
                     {c.value}
                     <Unit unit={proposedUnit} />
+                    <SourceEmailIcon sourceEmailId={c.sourceEmailId} resolve={resolveSourceEmail} />
                   </span>
                 </div>
               )}
