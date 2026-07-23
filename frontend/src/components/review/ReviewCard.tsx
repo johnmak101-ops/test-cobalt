@@ -1,5 +1,7 @@
 import { useMemo, useState } from 'react'
-import { CheckCircle, ChevronDown, ChevronRight, ExternalLink, Loader2, Mail, NotebookPen, Pencil, Save, X } from 'lucide-react'
+// Action-bar buttons are text-only — the only icon left in the bar is the busy spinner, which is
+// state, not decoration. ExternalLink/Mail still mark the source-email affordances.
+import { ChevronDown, ChevronRight, ExternalLink, Loader2, Mail, NotebookPen } from 'lucide-react'
 import { Badge } from '../ui/Badge'
 import {
   ConflictRow,
@@ -601,7 +603,7 @@ export function ReviewCard({
                 title="Confirm without applying AI Proposed values"
                 className={cn(ACTION_BTN, ACTION_VARIANT.success)}
               >
-                {busy ? <Loader2 size={13} className="animate-spin" /> : <CheckCircle size={13} />}
+                {busy && <Loader2 size={13} className="animate-spin" />}
                 Keep Existing
               </button>
             )}
@@ -1046,7 +1048,6 @@ export function ReviewCard({
               className={cn(ACTION_BTN, ACTION_VARIANT.secondary)}
               data-testid="open-shipment"
             >
-              <ExternalLink size={13} />
               Open shipment
             </a>
             {!readOnly && (
@@ -1066,7 +1067,6 @@ export function ReviewCard({
                        look like the same kind of action as Submit sitting next to it. */
                     className={cn(ACTION_BTN, ACTION_VARIANT.danger)}
                   >
-                    <X size={13} />
                     Cancel
                   </button>
                 )}
@@ -1077,7 +1077,6 @@ export function ReviewCard({
                     disabled={busy}
                     className={cn(ACTION_BTN, ACTION_VARIANT.secondary)}
                   >
-                    <Pencil size={13} />
                     Edit
                   </button>
                 )}
@@ -1100,7 +1099,7 @@ export function ReviewCard({
                     }
                     className={cn(ACTION_BTN, ACTION_VARIANT.success)}
                   >
-                    {busy ? <Loader2 size={13} className="animate-spin" /> : <CheckCircle size={13} />}
+                    {busy && <Loader2 size={13} className="animate-spin" />}
                     {multiCandNeedsTarget ? 'Link without field changes' : 'Keep current'}
                   </button>
                 )}
@@ -1122,7 +1121,7 @@ export function ReviewCard({
                     }
                     className={cn(ACTION_BTN, ACTION_VARIANT.primary)}
                   >
-                    {busy ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />}
+                    {busy && <Loader2 size={13} className="animate-spin" />}
                     {editing
                       ? 'Submit'
                       : multiCandNeedsTarget
@@ -1149,7 +1148,7 @@ export function ReviewCard({
                     title="Confirm this provisional as its own shipment — do not link into a candidate above"
                     className={cn(ACTION_BTN, ACTION_VARIANT.secondary)}
                   >
-                    {busy ? <Loader2 size={13} className="animate-spin" /> : <CheckCircle size={13} />}
+                    {busy && <Loader2 size={13} className="animate-spin" />}
                     Confirm as separate shipment
                   </button>
                 )}
