@@ -4,6 +4,7 @@ import {
   EmailHeader,
   EmailBodyPane,
   EmailAttachments,
+  parseSender,
   type RelatedEmail,
 } from '../components/shipments/EmailContent'
 import { useEmailAttachments } from '../hooks/use-emails'
@@ -103,7 +104,9 @@ export default function EmailWindowPage() {
                       </span>
                     </span>
                     <span className="mt-0.5 flex items-center justify-between gap-3 text-[11px] text-text-muted">
-                      <span className="min-w-0 truncate">{m.sender}</span>
+                      {/* parseSender, not the raw column: an internal Exchange sender arrives as a
+                          125-char X500 DN and would push the attachment count off the row. */}
+                      <span className="min-w-0 truncate">{parseSender(m.sender).name}</span>
                       {m.attachmentCount > 0 && (
                         <span className="inline-flex shrink-0 items-center gap-1">
                           <Paperclip size={10} />

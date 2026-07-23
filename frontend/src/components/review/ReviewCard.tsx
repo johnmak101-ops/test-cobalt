@@ -34,6 +34,7 @@ import { ReviewPoStylesSection } from './ReviewPoStylesSection'
 import type { ReviewShipment } from '../../hooks/use-review-queue'
 import type { LinkedPO, ShipmentDetail } from '../../hooks/use-shipments'
 import { cn, formatDateTime } from '../../lib/utils'
+import { parseSender } from '../../lib/email-sender'
 import { buildNeedsAttentionGroups, isExpandableMiss, portsLinkedFromRoute } from './needs-attention'
 import { NeedsAttentionMeshMiss } from './NeedsAttentionMeshMiss'
 import {
@@ -738,7 +739,7 @@ export function ReviewCard({
                               ? 'Body not stored — re-ingest to open'
                               : (
                                   <>
-                                    {e.sender} ·{' '}
+                                    {parseSender(e.sender).name} ·{' '}
                                     <span className="font-mono">{formatDateTime(e.receivedAt)}</span>
                                   </>
                                 )}
@@ -904,6 +905,9 @@ export function ReviewCard({
                           data-testid="proposed-column-header"
                         >
                           {proposedColumnLabel}
+                        </th>
+                        <th className={`${REVIEW_COL.reference} ${REVIEW_TH}`}>
+                          {REVIEW_HEAD.reference}
                         </th>
                       </tr>
                     </thead>

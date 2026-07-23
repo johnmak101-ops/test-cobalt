@@ -18,13 +18,10 @@ export interface RelatedEmail {
  *  To/Cc come from the stored queue_message columns when captured; otherwise the header falls back to the
  *  "Cobalt ShipTrack (ingest mailbox)" recipient line. */
 
-// "Display Name <addr@x.com>" → { name, addr }
-export function parseSender(raw: string): { name: string; addr: string } {
-  const m = (raw ?? '').match(/^\s*"?([^"<]*?)"?\s*<([^>]+)>\s*$/)
-  if (m) return { name: (m[1] || m[2]).trim(), addr: m[2].trim() }
-  const t = (raw ?? '').trim()
-  return { name: t || 'Unknown sender', addr: t.includes('@') ? t : '' }
-}
+// parseSender moved to lib/email-sender.ts (pure string work, needed by non-reader surfaces too).
+// Imported for use below and re-exported so existing importers keep working.
+import { parseSender } from '../../lib/email-sender'
+export { parseSender }
 
 export function initials(name: string): string {
   const parts = name.replace(/[<>"]/g, '').trim().split(/[\s@._-]+/).filter(Boolean)
