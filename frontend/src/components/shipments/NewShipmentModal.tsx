@@ -124,7 +124,7 @@ export function NewShipmentModal({ onClose }: { onClose: () => void }) {
 
   const section = (title: string, fields: Field[]) => (
     <div className="space-y-2">
-      <h4 className="text-xs font-semibold uppercase tracking-wide text-text-muted">{title}</h4>
+      <h4 className="text-xs font-semibold text-text-muted">{title}</h4>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">{fields.map(renderField)}</div>
     </div>
   )
@@ -139,7 +139,7 @@ export function NewShipmentModal({ onClose }: { onClose: () => void }) {
           <div className="flex items-start gap-2.5">
             <PlusCircle size={16} className="mt-0.5 shrink-0 text-text-muted" />
             <div>
-              <h3 className="text-sm font-semibold text-text-primary">New shipment</h3>
+              <h3 className="text-sm font-semibold text-text-primary">New Shipment</h3>
               <p className="mt-0.5 text-xs text-text-muted">
                 For a booking the system missed. Enter what you know — it saves as <em>provisional</em> and opens in the Review queue.
                 A later email with the same booking/SO fills the gaps automatically.

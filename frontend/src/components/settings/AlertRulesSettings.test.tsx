@@ -110,20 +110,12 @@ describe('AlertRulesSettings — single-severity cards', () => {
     }
   })
 
-  it('Reset to defaults asks for confirmation then POSTs the reset endpoint', async () => {
-    const user = userEvent.setup()
+  // The two "Reset to defaults" tests went with the button. Guard the removal so it cannot
+  // creep back in unnoticed — the page must offer no reset affordance at all.
+  it('offers no reset control', async () => {
     renderWithClient(<AlertRulesSettings />)
     await screen.findByText('No Draft BOL received')
-    await user.click(screen.getByRole('button', { name: /reset to defaults/i }))
-    await waitFor(() => expect(api.post).toHaveBeenCalledWith('/alert-rules/reset', {}))
-  })
-
-  it('does not reset when the confirm dialog is declined', async () => {
-    vi.mocked(window.confirm).mockReturnValue(false)
-    const user = userEvent.setup()
-    renderWithClient(<AlertRulesSettings />)
-    await screen.findByText('No Draft BOL received')
-    await user.click(screen.getByRole('button', { name: /reset to defaults/i }))
+    expect(screen.queryByRole('button', { name: /reset/i })).toBeNull()
     expect(api.post).not.toHaveBeenCalled()
   })
 })

@@ -108,9 +108,9 @@ export function FieldHistoryPopover({
             onMouseEnter={clearClose}
             onMouseLeave={scheduleClose}
           >
-            <p className="mb-2 flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wide text-text-muted">
+            <p className="mb-2 flex items-center gap-1 text-[11px] font-semibold text-text-muted">
               <Clock size={11} className="shrink-0" />
-              <span className="min-w-0 truncate">{label} — change history</span>
+              <span className="min-w-0 truncate">{label} — Change History</span>
             </p>
             <div className="divide-y divide-border font-sans">
               {entries.map((e) => (
