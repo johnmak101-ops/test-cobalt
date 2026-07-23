@@ -328,11 +328,26 @@ function SourceEmailCell({
         const link = resolve?.(c.sourceEmailId) ?? null
         return (
           <li key={`${c.source}-${c.value}-${i}`}>
-            {/* Matches MultiCandidateProposed's box metrics (border + px-2, py-1 editing / py-0.5 read)
-                so each icon sits on its value's line rather than drifting up the stack. */}
+            {/*
+              Matches MultiCandidateProposed's box metrics (border + px-2, py-1 editing / py-0.5
+              read) so each icon sits on its value's line rather than drifting up the stack.
+
+              A BLOCK box carrying `text-sm leading-snug`, not an inline-flex one. The height then
+              comes from the LINE BOX regardless of what sits inside it, giving 28.7px per row — the
+              same as the value box. An inline-flex wrapper takes its height from its children
+              instead, so a bare 13px icon would render a 25px row and every icon below would creep
+              upward off its value. The type ramp, not the glyph, holds the row open.
+
+              The glyph then sits ~1.9px below the row's exact centre, because align-middle centres
+              it on the baseline rather than the line box. Left alone deliberately: it is CONSTANT
+              (it does not accumulate down the stack) and invisible at 6% of a row. `flex
+              items-center` + a min-height looked like the fix and is not — border-box makes min-h
+              swallow the padding, collapsing rows to 22.1px and breaking the alignment this whole
+              block exists to guarantee.
+            */}
             <div
               className={cn(
-                'inline-flex items-center rounded border border-transparent px-2',
+                'rounded border border-transparent px-2 text-sm leading-snug',
                 editing ? 'py-1' : 'py-0.5',
               )}
             >
@@ -345,22 +360,17 @@ function SourceEmailCell({
                   }}
                   title={link.title}
                   data-testid="candidate-source-email"
-                  // text-sm/leading-snug, NOT text-xs: the row height must equal the value box's in
-                  // the proposed cell, and a smaller type ramp shortens each row by ~3px — an error
-                  // that compounds down the stack until row three's icon points at row two's value.
-                  className="inline-flex items-center gap-1 text-sm leading-snug text-cobalt-primary-light hover:underline"
+                  className="inline-flex items-center align-middle text-cobalt-primary-light hover:text-cobalt-primary"
                 >
-                  <Mail size={12} className="shrink-0" />
-                  {/* Inherits the button's text-sm. It must NOT be text-xs: the button is
-                      inline-flex, so its height comes from its flex children rather than its own
-                      line-height — a smaller label makes this row 25px against the value row's
-                      28.7px, and the 3.7px gap compounds down the stack. */}
-                  <span className="truncate">{c.source}</span>
+                  {/* The document type lives in the tooltip, not on screen — the column is narrow and
+                      "Booking Request" beside every row was more noise than signal. aria-label keeps
+                      it for screen readers, which have no tooltip. */}
+                  <Mail size={13} aria-label={`Open the source email — ${c.source}`} />
                 </button>
               ) : (
                 // This candidate has no traceable email, but a sibling does — hold the row's height
                 // so the icons below stay on their own values.
-                <span className="text-sm leading-snug text-text-muted">—</span>
+                <span className="text-text-muted">—</span>
               )}
             </div>
           </li>
