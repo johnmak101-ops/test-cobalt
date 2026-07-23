@@ -844,7 +844,7 @@ export function ReviewCard({
                   aria-label="Identity value"
                   value={identValue}
                   onChange={(e) => { setIdentValue(e.target.value); setIdentResult(null) }}
-                  className="w-44 rounded-md border border-border bg-surface-800 px-2 py-1 font-mono text-xs text-text-primary"
+                  className="w-44 rounded-md border border-border bg-surface-800 px-2 py-1 font-mono text-xs text-text-primary focus:border-cobalt-primary focus:outline-none"
                 />
                 <button
                   type="button"
@@ -1028,8 +1028,10 @@ export function ReviewCard({
                 rows={2}
                 placeholder="Explain why you chose a different value — this helps improve future extractions"
                 className={cn(
-                  'w-full rounded-lg border bg-surface-900 p-2.5 text-sm leading-snug text-text-primary placeholder:text-text-muted',
-                  noteRequired ? 'border-status-warning/60' : 'border-border',
+                  'w-full rounded-lg border bg-surface-900 p-2.5 text-sm leading-snug text-text-primary placeholder:text-text-muted focus:outline-none',
+                  // Focus must not paint over the "note required" warning — only the neutral state
+                  // takes the cobalt focus border.
+                  noteRequired ? 'border-status-warning/60' : 'border-border focus:border-cobalt-primary',
                 )}
               />
               {noteRequired && (
