@@ -201,7 +201,9 @@ describe('ReviewService.correct — coercion + human-wins locks', () => {
     await svc.correct('leg-1', { fields: { etd: '2026-07-12' }, reason: 'ETD was the CFS date' }, 'user-1')
     expect(locks.lock).toHaveBeenCalledWith('shipment', 'leg-1', 'etd', expect.any(String), 'user-1')
     expect(audit.write).toHaveBeenCalledWith(
-      expect.objectContaining({ field: 'etd', note: 'ETD was the CFS date', sourceType: 'manual' }),
+      // 'review', not 'manual': the history has to say WHERE the human acted — a Review Queue
+      // decision is not an Order Details edit.
+      expect.objectContaining({ field: 'etd', note: 'ETD was the CFS date', sourceType: 'review' }),
     )
   })
 

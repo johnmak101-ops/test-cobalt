@@ -18,6 +18,46 @@ const entry = (over: Partial<HistoryEntry>): HistoryEntry => ({
   ...over,
 })
 
+describe('ShipmentHistoryTimeline — three change sources', () => {
+  it('labels email, agent, manual and review distinctly', () => {
+    render(
+      <ShipmentHistoryTimeline
+        history={[
+          entry({ field: 'etd', sourceType: 'email', sourceId: 'msg-1', notes: 'FW: booking' }),
+          // agent-written rows carry an evidence id, not a message id — same origin, no link
+          entry({ field: 'pol', sourceType: 'system', sourceId: 'ev-9' }),
+          entry({ field: 'qty', sourceType: 'manual' }),
+          entry({ field: 'eta', sourceType: 'review' }),
+        ]}
+      />,
+    )
+    // email + agent both read as Email extraction
+    expect(screen.getAllByText('Email extraction')).toHaveLength(2)
+    expect(screen.getByText('Manual edit')).toBeInTheDocument()
+    expect(screen.getByText('Review queue')).toBeInTheDocument()
+    expect(screen.queryByText('System')).toBeNull()
+  })
+
+  it('links a Review queue change to that shipment’s review view', () => {
+    render(<ShipmentHistoryTimeline history={[entry({ field: 'eta', sourceType: 'review' })]} />)
+    const link = screen.getByTestId('history-review-link')
+    expect(link).toHaveAttribute('href', '/review-queue/s1')
+  })
+
+  it('does not offer a link for agent or manual changes', () => {
+    render(
+      <ShipmentHistoryTimeline
+        history={[
+          entry({ field: 'pol', sourceType: 'system', sourceId: 'ev-9' }),
+          entry({ field: 'qty', sourceType: 'manual', sourceId: 'x' }),
+        ]}
+      />,
+    )
+    expect(screen.queryByTestId('history-review-link')).toBeNull()
+    expect(screen.queryByRole('button', { name: /open the source email/i })).toBeNull()
+  })
+})
+
 describe('ShipmentHistoryTimeline — field titles render as human labels, not code casing', () => {
   const history: HistoryEntry[] = [
     entry({ field: 'state', newValue: 'BOOKED', sourceType: 'system', changedAt: '2026-07-03T06:35:00Z' }),

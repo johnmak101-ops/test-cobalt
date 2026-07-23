@@ -34,6 +34,7 @@ import * as m0016_mesh_miss_ack from './kysely-migrations/0016_mesh_miss_ack'
 import * as m0017_alert_rule_refs_draft_eta_delivered from './kysely-migrations/0017_alert_rule_refs_draft_eta_delivered'
 import * as m0018_shipment_warehouse_so from './kysely-migrations/0018_shipment_warehouse_so'
 import * as m0019_retire_alert_rule_pairs from './kysely-migrations/0019_retire_alert_rule_pairs'
+import * as m0020_change_log_source_review from './kysely-migrations/0020_change_log_source_review'
 
 const MIGRATIONS = {
   '0000_init': m0000_init,
@@ -56,6 +57,7 @@ const MIGRATIONS = {
   '0017_alert_rule_refs_draft_eta_delivered': m0017_alert_rule_refs_draft_eta_delivered,
   '0018_shipment_warehouse_so': m0018_shipment_warehouse_so,
   '0019_retire_alert_rule_pairs': m0019_retire_alert_rule_pairs,
+  '0020_change_log_source_review': m0020_change_log_source_review,
 }
 
 /** Exported for the registry drift-guard spec — a migration file that is never registered here is

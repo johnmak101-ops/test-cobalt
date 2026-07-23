@@ -117,6 +117,25 @@ describe('FieldHistoryPopover', () => {
     expect(link.textContent).toMatch(/\d/)
   })
 
+  it('links a Review queue change to that shipment’s review view', async () => {
+    const user = userEvent.setup()
+    render(
+      <FieldHistoryPopover
+        label="ETA"
+        entries={[entry('eta', { sourceType: 'review', sourceId: null })]}
+      >
+        17 Feb 2026
+      </FieldHistoryPopover>,
+    )
+    await user.hover(screen.getByTestId('field-history-anchor'))
+    const popover = await screen.findByTestId('field-history-popover')
+    expect(popover.textContent).toContain('Review queue')
+    expect(screen.getByTestId('field-history-review-link')).toHaveAttribute(
+      'href',
+      '/review-queue/s1',
+    )
+  })
+
   it('leaves the date as plain text when there is no email to open', async () => {
     const user = userEvent.setup()
     render(

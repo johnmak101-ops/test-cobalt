@@ -84,7 +84,10 @@ export const AUDIT_ENTITY = [
 // 'shadow' = a de-correction measurement row: "code would have corrected X" recorded WITHOUT changing
 // behavior, so the model's error-rate is queryable. Excluded from every user-facing audit/history read.
 export const CHANGE_TYPE = ['create', 'update', 'delete', 'supersede', 'merge', 'shadow'] as const
-export const SOURCE_TYPE = ['email', 'manual', 'system', 'agent'] as const
+/** `review` = a Review Queue decision (confirm / correct / link / dismiss / restore). It is a human
+ *  action like `manual`, but kept distinct so the history can say WHERE the human acted — Order
+ *  Details edits stay `manual`. */
+export const SOURCE_TYPE = ['email', 'manual', 'system', 'agent', 'review'] as const
 
 // ---- Alerts (Pillar-4) ----
 export const ALERT_SEVERITY = ['CRITICAL', 'WARNING', 'INFO'] as const
