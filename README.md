@@ -54,11 +54,13 @@ Full checklist: **[docs/ops/docker-deploy.md](docs/ops/docker-deploy.md)**.
 docker compose up --build -d
 # App: http://localhost:3000  (API + SPA)
 # Health: curl -sf http://127.0.0.1:3000/api/health
-# Login: admin@cobalt.hk / cobalt  (SEED_ON_START=1 on first volume)
+# Login: admin@cobalt.hk / cobalt-change-me  (SEED_ON_START=1; mustReset on first login)
+# Agent:  agent@cobalt.hk / cobalt
+# Seed is prod-shape (users/ports/rules only). SEED_DEMO=0 — no demo emails in the image path.
 ```
 
-Compose starts **SQL Server + app** (migrate + optional seed on boot). Point cobalt-queue
-`TRACKING_API_BASE=http://host.docker.internal:3000/api` at this stack.
+Compose starts **SQL Server + app** (migrate + seed on boot). Pass `MESH_*` for daily masters
+sync. Point cobalt-queue `TRACKING_API_BASE=http://host.docker.internal:3000/api` at this stack.
 
 **DEMO gold (with queue rematch):** expect **5** shipment spines (Set1 sea, two Set5 air HAWBs,
 Set6 sea + Set6 air). Packing-line ids (`31900…`) must not appear as incomplete shells.
