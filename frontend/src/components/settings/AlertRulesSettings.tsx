@@ -138,7 +138,7 @@ export function AlertRulesSettings() {
     <div className="space-y-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
-          <h2 className="text-lg font-semibold text-text-primary">Alert rules</h2>
+          <h2 className="text-lg font-semibold text-text-primary">Alert Rules</h2>
           <p className="mt-0.5 text-sm text-text-secondary">
             Both rules fire a set number of days after ETD — pick the threshold and severity.
           </p>
@@ -158,7 +158,7 @@ export function AlertRulesSettings() {
             disabled={!canEdit || resetRules.isPending || saveRules.isPending}
             className="rounded-lg px-3 py-2 text-sm text-text-secondary hover:bg-surface-700 hover:text-text-primary disabled:opacity-40"
           >
-            {resetRules.isPending ? 'Resetting…' : 'Reset to defaults'}
+            {resetRules.isPending ? 'Resetting…' : 'Reset to Defaults'}
           </button>
           <button
             type="button"
@@ -166,7 +166,7 @@ export function AlertRulesSettings() {
             disabled={!canEdit || !dirty || saveRules.isPending || resetRules.isPending}
             className="rounded-lg bg-cobalt-primary px-4 py-2 text-sm font-medium text-white hover:bg-cobalt-primary-light disabled:opacity-50"
           >
-            {saveRules.isPending ? 'Saving…' : 'Save changes'}
+            {saveRules.isPending ? 'Saving…' : 'Save Changes'}
           </button>
         </div>
       </div>
@@ -183,8 +183,9 @@ export function AlertRulesSettings() {
         {visibleRules.map((rule) => (
           <Card key={rule.id} className="overflow-hidden">
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/60 pb-4">
+              {/* No rule.id chip ("A1"/"A3"): the code is an internal key, meaningless to the
+                  operator reading the card. It still keys the row and the PUT payload. */}
               <div className="flex min-w-0 flex-wrap items-center gap-2.5">
-                <span className="font-mono text-xs text-text-muted">{rule.id}</span>
                 <h3 className="text-sm font-semibold text-text-primary">{rule.name}</h3>
                 <Badge variant="severity" value={rule.severity} />
               </div>
@@ -216,9 +217,9 @@ export function AlertRulesSettings() {
               <div>
                 <label
                   htmlFor={`${id}-${rule.id}-days`}
-                  className="mb-2 block text-[11px] font-medium uppercase tracking-wide text-text-secondary"
+                  className="mb-2 block text-[11px] font-medium text-text-secondary"
                 >
-                  Threshold — days after ETD
+                  Threshold — Days After ETD
                 </label>
                 <DaysStepper
                   id={`${id}-${rule.id}-days`}
@@ -233,7 +234,7 @@ export function AlertRulesSettings() {
               <div>
                 <label
                   htmlFor={`${id}-${rule.id}-severity`}
-                  className="mb-2 block text-[11px] font-medium uppercase tracking-wide text-text-secondary"
+                  className="mb-2 block text-[11px] font-medium text-text-secondary"
                 >
                   Severity
                 </label>
@@ -256,11 +257,11 @@ export function AlertRulesSettings() {
 
             <div className="mt-5 rounded-xl border border-border bg-surface-900/40 p-4">
               <div className="mb-3">
-                <p className="text-xs font-semibold text-text-secondary">Country of origin (custom days)</p>
+                <p className="text-xs font-semibold text-text-secondary">Custom Days</p>
+                {/* The country list and the "tap − until Default" hint are dropped: the three tiles
+                    below ARE the list, and each already reads "Default" until it is overridden. */}
                 <p className="mt-0.5 text-[11px] text-text-muted">
                   Overrides this rule’s days-after-ETD threshold when the shipment’s origin matches.
-                  China, Bangladesh, Cambodia only. Tap − until{' '}
-                  <span className="font-medium">Default</span> to inherit.
                 </p>
               </div>
               {/* auto-fit, not a breakpoint: a tile needs 32px padding + the 168px fixed-width

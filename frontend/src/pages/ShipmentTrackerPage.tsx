@@ -74,7 +74,7 @@ export default function ShipmentTrackerPage() {
             className="inline-flex items-center gap-1.5 rounded-lg bg-cobalt-primary px-3 py-1.5 text-xs font-medium text-white hover:bg-cobalt-primary-light"
           >
             <Plus size={14} />
-            New shipment
+            New Shipment
           </button>
           <PageSizeSelect value={perPage} onChange={handlePageSizeChange} />
         </div>
