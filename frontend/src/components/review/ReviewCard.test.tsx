@@ -546,6 +546,74 @@ describe('ReviewCard', () => {
 
   // Resolved = the Approved/Rejected queue views and any non-provisional shipment. Needs attention
   // is a triage prompt; once the item is resolved it is answered, so it stops being shown.
+  it('offers the source email per candidate, only when that email is actually on the shipment', async () => {
+    const user = userEvent.setup()
+    const open = vi.spyOn(window, 'open').mockReturnValue(null)
+    const conflict: CriticConflict = {
+      field: 'forwarder_name',
+      label: 'Forwarder',
+      candidates: [
+        { value: 'STORED CO', source: 'System' },
+        { value: 'UNITEX LOGISTICS LTD.', source: 'SO', sourceEmailId: 'gmid-known' },
+        { value: 'BLUE ANCHOR LINE', source: 'Booking Request', sourceEmailId: 'gmid-missing' },
+      ],
+      rationale: 'Two emails disagree.',
+    }
+    render(
+      <MemoryRouter>
+        <ReviewCard
+          shipment={baseShipment()}
+          criticReview={baseReview({ conflicts: [conflict] })}
+          compact={compact}
+          defaultExpanded
+          emails={[
+            { id: 'db-uuid-1', graphMessageId: 'gmid-known', subject: 'SO for GZL', sender: null },
+          ]}
+          onSaveAndApprove={vi.fn()}
+        />
+      </MemoryRouter>,
+    )
+    // one icon: the known email. The unmatched candidate and the System side get none.
+    const icons = screen.getAllByTestId('candidate-source-email')
+    expect(icons).toHaveLength(1)
+    expect(icons[0]).toHaveAttribute('title', 'Open the source email — SO for GZL')
+
+    await user.click(icons[0]!)
+    expect(open).toHaveBeenCalledWith(
+      expect.stringContaining('/email/db-uuid-1'),
+      'email_db-uuid-1',
+      expect.stringContaining('popup'),
+    )
+    open.mockRestore()
+  })
+
+  it('shows no source icon when the matching email body is gone', () => {
+    const conflict: CriticConflict = {
+      field: 'forwarder_name',
+      label: 'Forwarder',
+      candidates: [
+        { value: 'A', source: 'SO', sourceEmailId: 'gmid-known' },
+        { value: 'B', source: 'Booking Request', sourceEmailId: 'gmid-known' },
+      ],
+      rationale: 'x',
+    }
+    render(
+      <MemoryRouter>
+        <ReviewCard
+          shipment={baseShipment()}
+          criticReview={baseReview({ conflicts: [conflict] })}
+          compact={compact}
+          defaultExpanded
+          emails={[
+            { id: null, graphMessageId: 'gmid-known', subject: '(gone)', sender: null, bodyMissing: true },
+          ]}
+          onSaveAndApprove={vi.fn()}
+        />
+      </MemoryRouter>,
+    )
+    expect(screen.queryByTestId('candidate-source-email')).toBeNull()
+  })
+
   it('readOnly: Needs attention is gone once the item is resolved', () => {
     const props = {
       shipment: baseShipment(),

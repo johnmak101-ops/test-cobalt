@@ -95,6 +95,9 @@ export interface ReviewCardSavePayload {
 export type ReviewEmail = {
   /** Null when shipment_emails is orphaned (email_message wiped). */
   id: string | null
+  /** The queue attributes conflict candidates by this, not by our uuid — used to match a proposed
+   *  value back to the email that stated it. */
+  graphMessageId?: string | null
   subject: string
   sender: string | null
   receivedAt?: string | null
@@ -288,6 +291,29 @@ export function ReviewCard({
       }),
     [criticReview, reviewReasons, shipment, conflicts.length, hasPo, linkedPOs],
   )
+
+  /**
+   * A conflict candidate is attributed by the queue with a graphMessageId; our related emails carry
+   * the same id alongside our own uuid, so we can land the reader on the exact email that stated a
+   * value. Returns null — no icon — when that email is not among this shipment's emails or its body
+   * was wiped. `source` alone ('Final B/L') would only narrow it to a document TYPE, and a thread
+   * routinely holds several of the same type, so matching on the id is what keeps this honest.
+   */
+  const resolveSourceEmail = useMemo(() => {
+    const byGraphId = new Map<string, ReviewEmail>()
+    for (const e of emails) {
+      if (e.graphMessageId && e.id && !e.bodyMissing) byGraphId.set(e.graphMessageId, e)
+    }
+    return (sourceEmailId: string | null | undefined) => {
+      if (!sourceEmailId) return null
+      const em = byGraphId.get(sourceEmailId)
+      if (!em) return null
+      return {
+        open: () => openEmailWindow(em),
+        title: `Open the source email — ${em.subject}`,
+      }
+    }
+  }, [emails])
 
   const [resolutions, setResolutions] = useState<Record<string, string>>(() =>
     initialResolutions(conflicts),
@@ -963,6 +989,7 @@ export function ReviewCard({
                               existingOverride={
                                 isQtyConflict(c) ? existingQtyDisplay(c, liveQty) : null
                               }
+                              resolveSourceEmail={resolveSourceEmail}
                               onRequestEdit={() => {
                                 if (!readOnly) startEditing()
                               }}

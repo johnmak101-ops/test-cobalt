@@ -5,7 +5,15 @@ export type Band = 'low' | 'medium' | 'high'
 export interface CriticConflict {
   field: string
   label: string
-  candidates: { value: string; source: string; confidence?: Band }[]
+  candidates: {
+    value: string
+    source: string
+    confidence?: Band
+    /** graphMessageId of the email that stated this value (queue-side attribution). Matched against
+     *  a related email's graphMessageId to open the exact source — absent when the queue could not
+     *  attribute it (e.g. the 'System' side of a backend mismatch), and never guessed. */
+    sourceEmailId?: string | null
+  }[]
   rationale: string
 }
 

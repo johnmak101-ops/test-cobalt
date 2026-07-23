@@ -441,6 +441,9 @@ export class PresentationService {
     // Orphan shipment_emails (email_message wiped): keep a stub so Related Emails is not blank.
     const emails = relatedEmails.map((e) => ({
       id: e.id,
+      // The queue attributes a conflict candidate by graphMessageId (it has no access to our uuid
+      // PK), so the UI needs this to match a proposed value to the email that stated it.
+      graphMessageId: e.graphMessageId ?? null,
       subject: e.subject ?? '(email body not in store)',
       sender: e.sender ?? null,
       receivedAt: isoOrNull(e.receivedAt),
