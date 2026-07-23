@@ -41,15 +41,32 @@ const milestoneLabels: Record<string, string> = {
   DELIVERED: 'Delivered',
 }
 
-// Keyed on the UI-translated status (stateToUiStatus: RELEASED→DEPARTED, DELIVERED→ARRIVED).
-// Indices track the lean milestoneOrder (AT_WAREHOUSE / ARRIVED are no longer display stages — #126).
+/**
+ * Keyed on the UI-translated status (stateToUiStatus: RELEASED→DEPARTED, DELIVERED→ARRIVED), and
+ * it must agree stage-for-stage with what the STATUS BADGE prints for the same value — the two read
+ * the same shipment, so a badge saying "Final BOL" beside a timeline saying Departure is done is
+ * the app contradicting itself.
+ *
+ * Badge.tsx statusLabels ↔ milestoneOrder index:
+ *   BOOKED         Booking Request  0
+ *   CONFIRMED      SO Received      1
+ *   AT_WAREHOUSE   Draft BOL        2
+ *   SAILED         Final BOL        3   ← the DOCUMENT stage, NOT departure (see reconcile/state.ts)
+ *   DEPARTED       Departure        4
+ *   ARRIVED        Delivered        5
+ *
+ * AT_WAREHOUSE and SAILED used to map to 1 and 4 here, left over from an older milestoneOrder where
+ * Draft BOL and Final BOL were not display stages. Once #126 added them back as stages 2 and 3 this
+ * table was never updated, so a leg at SAILED with no ATD had its floor pushed to Departure —
+ * ticking "departed" for a shipment that had only had its B/L cut.
+ */
 const STATE_TO_INDEX: Record<string, number> = {
   BOOKED: 0,
   CONFIRMED: 1,
-  AT_WAREHOUSE: 1, // stage removed from display — floor at SO Received, never below
-  SAILED: 4, // Departure — the vessel has left
+  AT_WAREHOUSE: 2, // Draft BOL
+  SAILED: 3, // Final BOL — paperwork, the goods have not necessarily moved
   DEPARTED: 4, // Departure (UI status for leg state RELEASED)
-  ARRIVED: 5, // Delivered — stage removed from display, fold forward (UI status for leg state DELIVERED)
+  ARRIVED: 5, // Delivered (UI status for leg state DELIVERED)
 }
 
 export type TimelineStage = {
