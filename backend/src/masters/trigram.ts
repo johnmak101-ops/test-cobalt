@@ -1,3 +1,5 @@
+import { foldCjk } from './cjk-fold'
+
 /**
  * pg_trgm-compatible trigram similarity, in TypeScript (T-SQL re-spec 2026-07-10: SQL Server /
  * Fabric has no pg_trgm and Full-Text is a poor fit for short-name fuzzy match; the master sets are
@@ -6,14 +8,29 @@
  * Semantics mirror pg_trgm so the design's ~0.3 threshold carries over: lowercase, strip to
  * [a-z0-9 ], split on whitespace, pad each word with two leading spaces + one trailing space,
  * collect 3-grams into a SET, score |A ∩ B| / |A ∪ B|.
+ *
+ * CJK (Chinese-name retrieval): Han text has no word boundaries and 1–4-char org cores, so a token
+ * containing Han ideographs contributes CHARACTER BIGRAMS (single-space padded) instead of word
+ * 3-grams. Both sides fold traditional→simplified first (嘉發 ≡ 嘉发) — see cjk-fold.ts.
  */
+const HAN_RE = /[一-鿿]/
+
 export function trigrams(s: string): Set<string> {
   const out = new Set<string>()
-  const clean = s.toLowerCase().replace(/[^a-z0-9 ]+/g, ' ').trim()
+  const clean = foldCjk(s).toLowerCase().replace(/[^a-z0-9一-鿿 ]+/g, ' ').trim()
   if (!clean) return out
   for (const word of clean.split(/\s+/)) {
-    const padded = `  ${word} `
-    for (let i = 0; i + 3 <= padded.length; i++) out.add(padded.slice(i, i + 3))
+    if (HAN_RE.test(word)) {
+      // Strip the run-on legal-form suffix (有限公司/公司) like nameTokens does — at 4 of ~10 chars it
+      // otherwise outweighs the org core and sinks partial-core matches below the 0.3 threshold.
+      const stripped = CJK_STOPWORD_RE ? word.replace(CJK_STOPWORD_RE, '') : word
+      const core = stripped || word
+      const padded = ` ${core} `
+      for (let i = 0; i + 2 <= padded.length; i++) out.add(padded.slice(i, i + 2))
+    } else {
+      const padded = `  ${word} `
+      for (let i = 0; i + 3 <= padded.length; i++) out.add(padded.slice(i, i + 3))
+    }
   }
   return out
 }
@@ -45,7 +62,7 @@ const CJK_STOPWORD_RE = cjkStops.length ? new RegExp(cjkStops.join('|'), 'g') : 
 
 export function nameTokens(s: string): Set<string> {
   const out = new Set<string>()
-  let cleaned = s.toUpperCase().replace(/[^A-Z0-9一-鿿]+/g, ' ')
+  let cleaned = foldCjk(s).toUpperCase().replace(/[^A-Z0-9一-鿿]+/g, ' ')
   if (CJK_STOPWORD_RE) cleaned = cleaned.replace(CJK_STOPWORD_RE, ' ')
   cleaned = cleaned.trim()
   for (const t of cleaned.split(/\s+/)) {

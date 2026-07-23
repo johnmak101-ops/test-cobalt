@@ -16,13 +16,14 @@ export function mapCustomer(raw: Record<string, unknown>): MeshCustomerRow | nul
     country: str(raw.CountryName),
     contactEmail: str(raw.Email),
     address: str(raw.Address),
+    nameCh: str(raw.FullNameCh),
   }
 }
 export function mapVendor(raw: Record<string, unknown>, type: 'factory' | 'agent', codeKey: string): MeshVendorRow | null {
   if (raw?.IsActive !== true) return null
   const code = str(raw[codeKey])
   if (!code) return null
-  return { code, name: str(raw.FullNameEn) ?? str(raw.FullNameCh) ?? code, type, location: str(raw.CountryName), contactEmail: str(raw.Email), contactPhone: str(raw.Phone) }
+  return { code, name: str(raw.FullNameEn) ?? str(raw.FullNameCh) ?? code, type, location: str(raw.CountryName), contactEmail: str(raw.Email), contactPhone: str(raw.Phone), nameCh: str(raw.FullNameCh) }
 }
 export function mapForwarder(raw: Record<string, unknown>): MeshForwarderRow | null {
   if (raw?.Active !== true) return null

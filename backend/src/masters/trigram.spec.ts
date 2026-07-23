@@ -27,6 +27,24 @@ describe('trigramSimilarity (pg_trgm-compatible)', () => {
   })
 })
 
+describe('CJK folding + character bigrams (Chinese-name retrieval, 0022)', () => {
+  it('simplified vs traditional of the SAME company scores 1 (the DGJAFA case)', () => {
+    expect(trigramSimilarity('东莞市嘉发服饰有限公司', '東莞市嘉發服飾有限公司')).toBe(1)
+  })
+  it('a partial Chinese core still clears the 0.3 threshold', () => {
+    expect(trigramSimilarity('嘉发服饰', '東莞市嘉發服飾有限公司')).toBeGreaterThan(0.3)
+  })
+  it('unrelated Chinese names stay below threshold', () => {
+    expect(trigramSimilarity('吉安宏伟针织服装有限公司', '東莞市嘉發服飾有限公司')).toBeLessThan(0.3)
+  })
+  it('Latin behavior is unchanged by the fold (no-op on non-Han input)', () => {
+    expect(trigramSimilarity('MACAU FUNG TAI', 'macau fung tai')).toBe(1)
+  })
+  it('tokenMatch bridges scripts (simplified query, traditional master alias)', () => {
+    expect(tokenMatch('东莞市嘉发服饰有限公司', '東莞市嘉發服飾有限公司')).toBe(true)
+  })
+})
+
 describe('tokenMatch (name:tokens recall signal)', () => {
   it('short master name inside a long raw (the DSV case)', () => {
     expect(tokenMatch('DSV AIR AND SEA CO LTD', 'DSV')).toBe(true)

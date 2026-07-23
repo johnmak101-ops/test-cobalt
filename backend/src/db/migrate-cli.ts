@@ -36,6 +36,7 @@ import * as m0018_shipment_warehouse_so from './kysely-migrations/0018_shipment_
 import * as m0019_retire_alert_rule_pairs from './kysely-migrations/0019_retire_alert_rule_pairs'
 import * as m0020_change_log_source_review from './kysely-migrations/0020_change_log_source_review'
 import * as m0021_vendor_role_kind from './kysely-migrations/0021_vendor_role_kind'
+import * as m0022_master_name_ch from './kysely-migrations/0022_master_name_ch'
 
 const MIGRATIONS = {
   '0000_init': m0000_init,
@@ -60,6 +61,7 @@ const MIGRATIONS = {
   '0019_retire_alert_rule_pairs': m0019_retire_alert_rule_pairs,
   '0020_change_log_source_review': m0020_change_log_source_review,
   '0021_vendor_role_kind': m0021_vendor_role_kind,
+  '0022_master_name_ch': m0022_master_name_ch,
 }
 
 /** Exported for the registry drift-guard spec — a migration file that is never registered here is

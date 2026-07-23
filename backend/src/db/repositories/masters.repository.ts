@@ -70,20 +70,20 @@ export class MastersRepository {
   static readonly VENDOR_INSERT_BATCH = 250
   static readonly FORWARDER_INSERT_BATCH = 500
 
-  async insertCustomers(rows: { code: string; name: string; country: string | null; contactEmail: string | null; address: string | null; erpSyncedAt: Date }[]) {
+  async insertCustomers(rows: { code: string; name: string; country: string | null; contactEmail: string | null; address: string | null; nameCh: string | null; erpSyncedAt: Date }[]) {
     await insertInBatches(rows, MastersRepository.CUSTOMER_INSERT_BATCH, (chunk) =>
       this.db.insertInto('customers').values(chunk).execute().then(() => undefined),
     )
   }
-  async updateCustomer(id: string, patch: { name?: string; country?: string | null; contactEmail?: string | null; address?: string | null; erpSyncedAt: Date }) {
+  async updateCustomer(id: string, patch: { name?: string; country?: string | null; contactEmail?: string | null; address?: string | null; nameCh?: string | null; erpSyncedAt: Date }) {
     await this.db.updateTable('customers').set({ ...patch, updatedAt: new Date() }).where('id', '=', id).execute()
   }
-  async insertVendors(rows: { code: string; name: string; type: 'factory' | 'agent'; location: string | null; contactEmail: string | null; contactPhone: string | null; erpSyncedAt: Date }[]) {
+  async insertVendors(rows: { code: string; name: string; type: 'factory' | 'agent'; location: string | null; contactEmail: string | null; contactPhone: string | null; nameCh: string | null; erpSyncedAt: Date }[]) {
     await insertInBatches(rows, MastersRepository.VENDOR_INSERT_BATCH, (chunk) =>
       this.db.insertInto('vendors').values(chunk).execute().then(() => undefined),
     )
   }
-  async updateVendor(id: string, patch: { name?: string; type?: 'factory' | 'agent'; location?: string | null; contactEmail?: string | null; contactPhone?: string | null; erpSyncedAt: Date }) {
+  async updateVendor(id: string, patch: { name?: string; type?: 'factory' | 'agent'; location?: string | null; contactEmail?: string | null; contactPhone?: string | null; nameCh?: string | null; erpSyncedAt: Date }) {
     await this.db.updateTable('vendors').set({ ...patch, updatedAt: new Date() }).where('id', '=', id).execute()
   }
   async insertForwarders(rows: { code: string; name: string }[]) {

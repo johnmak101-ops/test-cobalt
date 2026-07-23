@@ -7,6 +7,8 @@ export interface MeshCustomerRow {
   country: string | null
   contactEmail: string | null
   address: string | null
+  /** Mesh FullNameCh — Chinese legal name; retrieval alias for Chinese-name matching (0022). */
+  nameCh: string | null
 }
 export interface MeshVendorRow {
   code: string
@@ -15,6 +17,8 @@ export interface MeshVendorRow {
   location: string | null
   contactEmail: string | null
   contactPhone: string | null
+  /** Mesh FullNameCh — Chinese legal name; retrieval alias for Chinese-name matching (0022). */
+  nameCh: string | null
 }
 export interface MeshForwarderRow { code: string; name: string }
 
