@@ -13,6 +13,7 @@ import { FieldHistoryContext, FieldHistoryPopover } from '../components/shipment
 import { indexHistoryByField, historyForField } from '../lib/history-grouping'
 import { AlertCard } from '../components/alerts/AlertCard'
 import { formatDate, formatDateTime, formatDateMaybeTime, cn } from '../lib/utils'
+import { parseSender } from '../lib/email-sender'
 import { EDITABLE_FIELDS, fieldLabel, numericFieldWarn, dateOrderWarn, type EditableField } from '../lib/review-fields'
 import { toast } from '../components/ui/Toast'
 import { interactiveProps } from '../lib/interactive'
@@ -783,7 +784,7 @@ export default function ShipmentDetailPage() {
                               'Body not stored — re-ingest to open'
                             ) : (
                               <>
-                                {email.sender} ·{' '}
+                                {parseSender(email.sender).name} ·{' '}
                                 <span className="font-mono">{formatDateTime(email.receivedAt)}</span>
                               </>
                             )}

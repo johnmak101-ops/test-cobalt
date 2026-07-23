@@ -62,31 +62,8 @@ export type ResolveSourceEmail = (
   sourceEmailId: string | null | undefined,
 ) => { open: () => void; title: string } | null
 
-/** Small mail affordance next to a proposed value — "which email said this?". */
-function SourceEmailIcon({
-  sourceEmailId,
-  resolve,
-}: {
-  sourceEmailId?: string | null
-  resolve?: ResolveSourceEmail
-}) {
-  const link = resolve?.(sourceEmailId) ?? null
-  if (!link) return null
-  return (
-    <button
-      type="button"
-      onClick={(e) => {
-        e.stopPropagation()
-        link.open()
-      }}
-      title={link.title}
-      data-testid="candidate-source-email"
-      className="ml-1 inline-flex shrink-0 cursor-pointer items-center align-baseline text-text-muted hover:text-cobalt-primary-light"
-    >
-      <Mail size={11} aria-label="Open the source email" />
-    </button>
-  )
-}
+// The inline SourceEmailIcon is gone — it sat after the value text where it read as punctuation.
+// Its replacement is the Reference Email column (SourceEmailCell, below the main row).
 
 /** Split candidates into Existing (System) vs Proposed (everything else). */
 export function splitCandidates(conflict: CriticConflict) {
@@ -269,7 +246,6 @@ export function ConflictRow({
             editing={editing}
             proposedUnit={proposedUnit}
             changed={changed}
-            resolveSourceEmail={resolveSourceEmail}
           />
         ) : editing ? (
           isPort ? (
@@ -310,7 +286,97 @@ export function ConflictRow({
           <span className="font-mono text-sm text-text-muted">—</span>
         )}
       </td>
+      <td className={cn(REVIEW_COL.reference, REVIEW_TD)}>
+        <SourceEmailCell
+          candidates={multi && !isPort ? proposed : proposed.slice(0, 1)}
+          resolve={resolveSourceEmail}
+          editing={editing}
+        />
+      </td>
     </tr>
+  )
+}
+
+/**
+ * The Reference Email column: one link per PROPOSED candidate, vertically aligned with the value it
+ * belongs to. The icon used to sit inline after the value text, where it read as punctuation and
+ * operators missed it entirely.
+ *
+ * Alignment is the whole job here. The proposed cell renders candidates as `<ul className="space-y-1">`
+ * with each value in a bordered box, so this mirrors that exact rhythm — same list spacing, same
+ * per-row padding and leading — with a transparent border standing in for the value box. Get the
+ * metrics wrong and row three's icon points at row two's value, which is worse than no column.
+ */
+function SourceEmailCell({
+  candidates,
+  resolve,
+  editing,
+}: {
+  candidates: { value: string; source: string; sourceEmailId?: string | null }[]
+  resolve?: ResolveSourceEmail
+  editing: boolean
+}) {
+  const anyResolvable = candidates.some((c) => resolve?.(c.sourceEmailId))
+  if (!anyResolvable) {
+    // No candidate can be traced — an em dash reads as "nothing to open", where an empty cell
+    // reads as "still loading".
+    return <span className="font-mono text-sm text-text-muted">—</span>
+  }
+  return (
+    <ul className="space-y-1" aria-label="Source email per proposed candidate">
+      {candidates.map((c, i) => {
+        const link = resolve?.(c.sourceEmailId) ?? null
+        return (
+          <li key={`${c.source}-${c.value}-${i}`}>
+            {/*
+              Matches MultiCandidateProposed's box metrics (border + px-2, py-1 editing / py-0.5
+              read) so each icon sits on its value's line rather than drifting up the stack.
+
+              A BLOCK box carrying `text-sm leading-snug`, not an inline-flex one. The height then
+              comes from the LINE BOX regardless of what sits inside it, giving 28.7px per row — the
+              same as the value box. An inline-flex wrapper takes its height from its children
+              instead, so a bare 13px icon would render a 25px row and every icon below would creep
+              upward off its value. The type ramp, not the glyph, holds the row open.
+
+              The glyph then sits ~1.9px below the row's exact centre, because align-middle centres
+              it on the baseline rather than the line box. Left alone deliberately: it is CONSTANT
+              (it does not accumulate down the stack) and invisible at 6% of a row. `flex
+              items-center` + a min-height looked like the fix and is not — border-box makes min-h
+              swallow the padding, collapsing rows to 22.1px and breaking the alignment this whole
+              block exists to guarantee.
+            */}
+            <div
+              className={cn(
+                'rounded border border-transparent px-2 text-sm leading-snug',
+                editing ? 'py-1' : 'py-0.5',
+              )}
+            >
+              {link ? (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    link.open()
+                  }}
+                  title={link.title}
+                  data-testid="candidate-source-email"
+                  className="inline-flex items-center align-middle text-cobalt-primary-light hover:text-cobalt-primary"
+                >
+                  {/* The document type lives in the tooltip, not on screen — the column is narrow and
+                      "Booking Request" beside every row was more noise than signal. aria-label keeps
+                      it for screen readers, which have no tooltip. */}
+                  <Mail size={13} aria-label={`Open the source email — ${c.source}`} />
+                </button>
+              ) : (
+                // This candidate has no traceable email, but a sibling does — hold the row's height
+                // so the icons below stay on their own values.
+                <span className="text-text-muted">—</span>
+              )}
+            </div>
+          </li>
+        )
+      })}
+    </ul>
   )
 }
 
@@ -502,13 +568,11 @@ function MultiCandidateProposed({
   editing,
   proposedUnit,
   changed,
-  resolveSourceEmail,
 }: {
   label: string
   proposed: { value: string; source: string; sourceEmailId?: string | null }[]
   value: string
   onChange: (v: string) => void
-  resolveSourceEmail?: ResolveSourceEmail
   editing: boolean
   proposedUnit?: string | null
   changed: boolean
@@ -546,7 +610,6 @@ function MultiCandidateProposed({
                   <span className="field-value font-mono text-sm leading-snug text-text-primary">
                     {c.value}
                     <Unit unit={proposedUnit} />
-                    <SourceEmailIcon sourceEmailId={c.sourceEmailId} resolve={resolveSourceEmail} />
                   </span>
                 </label>
               ) : (
@@ -572,7 +635,6 @@ function MultiCandidateProposed({
                   >
                     {c.value}
                     <Unit unit={proposedUnit} />
-                    <SourceEmailIcon sourceEmailId={c.sourceEmailId} resolve={resolveSourceEmail} />
                   </span>
                 </div>
               )}

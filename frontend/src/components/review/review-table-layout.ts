@@ -1,21 +1,28 @@
 /**
  * Shared column geometry for Review decision tables (POs & styles + field conflicts).
  * Both tables must use the same tracks so stacked grids line up:
- *   Field/PO# | Current | From email / AI
+ *   Field/PO# | Current | From email / AI | Reference Email
+ *
+ * The reference column carries the "which email said this?" affordance. It exists on BOTH tables
+ * even though only the conflict table fills it — dropping it from the PO table would knock the two
+ * grids out of alignment, which is the one thing this module exists to prevent.
  */
 export const REVIEW_COL = {
   /** Field name / PO# */
-  label: 'w-[24%]',
+  label: 'w-[20%]',
   /** Current system / style on shipment */
-  existing: 'w-[32%]',
+  existing: 'w-[27%]',
   /** AI / email proposed */
-  proposed: 'w-[44%]',
+  proposed: 'w-[41%]',
+  /** Source-email link per proposed candidate */
+  reference: 'w-[12%]',
 } as const
 
 /** Widths for <colgroup> (inline styles set from ReviewColGroup in .tsx). */
-export const REVIEW_COL_WIDTHS = ['24%', '32%', '44%'] as const
+export const REVIEW_COL_WIDTHS = ['20%', '27%', '41%', '12%'] as const
 
-export const REVIEW_TABLE_CLASS = 'w-full min-w-[36rem] table-fixed border-collapse'
+/** min-width up from 36rem: four tracks need the room before the reference header wraps to three lines. */
+export const REVIEW_TABLE_CLASS = 'w-full min-w-[42rem] table-fixed border-collapse'
 
 /**
  * Review card type scale — one ladder for every block on the decision desk.
@@ -59,6 +66,7 @@ export const REVIEW_HEAD = {
   label: 'Field / PO#',
   existing: 'Current',
   proposed: 'From email / AI',
+  reference: 'Reference Email',
 } as const
 
 /** Shared status-panel shell for Needs attention. */
