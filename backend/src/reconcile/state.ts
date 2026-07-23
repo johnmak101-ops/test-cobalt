@@ -55,16 +55,28 @@ export function deriveState(
       isPast(fields.etd, now))
   if (departed) bump('RELEASED')
 
-  // Delivered (ARRIVED) — arrival evidence only. A DEPARTURE date (etd/atd) is never delivery evidence:
-  // a 30-day ocean leg would otherwise read "Delivered" on the day it sailed.
-  //   1. ATA — the actual arrival, strongest signal (the arrival-side twin of ATD).
-  //   2. in-DC date + departure evidence — physically received at the DC.
-  //   3. ETA that has PASSED + departure evidence — the estimated fallback. `<= today`, not `== today`:
-  //      state is derived when an email is committed, so an equality test silently misses any shipment
-  //      with no mail that day. Requires departure evidence — an estimate cannot outrank never leaving.
+  /*
+   * Delivered (ARRIVED) — ARRIVAL-side evidence. A DEPARTURE date (etd/atd) is still never delivery
+   * evidence on its own: a 30-day ocean leg must not read "Delivered" on the day it sailed.
+   *   1. ATA — the actual arrival, strongest signal (the arrival-side twin of ATD).
+   *   2. in-DC date — physically received at the DC.
+   *   3. ETA that has PASSED — the estimated fallback. `<= today`, not `== today`: an equality test
+   *      silently misses any shipment with no mail that day.
+   *
+   * (2) and (3) used to also require departure evidence, on the reasoning that an estimate cannot
+   * outrank never leaving. Dropped by ops decision (2026-07-23): in practice the ATD and the
+   * Departure Notice are the signals most often MISSING from a leg — GZL26261147 sat at Departure
+   * with an ETA five months past because it had neither — so the departure gate was withholding
+   * delivery from the shipments that most needed it, and the gate itself was the unreliable half.
+   *
+   * The cost, accepted knowingly: a leg whose goods never actually shipped now reads Delivered once
+   * its planned ETA passes. Nothing downstream treats DELIVERED as terminal-and-final (alerts still
+   * evaluate, the state ladder still only climbs), and a cancelled booking is carried by
+   * leg_status='CANCELLED', which overrides the badge regardless of state.
+   */
   if (has(fields.ata)) bump('DELIVERED')
-  if (has(fields.in_dc_date) && departed) bump('DELIVERED')
-  if (departed && has(fields.eta) && isPastOrToday(fields.eta, now)) bump('DELIVERED')
+  if (has(fields.in_dc_date)) bump('DELIVERED')
+  if (has(fields.eta) && isPastOrToday(fields.eta, now)) bump('DELIVERED')
   return s
 }
 
