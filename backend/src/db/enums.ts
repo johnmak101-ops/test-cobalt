@@ -44,6 +44,9 @@ export const MASTER_RESOLUTION_KIND = [
   'platform_not_forwarder', 'genuine_short_brand', 'self_identity',
   // Wave 4 #145 — curated exact forwarder name → code (committer pre-lookup; exact-only)
   'forwarder_alias',
+  // vendor code → role. 'group_shipper' (e.g. SOUOCE) = the group's export arm on B/L shipper lines:
+  // cobalt-queue relatedVendors treats hub-vs-any-known-factory as co-valid (supersede, not conflict).
+  'vendor_role',
 ] as const
 export const MASTER_RESOLUTION_STATUS = ['approved', 'proposed', 'rejected'] as const
 export const MASTER_RESOLUTION_SOURCE = ['seed', 'curator', 'ops'] as const
