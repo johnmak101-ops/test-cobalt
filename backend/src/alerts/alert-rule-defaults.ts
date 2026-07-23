@@ -1,7 +1,8 @@
 /**
  * Factory catalogue for the two single-severity customer rules (Settings → Alert Rules).
- * Shared by seed.ts (fresh installs + structural sync) and POST /alert-rules/reset so
- * "Reset to defaults" and a fresh install can never drift apart.
+ * Read by seed.ts for fresh installs and structural sync. It was also the source for
+ * POST /alert-rules/reset until that route was removed with its button (2026-07-23); `pnpm seed` is
+ * now the one way back to factory thresholds, so this catalogue stays the single definition.
  */
 export interface AlertRuleFactoryRow {
   id: string

@@ -34,7 +34,7 @@ import { isHighBandAutoEligible } from '../decisions/band-routing'
 import { toUiAlert } from './mappers/alert.mapper'
 import { toUiAlertRule } from './mappers/alert-rule.mapper'
 import { SaveAlertRulesDto } from './alert-rules.dto'
-import { ALERT_COUNTRY_CODES, ALERT_RULE_FACTORY_DEFAULTS } from '../alerts/alert-rule-defaults'
+import { ALERT_COUNTRY_CODES } from '../alerts/alert-rule-defaults'
 import { toUiHistoryEntry } from './mappers/history.mapper'
 import { deriveRoute, portLabel, poNumbersJson, isoOrNull } from './adapters/derive'
 import { computeFieldConflicts } from './field-conflicts'
@@ -724,19 +724,7 @@ export class PresentationService {
     return { rules, eval: evalStats }
   }
 
-  /** True factory reset for the customer rules — thresholds, severity, country overrides, enabled.
-   *  Reuses the save path so active-alert presentation sync + immediate re-eval apply here too. */
-  async resetAlertRules() {
-    return this.saveAlertRules({
-      rules: ALERT_RULE_FACTORY_DEFAULTS.map((d) => ({
-        id: d.id,
-        thresholdDays: Math.round(d.thresholdHours / 24),
-        severity: d.severity,
-        enabled: d.enabled,
-        countryThresholds: null,
-      })),
-    })
-  }
+  // resetAlertRules removed with POST /alert-rules/reset (2026-07-23) — see UiAlertRulesController.
 
   // ---- dashboard ----
 

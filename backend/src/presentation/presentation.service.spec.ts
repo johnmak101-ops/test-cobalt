@@ -474,20 +474,12 @@ describe('PresentationService.alerts + alertRules', () => {
     expect(calls.resolved).toEqual(['A1'])
   })
 
-  it('resetAlertRules restores factory defaults for A1 and A3', async () => {
-    const { svc, calls } = buildSaveHarness([
-      serverRule(),
-      serverRule({
-        id: 'A3',
-        name: 'No Final BOL received',
-        description: 'Fires after ETD when Final B/L is still missing',
-        thresholdHours: 72,
-      }),
-    ])
-    await svc.resetAlertRules()
-    const byId = Object.fromEntries(calls.updateRule.map((c) => [c.id, c.patch]))
-    expect(byId.A1).toMatchObject({ thresholdHours: 24, severity: 'WARNING', enabled: true, countryThresholds: null })
-    expect(byId.A3).toMatchObject({ thresholdHours: 72, severity: 'WARNING', enabled: true, countryThresholds: null })
+  // resetAlertRules is gone with POST /alert-rules/reset. The factory catalogue it read is NOT —
+  // seed.ts still owns fresh installs and structural sync, so `pnpm seed` remains the route back to
+  // factory thresholds. That path has its own coverage; nothing here should resurrect the method.
+  it('exposes no resetAlertRules', () => {
+    const { svc } = buildSaveHarness([serverRule()])
+    expect((svc as unknown as Record<string, unknown>).resetAlertRules).toBeUndefined()
   })
 })
 
