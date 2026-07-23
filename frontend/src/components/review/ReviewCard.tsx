@@ -1062,7 +1062,9 @@ export function ReviewCard({
                     onClick={cancelEditing}
                     disabled={busy}
                     data-testid="cancel-editing"
-                    className={cn(ACTION_BTN, ACTION_VARIANT.secondary)}
+                    /* danger, not secondary: Cancel DISCARDS the edits in progress, so it should not
+                       look like the same kind of action as Submit sitting next to it. */
+                    className={cn(ACTION_BTN, ACTION_VARIANT.danger)}
                   >
                     <X size={13} />
                     Cancel
