@@ -1,12 +1,17 @@
-# ShipTrack — self-contained stack: SQL Server + the app image (backend serves API + SPA on :3000).
-#   docker compose up --build       # build the image + run everything
-#   open http://localhost:3000       # login admin@cobalt.hk / cobalt
+# ShipTrack — SQL Server + app image (API + SPA on :3000).
+#   docker compose up --build -d
+#   open http://localhost:3000
+#
+# Seed on first boot (SEED_ON_START=1): ports + users + alert rules only.
+# Do NOT set SEED_DEMO=1 unless you want fixture emails/legs in the DB.
+# Mesh + ports CSV sync need MESH_* (and optional PORTS_*) from the environment
+# or a sibling `.env` next to this file (Compose loads it automatically for ${VAR}).
 services:
   db:
     image: mcr.microsoft.com/mssql/server:2022-latest
     environment:
       ACCEPT_EULA: 'Y'
-      MSSQL_SA_PASSWORD: 'YourStrong!Passw0rd' # dev/demo only — rotate for anything shared
+      MSSQL_SA_PASSWORD: 'YourStrong!Passw0rd' # dev only — rotate for anything shared
     ports:
       - "${DB_PORT:-1433}:1433"
     volumes:
@@ -19,20 +24,41 @@ services:
 
   app:
     build: .
-    image: shiptrack:latest
+    # Local tag by default so `pull`/`push` from any checkout can't reach a registry nobody agreed
+    # on. Set SHIPTRACK_IMAGE to a registry path when you actually want to publish or pull.
+    image: ${SHIPTRACK_IMAGE:-shiptrack:latest}
     depends_on:
       db:
         condition: service_healthy
     environment:
-      # migrate-cli creates the `cobalt` database on first boot if it doesn't exist.
       SQL_SERVER_URL: "Server=db,1433;Database=cobalt;User Id=sa;Password=YourStrong!Passw0rd;Encrypt=false;TrustServerCertificate=true"
       PORT: "3000"
       STATIC_ROOT: /app/frontend/dist
-      # Demo secret only — set a real 32+ char JWT_SECRET in production.
-      JWT_SECRET: "cobalt-demo-jwt-secret-change-in-production-0123456789"
-      # first boot: create the schema + load demo data. Set both to "0" after the volume is seeded.
-      RUN_MIGRATIONS: "1"
-      SEED_ON_START: "1"
+      JWT_SECRET: "${JWT_SECRET:-cobalt-demo-jwt-secret-change-in-production-0123456789}"
+      # Schema + prod-shape seed (users/ports/rules). Not demo emails.
+      RUN_MIGRATIONS: "${RUN_MIGRATIONS:-1}"
+      SEED_ON_START: "${SEED_ON_START:-1}"
+      # Explicit off — seed.ts only builds DEMO dataset when this is 1/true.
+      SEED_DEMO: "${SEED_DEMO:-0}"
+      # Seed account passwords (seed-auth-users.ts)
+      SEED_INITIAL_PASSWORD: "${SEED_INITIAL_PASSWORD:-cobalt-change-me}"
+      TRACKING_AGENT_PASSWORD: "${TRACKING_AGENT_PASSWORD:-cobalt}"
+      # Clock-driven jobs. Both read the system clock, so they act without any new email arriving.
+      ALERT_EVAL_INTERVAL_MS: "${ALERT_EVAL_INTERVAL_MS:-900000}"
+      # ⚠ FIRST DEPLOY ONTO AN EXISTING DATABASE: set STATE_REFRESH_INTERVAL_MS=0 in the host .env,
+      #   run the dry-run, read the `promotions` list, then drop the override. The first tick on a
+      #   never-refreshed database promotes every leg whose dates have quietly come true — correct,
+      #   but a one-off bulk move that looks alarming if nobody expected it. See backend/.env.example.
+      STATE_REFRESH_INTERVAL_MS: "${STATE_REFRESH_INTERVAL_MS:-3600000}"
+      # Mesh masters pull (daily). Pass secrets via host .env / orchestrator — required for sync.
+      MESH_BASE_URL: "${MESH_BASE_URL:-https://operationapps.cobaltknitwear.com/cobaltmesh/api}"
+      MESH_TENANT_ID: "${MESH_TENANT_ID:-}"
+      MESH_CLIENT_ID: "${MESH_CLIENT_ID:-}"
+      MESH_CLIENT_SECRET: "${MESH_CLIENT_SECRET:-}"
+      MESH_SCOPE: "${MESH_SCOPE:-}"
+      MESH_SYNC_INTERVAL_MS: "${MESH_SYNC_INTERVAL_MS:-86400000}"
+      # Ports CSV master (UN/LOCODE + OurAirports) — monthly by default; 0 = off.
+      PORTS_SYNC_INTERVAL_MS: "${PORTS_SYNC_INTERVAL_MS:-2592000000}"
     ports:
       - "${APP_PORT:-3000}:3000"
 
