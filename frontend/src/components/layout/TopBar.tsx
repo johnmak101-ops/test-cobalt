@@ -1,9 +1,8 @@
 import { useState, useRef, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Bell, Sun, Moon, Type, LogOut, ChevronDown, AlertTriangle, Mail, ClipboardCheck, ChevronRight, Menu } from 'lucide-react'
+import { Bell, Sun, Moon, Type, LogOut, ChevronDown, AlertTriangle, ClipboardCheck, ChevronRight, Menu } from 'lucide-react'
 import { useAlerts, useMarkAlertRead } from '../../hooks/use-alerts'
 import { useReviewQueue, useReviewCounts } from '../../hooks/use-review-queue'
-import { useEmails } from '../../hooks/use-emails'
 import { useAuth } from '../../hooks/use-auth'
 import { useUIStore } from '../../store'
 import { cn, formatRelativeTime, parsePONumbers } from '../../lib/utils'
@@ -22,7 +21,12 @@ const severityDot: Record<string, string> = {
   INFO: 'bg-status-info',
 }
 
-type NotiTab = 'alerts' | 'inbox' | 'review'
+/**
+ * Inbox dropped (2026-07-23): the notification tray is for things needing a DECISION — an alert to
+ * act on, a shipment to confirm. A raw pending-email feed is neither; emails reach the operator
+ * through the shipment they belong to. The /inbox route and its page are untouched.
+ */
+type NotiTab = 'alerts' | 'review'
 
 export function TopBar() {
   const navigate = useNavigate()
@@ -30,7 +34,8 @@ export function TopBar() {
   const markRead = useMarkAlertRead()
   const { data: reviewData } = useReviewQueue()
   const { data: reviewCounts } = useReviewCounts()
-  const { data: emailsData } = useEmails()
+  // useEmails() went with the Inbox tab — it was that tab's only consumer, so every page load was
+  // fetching the full email list to render a count nobody sees now.
   const { user, logout } = useAuth()
   const { theme, toggleTheme, fontScale, toggleFontScale, openMobileNav, mobileNavOpen } = useUIStore()
   const [menuOpen, setMenuOpen] = useState(false)
@@ -44,21 +49,16 @@ export function TopBar() {
     (a) => a.status === 'ACTIVE' && !a.readAt,
   )
 
-  // Unread emails — pending processing
-  const unreadEmails =
-    (emailsData?.emails ?? []).filter((e) => e.processingStatus === 'PENDING')
-
   // Provisional shipments awaiting confirmation
   const pendingReviewCount = reviewCounts?.provisional ?? 0
   const unreadReviews = reviewData?.shipments ?? []
 
   const tabCounts: Record<NotiTab, number> = {
     alerts: unreadAlerts.length,
-    inbox: unreadEmails.length,
     review: pendingReviewCount,
   }
 
-  const totalBadge = tabCounts.alerts + tabCounts.inbox + tabCounts.review
+  const totalBadge = tabCounts.alerts + tabCounts.review
 
   // Close dropdowns on outside click
   useEffect(() => {
@@ -141,7 +141,6 @@ export function TopBar() {
               <div className="flex border-b border-border">
                 {([
                   { key: 'alerts' as NotiTab, label: 'Alerts', icon: <AlertTriangle size={13} />, color: 'text-status-warning' },
-                  { key: 'inbox' as NotiTab, label: 'Inbox', icon: <Mail size={13} />, color: 'text-cobalt-teal' },
                   { key: 'review' as NotiTab, label: 'Review', icon: <ClipboardCheck size={13} />, color: 'text-cobalt-primary-light' },
                 ]).map((tab) => (
                   <button
@@ -207,35 +206,6 @@ export function TopBar() {
                   </>
                 )}
 
-                {/* ── Inbox tab ── */}
-                {notiTab === 'inbox' && (
-                  <>
-                    {unreadEmails.length === 0 ? (
-                      <div className="px-4 py-8 text-center">
-                        <Mail size={20} className="mx-auto mb-2 text-text-muted" />
-                        <p className="text-xs text-text-muted">No pending emails</p>
-                      </div>
-                    ) : (
-                      unreadEmails.map((email) => (
-                        <button
-                          type="button"
-                          key={email.id}
-                          onClick={() => { setNotiOpen(false); navigate('/inbox') }}
-                          className="flex w-full items-start gap-2.5 px-4 py-2.5 text-left transition-colors hover:bg-surface-700"
-                        >
-                          <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-cobalt-teal" />
-                          <div className="min-w-0 flex-1">
-                            <p className="truncate text-xs font-medium text-text-primary">{email.subject}</p>
-                            <p className="mt-0.5 text-[10px] text-text-muted">
-                              {email.sender} · {formatRelativeTime(email.receivedAt)}
-                            </p>
-                          </div>
-                        </button>
-                      ))
-                    )}
-                  </>
-                )}
-
                 {/* ── Review Queue tab ── */}
                 {notiTab === 'review' && (
                   <>
@@ -277,14 +247,11 @@ export function TopBar() {
                   type="button"
                   onClick={() => {
                     setNotiOpen(false)
-                    navigate(
-                      notiTab === 'alerts' ? '/alerts' :
-                      notiTab === 'inbox' ? '/inbox' : '/review-queue'
-                    )
+                    navigate(notiTab === 'alerts' ? '/alerts' : '/review-queue')
                   }}
                   className="flex w-full items-center justify-center gap-1 text-xs font-medium text-cobalt-primary-light hover:underline"
                 >
-                  View all {notiTab === 'alerts' ? 'alerts' : notiTab === 'inbox' ? 'emails' : 'review items'}
+                  View all {notiTab === 'alerts' ? 'alerts' : 'review items'}
                   <ChevronRight size={12} />
                 </button>
               </div>
