@@ -280,14 +280,16 @@ export class CandidatesService {
     if (hit && Date.now() - hit.at < CACHE_TTL_MS) return hit.rows
     let rows: MasterRow[]
     if (kind === 'customer') {
+      // name_ch rides as an alias: trigram/token scoring folds 简↔繁 (cjk-fold), so a simplified
+      // document name surfaces a master stored in traditional script — and the LLM sees both.
       rows = (await this.repo.listCustomers()).map((c) => ({
         code: c.code, name: c.name, type: 'customer' as const, country: c.country,
-        domains: domainOf(c.contactEmail) ? [domainOf(c.contactEmail)!] : [], aliases: [],
+        domains: domainOf(c.contactEmail) ? [domainOf(c.contactEmail)!] : [], aliases: c.nameCh ? [c.nameCh] : [],
       }))
     } else if (kind === 'vendor') {
       rows = (await this.repo.listVendors()).map((v) => ({
         code: v.code, name: v.name, type: 'vendor' as const, vendorType: v.type, country: v.location,
-        domains: domainOf(v.contactEmail) ? [domainOf(v.contactEmail)!] : [], aliases: [],
+        domains: domainOf(v.contactEmail) ? [domainOf(v.contactEmail)!] : [], aliases: v.nameCh ? [v.nameCh] : [],
       }))
     } else if (kind === 'forwarder') {
       const [fwds, aliases] = await Promise.all([this.repo.listForwarders(), this.repo.listForwarderAliases()])
