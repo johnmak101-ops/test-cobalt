@@ -155,26 +155,39 @@ describe('ShipmentTable — column layout (#119)', () => {
   it('drops low-priority columns on narrow screens, keeping the identity ones', () => {
     renderTable([baseShipment()])
 
-    for (const name of [/^etd$/i, /^eta$/i, /^last activity$/i]) {
+    // lg tier: everything a narrow screen can live without — the shipment detail page has them all.
+    for (const name of [/customer po#/i, /^customer$/i, /^etd$/i, /^eta$/i, /^last activity$/i, /^risk$/i]) {
       expect(screen.getByRole('columnheader', { name })).toHaveClass('hidden', 'lg:table-cell')
     }
     expect(screen.getByRole('columnheader', { name: /^forwarder$/i })).toHaveClass('hidden', 'md:table-cell')
 
-    for (const name of [/booking id/i, /customer po#/i, /^customer$/i, /^route$/i, /^status$/i, /^risk$/i]) {
+    // What survives at every width: which shipment, where it is going, where it has got to.
+    for (const name of [/booking id/i, /^route$/i, /^status$/i]) {
       expect(screen.getByRole('columnheader', { name })).not.toHaveClass('hidden')
     }
 
-    // body cells hide in lockstep with their headers (0-indexed 3, 6, 7, 8)
+    // body cells hide in lockstep with their headers (0-indexed: 3 = Forwarder at md, rest at lg)
     const bodyRow = screen.getByText('BY058417').closest('tr')!
     const cells = within(bodyRow).getAllByRole('cell')
     expect(cells[3]).toHaveClass('hidden', 'md:table-cell')
-    for (const i of [6, 7, 8]) expect(cells[i]).toHaveClass('hidden', 'lg:table-cell')
+    for (const i of [1, 2, 6, 7, 8, 9]) expect(cells[i]).toHaveClass('hidden', 'lg:table-cell')
   })
 
   it('tiers the table min-width so a narrow viewport fits the visible columns', () => {
     renderTable([baseShipment()])
     const table = screen.getByRole('table')
-    expect(table).toHaveClass('min-w-[560px]', 'md:min-w-[720px]', 'lg:min-w-[960px]')
+    // No base min-width: three columns fit any phone, so forcing one would invent a scrollbar.
+    expect(table).not.toHaveClass('min-w-[560px]')
+    expect(table).toHaveClass('md:min-w-[600px]', 'lg:min-w-[1000px]')
+  })
+
+  // The pinned column's rule marks content sliding UNDER it. With nothing scrolled it is just a
+  // stray vertical line mid-table, which is exactly how it read on a non-overflowing screen.
+  it('draws no pinned divider until the table is scrolled sideways', () => {
+    renderTable([baseShipment()])
+    const divider = 'shadow-[inset_-1px_0_0_var(--color-border)]'
+    expect(screen.getByRole('columnheader', { name: /booking id/i })).not.toHaveClass(divider)
+    expect(screen.getByText('BY058417').closest('td')!).not.toHaveClass(divider)
   })
 
   it('puts the provisional awaiting-review icon in Risk, not next to Status', () => {

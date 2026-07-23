@@ -24,7 +24,7 @@ export default function SettingsPage() {
     { to: '/settings/alerts', label: 'Alert Rules', end: false, show: canView('alert_rules') },
     { to: '/settings/users', label: 'Users', end: false, show: isSuper },
     { to: '/settings/access', label: 'Access Control', end: false, show: isSuper },
-    { to: '/settings/mesh-misses', label: 'Mesh misses', end: false, show: isSuper },
+    { to: '/settings/mesh-misses', label: 'Mesh Misses', end: false, show: isSuper },
   ].filter((i) => i.show)
 
   // /settings alone had no content — send to the first tab the user can open.

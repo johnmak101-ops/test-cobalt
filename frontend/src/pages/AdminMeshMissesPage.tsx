@@ -109,7 +109,7 @@ export default function AdminMeshMissesPage() {
   return (
     <div className="space-y-4 p-1">
       <div className="flex flex-wrap items-center gap-3">
-        <h1 className="text-lg font-semibold text-text-primary">Mesh misses</h1>
+        <h1 className="text-lg font-semibold text-text-primary">Mesh Misses</h1>
         {/* Horizontal type sub-cats (was a select dropdown) */}
         <div
           role="tablist"

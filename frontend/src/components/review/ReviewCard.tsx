@@ -37,11 +37,6 @@ import { cn, formatDateTime } from '../../lib/utils'
 import { buildNeedsAttentionGroups, isExpandableMiss, portsLinkedFromRoute } from './needs-attention'
 import { NeedsAttentionMeshMiss } from './NeedsAttentionMeshMiss'
 import {
-  decisionPhrase,
-  AI_CONFIDENCE_LOW_REASON,
-  isWeakIdentityReason,
-} from '../../lib/decision-phrase'
-import {
   REVIEW_COL,
   REVIEW_FS,
   REVIEW_GROUP_HEADER,
@@ -370,16 +365,6 @@ export function ReviewCard({
 
   const id = identityOf(shipment)
   const band = compact?.band ?? criticReview?.confidence?.band ?? null
-  const cardPhrase = decisionPhrase({
-    candidates:
-      criticReview?.matchAmbiguity?.candidates?.length ??
-      criticReview?.matchAmbiguity?.candidateCount ??
-      compact?.candidateCount,
-    weakIdentity: reviewReasons?.some(isWeakIdentityReason),
-    conflictField: conflicts[0]?.label ?? conflicts[0]?.field ?? null,
-    aiLowReason: reviewReasons?.includes(AI_CONFIDENCE_LOW_REASON),
-  })
-
   /**
    * Leg columns to POST on Save & Approve. Keys are camelCase correct-DTO columns so every
    * contested field that maps (incl. pol→polRaw, forwarder_name→forwarderRaw) is applied — not
@@ -632,16 +617,13 @@ export function ReviewCard({
             >
               {/* data-testid why-review kept for legacy tests — same shell as Critical band */}
               <div data-testid="why-review">
-                {cardPhrase && (
-                  <p
-                    className={`${REVIEW_FS.meta} mb-1 font-semibold text-text-primary`}
-                    data-testid="decision-phrase-headline"
-                  >
-                    {cardPhrase}
-                  </p>
-                )}
+                {/* No decisionPhrase headline here. It named ONE field to resolve ("Resolve vendor
+                    code conflict") while the groups below describe the actual open questions, and
+                    the conflict table already lists every field needing a value. The phrase still
+                    earns its place on the COLLAPSED queue row, where nothing else summarises the
+                    row. */}
                 <p className={`${REVIEW_FS.topic} font-semibold text-text-primary`}>
-                  Needs attention
+                  Needs Attention
                 </p>
                 <div className="mt-1.5 space-y-2">
                   {needsAttentionGroups.map((g) => (
@@ -717,9 +699,9 @@ export function ReviewCard({
                   <ChevronRight size={14} className="shrink-0 text-text-muted" />
                 )}
                 <Mail size={14} className="shrink-0 text-text-muted" />
-                <h4 className="text-xs font-semibold uppercase tracking-wide text-text-primary">
-                  Source emails
-                  <span className="ml-2 text-xs font-normal normal-case tracking-normal text-text-muted">
+                <h4 className="text-xs font-semibold text-text-primary">
+                  Source Emails
+                  <span className="ml-2 text-xs font-normal text-text-muted">
                     · {emails.length}
                   </span>
                 </h4>
@@ -968,7 +950,7 @@ export function ReviewCard({
                         <tr className="border-b border-border">
                           <td colSpan={3} className={REVIEW_GROUP_HEADER}>
                             {group}
-                            <span className="ml-2 font-normal normal-case tracking-normal text-text-muted">
+                            <span className="ml-2 font-normal text-text-muted">
                               ({rows.length} {rows.length === 1 ? 'change' : 'changes'})
                             </span>
                           </td>
@@ -1050,7 +1032,7 @@ export function ReviewCard({
               className={cn(ACTION_BTN, ACTION_VARIANT.secondary)}
               data-testid="open-shipment"
             >
-              Open shipment
+              Open Shipment
             </a>
             {!readOnly && (
               /* Two states, two button sets:
@@ -1102,7 +1084,7 @@ export function ReviewCard({
                     className={cn(ACTION_BTN, ACTION_VARIANT.success)}
                   >
                     {busy && <Loader2 size={13} className="animate-spin" />}
-                    {multiCandNeedsTarget ? 'Link without field changes' : 'Keep current'}
+                    {multiCandNeedsTarget ? 'Link Without Field Changes' : 'Keep Current'}
                   </button>
                 )}
                 {(onSaveAndApprove || onApprove || multiCandNeedsTarget) && (
@@ -1128,12 +1110,12 @@ export function ReviewCard({
                       ? 'Submit'
                       : multiCandNeedsTarget
                         ? changeCount > 0
-                          ? `Link & apply ${changeCount} change${changeCount === 1 ? '' : 's'}`
-                          : 'Link & apply'
+                          ? `Link & Apply ${changeCount} Change${changeCount === 1 ? '' : 's'}`
+                          : 'Link & Apply'
                         : changeCount > 0
                           ? 'Approve'
                           : onApprove
-                            ? 'Keep current'
+                            ? 'Keep Current'
                             : 'Approve'}
                   </button>
                 )}
@@ -1151,7 +1133,7 @@ export function ReviewCard({
                     className={cn(ACTION_BTN, ACTION_VARIANT.secondary)}
                   >
                     {busy && <Loader2 size={13} className="animate-spin" />}
-                    Confirm as separate shipment
+                    Confirm as Separate Shipment
                   </button>
                 )}
               </div>
