@@ -952,7 +952,9 @@ export function ReviewCard({
                     {groupConflictFields(conflicts).map(({ group, conflicts: rows }) => (
                       <tbody key={group}>
                         <tr className="border-b border-border">
-                          <td colSpan={3} className={REVIEW_GROUP_HEADER}>
+                          {/* 4, not 3 — the Reference Email column. A short colSpan leaves the
+                              group band ending mid-table with an unshaded box over the last column. */}
+                          <td colSpan={4} className={REVIEW_GROUP_HEADER}>
                             {group}
                             <span className="ml-2 font-normal text-text-muted">
                               ({rows.length} {rows.length === 1 ? 'change' : 'changes'})
