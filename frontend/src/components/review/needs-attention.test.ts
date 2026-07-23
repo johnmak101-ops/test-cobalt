@@ -70,6 +70,80 @@ describe('Other group is not rendered', () => {
   })
 })
 
+/**
+ * Live regression (GZL26261147). The queue sends a correct guard note:
+ *   "auto: factory/vendor-like 'MACAU FUNG TAI LIMITED' replaced with customer 'WYSE LONDON LTD'"
+ * The PARTY_OPS branch could not find a party in it (extractQuotedParty was double-quote only), so
+ * it minted one from message.slice(0, 48) — landing mid-word — and Master Miss advertised
+ * "AUTO FACTORY VENDOR LIKE MACAU FUNG TAI LIMITE" as a company to add to Mesh, inflating the count
+ * from 2 parties to 3.
+ */
+describe('Master miss — a guard note is not a party', () => {
+  const GUARD_NOTE =
+    "auto: factory/vendor-like 'MACAU FUNG TAI LIMITED' replaced with customer 'WYSE LONDON LTD'"
+
+  // riskFlags channel: killed at the message, so no item is ever built.
+  it('drops the guard note outright when it arrives as a riskFlag', () => {
+    const items = buildNeedsAttention({
+      conflictsCount: 0,
+      riskFlags: [{ code: 'PARTY_OPS', message: GUARD_NOTE, severity: 'low' }],
+      reviewReasons: [],
+    } as never)
+    const text = items.map((i) => i.text).join(' | ')
+    expect(text).not.toMatch(/AUTO FACTORY/i)
+    expect(text).not.toMatch(/MACAU FUNG TAI/i)
+    expect(items.some((i) => i.lineId.startsWith('m-party:'))).toBe(false)
+  })
+
+  /**
+   * reviewReasons channel: the same sentence falls through to a generic reason:* line, which
+   * buildNeedsAttention deliberately still CLASSIFIES (the data and its history stay intact) and
+   * buildNeedsAttentionGroups filters at render. So assert both halves at their own layer — and in
+   * neither case may it become a party.
+   */
+  it('classifies but never renders the guard note when it arrives as a reviewReason', () => {
+    const opts = { conflictsCount: 0, riskFlags: [], reviewReasons: [GUARD_NOTE] } as never
+    expect(buildNeedsAttention(opts).some((i) => i.lineId.startsWith('m-party:'))).toBe(false)
+    const rendered = buildNeedsAttentionGroups(opts).flatMap((g) => g.items.map((i) => i.text)).join(' | ')
+    expect(rendered).not.toMatch(/AUTO FACTORY/i)
+    expect(rendered).not.toMatch(/MACAU FUNG TAI/i)
+  })
+
+  it('counts 2 parties, not 3, on the shipment that exposed this', () => {
+    const items = buildNeedsAttention({
+      conflictsCount: 0,
+      riskFlags: [{ code: 'PARTY_OPS', message: GUARD_NOTE, severity: 'low' }],
+      reviewReasons: [
+        'Cannot match "吉安宏伟针织服装有限公司" in the vendor list. Please add it in Cobalt Fashion Data Mesh System, then rematch.',
+        'forwarder_name "LOGIMARK" did not exact-match a master (LLM matcher owns fuzzy; left unlinked)',
+      ],
+    } as never)
+    const master = items.filter((i) => i.groupId === 'master_miss')
+    expect(master).toHaveLength(1)
+    expect(master[0]!.text).toMatch(/2 parties not found/)
+    expect(master[0]!.details).toEqual(
+      expect.arrayContaining(['吉安宏伟针织服装有限公司', 'LOGIMARK']),
+    )
+    expect(master[0]!.details).not.toEqual(expect.arrayContaining([expect.stringMatching(/AUTO FACTORY/i)]))
+  })
+
+  /**
+   * The general backstop, independent of the sentence above: an unrecognised PARTY_OPS message with
+   * no quoted name must never be minted into a party. It stays visible — just not as a company.
+   */
+  it('surfaces an unquoted party note without inventing a company from it', () => {
+    const items = buildNeedsAttention({
+      conflictsCount: 0,
+      riskFlags: [{ code: 'PARTY_OPS', message: 'some future ops note with no quoted party at all', severity: 'low' }],
+      reviewReasons: [],
+    } as never)
+    const master = items.filter((i) => i.groupId === 'master_miss')
+    expect(master).toHaveLength(1)
+    expect(master[0]!.lineId.startsWith('m-party:')).toBe(false)
+    expect(master[0]!.text).toContain('some future ops note')
+  })
+})
+
 describe('Master miss — numeric party names are filtered out', () => {
   const miss = (name: string) => `vendor "${name}" did not exact-match a master`
 
