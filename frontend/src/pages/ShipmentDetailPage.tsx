@@ -381,10 +381,12 @@ export default function ShipmentDetailPage() {
       {/* Horizontal Milestone Timeline (full width) */}
       <Card>
         <h4 className="mb-4 text-base font-semibold text-text-primary">Milestone Timeline</h4>
+        {/* No `horizontal` prop: it FORCED the horizontal tracker at every width, so a narrow card
+            crushed six stages together no matter the screen. Left to itself the component picks the
+            layout from its own container width. */}
         <MilestoneTimeline
           milestones={shipment.milestones ?? []}
           currentStatus={shipment.status}
-          horizontal
           mode={shipment.mode}
           etd={shipment.etd}
           atd={shipment.actualDeparture}
