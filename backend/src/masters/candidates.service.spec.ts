@@ -30,6 +30,42 @@ function forwarderRepo(opts: {
   return { svc: new CandidatesService(repo as unknown as MastersRepository) }
 }
 
+function vendorRepo(opts: {
+  vendors?: { code: string; name: string; type: string; location: string | null; contactEmail: string | null; nameCh: string | null }[]
+  facts?: Fact[]
+}) {
+  const repo = {
+    listVendors: async () => opts.vendors ?? [],
+    listResolution: async (_status: string) => opts.facts ?? [],
+  }
+  return { svc: new CandidatesService(repo as unknown as MastersRepository) }
+}
+
+describe('CandidatesService — Chinese-name retrieval (name_ch alias + 简↔繁 fold, 0022)', () => {
+  it('a simplified-Chinese document name surfaces a master stored with a traditional name_ch (DGJAFA)', async () => {
+    const { svc } = vendorRepo({
+      vendors: [
+        { code: 'DGJAFA', name: 'DONGGUAN CITY JIAFA FASHION CO., LTD.', type: 'factory', location: 'China', contactEmail: null, nameCh: '東莞市嘉發服飾有限公司' },
+        { code: 'ROKNFT', name: 'ROSE KNITTING FACTORY LIMITED', type: 'factory', location: 'Hong Kong, SAR China', contactEmail: null, nameCh: '玫瑰針織廠有限公司' },
+      ],
+    })
+    const { candidates } = await svc.candidates({ type: 'vendor', name: '东莞市嘉发服饰有限公司' })
+    const hit = candidates.find((c) => c.code === 'DGJAFA')
+    expect(hit).toBeTruthy() // was 0-candidates: name_ch dropped at sync + no 简↔繁 fold
+    expect(hit!.signals.some((s) => s.startsWith('name:'))).toBe(true)
+    expect(hit!.aliases).toContain('東莞市嘉發服飾有限公司') // the LLM sees both scripts
+    expect(candidates.some((c) => c.code === 'ROKNFT')).toBe(false) // unrelated Chinese name stays out
+  })
+
+  it('a vendor without name_ch serves no alias (no empty-string noise)', async () => {
+    const { svc } = vendorRepo({
+      vendors: [{ code: 'DSV001', name: 'DSV AIR AND SEA', type: 'agent', location: null, contactEmail: null, nameCh: null }],
+    })
+    const { candidates } = await svc.candidates({ type: 'vendor', name: 'DSV AIR AND SEA' })
+    expect(candidates[0]!.aliases).toEqual([])
+  })
+})
+
 describe('CandidatesService — port kind', () => {
   it("kind='port' surfaces ports with fact-lhs aliases + iata, and mode rides the candidate", async () => {
     const { svc } = portRepo({

@@ -5,14 +5,14 @@ describe('mesh mappers', () => {
   it('maps an active customer (incl. country/email/address enrichment); drops inactive; falls back name→code', () => {
     expect(
       mapCustomer({ CustomerCode: '2TAL', FullNameEn: '2TALL.COM RETAIL LIMITED ', FullNameCh: '', CountryName: 'United Kingdom', Email: 'buy@2tall.com ', Address: '1 High St', IsActive: true }),
-    ).toEqual({ code: '2TAL', name: '2TALL.COM RETAIL LIMITED', country: 'United Kingdom', contactEmail: 'buy@2tall.com', address: '1 High St' })
+    ).toEqual({ code: '2TAL', name: '2TALL.COM RETAIL LIMITED', country: 'United Kingdom', contactEmail: 'buy@2tall.com', address: '1 High St', nameCh: null })
     // missing enrichment fields → nulls (Mesh rows vary)
-    expect(mapCustomer({ CustomerCode: 'X', FullNameEn: '', FullNameCh: '', IsActive: true })).toEqual({ code: 'X', name: 'X', country: null, contactEmail: null, address: null })
+    expect(mapCustomer({ CustomerCode: 'X', FullNameEn: '', FullNameCh: '', IsActive: true })).toEqual({ code: 'X', name: 'X', country: null, contactEmail: null, address: null, nameCh: null })
     expect(mapCustomer({ CustomerCode: 'X', FullNameEn: 'Y', IsActive: false })).toBeNull()
   })
   it('maps a factory and a gmtsupplier to vendor rows with the right type', () => {
-    expect(mapVendor({ FactoryCode: 'AAGLLT', FullNameEn: 'AA GLOBAL LTD', CountryName: 'Taiwan', Email: '', Phone: '', IsActive: true }, 'factory', 'FactoryCode'))
-      .toEqual({ code: 'AAGLLT', name: 'AA GLOBAL LTD', type: 'factory', location: 'Taiwan', contactEmail: null, contactPhone: null })
+    expect(mapVendor({ FactoryCode: 'AAGLLT', FullNameEn: 'AA GLOBAL LTD', FullNameCh: '雙A環球有限公司', CountryName: 'Taiwan', Email: '', Phone: '', IsActive: true }, 'factory', 'FactoryCode'))
+      .toEqual({ code: 'AAGLLT', name: 'AA GLOBAL LTD', type: 'factory', location: 'Taiwan', contactEmail: null, contactPhone: null, nameCh: '雙A環球有限公司' })
     expect(mapVendor({ GmtSuppCode: 'ABLSUC', FullNameEn: 'ABLE SUCCESS LIMITED', CountryName: 'China', IsActive: true }, 'agent', 'GmtSuppCode')?.type).toBe('agent')
   })
   it('maps an active forwarder; drops inactive (Active flag)', () => {
@@ -37,7 +37,7 @@ describe('MeshClient', () => {
   it('fetches a token then GETs with Bearer, and caches the token across calls', async () => {
     const { fn, calls } = fakeFetch({ '/ShipTrack/customers': [{ CustomerCode: 'A', FullNameEn: 'Acme', IsActive: true }] })
     const c = new MeshClient(cfg, fn as unknown as typeof fetch)
-    expect(await c.customers()).toEqual([{ code: 'A', name: 'Acme', country: null, contactEmail: null, address: null }])
+    expect(await c.customers()).toEqual([{ code: 'A', name: 'Acme', country: null, contactEmail: null, address: null, nameCh: null }])
     await c.customers()
     expect(calls.filter((u) => u.includes('/oauth2/')).length).toBe(1) // token cached
     expect(calls.some((u) => u === 'https://h/api/ShipTrack/customers')).toBe(true)

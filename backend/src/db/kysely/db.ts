@@ -7,6 +7,8 @@ import type {
   ReviewEmail as GenReviewEmail,
   ShipmentMilestones as GenShipmentMilestones,
   ParsedRecord as GenParsedRecord,
+  Customers as GenCustomers,
+  Vendors as GenVendors,
   Generated,
 } from './db.generated'
 import type {
@@ -136,6 +138,14 @@ export interface MeshMissAck {
   ackedAt: Generated<Date>
 }
 
+/** 0022 — Mesh FullNameCh (Chinese legal name), a retrieval alias for the LLM master matcher. */
+export interface Customers extends GenCustomers {
+  nameCh: string | null
+}
+export interface Vendors extends GenVendors {
+  nameCh: string | null
+}
+
 export interface DB
   extends Omit<
     GeneratedDB,
@@ -149,6 +159,9 @@ export interface DB
     | 'routingShadow'
     | 'criticCalibration'
     | 'meshMissAck'
+    // 0022 name_ch columns (codegen not rerun) — omit then re-add below
+    | 'customers'
+    | 'vendors'
   > {
   shipments: Shipments
   bookings: Bookings
@@ -159,4 +172,6 @@ export interface DB
   routingShadow: RoutingShadow
   criticCalibration: CriticCalibration
   meshMissAck: MeshMissAck
+  customers: Customers
+  vendors: Vendors
 }

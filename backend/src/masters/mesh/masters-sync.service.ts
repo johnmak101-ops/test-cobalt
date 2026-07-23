@@ -4,12 +4,12 @@ export interface SyncSummary { type: 'customers' | 'vendors' | 'forwarders'; fet
 
 /** The masters-write surface the sync needs. MastersRepository satisfies it structurally. */
 export interface MastersSyncRepo {
-  listCustomers(): Promise<{ id: string; code: string; name: string; country: string | null; contactEmail: string | null; address: string | null }[]>
+  listCustomers(): Promise<{ id: string; code: string; name: string; country: string | null; contactEmail: string | null; address: string | null; nameCh: string | null }[]>
   insertCustomers(rows: (MeshCustomerRow & { erpSyncedAt: Date })[]): Promise<void>
-  updateCustomer(id: string, patch: { name?: string; country?: string | null; contactEmail?: string | null; address?: string | null; erpSyncedAt: Date }): Promise<void>
-  listVendors(): Promise<{ id: string; code: string | null; name: string; type: string; location: string | null; contactEmail: string | null; contactPhone: string | null }[]>
+  updateCustomer(id: string, patch: { name?: string; country?: string | null; contactEmail?: string | null; address?: string | null; nameCh?: string | null; erpSyncedAt: Date }): Promise<void>
+  listVendors(): Promise<{ id: string; code: string | null; name: string; type: string; location: string | null; contactEmail: string | null; contactPhone: string | null; nameCh: string | null }[]>
   insertVendors(rows: (MeshVendorRow & { erpSyncedAt: Date })[]): Promise<void>
-  updateVendor(id: string, patch: { name?: string; type?: 'factory' | 'agent'; location?: string | null; contactEmail?: string | null; contactPhone?: string | null; erpSyncedAt: Date }): Promise<void>
+  updateVendor(id: string, patch: { name?: string; type?: 'factory' | 'agent'; location?: string | null; contactEmail?: string | null; contactPhone?: string | null; nameCh?: string | null; erpSyncedAt: Date }): Promise<void>
   listForwarders(): Promise<{ id: string; code: string | null; name: string }[]>
   insertForwarders(rows: { code: string; name: string }[]): Promise<void>
   updateForwarder(id: string, patch: { name: string }): Promise<unknown>
@@ -36,11 +36,11 @@ export class MastersSyncService {
       let updated = 0
       for (const raw of fetched) {
         // normalize enrichment to null so a source omitting a field diffs stably against DB NULLs
-        const row = { ...raw, country: raw.country ?? null, contactEmail: raw.contactEmail ?? null, address: raw.address ?? null }
+        const row = { ...raw, country: raw.country ?? null, contactEmail: raw.contactEmail ?? null, address: raw.address ?? null, nameCh: raw.nameCh ?? null }
         const cur = existing.get(U(row.code))
         if (!cur) toInsert.push({ ...row, erpSyncedAt: now })
-        else if (cur.name !== row.name || cur.country !== row.country || cur.contactEmail !== row.contactEmail || cur.address !== row.address) {
-          await this.repo.updateCustomer(cur.id, { name: row.name, country: row.country, contactEmail: row.contactEmail, address: row.address, erpSyncedAt: now })
+        else if (cur.name !== row.name || cur.country !== row.country || cur.contactEmail !== row.contactEmail || cur.address !== row.address || cur.nameCh !== row.nameCh) {
+          await this.repo.updateCustomer(cur.id, { name: row.name, country: row.country, contactEmail: row.contactEmail, address: row.address, nameCh: row.nameCh, erpSyncedAt: now })
           updated++
         }
       }
@@ -56,11 +56,12 @@ export class MastersSyncService {
       const now = this.now()
       const toInsert: (MeshVendorRow & { erpSyncedAt: Date })[] = []
       let updated = 0
-      for (const row of fetched) {
+      for (const raw of fetched) {
+        const row = { ...raw, nameCh: raw.nameCh ?? null }
         const cur = existing.get(U(row.code))
         if (!cur) toInsert.push({ ...row, erpSyncedAt: now })
-        else if (cur.name !== row.name || cur.type !== row.type || cur.location !== row.location || cur.contactEmail !== row.contactEmail || cur.contactPhone !== row.contactPhone) {
-          await this.repo.updateVendor(cur.id, { name: row.name, type: row.type, location: row.location, contactEmail: row.contactEmail, contactPhone: row.contactPhone, erpSyncedAt: now })
+        else if (cur.name !== row.name || cur.type !== row.type || cur.location !== row.location || cur.contactEmail !== row.contactEmail || cur.contactPhone !== row.contactPhone || cur.nameCh !== row.nameCh) {
+          await this.repo.updateVendor(cur.id, { name: row.name, type: row.type, location: row.location, contactEmail: row.contactEmail, contactPhone: row.contactPhone, nameCh: row.nameCh, erpSyncedAt: now })
           updated++
         }
       }
