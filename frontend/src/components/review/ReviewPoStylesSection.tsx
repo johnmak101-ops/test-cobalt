@@ -238,8 +238,10 @@ export function ReviewPoStylesSection({
   const sorted = [...linkedPOs].sort((a, b) =>
     a.poNumber.localeCompare(b.poNumber, undefined, { numeric: true }),
   )
-  /** Always 3 columns — matches field-conflict table (actions live inside proposed cell). */
-  const colSpan = 3
+  /** Always 4 columns — matches the field-conflict table (actions live inside the proposed cell).
+   *  The 4th is Reference Email: empty here (a PO row has no per-candidate source email), but the
+   *  track must exist or the two stacked grids stop lining up. */
+  const colSpan = 4
 
   const table = (
     <table className={REVIEW_TABLE_CLASS}>
@@ -255,6 +257,8 @@ export function ReviewPoStylesSection({
             >
               {proposedColumnLabel}
             </th>
+            {/* Header kept (not blank) so the column reads as deliberate rather than a rendering gap. */}
+            <th className={cn(REVIEW_COL.reference, REVIEW_TH)}>{REVIEW_HEAD.reference}</th>
           </tr>
         </thead>
       )}
@@ -366,7 +370,7 @@ export function ReviewPoStylesSection({
                   />
                 )}
               </td>
-              <td className={cn(REVIEW_COL.proposed, REVIEW_TD)}>
+              <td className={cn(REVIEW_COL.proposed, REVIEW_TD)} data-po-proposed="">
                 <div className="flex min-w-0 items-start justify-between gap-2">
                   <div className="min-w-0 flex-1">
                     <StyleListDisplay
@@ -385,6 +389,9 @@ export function ReviewPoStylesSection({
                   )}
                 </div>
               </td>
+              {/* Reference Email track — a PO row has no per-candidate source email; the cell exists
+                  only to keep this grid aligned with the conflict table stacked below it. */}
+              <td className={cn(REVIEW_COL.reference, REVIEW_TD)} aria-hidden />
             </tr>
           )
         })}
@@ -489,6 +496,8 @@ function AddRow({
           </IconBtn>
         </div>
       </td>
+      {/* Reference Email track — keeps the add/edit row the same width as the rows around it. */}
+      <td className={cn(REVIEW_COL.reference, REVIEW_TD)} aria-hidden />
     </tr>
   )
 }

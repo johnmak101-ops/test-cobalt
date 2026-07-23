@@ -34,6 +34,7 @@ import { ReviewPoStylesSection } from './ReviewPoStylesSection'
 import type { ReviewShipment } from '../../hooks/use-review-queue'
 import type { LinkedPO, ShipmentDetail } from '../../hooks/use-shipments'
 import { cn, formatDateTime } from '../../lib/utils'
+import { parseSender } from '../../lib/email-sender'
 import { buildNeedsAttentionGroups, isExpandableMiss, portsLinkedFromRoute } from './needs-attention'
 import { NeedsAttentionMeshMiss } from './NeedsAttentionMeshMiss'
 import {
@@ -738,7 +739,7 @@ export function ReviewCard({
                               ? 'Body not stored — re-ingest to open'
                               : (
                                   <>
-                                    {e.sender} ·{' '}
+                                    {parseSender(e.sender).name} ·{' '}
                                     <span className="font-mono">{formatDateTime(e.receivedAt)}</span>
                                   </>
                                 )}
@@ -905,6 +906,9 @@ export function ReviewCard({
                         >
                           {proposedColumnLabel}
                         </th>
+                        <th className={`${REVIEW_COL.reference} ${REVIEW_TH}`}>
+                          {REVIEW_HEAD.reference}
+                        </th>
                       </tr>
                     </thead>
                   </table>
@@ -948,7 +952,9 @@ export function ReviewCard({
                     {groupConflictFields(conflicts).map(({ group, conflicts: rows }) => (
                       <tbody key={group}>
                         <tr className="border-b border-border">
-                          <td colSpan={3} className={REVIEW_GROUP_HEADER}>
+                          {/* 4, not 3 — the Reference Email column. A short colSpan leaves the
+                              group band ending mid-table with an unshaded box over the last column. */}
+                          <td colSpan={4} className={REVIEW_GROUP_HEADER}>
                             {group}
                             <span className="ml-2 font-normal text-text-muted">
                               ({rows.length} {rows.length === 1 ? 'change' : 'changes'})
