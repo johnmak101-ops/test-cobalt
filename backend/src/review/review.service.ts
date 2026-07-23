@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common'
+﻿import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common'
 import { ShipmentRepository } from '../db/repositories/shipment.repository'
 import { BookingRepository } from '../db/repositories/booking.repository'
 import { FieldLockRepository } from '../db/repositories/field-lock.repository'
@@ -177,7 +177,7 @@ export class ReviewService {
     await this.audit.write({
       entityType: 'shipment', entityId: shipmentId, field: null,
       oldValue: leg.reviewStatus, newValue: 'confirmed', changeType: 'update',
-      sourceType: 'manual', actorUserId: actorId, note: note?.trim() || 'review: confirmed as-is',
+      sourceType: 'review', actorUserId: actorId, note: note?.trim() || 'review: confirmed as-is',
     })
     const messageId = await this.resolveLearningMessageId(shipmentId)
     const forwarder = ((leg as Record<string, unknown>).forwarderRaw as string | null) ?? null
@@ -227,7 +227,7 @@ export class ReviewService {
     await this.audit.write({
       entityType: 'shipment', entityId: shipmentId, field,
       oldValue: toStr(current[field]), newValue: toStr(value), changeType: 'update',
-      sourceType: 'manual', actorUserId: actorId, note,
+      sourceType: 'review', actorUserId: actorId, note,
     })
     // Feed the correction to the queue learning loop (best-effort; never breaks the review save). Post the
     // queue's snake_case parse-field name — the leg column `soNo` is the parser's `so_no`, and the queue
@@ -367,12 +367,12 @@ export class ReviewService {
     await this.audit.write({
       entityType: 'shipment', entityId: shipmentId, field: null,
       oldValue: 'provisional', newValue: `linked:${dto.targetShipmentId}`, changeType: 'update',
-      sourceType: 'manual', actorUserId: actorId, note,
+      sourceType: 'review', actorUserId: actorId, note,
     })
     await this.audit.write({
       entityType: 'shipment', entityId: dto.targetShipmentId, field: null,
       oldValue: null, newValue: `absorbed:${shipmentId}`, changeType: 'update',
-      sourceType: 'manual', actorUserId: actorId,
+      sourceType: 'review', actorUserId: actorId,
       note:
         correctedFieldCount > 0
           ? `review: absorbed provisional + applied ${correctedFieldCount} field(s)`
@@ -414,7 +414,7 @@ export class ReviewService {
       await this.audit.write({
         entityType: 'shipment', entityId: id, field: null,
         oldValue: 'provisional', newValue: 'dismissed', changeType: 'update',
-        sourceType: 'manual', actorUserId: actorId,
+        sourceType: 'review', actorUserId: actorId,
         note: note?.trim() ? `review: dismissed — ${note.trim()}` : 'review: dismissed — not a trackable shipment',
       })
       await this.recordCalibration({
@@ -435,7 +435,7 @@ export class ReviewService {
     await this.audit.write({
       entityType: 'shipment', entityId: shipmentId, field: null,
       oldValue: 'dismissed', newValue: 'provisional', changeType: 'update',
-      sourceType: 'manual', actorUserId: actorId, note: 'review: restored to queue',
+      sourceType: 'review', actorUserId: actorId, note: 'review: restored to queue',
     })
     return { shipmentId, restored: true }
   }

@@ -7,22 +7,29 @@ import {
   Clock,
   Mail,
   User,
-  Settings,
+  ClipboardCheck,
   AlertTriangle,
   ArrowRight,
   ExternalLink,
 } from 'lucide-react'
 
-const sourceIcons = {
+const sourceIcons: Record<string, typeof Mail> = {
   email: Mail,
   manual: User,
-  system: Settings,
+  system: Mail,
+  review: ClipboardCheck,
 }
 
-export const sourceLabels = {
+/**
+ * Three sources, as ops think of them. `system` is the agent writing what it read out of an email —
+ * the same origin as `email`, so it carries the same label; it just cannot LINK, because those rows
+ * store an evidence id rather than an email message id.
+ */
+export const sourceLabels: Record<string, string> = {
   email: 'Email extraction',
+  system: 'Email extraction',
   manual: 'Manual edit',
-  system: 'System',
+  review: 'Review queue',
 }
 
 /**
@@ -58,7 +65,7 @@ export function ShipmentHistoryTimeline({ history }: ShipmentHistoryTimelineProp
       <div className="absolute left-[15px] top-2 bottom-2 w-px bg-border" />
 
       {history.map((entry) => {
-        const SourceIcon = sourceIcons[entry.sourceType] ?? Settings
+        const SourceIcon = sourceIcons[entry.sourceType] ?? Mail
 
         return (
           <div key={entry.id} className="relative flex gap-3 pb-4 last:pb-0">
@@ -109,6 +116,21 @@ export function ShipmentHistoryTimeline({ history }: ShipmentHistoryTimelineProp
                 <span>·</span>
                 <span className="font-mono">{formatDateTime(entry.changedAt)}</span>
               </div>
+
+              {/* A Review Queue decision links back to where the human made it. Plain <a> (not
+                  <Link>) to match the ReviewCard's own Open shipment link and keep this component
+                  usable outside a Router. */}
+              {entry.sourceType === 'review' && (
+                <a
+                  href={`/review-queue/${entry.shipmentId}`}
+                  data-testid="history-review-link"
+                  title="Open the review view for this shipment"
+                  className="mt-1 inline-flex max-w-full items-center gap-1 text-left text-xs italic text-text-muted hover:text-cobalt-primary-light hover:underline"
+                >
+                  <span className="min-w-0 truncate">View in review queue</span>
+                  <ExternalLink size={10} className="shrink-0" />
+                </a>
+              )}
 
               {/* The source email: subject as a clickable link → the reading-pane popup */}
               {entry.notes && entry.sourceType === 'email' && entry.sourceId ? (

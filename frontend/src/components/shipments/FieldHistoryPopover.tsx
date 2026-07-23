@@ -140,6 +140,18 @@ export function FieldHistoryPopover({
                         {formatDateTime(e.changedAt)}
                         <ExternalLink size={9} className="shrink-0" />
                       </button>
+                    ) : e.sourceType === 'review' ? (
+                      /* Same idea for a Review Queue decision — the timestamp opens where the human
+                         made the call. */
+                      <a
+                        href={`/review-queue/${e.shipmentId}`}
+                        data-testid="field-history-review-link"
+                        title="Open the review view for this shipment"
+                        className="inline-flex items-center gap-1 align-baseline text-text-muted hover:text-cobalt-primary-light hover:underline"
+                      >
+                        {formatDateTime(e.changedAt)}
+                        <ExternalLink size={9} className="shrink-0" />
+                      </a>
                     ) : (
                       formatDateTime(e.changedAt)
                     )}

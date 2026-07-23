@@ -7,7 +7,8 @@ export interface HistoryEntry {
   field: string
   oldValue: string | null
   newValue: string | null
-  sourceType: 'email' | 'manual' | 'system'
+  /** `system` = agent-written (the backend maps 'agent' here); `review` = a Review Queue decision. */
+  sourceType: 'email' | 'manual' | 'system' | 'review'
   sourceId: string | null
   changedBy: string | null
   isDelay: boolean

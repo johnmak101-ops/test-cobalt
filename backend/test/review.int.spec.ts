@@ -75,7 +75,7 @@ describe('ReviewService (integration)', () => {
     expect(posByJob['JOB-RB']).toEqual(['PO-RB'])
   })
 
-  it('confirm flips to confirmed and records the reviewer + a manual audit', async () => {
+  it('confirm flips to confirmed and records the reviewer + a review-sourced audit', async () => {
     const { leg } = await seedProvisional('JOB-R-1', 40)
     const res = await review.confirm(leg.id, reviewerId)
     expect(res.reviewStatus).toBe('confirmed')
@@ -86,7 +86,10 @@ describe('ReviewService (integration)', () => {
     expect(updated.reviewedAt).not.toBeNull()
 
     const audit = await db.selectFrom('changeLog').where('entityId', '=', leg.id).selectAll().execute()
-    expect(audit.some((a) => a.sourceType === 'manual' && a.actorUserId === reviewerId)).toBe(true)
+    // 'review' distinguishes a queue decision from an Order Details edit ('manual'). Hitting the
+    // real DB here also proves migration 0020 widened ck_change_log_source_type — the INSERT would
+    // fail the CHECK otherwise.
+    expect(audit.some((a) => a.sourceType === 'review' && a.actorUserId === reviewerId)).toBe(true)
   })
 
   it('correct updates a field, locks it (human-wins), audits the reason, and confirms', async () => {
