@@ -1,10 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { render, screen } from '@testing-library/react'
-import {
-  MilestoneTimeline,
-  orientationLine,
-  stageDateCaption,
-} from './MilestoneTimeline'
+import { MilestoneTimeline, stageDateCaption } from './MilestoneTimeline'
+import { statusLabels } from '../ui/Badge'
 import { formatDate } from '../../lib/utils'
 
 describe('stageDateCaption', () => {
@@ -47,35 +44,46 @@ describe('stageDateCaption', () => {
   })
 })
 
-describe('orientationLine', () => {
-  it('mid-lifecycle: Now and Next', () => {
-    const line = orientationLine([
-      { label: 'Booking Request', done: true, isCurrent: false, isNext: false, isLast: false },
-      { label: 'SO Received', done: true, isCurrent: true, isNext: false, isLast: false },
-      { label: 'Draft BOL', done: false, isCurrent: false, isNext: true, isLast: false },
-      { label: 'Delivered', done: false, isCurrent: false, isNext: false, isLast: true },
-    ])
-    expect(line).toBe('Now: SO Received · Next: Draft BOL')
-  })
-
-  it('terminal complete', () => {
-    const line = orientationLine([
-      { label: 'Booking Request', done: true, isCurrent: false, isNext: false, isLast: false },
-      { label: 'Delivered', done: true, isCurrent: false, isNext: false, isLast: true },
-    ])
-    expect(line).toBe('Complete · Delivered')
-  })
-
-  it('not started', () => {
-    const line = orientationLine([
-      { label: 'Booking Request', done: false, isCurrent: false, isNext: false, isLast: false },
-      { label: 'Delivered', done: false, isCurrent: false, isNext: false, isLast: true },
-    ])
-    expect(line).toBe('Not started · Next: Booking Request')
-  })
-})
-
 describe('MilestoneTimeline', () => {
+  /**
+   * The status badge and the timeline render the SAME shipment status, so they must agree on which
+   * stage it names. STATE_TO_INDEX drifted from Badge.tsx after #126 re-added Draft BOL and Final
+   * BOL as stages: AT_WAREHOUSE floored one stage short, and SAILED floored a stage too far — a leg
+   * whose badge read "Final BOL" had Departure ticked as done, claiming a shipment had sailed when
+   * only its B/L had been cut.
+   *
+   * Asserted against Badge.tsx's own statusLabels, not a copy of them, so relabelling a status
+   * there without moving its index here fails loudly.
+   */
+  it.each([
+    ['CONFIRMED', 'SO Received', 'Draft BOL'],
+    ['AT_WAREHOUSE', 'Draft BOL', 'Final BOL'],
+    ['SAILED', 'Final BOL', 'Departure'],
+    ['DEPARTED', 'Departure', 'Delivered'],
+  ])('%s makes %s current and leaves %s untouched — matching its badge', (status, current, next) => {
+    render(<MilestoneTimeline horizontal={false} milestones={[]} currentStatus={status} />)
+    expect(statusLabels[status]).toBe(current)
+    expect(screen.getByText(current)).toHaveClass('font-semibold', 'text-status-warning')
+    expect(screen.getByText(next)).toHaveClass('font-medium', 'text-text-primary')
+  })
+
+  it('ARRIVED completes the terminal stage rather than marking it in-progress', () => {
+    render(<MilestoneTimeline horizontal={false} milestones={[]} currentStatus="ARRIVED" />)
+    expect(statusLabels.ARRIVED).toBe('Delivered')
+    expect(screen.getByText('Delivered')).toHaveClass('text-text-secondary')
+    expect(screen.getByText('Delivered')).not.toHaveClass('text-status-warning')
+  })
+
+  // The "Now: X · Next: Y" strip and its orientationLine helper are gone — the stepper already
+  // shows both: current = the amber node with the moving transport icon, next = the empty ring
+  // beside it. Guarded so the sentence cannot creep back above the stages.
+  it('renders no orientation strip above the stepper', () => {
+    render(<MilestoneTimeline horizontal milestones={[]} currentStatus="CONFIRMED" />)
+    expect(screen.queryByTestId('milestone-orientation')).toBeNull()
+    expect(screen.queryByText(/^Now: /)).toBeNull()
+    expect(screen.queryByText(/^Complete · /)).toBeNull()
+  })
+
   // The horizontal connectors used to be flex siblings with `self-center`, which centred them on the
   // whole stage column — icon AND label AND date — so they drew ~31px too low, straight through the
   // label row, and were squeezed to whatever width the text left over (~9px). They are now absolute,
@@ -128,12 +136,40 @@ describe('MilestoneTimeline', () => {
     expect(screen.queryByText('Arrived')).not.toBeInTheDocument()
   })
 
-  // The STATE_TO_INDEX floor exists for legs whose stage has no date. state.ts BUG-7 bumps a leg to
-  // SAILED with NO atd (Invoice/Billing + carrier doc + past ETD — "demonstrably sailed"). Such a leg
-  // must still show Departure as reached; mapping SAILED below Departure made it advertise an
-  // ESTIMATED departure for a ship that already left.
-  // Eng lock: caption is Done, never Est./ETD when done.
-  it('a SAILED leg with no ATD shows Departure as Done, not an estimate', () => {
+  /**
+   * The eng lock this replaces: a leg that has demonstrably departed but carries no ATD must show
+   * Departure as **Done**, never as an ETD estimate. That guarantee is kept — but it was being
+   * tested through the wrong status.
+   *
+   * The old test drove it with currentStatus="SAILED", on the premise that "state.ts BUG-7 bumps a
+   * leg to SAILED with NO atd". It does not: BUG-7 (Invoice/Billing + carrier doc + past ETD) bumps
+   * to RELEASED, which stateToUiStatus translates to DEPARTED — state.spec.ts asserts that three
+   * times. So the BUG-7 leg reaches Departure on its own, and propping SAILED up to index 4 to
+   * carry it only mislabelled every genuine Final-BOL leg as departed.
+   *
+   * The trap is the name: DB state SAILED reads like "has sailed" but is the Final BOL DOCUMENT
+   * stage — paperwork cut, goods not necessarily moved.
+   */
+  it('a departed leg with no ATD shows Departure as Done, not an estimate', () => {
+    render(
+      <MilestoneTimeline
+        horizontal={false}
+        milestones={[
+          { id: '1', milestoneType: 'BOOKING_SENT', occurredAt: '2026-01-01T00:00:00Z', notes: null },
+        ]}
+        currentStatus="DEPARTED" // what BUG-7's RELEASED actually arrives as
+        etd="2026-01-05T00:00:00Z"
+        atd={null}
+      />,
+    )
+    expect(screen.queryByText(/Est\./)).not.toBeInTheDocument()
+    expect(screen.queryByText(/^ETD /)).not.toBeInTheDocument()
+    expect(screen.getAllByText('Done').length).toBeGreaterThan(0)
+  })
+
+  // The other half: paperwork alone must NOT claim the goods moved. A Final BOL leg still owes an
+  // ETD on Departure — that estimate is correct here, and was being suppressed.
+  it('a Final BOL leg with no ATD leaves Departure pending, still showing its ETD', () => {
     render(
       <MilestoneTimeline
         horizontal={false}
@@ -145,10 +181,8 @@ describe('MilestoneTimeline', () => {
         atd={null}
       />,
     )
-    expect(screen.queryByText(/Est\./)).not.toBeInTheDocument()
-    expect(screen.queryByText(/^ETD /)).not.toBeInTheDocument()
-    // Departure row is done without date → one of the "Done" captions
-    expect(screen.getAllByText('Done').length).toBeGreaterThan(0)
+    expect(screen.getByText('Final BOL')).toHaveClass('text-status-warning')
+    expect(screen.getByText(`ETD ${formatDate('2026-01-05T00:00:00Z')}`)).toBeInTheDocument()
   })
 
   it('tolerates stored AT_WAREHOUSE milestones without crashing or showing them', () => {
@@ -169,7 +203,10 @@ describe('MilestoneTimeline', () => {
     expect(screen.queryByText('At Warehouse')).not.toBeInTheDocument()
   })
 
-  it('shows orientation Now/Next for mid-lifecycle CONFIRMED with SO date', () => {
+  // Was an assertion on the "Now: X · Next: Y" strip. That strip is gone, but which stage is
+  // CURRENT and which is NEXT is still the point of the component — the stepper now carries it,
+  // so assert it there: current is amber and bold, next is plain primary, the rest recede.
+  it('marks the current and next stage for mid-lifecycle CONFIRMED with SO date', () => {
     render(
       <MilestoneTimeline
         horizontal={false}
@@ -180,9 +217,10 @@ describe('MilestoneTimeline', () => {
         currentStatus="CONFIRMED"
       />,
     )
-    expect(screen.getByTestId('milestone-orientation')).toHaveTextContent(
-      'Now: SO Received · Next: Draft BOL',
-    )
+    expect(screen.getByText('SO Received')).toHaveClass('font-semibold', 'text-status-warning')
+    expect(screen.getByText('Draft BOL')).toHaveClass('font-medium', 'text-text-primary')
+    expect(screen.getByText('Booking Request')).toHaveClass('text-text-secondary')
+    expect(screen.getByText('Delivered')).toHaveClass('text-text-muted')
   })
 
   it('shows Not yet for future stages without estimates', () => {
@@ -216,7 +254,9 @@ describe('MilestoneTimeline', () => {
     expect(screen.getByText(`ETD ${formatDate('2026-07-26T00:00:00Z')}`)).toBeInTheDocument()
   })
 
-  it('shows Complete orientation when delivered with inDcDate', () => {
+  // Was the "Complete · Delivered" strip. Same guarantee, read off the stepper: the terminal stage
+  // is done and dated from inDcDate, and nothing is left mid-flight (no amber current stage).
+  it('shows the terminal stage complete and dated when delivered with inDcDate', () => {
     render(
       <MilestoneTimeline
         horizontal={false}
@@ -227,6 +267,8 @@ describe('MilestoneTimeline', () => {
         inDcDate="2026-02-01T00:00:00Z"
       />,
     )
-    expect(screen.getByTestId('milestone-orientation')).toHaveTextContent(/Complete · Delivered/)
+    expect(screen.getByText('Delivered')).toHaveClass('text-text-secondary')
+    expect(screen.getByText(formatDate('2026-02-01T00:00:00Z'))).toBeInTheDocument()
+    expect(screen.queryByText('Not yet')).toBeNull()
   })
 })
