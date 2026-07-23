@@ -2,7 +2,7 @@ import { useDashboard } from '../hooks/use-dashboard'
 import { useAlerts } from '../hooks/use-alerts'
 import { useShipments } from '../hooks/use-shipments'
 import { KPICard } from '../components/dashboard/KPICard'
-import { ActiveAlertsTable } from '../components/dashboard/ActiveAlertsTable'
+import { ActiveAlertsPanel } from '../components/dashboard/ActiveAlertsPanel'
 import { ActiveShipmentsTable } from '../components/dashboard/ActiveShipmentsTable'
 import { Package, AlertTriangle, AlertCircle, Mail } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
@@ -59,9 +59,10 @@ export default function DashboardPage() {
         />
       </div>
 
-      {/* The "Alerts Requiring Attention" card stack was replaced by ActiveAlertsTable below:
-          same rows, but scannable in a grid and consistent with every other list in the app. */}
-      <ActiveAlertsTable alerts={alertsData?.alerts ?? []} />
+      {/* Alerts stay the compact AlertCard stack (severity edge + unread dot + full message); what
+          changed is the source — live /alerts, ACTIVE-only, snoozed excluded, worst-first — instead
+          of the dashboard payload's recentAlerts. */}
+      <ActiveAlertsPanel alerts={alertsData?.alerts ?? []} />
 
       <ActiveShipmentsTable shipments={shipmentsData?.shipments ?? []} />
 
