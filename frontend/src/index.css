@@ -174,3 +174,57 @@ body {
     opacity: 1;
   }
 }
+
+/* The IN-PROGRESS milestone connector — the leg the shipment is on right now — carries a pale band
+   that travels along it toward the stage ahead. Same intent as .animate-breathe on the node beside
+   it: "moving", not "loading".
+
+   A background-image over the element's own bg-status-warning, so reduced-motion can drop the image
+   and leave the plain amber rule behind. Increasing background-position slides the image LEFT, so
+   the keyframes run 100% -> 0% to send the highlight forward, in the direction of travel.
+   Two axes because the stepper flips: -x for the horizontal tracker, -y for the vertical one (a
+   90deg gradient on a 2px-wide vertical rule would never be seen). */
+@keyframes shimmer-x {
+  from { background-position: 100% 0; }
+  to { background-position: 0% 0; }
+}
+
+@keyframes shimmer-y {
+  from { background-position: 0 100%; }
+  to { background-position: 0 0%; }
+}
+
+.animate-shimmer-x,
+.animate-shimmer-y {
+  --shimmer-band: color-mix(in srgb, var(--color-status-warning) 30%, white);
+}
+
+.animate-shimmer-x {
+  background-image: linear-gradient(
+    90deg,
+    var(--color-status-warning) 40%,
+    var(--shimmer-band) 50%,
+    var(--color-status-warning) 60%
+  );
+  background-size: 300% 100%;
+  animation: shimmer-x 2.4s linear infinite;
+}
+
+.animate-shimmer-y {
+  background-image: linear-gradient(
+    180deg,
+    var(--color-status-warning) 40%,
+    var(--shimmer-band) 50%,
+    var(--color-status-warning) 60%
+  );
+  background-size: 100% 300%;
+  animation: shimmer-y 2.4s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-shimmer-x,
+  .animate-shimmer-y {
+    animation: none;
+    background-image: none;
+  }
+}
