@@ -1,5 +1,20 @@
 import { describe, it, expect } from 'vitest'
-import { mapFieldsToLegColumns } from './committer-leg-mapping'
+import { mapFieldsToLegColumns, scheduleRetractionColumns } from './committer-leg-mapping'
+
+describe('scheduleRetractionColumns — explicit-null schedule fields the merge retracted', () => {
+  it('EXPLICIT null in the decision names the column; an ABSENT field never does', () => {
+    expect(scheduleRetractionColumns({ atd: null, etd: '2026-02-08' })).toEqual(['atd'])
+    expect(scheduleRetractionColumns({ etd: '2026-02-08' })).toEqual([]) // atd absent = no statement
+    expect(scheduleRetractionColumns({})).toEqual([])
+  })
+  it('covers the schedule class only — identity/entity/quantity nulls never retract', () => {
+    expect(scheduleRetractionColumns({ warehouse_end_date: null, eta: null })).toEqual(['warehouseEndDate', 'eta'])
+    expect(scheduleRetractionColumns({ booking_no: null, vendor_code: null, qty: null })).toEqual([])
+  })
+  it('a stated (non-null) schedule field is not a retraction', () => {
+    expect(scheduleRetractionColumns({ atd: '2026-05-08' })).toEqual([])
+  })
+})
 
 describe('mapFieldsToLegColumns — direct field→leg-column mapping (pure, no I/O)', () => {
   it('resolves scacCode from scac_code or the scac alias — the parser owns SCAC, no MBL-prefix guessing', () => {

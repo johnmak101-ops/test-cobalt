@@ -49,3 +49,25 @@ export function mapFieldsToLegColumns(f: Record<string, unknown>): Record<string
     consigneeAddress: str(f.consignee_address),
   }
 }
+
+/**
+ * Schedule columns the queue merge EXPLICITLY retracted — the field is PRESENT in the decision's
+ * fields bag with value null (the lone-ATD contradiction guard / a coherence pass that found no
+ * keepable statement). Only these may CLEAR a stored value; an ABSENT field stays "no statement"
+ * (mapFieldsToLegColumns flattens both shapes to null, so the distinction must be derived here,
+ * before the mapping). Deliberately schedule-only: identity/entity/quantity retraction stays a
+ * human decision.
+ */
+const SCHEDULE_RETRACTABLE: readonly (readonly [src: string, col: string])[] = [
+  ['cargo_ready_date', 'cargoReadyDate'],
+  ['warehouse_start_date', 'warehouseStartDate'],
+  ['warehouse_end_date', 'warehouseEndDate'],
+  ['etd', 'etd'],
+  ['atd', 'atd'],
+  ['eta', 'eta'],
+  ['ata', 'ata'],
+  ['in_dc_date', 'inDcDate'],
+]
+export function scheduleRetractionColumns(f: Record<string, unknown>): string[] {
+  return SCHEDULE_RETRACTABLE.filter(([src]) => src in f && f[src] === null).map(([, col]) => col)
+}
