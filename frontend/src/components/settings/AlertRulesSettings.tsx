@@ -103,16 +103,6 @@ export function AlertRulesSettings() {
     onError: (e) => toast.error(apiError(e, 'Save failed')),
   })
 
-  const resetRules = useMutation({
-    mutationFn: () => api.post('/alert-rules/reset', {}),
-    onSuccess: () => {
-      setDraft(null)
-      toast.success('Defaults restored')
-      invalidate()
-    },
-    onError: (e) => toast.error(apiError(e, 'Reset failed')),
-  })
-
   const updateRule = (ruleId: string, patch: Partial<AlertRule>) => {
     setDraft((prev) => (prev ?? serverRules ?? []).map((r) => (r.id === ruleId ? { ...r, ...patch } : r)))
   }
@@ -143,27 +133,14 @@ export function AlertRulesSettings() {
             Both rules fire a set number of days after ETD — pick the threshold and severity.
           </p>
         </div>
+        {/* No "Reset to Defaults" button: it did not work from the UI, and the two thresholds it
+            restored are quicker to retype than to trust. POST /alert-rules/reset still exists
+            server-side — nothing in the app calls it now. */}
         <div className="flex shrink-0 items-center gap-2">
           <button
             type="button"
-            onClick={() => {
-              if (
-                !window.confirm(
-                  'Restore factory defaults for all alert rules? This overwrites thresholds, severities, country overrides, and enabled states.',
-                )
-              )
-                return
-              resetRules.mutate()
-            }}
-            disabled={!canEdit || resetRules.isPending || saveRules.isPending}
-            className="rounded-lg px-3 py-2 text-sm text-text-secondary hover:bg-surface-700 hover:text-text-primary disabled:opacity-40"
-          >
-            {resetRules.isPending ? 'Resetting…' : 'Reset to Defaults'}
-          </button>
-          <button
-            type="button"
             onClick={() => saveRules.mutate(allRules)}
-            disabled={!canEdit || !dirty || saveRules.isPending || resetRules.isPending}
+            disabled={!canEdit || !dirty || saveRules.isPending}
             className="rounded-lg bg-cobalt-primary px-4 py-2 text-sm font-medium text-white hover:bg-cobalt-primary-light disabled:opacity-50"
           >
             {saveRules.isPending ? 'Saving…' : 'Save Changes'}
