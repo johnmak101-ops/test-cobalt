@@ -6,20 +6,19 @@ import type { Alert } from '../../hooks/use-alerts'
 const MAX_CARDS = 5
 
 /**
- * Active alerts on the dashboard, as the compact AlertCard stack.
- *
- * Cards, not a table: an alert is a thing to ACT on, and the card carries the severity as a coloured
- * left edge, the unread dot, and the full message on its own line — none of which survives being
- * squeezed into a truncating grid cell. AlertCard is the same component the Alerts page renders, so
- * the two cannot drift.
+ * The alerts that are live *right now*, worst-first then newest.
  *
  * ACTIVE only, and snoozed rows are excluded: a snooze is a human saying "not now", so showing it
  * here would re-nag with the thing they just parked. Dismissed/resolved never carry status ACTIVE.
+ *
+ * A module function, not inline in the component: reading the clock during render is impure
+ * (react-hooks/purity), and the same convention already holds for formatRelativeTime. The clock is
+ * only compared against snooze deadlines measured in hours, so the 60s /alerts refetch is ample
+ * resolution — an expiring snooze surfaces on the next poll.
  */
-export function ActiveAlertsPanel({ alerts }: { alerts: Alert[] }) {
-  const navigate = useNavigate()
+export function selectLiveAlerts(alerts: Alert[]): Alert[] {
   const now = Date.now()
-  const active = alerts
+  return alerts
     .filter((a) => a.status === 'ACTIVE')
     .filter((a) => !a.snoozedUntil || new Date(a.snoozedUntil).getTime() <= now)
     // Worst first, then newest — an operator reads top-down and should hit CRITICAL first.
@@ -29,6 +28,19 @@ export function ActiveAlertsPanel({ alerts }: { alerts: Alert[] }) {
       if (d !== 0) return d
       return (b.triggeredAt ?? '') < (a.triggeredAt ?? '') ? -1 : 1
     })
+}
+
+/**
+ * Active alerts on the dashboard, as the compact AlertCard stack.
+ *
+ * Cards, not a table: an alert is a thing to ACT on, and the card carries the severity as a coloured
+ * left edge, the unread dot, and the full message on its own line — none of which survives being
+ * squeezed into a truncating grid cell. AlertCard is the same component the Alerts page renders, so
+ * the two cannot drift. Which alerts qualify is selectLiveAlerts's call.
+ */
+export function ActiveAlertsPanel({ alerts }: { alerts: Alert[] }) {
+  const navigate = useNavigate()
+  const active = selectLiveAlerts(alerts)
   const shown = active.slice(0, MAX_CARDS)
 
   return (
