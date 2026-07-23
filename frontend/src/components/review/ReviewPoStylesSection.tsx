@@ -263,8 +263,8 @@ export function ReviewPoStylesSection({
         <tr className="border-b border-border">
           <td colSpan={colSpan} className={REVIEW_GROUP_HEADER}>
             <span className="inline-flex flex-wrap items-center gap-2">
-              POs & styles
-              <span className="font-normal normal-case tracking-normal text-text-muted">
+              POs & Styles
+              <span className="font-normal text-text-muted">
                 ({sorted.length} {sorted.length === 1 ? 'PO' : 'POs'})
                 {canEdit ? ' — editing' : ''}
               </span>

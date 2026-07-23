@@ -47,7 +47,12 @@ export const REVIEW_TH = `px-3 py-2.5 text-left ${REVIEW_FS.meta} font-medium te
 
 export const REVIEW_TD = `min-w-0 overflow-hidden px-3 py-2.5 align-top ${REVIEW_FS.value}`
 
-export const REVIEW_GROUP_HEADER = `px-3 py-2 text-left ${REVIEW_FS.meta} font-semibold uppercase tracking-wide text-text-muted bg-surface-900/30`
+/**
+ * Table group headers. Sentence/Title case as written in the source string — NOT uppercased in CSS.
+ * Titles and subtitles across the review card capitalise the first letter only; ALL CAPS made the
+ * group header shout louder than the panel title above it.
+ */
+export const REVIEW_GROUP_HEADER = `px-3 py-2 text-left ${REVIEW_FS.meta} font-semibold text-text-muted bg-surface-900/30`
 
 /** Shared thead labels — same wording on PO + conflict tables so columns read as one grid. */
 export const REVIEW_HEAD = {
