@@ -3,6 +3,15 @@
 const ORDER = ['BOOKED', 'CONFIRMED', 'AT_WAREHOUSE', 'SAILED', 'RELEASED', 'DELIVERED'] as const
 export type ShipmentState = (typeof ORDER)[number]
 
+/**
+ * Position on the staircase; -1 for anything unrecognised. Lets a caller compare two states without
+ * copying ORDER — the state refresher uses it to promote only, never to walk a leg backwards.
+ * An unknown stored value ranks -1, so it can be climbed out of but never descended into.
+ */
+export function stateRank(state: string | null | undefined): number {
+  return ORDER.indexOf(state as ShipmentState)
+}
+
 const has = (v: unknown) => v != null && v !== ''
 
 export function deriveState(
