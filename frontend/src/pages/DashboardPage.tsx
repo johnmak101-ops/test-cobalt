@@ -2,7 +2,6 @@ import { useDashboard } from '../hooks/use-dashboard'
 import { useAlerts } from '../hooks/use-alerts'
 import { useShipments } from '../hooks/use-shipments'
 import { KPICard } from '../components/dashboard/KPICard'
-import { RecentActivityTable } from '../components/dashboard/RecentActivityTable'
 import { ActiveAlertsTable } from '../components/dashboard/ActiveAlertsTable'
 import { ActiveShipmentsTable } from '../components/dashboard/ActiveShipmentsTable'
 import { Package, AlertTriangle, AlertCircle, Mail } from 'lucide-react'
@@ -66,8 +65,9 @@ export default function DashboardPage() {
 
       <ActiveShipmentsTable shipments={shipmentsData?.shipments ?? []} />
 
-      {/* Today's cargo that set sail (empty state is handled inside the table). */}
-      <RecentActivityTable shipments={data?.recentActivity ?? []} />
+      {/* "Today's Cargo Set Sail" is parked, not deleted — it read "No cargo set sail today" on
+          most days, which is a whole card spent saying nothing. RecentActivityTable and the
+          dashboard's recentActivity payload are untouched; restore by rendering it again. */}
     </div>
   )
 }
