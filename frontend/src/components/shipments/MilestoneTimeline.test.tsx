@@ -1,10 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { render, screen } from '@testing-library/react'
-import {
-  MilestoneTimeline,
-  orientationLine,
-  stageDateCaption,
-} from './MilestoneTimeline'
+import { MilestoneTimeline, stageDateCaption } from './MilestoneTimeline'
 import { formatDate } from '../../lib/utils'
 
 describe('stageDateCaption', () => {
@@ -47,35 +43,17 @@ describe('stageDateCaption', () => {
   })
 })
 
-describe('orientationLine', () => {
-  it('mid-lifecycle: Now and Next', () => {
-    const line = orientationLine([
-      { label: 'Booking Request', done: true, isCurrent: false, isNext: false, isLast: false },
-      { label: 'SO Received', done: true, isCurrent: true, isNext: false, isLast: false },
-      { label: 'Draft BOL', done: false, isCurrent: false, isNext: true, isLast: false },
-      { label: 'Delivered', done: false, isCurrent: false, isNext: false, isLast: true },
-    ])
-    expect(line).toBe('Now: SO Received · Next: Draft BOL')
-  })
-
-  it('terminal complete', () => {
-    const line = orientationLine([
-      { label: 'Booking Request', done: true, isCurrent: false, isNext: false, isLast: false },
-      { label: 'Delivered', done: true, isCurrent: false, isNext: false, isLast: true },
-    ])
-    expect(line).toBe('Complete · Delivered')
-  })
-
-  it('not started', () => {
-    const line = orientationLine([
-      { label: 'Booking Request', done: false, isCurrent: false, isNext: false, isLast: false },
-      { label: 'Delivered', done: false, isCurrent: false, isNext: false, isLast: true },
-    ])
-    expect(line).toBe('Not started · Next: Booking Request')
-  })
-})
-
 describe('MilestoneTimeline', () => {
+  // The "Now: X · Next: Y" strip and its orientationLine helper are gone — the stepper already
+  // shows both: current = the amber node with the moving transport icon, next = the empty ring
+  // beside it. Guarded so the sentence cannot creep back above the stages.
+  it('renders no orientation strip above the stepper', () => {
+    render(<MilestoneTimeline horizontal milestones={[]} currentStatus="CONFIRMED" />)
+    expect(screen.queryByTestId('milestone-orientation')).toBeNull()
+    expect(screen.queryByText(/^Now: /)).toBeNull()
+    expect(screen.queryByText(/^Complete · /)).toBeNull()
+  })
+
   // The horizontal connectors used to be flex siblings with `self-center`, which centred them on the
   // whole stage column — icon AND label AND date — so they drew ~31px too low, straight through the
   // label row, and were squeezed to whatever width the text left over (~9px). They are now absolute,
@@ -169,7 +147,10 @@ describe('MilestoneTimeline', () => {
     expect(screen.queryByText('At Warehouse')).not.toBeInTheDocument()
   })
 
-  it('shows orientation Now/Next for mid-lifecycle CONFIRMED with SO date', () => {
+  // Was an assertion on the "Now: X · Next: Y" strip. That strip is gone, but which stage is
+  // CURRENT and which is NEXT is still the point of the component — the stepper now carries it,
+  // so assert it there: current is amber and bold, next is plain primary, the rest recede.
+  it('marks the current and next stage for mid-lifecycle CONFIRMED with SO date', () => {
     render(
       <MilestoneTimeline
         horizontal={false}
@@ -180,9 +161,10 @@ describe('MilestoneTimeline', () => {
         currentStatus="CONFIRMED"
       />,
     )
-    expect(screen.getByTestId('milestone-orientation')).toHaveTextContent(
-      'Now: SO Received · Next: Draft BOL',
-    )
+    expect(screen.getByText('SO Received')).toHaveClass('font-semibold', 'text-status-warning')
+    expect(screen.getByText('Draft BOL')).toHaveClass('font-medium', 'text-text-primary')
+    expect(screen.getByText('Booking Request')).toHaveClass('text-text-secondary')
+    expect(screen.getByText('Delivered')).toHaveClass('text-text-muted')
   })
 
   it('shows Not yet for future stages without estimates', () => {
@@ -216,7 +198,9 @@ describe('MilestoneTimeline', () => {
     expect(screen.getByText(`ETD ${formatDate('2026-07-26T00:00:00Z')}`)).toBeInTheDocument()
   })
 
-  it('shows Complete orientation when delivered with inDcDate', () => {
+  // Was the "Complete · Delivered" strip. Same guarantee, read off the stepper: the terminal stage
+  // is done and dated from inDcDate, and nothing is left mid-flight (no amber current stage).
+  it('shows the terminal stage complete and dated when delivered with inDcDate', () => {
     render(
       <MilestoneTimeline
         horizontal={false}
@@ -227,6 +211,8 @@ describe('MilestoneTimeline', () => {
         inDcDate="2026-02-01T00:00:00Z"
       />,
     )
-    expect(screen.getByTestId('milestone-orientation')).toHaveTextContent(/Complete · Delivered/)
+    expect(screen.getByText('Delivered')).toHaveClass('text-text-secondary')
+    expect(screen.getByText(formatDate('2026-02-01T00:00:00Z'))).toBeInTheDocument()
+    expect(screen.queryByText('Not yet')).toBeNull()
   })
 })

@@ -85,27 +85,11 @@ export function stageDateCaption(s: {
   return 'Not yet'
 }
 
-/**
- * Orientation strip above the stepper.
- * mid: Now: X · Next: Y | terminal complete | not started
+/*
+ * The "Now: X · Next: Y" orientation strip is gone, and orientationLine with it — the stepper
+ * already says both things louder than the sentence did: the current stage is the amber node with
+ * the moving transport icon, and the next one is the empty ringed node beside it.
  */
-export function orientationLine(
-  stages: Array<{ label: string; done: boolean; isCurrent: boolean; isNext: boolean; isLast: boolean }>,
-): string {
-  if (stages.length === 0) return 'Not started'
-  const current = stages.find((s) => s.isCurrent)
-  const next = stages.find((s) => s.isNext)
-  const last = stages[stages.length - 1]!
-  if (last.done && last.isLast) {
-    return `Complete · ${last.label}`
-  }
-  if (!current) {
-    const first = stages[0]!
-    return `Not started · Next: ${first.label}`
-  }
-  if (next) return `Now: ${current.label} · Next: ${next.label}`
-  return `Now: ${current.label}`
-}
 
 const DONE_TOOLTIP = 'Implied complete; no email date on file'
 
@@ -204,8 +188,6 @@ export function MilestoneTimeline({
     est: estDate(type),
   }))
 
-  const orientation = orientationLine(stages)
-
   // Vertical stepper — the default layout, and the mobile form of the horizontal tracker below.
   const verticalView = (
     <div className="space-y-0">
@@ -230,7 +212,11 @@ export function MilestoneTimeline({
               <div
                 className={cn(
                   'min-h-8 w-0.5 flex-1',
-                  s.idx < currentIndex ? 'bg-cobalt-primary' : s.isCurrent ? 'bg-status-warning' : 'bg-border',
+                  s.idx < currentIndex
+                    ? 'bg-cobalt-primary'
+                    : s.isCurrent
+                      ? 'bg-status-warning animate-shimmer-y'
+                      : 'bg-border',
                 )}
               />
             )}
@@ -265,7 +251,11 @@ export function MilestoneTimeline({
               aria-hidden
               className={cn(
                 'absolute left-[calc(50%+1.125rem)] right-[calc(-50%+1.125rem)] top-[0.8125rem] h-0.5',
-                s.idx < currentIndex ? 'bg-cobalt-primary' : s.isCurrent ? 'bg-status-warning' : 'bg-border',
+                s.idx < currentIndex
+                  ? 'bg-cobalt-primary'
+                  : s.isCurrent
+                    ? 'bg-status-warning animate-shimmer-x'
+                    : 'bg-border',
               )}
             />
           )}
@@ -294,24 +284,10 @@ export function MilestoneTimeline({
 
   // Prefer horizontal prop for tests / forced layout; otherwise responsive split.
   if (horizontal === true) {
-    return (
-      <div data-testid="milestone-timeline">
-        <p className="mb-3 text-sm font-medium text-text-primary" data-testid="milestone-orientation">
-          {orientation}
-        </p>
-        {horizontalView}
-      </div>
-    )
+    return <div data-testid="milestone-timeline">{horizontalView}</div>
   }
   if (horizontal === false) {
-    return (
-      <div data-testid="milestone-timeline">
-        <p className="mb-3 text-sm font-medium text-text-primary" data-testid="milestone-orientation">
-          {orientation}
-        </p>
-        {verticalView}
-      </div>
-    )
+    return <div data-testid="milestone-timeline">{verticalView}</div>
   }
 
   // Six steps side by side crowd a narrow card (labels collide) — vertical stepper below 42rem,
@@ -320,9 +296,6 @@ export function MilestoneTimeline({
   // viewport-keyed `md:` was showing the crowded horizontal layout in exactly that gap.
   return (
     <div data-testid="milestone-timeline" className="@container">
-      <p className="mb-3 text-sm font-medium text-text-primary" data-testid="milestone-orientation">
-        {orientation}
-      </p>
       <div className="@2xl:hidden">{verticalView}</div>
       <div className="hidden @2xl:block">{horizontalView}</div>
     </div>
