@@ -71,7 +71,9 @@ SEED_DEMO=0
 #STATE_REFRESH_INTERVAL_MS=0
 ```
 
-Hub image: `johnmak101/cobalt-shiptrack:latest` (override with `SHIPTRACK_IMAGE=...`).
+Image tag: `shiptrack:latest`, built locally by `build: .`. Set `SHIPTRACK_IMAGE=<registry>/<org>/cobalt-shiptrack:latest`
+only when you actually want to publish to or pull from a registry — the default stays local so a
+`pull` / `push` from any checkout can't reach a registry nobody agreed on.
 
 ## Dual-stack with cobalt-queue
 

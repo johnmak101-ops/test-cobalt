@@ -24,7 +24,9 @@ services:
 
   app:
     build: .
-    image: ${SHIPTRACK_IMAGE:-johnmak101/cobalt-shiptrack:latest}
+    # Local tag by default so `pull`/`push` from any checkout can't reach a registry nobody agreed
+    # on. Set SHIPTRACK_IMAGE to a registry path when you actually want to publish or pull.
+    image: ${SHIPTRACK_IMAGE:-shiptrack:latest}
     depends_on:
       db:
         condition: service_healthy
