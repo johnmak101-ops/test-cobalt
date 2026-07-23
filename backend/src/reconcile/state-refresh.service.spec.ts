@@ -95,19 +95,34 @@ describe('StateRefreshService — the calendar, not an email', () => {
   })
 
   /**
-   * A skip is a signal, not a shrug. GZL26261147 in the live data stores RELEASED with no atd and no
-   * Departure Notice among its email types — something set that state and the proof is gone. Report
-   * it; do not quietly pass over it, and do not "correct" it downward either.
+   * A skip is a signal, not a shrug: a leg storing a state its own evidence cannot reproduce gets
+   * reported, never quietly passed over and never "corrected" downward.
+   *
+   * This used to be driven by GZL26261147's shape (RELEASED, no atd, ETA long past). Since the
+   * passed-ETA rule dropped its departure gate that leg now PROMOTES to DELIVERED — the point of
+   * the change — so the case needs a leg with no arrival-side evidence at all: stored RELEASED,
+   * only a Final B/L on file, which derives no higher than SAILED.
    */
   it('reports a leg whose stored state its evidence no longer proves', async () => {
-    const { svc, setState } = harness([leg({ state: 'RELEASED', eta: new Date('2026-02-11T00:00:00Z') })], {
-      'leg-1': ['Final B/L'],
-    })
+    const { svc, setState } = harness([leg({ state: 'RELEASED' })], { 'leg-1': ['Final B/L'] })
     const res = await svc.refresh(NOW)
     expect(res.promotions).toEqual([])
     expect(res.regressions).toHaveLength(1)
     expect(res.regressions[0]).toMatchObject({ from: 'RELEASED', to: 'SAILED' })
     expect(setState).not.toHaveBeenCalled()
+  })
+
+  // The leg that prompted the rule change: Departure with no ATD and an ETA months past. It must
+  // now climb rather than sit in the regressions list.
+  it('promotes the GZL26261147 shape — Departure, no ATD, ETA long past', async () => {
+    const { svc, setState } = harness(
+      [leg({ state: 'RELEASED', atd: null, etd: new Date('2026-02-08T00:00:00Z'), eta: new Date('2026-02-11T00:00:00Z') })],
+      { 'leg-1': ['Final B/L'] },
+    )
+    const res = await svc.refresh(NOW)
+    expect(res.regressions).toEqual([])
+    expect(res.promotions[0]).toMatchObject({ from: 'RELEASED', to: 'DELIVERED', reason: 'ETA has passed' })
+    expect(setState).toHaveBeenCalledWith('leg-1', 'DELIVERED')
   })
 
   it('does not rewrite a leg that is already at the right state', async () => {
