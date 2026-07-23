@@ -22,7 +22,7 @@ import { EvidenceRepository } from '../db/repositories/evidence.repository'
 import { resolvePoEnrichment, unattributedBrandStyle } from './po-enrichment'
 import { needsHumanReview } from './committer-helpers'
 import type { CriticReview } from '../decisions/critic-review.types'
-import { mapFieldsToLegColumns } from './committer-leg-mapping'
+import { mapFieldsToLegColumns, scheduleRetractionColumns } from './committer-leg-mapping'
 import {
   findExistingLeg,
   findAdoptableZeroIdLeg,
@@ -317,7 +317,7 @@ export class CommitterService {
       action = 'amend_fields'
       const bk = await this.bookings.findById(bookingId)
       jobNo = bk?.jobNo ?? '(unknown)'
-      await this.applyFields(shipmentId, existing as Record<string, unknown>, legValues, supersededLockedFields, g)
+      await this.applyFields(shipmentId, existing as Record<string, unknown>, legValues, supersededLockedFields, g, scheduleRetractionColumns(f))
       if (adoptedZeroId) {
         await this.audit.write({
           entityType: 'shipment', entityId: shipmentId, field: 'match_keys',
@@ -567,6 +567,7 @@ export class CommitterService {
     next: Record<string, unknown>,
     superseded: string[],
     g: ReconGroup,
+    retractions: string[] = [],
   ) {
     const locks = await this.fieldLocks.forEntity(shipmentId)
     const locked = new Set(locks.filter((l) => l.entityType === 'shipment').map((l) => l.field))
@@ -577,6 +578,16 @@ export class CommitterService {
       patch[k] = v
       await this.writeAudit('shipment', shipmentId, 'update', toStr(current[k]), toStr(v), g, k)
       if (locked.has(k)) superseded.push(k)
+    }
+    // Schedule retraction (the stale-ATD class): the merge asserted an EXPLICIT null for these columns
+    // — a full-thread re-derivation found the stored statement contradicted/unsupported — so a stored
+    // value CLEARS (audited old→null; a locked field follows the same contested supersede flow). The
+    // normal loop above skips every null, so absent fields still never clear anything.
+    for (const col of retractions) {
+      if (current[col] == null) continue
+      patch[col] = null
+      await this.writeAudit('shipment', shipmentId, 'update', toStr(current[col]), null, g, col)
+      if (locked.has(col)) superseded.push(col)
     }
     if (Object.keys(patch).length) await this.shipments.updateLeg(shipmentId, patch)
   }
