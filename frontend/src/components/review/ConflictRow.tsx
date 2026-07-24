@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Copy, Mail, Plus, X } from 'lucide-react'
-import type { CriticConflict } from '../../lib/critic-review'
+import type { CriticCandidate, CriticConflict } from '../../lib/critic-review'
 import {
   reviewFieldLabel,
   mapCriticFieldToColumn,
@@ -48,6 +48,32 @@ export interface ConflictRowProps {
 function Unit({ unit }: { unit?: string | null }) {
   if (!unit) return null
   return <span className="ml-1 text-[11px] text-text-muted">{unit}</span>
+}
+
+/** Mesh master code beside the party name (variant A) — the code is a chip, never part of the
+ *  committed value string. */
+function MasterCodeChip({ code }: { code: string }) {
+  return (
+    <span
+      data-testid="master-code-chip"
+      className="mr-1.5 inline-block shrink-0 rounded border border-cobalt-primary/40 bg-cobalt-primary/10 px-1 align-[1px] font-mono text-[11px] font-medium leading-4 text-cobalt-primary-light"
+    >
+      {code}
+    </span>
+  )
+}
+
+/** Letter-bearing party name with no Mesh master — honest miss marker (matches the Needs
+ *  Attention "not found in Mesh Database" panel; numeric leaks never get this, backend-guarded). */
+function MeshMissTag() {
+  return (
+    <span
+      data-testid="mesh-miss-tag"
+      className="ml-1.5 inline-block shrink-0 whitespace-nowrap rounded bg-status-warning/15 px-1.5 align-[1px] text-[11px] font-medium leading-4 text-status-warning"
+    >
+      not in Mesh
+    </span>
+  )
 }
 
 function isSystemSource(source: string): boolean {
@@ -123,6 +149,9 @@ export function ConflictRow({
 }: ConflictRowProps) {
   const { existing, proposed } = splitCandidates(conflict)
   const changed = changesStoredValue(conflict, value)
+  // The candidate the controlled value currently equals — chips come from IT, never from a
+  // free-typed override (a custom value has no known master).
+  const activeProposed = proposed.find((p) => p.value === value) ?? null
   const label = reviewFieldLabel(conflict.field, conflict.label)
   const column = mapCriticFieldToColumn(conflict.field)
   // POL/POD edit from the seeded ports master (searchable, free-text fallback) instead of a bare input.
@@ -186,8 +215,12 @@ export function ConflictRow({
           ) : (
             <span className="inline-flex max-w-full flex-wrap items-baseline gap-x-1.5">
               <span className="field-value font-mono text-sm leading-snug text-text-primary">
+                {!useLiveExisting && existing?.master ? (
+                  <MasterCodeChip code={existing.master.code} />
+                ) : null}
                 {existingDisplay}
                 <Unit unit={existingUnit} />
+                {!useLiveExisting && existing?.master === null ? <MeshMissTag /> : null}
               </span>
               <span className="text-[11px] text-text-muted">{existingSourceLabel}</span>
             </span>
@@ -280,8 +313,10 @@ export function ConflictRow({
                 changed ? 'font-medium text-ai-proposed' : 'text-text-primary',
               )}
             >
+              {activeProposed?.master ? <MasterCodeChip code={activeProposed.master.code} /> : null}
               {value}
               <Unit unit={proposedUnit} />
+              {activeProposed?.master === null ? <MeshMissTag /> : null}
             </span>
           </span>
         ) : (
@@ -590,7 +625,7 @@ function MultiCandidateProposed({
   changed,
 }: {
   label: string
-  proposed: { value: string; source: string; sourceEmailId?: string | null }[]
+  proposed: CriticCandidate[]
   value: string
   onChange: (v: string) => void
   editing: boolean
@@ -628,8 +663,10 @@ function MultiCandidateProposed({
                     aria-label={`Select proposed candidate: ${c.value}`}
                   />
                   <span className="field-value font-mono text-sm leading-snug text-text-primary">
+                    {c.master ? <MasterCodeChip code={c.master.code} /> : null}
                     {c.value}
                     <Unit unit={proposedUnit} />
+                    {c.master === null ? <MeshMissTag /> : null}
                   </span>
                 </label>
               ) : (
@@ -653,8 +690,10 @@ function MultiCandidateProposed({
                           : 'text-text-secondary',
                     )}
                   >
+                    {c.master ? <MasterCodeChip code={c.master.code} /> : null}
                     {c.value}
                     <Unit unit={proposedUnit} />
+                    {c.master === null ? <MeshMissTag /> : null}
                   </span>
                 </div>
               )}
