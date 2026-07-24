@@ -278,6 +278,45 @@ export class MastersRepository {
     return (await this.forwarderLinkByName(name))?.id ?? null
   }
 
+  /**
+   * Human-edit party resolution: code-exact, then unique normalized-name exact (Unicode-aware so
+   * Chinese master names count). Free text needing judgment stays with the queue LLM Master
+   * Matcher — no match here means "unlink the FK and let the raw value drive display".
+   */
+  private exactPartyId(
+    rows: { id: string; code?: string | null; name: string; nameCh?: string | null }[],
+    value: string,
+  ): string | null {
+    const v = value.trim()
+    if (!v) return null
+    const vUpper = v.toUpperCase()
+    const codeHits = rows.filter((r) => (r.code ?? '').trim().toUpperCase() === vUpper)
+    if (codeHits.length === 1) return codeHits[0]!.id
+    const normalize = (s: string) => s.toUpperCase().replace(/[^\p{L}\p{N}]/gu, '')
+    const key = normalize(v)
+    if (key.length < 3) return null
+    const nameHits = rows.filter(
+      (r) => normalize(r.name) === key || (r.nameCh != null && normalize(r.nameCh) === key),
+    )
+    const ids = new Set(nameHits.map((r) => r.id))
+    return ids.size === 1 ? nameHits[0]!.id : null
+  }
+
+  async vendorIdExact(value: string): Promise<string | null> {
+    const rows = await this.db.selectFrom('vendors').select(['id', 'code', 'name', 'nameCh']).execute()
+    return this.exactPartyId(rows, value)
+  }
+
+  async customerIdExact(value: string): Promise<string | null> {
+    const rows = await this.db.selectFrom('customers').select(['id', 'code', 'name', 'nameCh']).execute()
+    return this.exactPartyId(rows, value)
+  }
+
+  /** Forwarder twin of the party resolvers — code tier then the exact-name/alias tiers. */
+  async forwarderIdExact(value: string): Promise<string | null> {
+    return (await this.forwarderIdByCode(value)) ?? (await this.forwarderIdByName(value))
+  }
+
   async portIdByCodeOrName(code: string) {
     return (await this.portByCodeOrName(code))?.id ?? null
   }

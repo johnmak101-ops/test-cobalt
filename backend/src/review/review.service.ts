@@ -4,6 +4,7 @@ import { BookingRepository } from '../db/repositories/booking.repository'
 import { FieldLockRepository } from '../db/repositories/field-lock.repository'
 import { AuditRepository } from '../db/repositories/audit.repository'
 import { CriticCalibrationRepository } from '../db/repositories/critic-calibration.repository'
+import { MastersRepository } from '../db/repositories/masters.repository'
 import type { CalibrationOutcome } from '../db/kysely/db'
 import type { CriticReview } from '../decisions/critic-review.types'
 import { QueueLearningClient } from './queue-learning.client'
@@ -86,6 +87,7 @@ export class ReviewService {
     private readonly audit: AuditRepository,
     private readonly queueLearning: QueueLearningClient,
     private readonly calibration: CriticCalibrationRepository,
+    private readonly masters: MastersRepository,
   ) {}
 
   private bandFromLeg(leg: { criticReview?: CriticReview | null | unknown }): 'low' | 'medium' | 'high' | null {
@@ -222,7 +224,30 @@ export class ReviewService {
       throw new BadRequestException(`field not correctable: ${field}`)
     }
     const value = coerceLegField(field, raw)
-    await this.shipments.updateLeg(shipmentId, { [field]: value })
+    const patch: Record<string, unknown> = { [field]: value }
+    // Stale-FK guard, same class as the detail-edit fix: display prefers the resolved master
+    // (port label from polId, forwarder/party names from their FKs), so a human raw-value write
+    // must re-link the master (exact code/name) or unlink it — otherwise the old master keeps
+    // winning and the correction looks like it never saved.
+    if (field === 'polRaw' || field === 'podRaw') {
+      patch[field === 'polRaw' ? 'polId' : 'podId'] =
+        value == null ? null : await this.masters.portIdByUnlocode(String(value))
+    }
+    if (field === 'forwarderRaw') {
+      patch.forwarderId = value == null ? null : await this.masters.forwarderIdExact(String(value))
+    }
+    await this.shipments.updateLeg(shipmentId, patch)
+    if ((field === 'vendorRaw' || field === 'customerRaw') && current.bookingId) {
+      const masterId =
+        value == null
+          ? null
+          : field === 'vendorRaw'
+            ? await this.masters.vendorIdExact(String(value))
+            : await this.masters.customerIdExact(String(value))
+      await this.bookings.update(String(current.bookingId), {
+        [field === 'vendorRaw' ? 'vendorId' : 'customerId']: masterId,
+      })
+    }
     await this.fieldLocks.lock('shipment', shipmentId, field, toStr(value), actorId)
     await this.audit.write({
       entityType: 'shipment', entityId: shipmentId, field,
