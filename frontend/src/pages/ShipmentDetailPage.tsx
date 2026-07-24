@@ -108,8 +108,9 @@ function houseBillLabel(mode: string | null | undefined): string {
 }
 
 /**
- * Single SO# display: forwarder SO if present, else warehouse (入仓) SO.
- * When both exist and differ (Set1 FEL + B126), show both joined.
+ * Compact SO display for the page TITLE only: forwarder SO if present, else warehouse (入仓) SO;
+ * both joined when they differ. The Order Details rows show the two columns SEPARATELY (SO# +
+ * Warehouse SO), mirroring the edit form — the joined row read as one un-editable value (2026-07-24).
  */
 function displaySoNumber(shipment: {
   soNumber?: string | null
@@ -637,10 +638,11 @@ export default function ShipmentDetailPage() {
                     : 'awaiting the forwarder booking'
               }
             />
+            <DetailRow historyKey="soNo" label={fieldLabel('soNo')} value={shipment.soNumber} />
             <DetailRow
-              historyKey="soNo"
-              label={fieldLabel('soNo')}
-              value={displaySoNumber(shipment)}
+              historyKey="warehouseSo"
+              label={fieldLabel('warehouseSo')}
+              value={shipment.warehouseSo ?? null}
             />
             <DetailRow
               label="Last Email"

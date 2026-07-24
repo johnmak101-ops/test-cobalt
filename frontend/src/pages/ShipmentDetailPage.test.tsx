@@ -267,6 +267,28 @@ describe('ShipmentDetailPage — read view and edit form stay in step', () => {
     expect((screen.getByLabelText('Warehouse SO') as HTMLInputElement).value).toBe('B1261611448')
   })
 
+  it('splits SO# and Warehouse SO into separate READ rows too — no combined "A · B" row', () => {
+    mockUseShipment.mockReturnValue({
+      data: fixture({ soNumber: 'FEL-GZ-OSA-2842', warehouseSo: 'B1261611448' }),
+      isLoading: false,
+    })
+    renderPage()
+
+    expect(sectionLabels('Order Info')).toEqual(
+      expect.arrayContaining(['SO#', 'Warehouse SO']),
+    )
+    // Scoped to the rows — the page TITLE legitimately keeps its compact joined "A · B" summary.
+    const section = screen.getByText('Order Info').closest('div')!.parentElement!
+    const rowValue = (label: string) => {
+      const row = [...section.querySelectorAll('div.grid')].find(
+        (r) => r.firstElementChild?.textContent?.trim() === label,
+      )!
+      return row.children[1]!.textContent?.trim()
+    }
+    expect(rowValue('SO#')).toBe('FEL-GZ-OSA-2842')
+    expect(rowValue('Warehouse SO')).toBe('B1261611448')
+  })
+
   it('offers only SEA / AIR modes, with the current granular mode selectable and NOT "unrecognized"', async () => {
     mockUseShipment.mockReturnValue({ data: fixture({ mode: 'SEA_LCL' }), isLoading: false })
     const user = userEvent.setup()

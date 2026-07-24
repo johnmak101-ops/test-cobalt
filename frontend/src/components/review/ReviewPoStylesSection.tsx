@@ -358,15 +358,18 @@ export function ReviewPoStylesSection({
               </td>
               <td className={cn(REVIEW_COL.existing, REVIEW_TD)}>
                 {canEdit ? (
+                  /* pairs=false: the row IS a PO — a slash stays inside the style token. */
                   <StyleListEditor
                     label={`Style for PO ${po.poNumber}`}
                     value={draft.itemStyleNo}
                     onChange={(v) => setDraft(po.id, { itemStyleNo: v })}
+                    pairs={false}
                   />
                 ) : (
                   <StyleListDisplay
                     value={current ?? ''}
                     className={current ? 'text-text-primary' : undefined}
+                    pairs={false}
                   />
                 )}
               </td>
@@ -376,6 +379,7 @@ export function ReviewPoStylesSection({
                     <StyleListDisplay
                       value={proposed ?? ''}
                       className={proposed ? 'font-medium text-ai-proposed' : undefined}
+                      pairs={false}
                     />
                   </div>
                   {canEdit && po.linkId && (

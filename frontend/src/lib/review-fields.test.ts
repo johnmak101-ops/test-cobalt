@@ -15,6 +15,8 @@ import {
   reviewGroupOf,
   toInputValue,
   parseStyleEntries,
+  parseStyleTokens,
+  serializeStyleTokens,
   serializeStyleEntries,
   numericFieldWarn,
   dateOrderWarn,
@@ -210,6 +212,25 @@ describe('buildCorrections — dirty-diff keyed by leg column', () => {
   it('returns {} when nothing changed', () => {
     const edited = { bookingNo: 'BX123', quantityShipped: '5', grossWeight: '7', etd: '2026-07-10T00:00', consigneeName: '' }
     expect(buildCorrections(original, edited)).toEqual({})
+  })
+})
+
+describe('parseStyleTokens — per-PO style lists (NO PO/STYLE pair splitting)', () => {
+  it('keeps a slash inside a token intact — within one PO a slash is part of the style', () => {
+    expect(parseStyleTokens('C193/FERN JUMPER')).toEqual(['C193/FERN JUMPER'])
+  })
+  it('splits on commas / Excel separators like the pair parser', () => {
+    expect(parseStyleTokens('56571/SS26SW022, 56572/SS26SW023')).toEqual([
+      '56571/SS26SW022',
+      '56572/SS26SW023',
+    ])
+    expect(parseStyleTokens('A\tB\nC')).toEqual(['A', 'B', 'C'])
+  })
+  it('round-trips through serializeStyleTokens unchanged', () => {
+    const v = '56571/SS26SW022, 56572/SS26SW023'
+    expect(serializeStyleTokens(parseStyleTokens(v))).toBe(v)
+    expect(parseStyleTokens(null)).toEqual([])
+    expect(serializeStyleTokens([' ', ''])).toBe('')
   })
 })
 
