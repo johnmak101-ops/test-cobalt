@@ -34,6 +34,8 @@ services:
       SQL_SERVER_URL: "Server=db,1433;Database=cobalt;User Id=sa;Password=YourStrong!Passw0rd;Encrypt=false;TrustServerCertificate=true"
       PORT: "3000"
       STATIC_ROOT: /app/frontend/dist
+      # Email wall-clock + manual-edit strings are interpreted in the SERVER's zone — see Dockerfile.
+      TZ: "${TZ:-Asia/Hong_Kong}"
       JWT_SECRET: "${JWT_SECRET:-cobalt-demo-jwt-secret-change-in-production-0123456789}"
       # Schema + prod-shape seed (users/ports/rules). Not demo emails.
       RUN_MIGRATIONS: "${RUN_MIGRATIONS:-1}"

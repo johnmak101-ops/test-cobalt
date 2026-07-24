@@ -16,5 +16,12 @@ export const UOM_OPTIONS = [
 
 export const MODE_OPTIONS = ['SEA', 'SEA_FCL', 'SEA_LCL', 'AIR'] as const
 
+/**
+ * What the human-edit Mode dropdowns OFFER — just the two families, easier to scan (2026-07-24).
+ * The agent still writes SEA_FCL / SEA_LCL (MODE_OPTIONS mirrors the DB CHECK), and an existing
+ * granular value stays selectable in the dropdown without being flagged unrecognized.
+ */
+export const MODE_EDIT_OPTIONS = ['SEA', 'AIR'] as const
+
 export type UomOption = (typeof UOM_OPTIONS)[number]
 export type ModeOption = (typeof MODE_OPTIONS)[number]

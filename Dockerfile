@@ -30,9 +30,14 @@ COPY --from=build /app/frontend/dist frontend/dist
 COPY docker-entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
+# TZ is LOAD-BEARING, not cosmetic: emails state HK wall-clock times and the edit form sends local
+# wall-clock strings ("2026-03-02T18:00"); the backend interprets both in ITS OWN zone. A UTC
+# container shifted every such value +8h on write (cut-offs read back as the small hours of the
+# NEXT day). Override via compose only for a deployment that genuinely operates in another zone.
 ENV NODE_ENV=production \
     STATIC_ROOT=/app/frontend/dist \
-    PORT=3000
+    PORT=3000 \
+    TZ=Asia/Hong_Kong
 EXPOSE 3000
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \

@@ -4,7 +4,7 @@
  * column = the leg column name POST /api/review/:id/correct expects (it updates the row and
  * field-locks by column). The backend coerces values (dates → Date, numerics → number).
  */
-import { MODE_OPTIONS, UOM_OPTIONS } from './enums'
+import { MODE_OPTIONS, MODE_EDIT_OPTIONS, UOM_OPTIONS } from './enums'
 
 export type FieldType = 'text' | 'number' | 'date'
 
@@ -39,6 +39,12 @@ export interface EditableField {
    */
   options?: readonly string[]
   /**
+   * Full legal enum when `options` is a deliberately SHORTER offer list (Mode shows SEA/AIR only).
+   * A current value in here but not in `options` is still valid — rendered selectable, never
+   * suffixed "(unrecognized)". Defaults to `options`.
+   */
+  allValues?: readonly string[]
+  /**
    * When set, the edit form and the review conflict row render a master picker instead of free text.
    * 'port' → a searchable UN/LOCODE dropdown (ports are a seeded, complete master), with a free-text
    * fallback for a port not yet in the catalog. The chosen value is written to the raw column.
@@ -48,8 +54,10 @@ export interface EditableField {
 
 export const EDITABLE_FIELDS: EditableField[] = [
   { section: 'Order Info', label: 'Booking No.', uiKey: 'bookingNo', column: 'bookingNo', type: 'text' },
-  // Combined display: soNo ?? warehouseSo (see displaySoNumber). Warehouse SO stays writable via critic map.
+  // Read view combines the two SOs into one row ("A · B", see displaySoNumber); the EDIT form keeps
+  // them apart — one input per column, so the warehouse (入仓) SO is editable on its own (2026-07-24).
   { section: 'Order Info', label: 'SO#', uiKey: 'soNumber', column: 'soNo', type: 'text' },
+  { section: 'Order Info', label: 'Warehouse SO', uiKey: 'warehouseSo', column: 'warehouseSo', type: 'text' },
   // Item / Style No. lives on Customer Purchase Orders (per-PO), not Order Details — see HIDDEN_FIELD_LABELS.
   { section: 'Cargo & Logistics', label: 'Total Quantity', uiKey: 'quantityShipped', column: 'qty', type: 'number' },
   { section: 'Cargo & Logistics', label: 'UOM', uiKey: 'quantityUnit', column: 'qtyUnit', type: 'text', options: UOM_OPTIONS },
@@ -70,7 +78,7 @@ export const EDITABLE_FIELDS: EditableField[] = [
   // the two modes of one card reshuffle under the user's cursor — the drift the derivation exists to
   // prevent. Customer/Vendor have no raw row on the read view (codes live under Order Info); they sit
   // with the other parties, between Mode and Forwarder.
-  { section: 'Shipping', label: 'Mode', uiKey: 'mode', column: 'mode', type: 'text', options: MODE_OPTIONS },
+  { section: 'Shipping', label: 'Mode', uiKey: 'mode', column: 'mode', type: 'text', options: MODE_EDIT_OPTIONS, allValues: MODE_OPTIONS },
   { section: 'Shipping', label: 'Customer', uiKey: 'customerRaw', column: 'customerRaw', type: 'text' },
   { section: 'Shipping', label: 'Vendor', uiKey: 'vendorRaw', column: 'vendorRaw', type: 'text' },
   { section: 'Shipping', label: 'Forwarder', uiKey: 'forwarderRaw', column: 'forwarderRaw', type: 'text' },
@@ -355,8 +363,6 @@ const HIDDEN_FIELD_LABELS: Record<string, string> = {
   grossWeight: 'Gross Weight',
   measurement: 'Measurement',
   htsCode: 'HTS Code',
-  // Combined into SO# on Order Details (soNo ?? warehouseSo)
-  warehouseSo: 'Warehouse SO',
   // Per-PO styles live on Purchase Orders card / ReviewPoStylesSection — not Order Details bag field
   itemStyleNo: 'Item / Style No.',
 }

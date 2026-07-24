@@ -239,6 +239,30 @@ describe('ShipmentDetailPage — read view and edit form stay in step', () => {
     })
   })
 
+  it('exposes Warehouse SO as its own edit field beside SO#', async () => {
+    mockUseShipment.mockReturnValue({
+      data: fixture({ soNumber: 'FEL-GZ-OSA-2842', warehouseSo: 'B1261611448' }),
+      isLoading: false,
+    })
+    const user = userEvent.setup()
+    renderPage()
+    await user.click(screen.getByRole('button', { name: /edit/i }))
+
+    expect((screen.getByLabelText('SO#') as HTMLInputElement).value).toBe('FEL-GZ-OSA-2842')
+    expect((screen.getByLabelText('Warehouse SO') as HTMLInputElement).value).toBe('B1261611448')
+  })
+
+  it('offers only SEA / AIR modes, with the current granular mode selectable and NOT "unrecognized"', async () => {
+    mockUseShipment.mockReturnValue({ data: fixture({ mode: 'SEA_LCL' }), isLoading: false })
+    const user = userEvent.setup()
+    renderPage()
+    await user.click(screen.getByRole('button', { name: /edit/i }))
+
+    const select = screen.getByTestId('edit-select-mode') as HTMLSelectElement
+    const labels = [...select.options].map((o) => o.textContent)
+    expect(labels).toEqual(['—', 'SEA_LCL', 'SEA', 'AIR'])
+  })
+
   it('keeps the stored cut-off time when only the day is changed', async () => {
     mockUseShipment.mockReturnValue({
       data: fixture({ warehouseEndDate: '2026-03-02T18:00:00' }),
