@@ -76,7 +76,7 @@ describe('PurchaseOrdersCard — full CRUD', () => {
     await user.click(screen.getByTestId('po-add'))
     const row = screen.getByTestId('po-add-row')
     await user.type(within(row).getByPlaceholderText('PO number'), '99999')
-    await user.type(within(row).getByPlaceholderText('Item / style'), 'STYLE-9')
+    await user.type(within(row).getByPlaceholderText('Style / item no. — or paste a list'), 'STYLE-9')
     await user.click(within(row).getByRole('button', { name: 'Save' }))
     expect(createMutate).toHaveBeenCalledTimes(1)
     expect(createMutate.mock.calls[0][0]).toMatchObject({ poNumber: '99999', customerId: 'c1', itemStyleNo: 'STYLE-9' })
@@ -88,7 +88,7 @@ describe('PurchaseOrdersCard — full CRUD', () => {
     await enterCrudMode(user)
     await user.click(screen.getByRole('button', { name: 'Edit PO' }))
     const row = screen.getByTestId('po-edit-po1')
-    await user.type(within(row).getByPlaceholderText('Item / style'), 'STYLE-1')
+    await user.type(within(row).getByPlaceholderText('Style / item no. — or paste a list'), 'STYLE-1')
     await user.click(within(row).getByRole('button', { name: 'Save' }))
     expect(updateMutate.mock.calls[0][0]).toMatchObject({ id: 'po1', poNumber: '76075', itemStyleNo: 'STYLE-1' })
   })
@@ -129,5 +129,40 @@ describe('PurchaseOrdersCard — full CRUD', () => {
     expect(screen.queryByRole('button', { name: 'Edit PO' })).toBeNull()
     expect(screen.queryByTestId('po-add')).toBeNull()
     expect(screen.getByTestId('po-crud-edit')).toBeInTheDocument()
+  })
+})
+
+describe('PurchaseOrdersCard — Item/Style as a structured list (parity with the review queue)', () => {
+  it('renders a multi-style value one per line, not a comma blob', async () => {
+    const user = userEvent.setup()
+    renderCard([po({ itemStyleNo: '56571/SS26SW022, 56572/SS26SW023' })])
+    await user.click(screen.getByTestId('pos-card-toggle'))
+
+    const display = screen.getByTestId('style-list-display')
+    const items = within(display).getAllByRole('listitem')
+    expect(items).toHaveLength(2)
+    expect(items[0]).toHaveTextContent('56571/SS26SW022')
+    expect(items[1]).toHaveTextContent('56572/SS26SW023')
+  })
+
+  it('edits each style as its own row and saves the serialized list', async () => {
+    const user = userEvent.setup()
+    renderCard([po({ itemStyleNo: '56571/SS26SW022, 56572/SS26SW023' })])
+    await enterCrudMode(user)
+    await user.click(screen.getByTitle('Edit PO'))
+
+    const editor = screen.getByTestId('style-list-editor')
+    expect(within(editor).getAllByPlaceholderText('Style / item no. — or paste a list')).toHaveLength(2)
+
+    await user.click(within(editor).getByRole('button', { name: /add style/i }))
+    await user.type(within(editor).getByLabelText('Item / Style PO 3'), '56573')
+    await user.type(within(editor).getByLabelText('Item / Style style 3'), 'SS26SW024')
+    await user.click(screen.getByTitle('Save'))
+
+    expect(updateMutate.mock.calls[0][0]).toMatchObject({
+      id: 'po1',
+      poNumber: '76075',
+      itemStyleNo: '56571/SS26SW022, 56572/SS26SW023, 56573/SS26SW024',
+    })
   })
 })
