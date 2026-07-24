@@ -120,6 +120,10 @@ export function pendingReviewAnnotations(
       // long to read in a tooltip (ops 2026-07-24).
       if (MESH_MISS_RE.test(r)) {
         const name = r.match(/"([^"]+)"/)?.[1]
+        // A "party" with no letter in any script is a leaked PO/booking/container number, not a
+        // company — "advise add in Mesh" is unactionable for it, so no icon at all. Twin of
+        // isNonPartyName (needs-attention.ts / backend critic-review.types.ts) — keep in step.
+        if (name && !/\p{L}/u.test(name)) continue
         add(
           missColumn(r),
           'miss',
@@ -132,6 +136,7 @@ export function pendingReviewAnnotations(
         for (const col of conflictColumns([r])) add(col, 'warn', humanizeWarnReason(r))
     }
     for (const m of shipment.criticReview?.masterMisses ?? []) {
+      if (!/\p{L}/u.test(m.rawName ?? '')) continue // numeric leak — see the comment above
       add(
         mapCriticFieldToColumn(m.field) ?? missColumn(m.field + ' "x"'),
         'miss',
