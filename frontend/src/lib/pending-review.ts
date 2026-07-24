@@ -9,7 +9,12 @@ export interface PendingReviewSource {
   reviewReasons?: string[]
   criticReview?: { conflicts?: Array<{ field: string }> } | null
   contestedLocks?: Array<{ field: string }> | null
+  /** Raw party twin names a different company than the resolved master ("flag, don't follow"). */
+  customerMismatch?: PartyMismatchLike | null
+  vendorMismatch?: PartyMismatchLike | null
 }
+
+export type PartyMismatchLike = { raw: string; masterCode: string; masterName: string }
 
 /**
  * Reasons that state a genuine disagreement. reviewReasons also carries system-decision notes
@@ -149,6 +154,20 @@ export function pendingReviewAnnotations(
       mapCriticFieldToColumn(lock.field) ?? lock.field,
       'warn',
       `A newer email changed your edit (${lock.yourValue ?? '—'} → ${lock.newValue ?? '—'}) — keep or restore below.`,
+    )
+  }
+  // "Flag, don't follow" (2026-07-24): an agent raw-party write never moves the resolved master, so
+  // when they diverge the master keeps display and this amber says so. Outside the provisional gate —
+  // the divergence persists after confirm, unlike open review questions.
+  for (const [col, m] of [
+    ['customerRaw', shipment.customerMismatch],
+    ['vendorRaw', shipment.vendorMismatch],
+  ] as const) {
+    if (!m) continue
+    add(
+      col,
+      'warn',
+      `Emails say "${m.raw}" but the resolved master ${m.masterCode} — ${m.masterName} — is kept for display. Edit here or correct in review if wrong.`,
     )
   }
   return out

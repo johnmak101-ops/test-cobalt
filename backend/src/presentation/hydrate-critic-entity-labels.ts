@@ -47,8 +47,9 @@ function nameMapFor(kind: EntityKind, maps: EntityCodeNameMaps) {
   return maps.vendorByName
 }
 
-/** Same spirit as the repository's norm_exact tier, but Unicode-aware so CJK names survive. */
-function normalizeEntityName(s: string): string {
+/** Same spirit as the repository's norm_exact tier, but Unicode-aware so CJK names survive.
+ *  Shared with the mapper's party-mismatch check — one normalization, one answer. */
+export function normalizeEntityName(s: string): string {
   return s.toUpperCase().replace(/[^\p{L}\p{N}]/gu, '')
 }
 

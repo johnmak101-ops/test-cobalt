@@ -46,7 +46,8 @@ import {
   hydrateCriticEntityLabels,
 } from './hydrate-critic-entity-labels'
 
-type Ref = { id: string; code?: string | null; name: string }
+// nameCh rides along (repo selectAll) — the mapper's party-mismatch check accepts a Chinese raw.
+type Ref = { id: string; code?: string | null; name: string; nameCh?: string | null }
 type PortRow = { id: string; unlocode?: string | null; country?: string | null; iata?: string | null }
 type BookingRow = { id: string; customerId: string | null; vendorId: string | null }
 type LinkedPoRow = {
