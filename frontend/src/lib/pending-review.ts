@@ -47,6 +47,17 @@ function missColumn(reason: string): string | null {
   return null
 }
 
+/** Committer prose → an operator instruction (ops 2026-07-24: tooltips must say what to DO —
+ *  "per-PO qty dropped" reads as system internals; "Please verify" is the ask). */
+function humanizeWarnReason(r: string): string {
+  const units = r.match(/conflicting units \(([^)]+)\)/i)?.[1]
+  if (units) {
+    return `Quantity stated under conflicting units (${units}) — the per-PO figure was dropped. Please verify.`
+  }
+  const stripped = r.replace(/^PO \d+:\s*/i, '').trim()
+  return /verify/i.test(stripped) ? stripped : `${stripped} — please verify.`
+}
+
 /** Column → annotation for the detail rows (see PendingAnnotation). Same sources as
  *  pendingReviewColumns, plus master misses (criticReview.masterMisses + mesh reasons). */
 export function pendingReviewAnnotations(
@@ -94,7 +105,8 @@ export function pendingReviewAnnotations(
             : 'Not found in Mesh Database — advise add in Mesh.',
         )
       }
-      else if (CONFLICT_REASON_RE.test(r)) for (const col of conflictColumns([r])) add(col, 'warn', r)
+      else if (CONFLICT_REASON_RE.test(r))
+        for (const col of conflictColumns([r])) add(col, 'warn', humanizeWarnReason(r))
     }
     for (const m of shipment.criticReview?.masterMisses ?? []) {
       add(

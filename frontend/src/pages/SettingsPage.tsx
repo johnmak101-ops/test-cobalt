@@ -13,7 +13,9 @@ export default function SettingsPage() {
   const { user } = useAuth()
   const { canView } = usePageAccess()
   const isSuper = user?.role === 'SUPERADMIN'
+  const isAdminUp = user?.role === 'ADMIN' || isSuper
   const isAlertsSettings = location.pathname.includes('/settings/alerts')
+  const isLifecycle = location.pathname.includes('/settings/lifecycle')
   const isUsersSettings = location.pathname.includes('/settings/users')
   const isAccess = location.pathname.includes('/settings/access')
   const isMeshMisses = location.pathname.includes('/settings/mesh-misses')
@@ -23,6 +25,8 @@ export default function SettingsPage() {
   // Users / Access Control / Mesh misses: SUPERADMIN only (not ADMIN).
   const navItems = [
     { to: '/settings/alerts', label: 'Alert Rules', end: false, show: canView('alert_rules') },
+    // Lifecycle tunables move state on a clock — governance, so ADMIN+ only (ops 2026-07-24).
+    { to: '/settings/lifecycle', label: 'Lifecycle', end: false, show: isAdminUp },
     { to: '/settings/users', label: 'Users', end: false, show: isSuper },
     { to: '/settings/access', label: 'Access Control', end: false, show: isSuper },
     { to: '/settings/mesh-misses', label: 'Mesh Misses', end: false, show: isSuper },
@@ -71,10 +75,9 @@ export default function SettingsPage() {
         ) : isUsersSettings ? (
           <UsersSettings />
         ) : isAlertsSettings ? (
-          <div className="space-y-6">
-            <AlertRulesSettings />
-            <LifecycleSettings />
-          </div>
+          <AlertRulesSettings />
+        ) : isLifecycle && isAdminUp ? (
+          <LifecycleSettings />
         ) : isMeshMisses ? (
           <AdminMeshMissesPage />
         ) : (

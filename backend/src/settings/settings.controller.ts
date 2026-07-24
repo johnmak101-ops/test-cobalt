@@ -48,8 +48,9 @@ export class SettingsController {
     return { mode: dto.mode }
   }
 
-  /** No-arrival-data Delivered fallback: departure + these day allowances ⇒ Delivered. */
-  @Roles('EDITOR', 'ADMIN')
+  /** No-arrival-data Delivered fallback: departure + these day allowances ⇒ Delivered.
+   *  ADMIN+ read AND write — the Settings tab itself is admin-only (SUPERADMIN passes via guard). */
+  @Roles('ADMIN')
   @Get('etd-fallback')
   async getEtdFallback() {
     return this.settings.etdFallback()
