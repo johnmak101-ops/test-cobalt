@@ -33,8 +33,14 @@ const CONFLICT_REASON_RE = /conflict|disagree|differ|already stored on|locked fi
  */
 /** Per-column marker for the Order Details rows: 'warn' = open review question (yellow icon),
  *  'miss' = master miss — party/port not in Mesh (red icon, outranks warn). Messages feed the
- *  icon's hover tooltip. */
-export type PendingAnnotation = { level: 'warn' | 'miss'; messages: string[] }
+ *  icon's hover tooltip. `mask` = commit-first wrote an UNCONFIRMED answer to this column — the
+ *  row must display `prior` (the pre-write value) instead, or the "(pending)" placeholder when
+ *  prior is null. Only set while the answer is genuinely undecided (see the mask rules below). */
+export type PendingAnnotation = {
+  level: 'warn' | 'miss'
+  messages: string[]
+  mask?: { prior: string | null }
+}
 
 const MESH_MISS_RE =
   /did not exact(?:\/curated)?-match a (?:port )?master|not found in Mesh Database|Cannot match "[^"]+" in the (?:forwarder|customer|vendor|consignee) list|not in UN\/LOCODE masters/i
@@ -90,10 +96,21 @@ export function pendingReviewAnnotations(
   shipment:
     | (PendingReviewSource & {
         criticReview?: {
-          conflicts?: Array<{ field: string; label?: string; rationale?: string }>
+          confidence?: { band?: string }
+          conflicts?: Array<{
+            field: string
+            label?: string
+            rationale?: string
+            candidates?: Array<{
+              value: string
+              source: string
+              master?: { code: string; name: string } | null
+            }>
+          }>
           masterMisses?: Array<{ type: string; rawName: string; field: string }>
         } | null
         contestedLocks?: Array<{ field: string; yourValue?: string | null; newValue?: string | null }> | null
+        humanLockedFields?: string[]
       })
     | null
     | undefined,
@@ -118,6 +135,27 @@ export function pendingReviewAnnotations(
           ? humanizeWarnReason(c.rationale.trim())
           : 'Values disagree across emails — resolve in the review queue.',
       )
+    }
+    // Commit-first wrote the LLM's preferred answer into these columns, but the operator has not
+    // chosen yet — the detail row must not assert it. Mask back to the pre-write (System) value,
+    // or to the "(pending)" placeholder when there was none. Never for high band (auto-confirm
+    // path stays firm) and never for human-locked fields (a manual edit IS the settled answer).
+    if (shipment.criticReview?.confidence?.band !== 'high') {
+      const locked = new Set(shipment.humanLockedFields ?? [])
+      for (const c of shipment.criticReview?.conflicts ?? []) {
+        const col = mapCriticFieldToColumn(c.field)
+        if (!col || locked.has(col)) continue
+        const cur = out.get(col)
+        if (!cur || cur.mask) continue
+        const sys = (c.candidates ?? []).find((k) => k.source.trim().toLowerCase() === 'system')
+        const sysValue = sys?.value?.trim() || null
+        // The party rows are labelled Customer/Vendor CODE — show the prior's code when known.
+        const prior =
+          (col === 'vendorRaw' || col === 'customerRaw') && sys?.master?.code
+            ? sys.master.code
+            : sysValue
+        cur.mask = { prior }
+      }
     }
     for (const r of shipment.reviewReasons ?? []) {
       // Same wording as the review queue's Needs Attention line — the raw reason ("forwarder_name
