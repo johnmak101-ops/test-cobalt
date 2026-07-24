@@ -96,7 +96,7 @@ describe('ShipmentDetailPage — pending-review word highlight', () => {
     mutateSpy.mockClear()
   })
 
-  it('marks the values of fields named in provisional critic conflicts, and only those', () => {
+  it('masks provisional conflicted fields to the prior System value, amber-marked — and only those', () => {
     mockUseShipment.mockReturnValue({
       data: fixture({
         reviewStatus: 'provisional',
@@ -106,14 +106,14 @@ describe('ShipmentDetailPage — pending-review word highlight', () => {
     })
     renderPage()
 
+    // Unconfirmed-answer mask (2026-07-24): the committed-but-undecided value must NOT display —
+    // the row shows the pre-write System candidate ('a') in amber instead.
     const marks = pendingMarks()
-    const texts = marks.map((m) => m.textContent ?? '')
-    expect(texts.some((t) => t.includes('cartons'))).toBe(true)
-    expect(texts.some((t) => t.includes('Feb 2026'))).toBe(true)
     expect(marks).toHaveLength(2)
-    expect(marks.every((m) => m.classList.contains('review-pending-value'))).toBe(true)
+    expect(marks.every((m) => m.textContent === 'a')).toBe(true)
+    expect(screen.queryByText('cartons')).toBeNull()
 
-    // Booking No. has no conflict — its value (header + row) must stay unmarked.
+    // Booking No. has no conflict — its value must stay unmarked (and unmasked).
     for (const el of screen.getAllByText('GZL26261147')) {
       expect(el.closest('mark')).toBeNull()
     }
@@ -141,7 +141,7 @@ describe('ShipmentDetailPage — pending-review word highlight', () => {
     expect(pendingMarks().some((m) => m.textContent === 'MACFUN')).toBe(true)
   })
 
-  it('marks the Customer/Vendor Code rows when a party conflict is pending (raw-twin mapping)', () => {
+  it('masks the Customer/Vendor Code rows when a party conflict is pending (raw-twin mapping)', () => {
     mockUseShipment.mockReturnValue({
       data: fixture({
         reviewStatus: 'provisional',
@@ -151,9 +151,11 @@ describe('ShipmentDetailPage — pending-review word highlight', () => {
     })
     renderPage()
 
+    // Masked to the prior System candidate — the undecided master codes must not display.
     const texts = pendingMarks().map((m) => m.textContent ?? '')
-    expect(texts).toContain('MACFUN')
-    expect(texts).toContain('WYSE')
+    expect(texts).toEqual(['a', 'a'])
+    expect(screen.queryByText('MACFUN')).toBeNull()
+    expect(screen.queryByText('WYSE')).toBeNull()
   })
 
   it('shows no marks once the review is confirmed', () => {
@@ -183,17 +185,31 @@ describe('ShipmentDetailPage — pending-review word highlight', () => {
     expect(marks[0]!.textContent).toContain('Feb 2026')
   })
 
-  it('never marks a blank value — "(pending)" placeholders stay plain', () => {
+  it('never marks a blank value — a conflict with no prior shows a plain "(pending)"', () => {
     mockUseShipment.mockReturnValue({
       data: fixture({
         etd: null,
         reviewStatus: 'provisional',
-        criticReview: criticWithConflicts(['etd']),
+        criticReview: {
+          ...criticWithConflicts([]),
+          // No System candidate — the LLM proposed onto an empty field. The row must show the
+          // "(pending)" placeholder (unmarked), never the undecided proposal.
+          conflicts: [
+            {
+              field: 'etd',
+              label: 'etd',
+              candidates: [{ value: '2026-02-09', source: 'SO' }],
+              rationale: 'test',
+            },
+          ],
+        },
       }),
       isLoading: false,
     })
     renderPage()
     expect(pendingMarks()).toHaveLength(0)
+    expect(screen.getAllByText(/\(pending\)/).length).toBeGreaterThan(0)
+    expect(screen.queryByText(/2026-02-09/)).toBeNull()
   })
 })
 
@@ -338,5 +354,25 @@ describe('ShipmentDetailPage — read view and edit form stay in step', () => {
     expect(mutateSpy.mock.calls[0]![0]).toMatchObject({
       fields: { warehouseEndDate: '2026-03-05T18:00' },
     })
+  })
+})
+
+describe('ShipmentDetailPage — header identity', () => {
+  beforeEach(() => {
+    mockUseShipment.mockReset()
+  })
+
+  it('shows ONLY the Shipment ID in the title — booking/SO stay in Order Details', () => {
+    mockUseShipment.mockReturnValue({
+      data: fixture({ soNumber: 'SO-123', warehouseSo: '098-32230564' }),
+      isLoading: false,
+    })
+    renderPage()
+    const h1 = document.querySelector('h1')!
+    expect(h1.textContent).toContain('Shipment ID')
+    expect(h1.textContent).not.toContain('Booking No.')
+    expect(h1.textContent).not.toContain('SO')
+    // The identifiers are not lost — Booking No. still renders in the Order Details rows.
+    expect(screen.getAllByText('GZL26261147').length).toBeGreaterThan(0)
   })
 })

@@ -107,27 +107,6 @@ function houseBillLabel(mode: string | null | undefined): string {
   return isAirMode(mode) ? 'HAWB' : fieldLabel('hblAwbFcrNo')
 }
 
-/**
- * Compact SO display for the page TITLE only: forwarder SO if present, else warehouse (入仓) SO;
- * both joined when they differ. The Order Details rows show the two columns SEPARATELY (SO# +
- * Warehouse SO), mirroring the edit form — the joined row read as one un-editable value (2026-07-24).
- */
-function displaySoNumber(shipment: {
-  soNumber?: string | null
-  warehouseSo?: string | null
-}): string | null {
-  const so = shipment.soNumber?.trim() || null
-  const wh = shipment.warehouseSo?.trim() || null
-  if (!so && !wh) return null
-  if (so && wh) {
-    const a = so.toUpperCase().replace(/[^A-Z0-9]/g, '')
-    const b = wh.toUpperCase().replace(/[^A-Z0-9]/g, '')
-    if (a === b) return so
-    return `${so} · ${wh}`
-  }
-  return so ?? wh
-}
-
 export default function ShipmentDetailPage() {
   const fieldId = useId()
   const { id } = useParams<{ id: string }>()
@@ -189,19 +168,13 @@ export default function ShipmentDetailPage() {
       .flatMap((e) => (e.receivedAt ? [e.receivedAt] : []))
       .sort()
       .at(-1) ?? null
-  // Title identity (#348/#350): the derived Shipment ID leads — always present, one shape for every
-  // leg, anchored to the beginning email (fallback: creation). #151's "· Leg n/N" ordinal rides it.
-  // Booking follows under its editor name "Booking No." (#126); SO keeps its slot. The old PO
-  // fallback is gone — with the Shipment ID the title can never be empty.
+  // Title identity (#348/#350, trimmed 2026-07-24): ONLY the derived Shipment ID — always present,
+  // one shape for every leg, anchored to the beginning email (fallback: creation). #151's
+  // "· Leg n/N" ordinal rides it. Booking No. and the SO pair live in the Order Details rows.
   const shipmentIdValue =
     formatShipmentId(shipment.id, shipment.firstEmailAt ?? shipment.createdAt) +
     ((shipment.legCount ?? 1) > 1 ? ` · Leg ${shipment.legNo ?? 1}/${shipment.legCount}` : '')
-  const soDisplay = displaySoNumber(shipment)
-  const titleIds = [
-    { label: 'Shipment ID', value: shipmentIdValue },
-    shipment.bookingNo && { label: 'Booking No.', value: shipment.bookingNo },
-    soDisplay && { label: 'SO', value: soDisplay },
-  ].filter(Boolean) as { label: string; value: string }[]
+  const titleIds = [{ label: 'Shipment ID', value: shipmentIdValue }]
   const activeAlerts = (shipment.alerts ?? []).filter((a) => a.status === 'ACTIVE')
   const criticalCount = activeAlerts.filter((a) => a.severity === 'CRITICAL').length
   const warningCount = activeAlerts.filter((a) => a.severity === 'WARNING').length
