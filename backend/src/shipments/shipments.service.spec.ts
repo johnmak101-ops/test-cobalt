@@ -30,17 +30,23 @@ function makeService(legOverride: Record<string, unknown> = {}, graphId: string 
     apply: vi.fn(async () => ({ shipmentId: 'new-leg', jobNo: 'J1', state: 'provisional', action: 'created' })),
   }
   const queueLearning = { postCorrection: vi.fn(async (_p: CorrectionPayload) => undefined) }
-  const masters = { portIdByUnlocode: vi.fn(async (): Promise<string | null> => null) }
+  const masters = {
+    portIdByUnlocode: vi.fn(async (): Promise<string | null> => null),
+    vendorIdExact: vi.fn(async (): Promise<string | null> => null),
+    customerIdExact: vi.fn(async (): Promise<string | null> => null),
+    forwarderIdExact: vi.fn(async (): Promise<string | null> => null),
+  }
+  const bookings = { update: vi.fn(async () => undefined) }
   const svc = new ShipmentsService(
     shipments as unknown as ShipmentRepository,
-    {} as unknown as BookingRepository,
+    bookings as unknown as BookingRepository,
     fieldLocks as unknown as FieldLockRepository,
     audit as unknown as AuditRepository,
     committer as unknown as CommitterService,
     queueLearning as unknown as QueueLearningClient,
     masters as unknown as MastersRepository,
   )
-  return { svc, shipments, fieldLocks, audit, committer, queueLearning, masters }
+  return { svc, shipments, bookings, fieldLocks, audit, committer, queueLearning, masters }
 }
 
 describe('ShipmentsService.editFields — numeric sanity gate (manual edit path)', () => {
@@ -101,6 +107,48 @@ describe('ShipmentsService.editFields — POL/POD edits re-resolve the port mast
       'leg-1',
       expect.objectContaining({ polRaw: null, polId: null }),
     )
+  })
+})
+
+describe('ShipmentsService.editFields — party edits re-resolve the master FK (display follows)', () => {
+  it('sets the booking vendor FK when the edited vendor resolves to a master', async () => {
+    const { svc, bookings, masters } = makeService({ bookingId: 'bk-1', vendorRaw: 'SOUOCE' })
+    masters.vendorIdExact.mockResolvedValueOnce('v-rose')
+    await svc.editFields('leg-1', { vendorRaw: 'ROSE KNITTING FACTORY LIMITED' }, 'user-1', 'correct vendor')
+    expect(masters.vendorIdExact).toHaveBeenCalledWith('ROSE KNITTING FACTORY LIMITED')
+    expect(bookings.update).toHaveBeenCalledWith('bk-1', { vendorId: 'v-rose' })
+  })
+
+  it('unlinks the booking vendor FK when the edited vendor matches no master (raw drives display)', async () => {
+    const { svc, bookings, masters } = makeService({ bookingId: 'bk-1', vendorRaw: 'SOUOCE' })
+    masters.vendorIdExact.mockResolvedValueOnce(null)
+    await svc.editFields('leg-1', { vendorRaw: 'BRAND NEW KNITTERS LTD' }, 'user-1', 'not in Mesh yet')
+    expect(bookings.update).toHaveBeenCalledWith('bk-1', { vendorId: null })
+  })
+
+  it('sets the booking customer FK for customer edits', async () => {
+    const { svc, bookings, masters } = makeService({ bookingId: 'bk-1', customerRaw: 'WYSE' })
+    masters.customerIdExact.mockResolvedValueOnce('c-docc')
+    await svc.editFields('leg-1', { customerRaw: 'DOCLASSE CO., LTD.' }, 'user-1', 'correct customer')
+    expect(masters.customerIdExact).toHaveBeenCalledWith('DOCLASSE CO., LTD.')
+    expect(bookings.update).toHaveBeenCalledWith('bk-1', { customerId: 'c-docc' })
+  })
+
+  it('re-links the leg forwarder FK inside the same leg patch', async () => {
+    const { svc, shipments, masters } = makeService({ forwarderRaw: 'FWD', forwarderId: 'f-old' })
+    masters.forwarderIdExact.mockResolvedValueOnce('f-logi')
+    await svc.editFields('leg-1', { forwarderRaw: 'LOGIMARK' }, 'user-1', 'correct forwarder')
+    expect(shipments.updateLeg).toHaveBeenCalledWith(
+      'leg-1',
+      expect.objectContaining({ forwarderRaw: 'LOGIMARK', forwarderId: 'f-logi' }),
+    )
+  })
+
+  it('skips the booking write when the leg has no booking', async () => {
+    const { svc, bookings, masters } = makeService({ bookingId: null, vendorRaw: 'SOUOCE' })
+    masters.vendorIdExact.mockResolvedValueOnce(null)
+    await svc.editFields('leg-1', { vendorRaw: 'ROSE KNITTING FACTORY LIMITED' }, 'user-1', 'no booking')
+    expect(bookings.update).not.toHaveBeenCalled()
   })
 })
 

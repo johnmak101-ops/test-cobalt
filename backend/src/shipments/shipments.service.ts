@@ -208,7 +208,24 @@ export class ShipmentsService {
         const fk = field === 'polRaw' ? 'polId' : 'podId'
         patch[fk] = value == null ? null : await this.masters.portIdByUnlocode(String(value))
       }
+      // Same stale-FK class for the forwarder: display prefers the resolved master, so the human's
+      // raw edit re-links it (code or exact name) or unlinks it — never leaves the old master winning.
+      if (field === 'forwarderRaw') {
+        patch.forwarderId = value == null ? null : await this.masters.forwarderIdExact(String(value))
+      }
       await this.shipments.updateLeg(id, patch)
+      // Customer/Vendor masters hang off the BOOKING, not the leg — re-point (or unlink) there.
+      if ((field === 'vendorRaw' || field === 'customerRaw') && current.bookingId) {
+        const masterId =
+          value == null
+            ? null
+            : field === 'vendorRaw'
+              ? await this.masters.vendorIdExact(String(value))
+              : await this.masters.customerIdExact(String(value))
+        await this.bookings.update(String(current.bookingId), {
+          [field === 'vendorRaw' ? 'vendorId' : 'customerId']: masterId,
+        })
+      }
       await this.fieldLocks.lock('shipment', id, field, asStr(value), actorId)
       await this.audit.write({
         entityType: 'shipment', entityId: id, field,
