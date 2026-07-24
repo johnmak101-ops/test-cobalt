@@ -1,5 +1,13 @@
+import { RequestMethod } from '@nestjs/common'
 import type { Params } from 'nestjs-pino'
 import type { TransportTargetOptions } from 'pino'
+
+/**
+ * nestjs-pino's default middleware route is the LEGACY `'*'`, which Nest 11 (path-to-regexp v8)
+ * auto-converts with a boot-time LegacyRouteConverter warning once the global /api prefix lands
+ * on it. Same coverage, modern syntax — the warning goes away.
+ */
+const ALL_ROUTES = [{ path: '{*splat}', method: RequestMethod.ALL }]
 
 /**
  * Structured logging config for the tracking backend (pino, via nestjs-pino).
@@ -18,7 +26,7 @@ export function loggerParams(): Params {
   // 'silent' means log nothing — skip the transport entirely. Besides being less wasteful, this
   // avoids spawning a pino transport worker thread, which crashes when the app is booted inside a
   // test runner's own worker (used by the AppModule boot spec).
-  if (level === 'silent') return { pinoHttp: { level: 'silent' } }
+  if (level === 'silent') return { pinoHttp: { level: 'silent' }, forRoutes: ALL_ROUTES }
   const isProd = process.env.NODE_ENV === 'production'
   const logFile = process.env.LOG_FILE ?? 'logs/backend'
 
@@ -42,6 +50,7 @@ export function loggerParams(): Params {
   }
 
   return {
+    forRoutes: ALL_ROUTES,
     pinoHttp: {
       level,
       // never write credentials that ride in headers into the logs
