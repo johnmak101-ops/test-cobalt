@@ -11,7 +11,7 @@ import { PurchaseOrdersCard } from '../components/shipments/PurchaseOrdersCard'
 import { PortPicker } from '../components/shipments/PortPicker'
 import { FieldHistoryContext, FieldHistoryPopover } from '../components/shipments/FieldHistoryPopover'
 import { indexHistoryByField, historyForField } from '../lib/history-grouping'
-import { pendingReviewColumns } from '../lib/pending-review'
+import { pendingReviewAnnotations, type PendingAnnotation } from '../lib/pending-review'
 import { AlertCard } from '../components/alerts/AlertCard'
 import { formatDate, formatDateTime, formatDateMaybeTime, cn } from '../lib/utils'
 import { parseSender } from '../lib/email-sender'
@@ -78,7 +78,7 @@ const EDIT_SECTIONS: { title: string; fields: EditField[] }[] = (() => {
  * read it by their own historyKey, same pattern as FieldHistoryContext, instead of threading a
  * boolean through ~30 call sites.
  */
-const PendingReviewContext = createContext<ReadonlySet<string>>(new Set())
+const PendingReviewContext = createContext<ReadonlyMap<string, PendingAnnotation>>(new Map())
 
 /** Sea modes show vessel/voyage; air modes show flight. Unknown mode shows all present fields. */
 function isAirMode(mode: string | null | undefined): boolean {
@@ -139,7 +139,7 @@ export default function ShipmentDetailPage() {
   // Index once; DetailRows read their field's history from context, the History tab groups it.
   const historyIndex = useMemo(() => indexHistoryByField(historyData?.history ?? []), [historyData])
   // Which columns get the amber "something open for review" word-highlight.
-  const pendingReview = useMemo(() => pendingReviewColumns(shipment), [shipment])
+  const pendingReview = useMemo(() => pendingReviewAnnotations(shipment), [shipment])
   const [activeTab, setActiveTab] = useState<'details' | 'history'>('details')
   const update = useUpdateShipment(id!)
   const [editing, setEditing] = useState(false)
@@ -907,36 +907,57 @@ function DetailRow({
 }) {
   const historyIndex = useContext(FieldHistoryContext)
   const entries = historyKey ? historyForField(historyKey, historyIndex) : []
-  const pendingReview = useContext(PendingReviewContext)
-  // Amber word-highlight only on a REAL stored value — "(pending)" and the date formatters'
-  // 'TBD' are placeholders, not values anyone can compare against the review item.
+  const ann = useContext(PendingReviewContext).get(historyKey ?? '')
+  // Amber colour only on a REAL stored value — "(pending)" and the date formatters' 'TBD' are
+  // placeholders. The warning icon beside the history clock is the primary cue (2026-07-24):
+  // yellow = open review question, red = master miss; hover shows the related message(s).
   const valueNode =
-    value != null && value !== 'TBD' && historyKey && pendingReview.has(historyKey) ? (
-      <mark className="review-pending-value" title="Pending review">
-        {value}
-      </mark>
+    value != null && value !== 'TBD' && ann ? (
+      <mark className="review-pending-value">{value}</mark>
     ) : (
       value
     )
+  const annIcon = ann ? (
+    <span
+      title={ann.messages.join('\n')}
+      data-testid={`pending-icon-${ann.level}`}
+      className="ml-1 inline-flex align-baseline"
+    >
+      <AlertTriangle
+        size={12}
+        aria-label={ann.level === 'miss' ? 'Master miss' : 'Pending review'}
+        className={ann.level === 'miss' ? 'text-status-critical' : 'text-status-warning'}
+      />
+    </span>
+  ) : null
   return (
     <div className="grid grid-cols-[8rem_1fr] items-baseline gap-x-3 sm:grid-cols-[10rem_1fr]">
       <span className="truncate text-sm text-text-muted">{label}</span>
       <span className="field-value font-mono text-base leading-snug text-text-primary">
         {value != null ? (
           entries.length > 0 ? (
-            <FieldHistoryPopover label={label} entries={entries}>
-              {valueNode}
-            </FieldHistoryPopover>
+            <>
+              <FieldHistoryPopover label={label} entries={entries}>
+                {valueNode}
+              </FieldHistoryPopover>
+              {annIcon}
+            </>
           ) : (
-            valueNode
+            <>
+              {valueNode}
+              {annIcon}
+            </>
           )
         ) : (
-          <span className="italic text-text-muted">
-            (pending)
-            {hint && (
-              <span className="ml-1.5 font-sans text-sm not-italic text-text-muted/70">· {hint}</span>
-            )}
-          </span>
+          <>
+            <span className="italic text-text-muted">
+              (pending)
+              {hint && (
+                <span className="ml-1.5 font-sans text-sm not-italic text-text-muted/70">· {hint}</span>
+              )}
+            </span>
+            {annIcon}
+          </>
         )}
       </span>
     </div>

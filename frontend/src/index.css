@@ -173,14 +173,11 @@ body {
    over a soft amber wash, on a <mark> so the browser's yellow/black defaults never leak through.
    The negative margin cancels the left padding so the word stays column-aligned with unmarked
    values; clone keeps the wash on every fragment of a wrapped value (addresses). */
+/* 2026-07-24: wash removed by request — colour only; the per-field warning icon (DetailRow)
+   carries the non-colour cue and the hover message. */
 .review-pending-value {
   color: var(--color-review-pending);
-  background: var(--color-review-pending-bg);
-  border-radius: 4px;
-  padding: 1px 6px;
-  margin-left: -6px;
-  -webkit-box-decoration-break: clone;
-  box-decoration-break: clone;
+  background: transparent; /* a bare <mark> defaults to UA yellow */
 }
 
 /* Gentle "breathing" pulse for the in-progress milestone node (a shipment that has departed but
