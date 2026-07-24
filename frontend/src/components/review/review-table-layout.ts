@@ -61,7 +61,9 @@ export const REVIEW_TD = `min-w-0 overflow-hidden px-3 py-2.5 align-top ${REVIEW
  */
 export const REVIEW_GROUP_HEADER = `px-3 py-2 text-left ${REVIEW_FS.meta} font-semibold text-text-muted bg-surface-900/30`
 
-/** Shared thead labels — same wording on PO + conflict tables so columns read as one grid. */
+/** Shared thead labels for the conflict grid. The POs & Styles section keeps these column TRACKS
+ *  but names its own first two columns "PO" / "Item/Style" (#358) — the generic wording never fit
+ *  its rows. */
 export const REVIEW_HEAD = {
   label: 'Field / PO#',
   existing: 'Current',

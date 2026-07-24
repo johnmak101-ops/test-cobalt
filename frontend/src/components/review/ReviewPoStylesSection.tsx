@@ -81,9 +81,7 @@ export interface ReviewPoStylesSectionProps {
    * (same column tracks as field conflicts).
    */
   embedded?: boolean
-  /** When false, omit column header row (parent already rendered a shared thead). Default true. */
-  showColumnHeader?: boolean
-  /** Third-column header when this section owns the thead (solo PO grid). */
+  /** Third-column header — tracks the card's state label (AI Proposed → Resolution → Edited). */
   proposedColumnLabel?: string
 }
 
@@ -95,7 +93,6 @@ export function ReviewPoStylesSection({
   editing = false,
   reviewReasons = [],
   embedded = false,
-  showColumnHeader = true,
   proposedColumnLabel = REVIEW_HEAD.proposed,
 }: ReviewPoStylesSectionProps) {
   const create = useCreatePurchaseOrder()
@@ -246,22 +243,6 @@ export function ReviewPoStylesSection({
   const table = (
     <table className={REVIEW_TABLE_CLASS}>
       <ReviewColGroup />
-      {showColumnHeader && (
-        <thead>
-          <tr className="border-b border-border bg-surface-900/50">
-            <th className={cn(REVIEW_COL.label, REVIEW_TH)}>{REVIEW_HEAD.label}</th>
-            <th className={cn(REVIEW_COL.existing, REVIEW_TH)}>{REVIEW_HEAD.existing}</th>
-            <th
-              className={cn(REVIEW_COL.proposed, REVIEW_TH)}
-              data-testid="proposed-column-header"
-            >
-              {proposedColumnLabel}
-            </th>
-            {/* Header kept (not blank) so the column reads as deliberate rather than a rendering gap. */}
-            <th className={cn(REVIEW_COL.reference, REVIEW_TH)}>{REVIEW_HEAD.reference}</th>
-          </tr>
-        </thead>
-      )}
       <tbody>
         {/* Section label row — same rhythm as conflict group headers */}
         <tr className="border-b border-border">
@@ -288,6 +269,22 @@ export function ReviewPoStylesSection({
               )}
             </span>
           </td>
+        </tr>
+        {/* #358: name the grid for THIS section — the card's shared thead (when present) sits above
+            the conflict groups saying "Field / PO#" / "Current"; down here the columns read
+            unlabeled, and those names never fit PO rows anyway. */}
+        <tr className="border-b border-border bg-surface-900/50">
+          <th scope="col" className={cn(REVIEW_COL.label, REVIEW_TH)}>PO</th>
+          <th scope="col" className={cn(REVIEW_COL.existing, REVIEW_TH)}>Item/Style</th>
+          <th
+            scope="col"
+            className={cn(REVIEW_COL.proposed, REVIEW_TH)}
+            data-testid="po-proposed-column-header"
+          >
+            {proposedColumnLabel}
+          </th>
+          {/* Header kept (not blank) so the column reads as deliberate rather than a rendering gap. */}
+          <th scope="col" className={cn(REVIEW_COL.reference, REVIEW_TH)}>{REVIEW_HEAD.reference}</th>
         </tr>
         {canEdit && adding && (
           <AddRow busy={busy} onCancel={() => setAdding(false)} onSave={handleAdd} />
