@@ -81,6 +81,36 @@ export function highlightPlainTextToHtml(text: string, token: string | null | un
   }
 }
 
+/** URL shapes worth linking in a plain-text body. Trailing punctuation stays text (sentences end). */
+const URL_RE = /(https?:\/\/[^\s<>"']+|www\.[^\s<>"']+)/g
+
+/**
+ * Plain-text email body → safe HTML: everything escaped, the highlight token marked, and URLs
+ * turned into real anchors (2026-07-24 — MIME-only forwards render text-only, so links were dead
+ * text an operator had to retype). href is built from the RAW url (entity-escaped for the
+ * attribute); a bare www. host gets https://. Only URL-shaped tokens become markup — the rest of
+ * the body can never inject HTML.
+ */
+export function plainTextBodyHtml(text: string, token: string | null | undefined): string {
+  const out: string[] = []
+  let last = 0
+  for (const m of text.matchAll(URL_RE)) {
+    const start = m.index ?? 0
+    let url = m[0]
+    const trail = url.match(/[.,;:!?)\]]+$/)?.[0] ?? ''
+    if (trail) url = url.slice(0, -trail.length)
+    out.push(highlightPlainTextToHtml(text.slice(last, start), token))
+    const href = url.startsWith('www.') ? `https://${url}` : url
+    out.push(
+      `<a href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer">${escapeHtml(url)}</a>`,
+    )
+    if (trail) out.push(escapeHtml(trail))
+    last = start + m[0].length
+  }
+  out.push(highlightPlainTextToHtml(text.slice(last), token))
+  return out.join('')
+}
+
 /** Wrap the stored email HTML in a minimal Outlook-reading-pane document (white pane, Segoe UI, links
  *  blue, images clamped). `<base target="_blank">` keeps any link out of the sandbox; sandbox="" blocks it
  *  from navigating anyway — the point is faithful rendering, not interactivity. */
@@ -175,17 +205,12 @@ export function EmailBodyPane({
           srcDoc={emailSrcDoc(html, hl)}
         />
       ) : text ? (
-        hl ? (
-          <pre
-            className="field-value flex-1 overflow-auto whitespace-pre-wrap p-6 font-sans text-sm leading-relaxed text-[#201f1e]"
-            data-testid="email-body-highlighted"
-            dangerouslySetInnerHTML={{ __html: highlightPlainTextToHtml(text, hl) }}
-          />
-        ) : (
-          <pre className="field-value flex-1 overflow-auto whitespace-pre-wrap p-6 font-sans text-sm leading-relaxed text-[#201f1e]">
-            {text}
-          </pre>
-        )
+        /* One renderer for both cases: escapes everything, marks the ?hl token, linkifies URLs. */
+        <pre
+          className="field-value flex-1 overflow-auto whitespace-pre-wrap p-6 font-sans text-sm leading-relaxed text-[#201f1e] [&_a]:text-[#0f6cbd] [&_a]:underline"
+          data-testid={hl ? 'email-body-highlighted' : 'email-body-text'}
+          dangerouslySetInnerHTML={{ __html: plainTextBodyHtml(text, hl) }}
+        />
       ) : (
         <p className="p-6 text-sm italic text-[#605e5c]">(No body content was captured for this email.)</p>
       )}
