@@ -132,11 +132,24 @@ describe('ShipmentDetailPage — pending-review word highlight', () => {
     })
     renderPage()
 
+    // Hovering an icon opens the change-history-style card with the message(s) — the native
+    // title tooltip is gone (ops 2026-07-24: one hover-card design across the page).
     const warn = screen.getAllByTestId('pending-icon-warn')
     expect(warn.length).toBeGreaterThan(0)
-    expect(warn[0]).toHaveAttribute('title', 'test — please verify.')
+    fireEvent.mouseEnter(warn[0])
+    expect(screen.getByTestId('pending-annotation-popover')).toHaveTextContent('test — please verify.')
+    expect(screen.getByTestId('pending-annotation-popover')).toHaveTextContent('Needs Review')
+    fireEvent.mouseLeave(warn[0])
+
     const miss = screen.getByTestId('pending-icon-miss')
-    expect(miss).toHaveAttribute('title', '"SOUOCE" not found in Mesh Database — advise add in Mesh.')
+    fireEvent.mouseEnter(miss)
+    const cards = screen.getAllByTestId('pending-annotation-popover')
+    expect(
+      cards.some((c) =>
+        (c.textContent ?? '').includes('"SOUOCE" not found in Mesh Database — advise add in Mesh.'),
+      ),
+    ).toBe(true)
+    expect(cards.some((c) => (c.textContent ?? '').includes('Master Miss'))).toBe(true)
     // the vendor code value itself takes the amber colour, no wash
     expect(pendingMarks().some((m) => m.textContent === 'MACFUN')).toBe(true)
   })
@@ -208,8 +221,15 @@ describe('ShipmentDetailPage — pending-review word highlight', () => {
     })
     renderPage()
     expect(pendingMarks()).toHaveLength(0)
-    expect(screen.getAllByText(/\(pending\)/).length).toBeGreaterThan(0)
     expect(screen.queryByText(/2026-02-09/)).toBeNull()
+    const pendings = screen.getAllByText(/\(pending\)/)
+    expect(pendings.length).toBeGreaterThan(0)
+    // A review-queue question sits behind THIS placeholder — it renders amber, not muted grey.
+    const masked = pendings.find((p) => p.closest('div.grid')?.textContent?.includes('ETD'))!
+    expect(masked.className).toContain('text-status-warning')
+    // An ordinary empty field (no open question) keeps the muted placeholder.
+    const plain = pendings.find((p) => p.closest('div.grid')?.textContent?.includes('Container'))!
+    expect(plain.className).toContain('text-text-muted')
   })
 })
 

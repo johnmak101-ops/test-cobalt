@@ -9,7 +9,13 @@ import { CategorizedShipmentHistory } from '../components/shipments/CategorizedS
 import { ContestedLockCard } from '../components/shipments/ContestedLockCard'
 import { PurchaseOrdersCard } from '../components/shipments/PurchaseOrdersCard'
 import { PortPicker } from '../components/shipments/PortPicker'
-import { FieldHistoryContext, FieldHistoryPopover } from '../components/shipments/FieldHistoryPopover'
+import {
+  FieldHistoryContext,
+  FieldHistoryPopover,
+  HOVER_CARD_CLASS,
+  useHoverPopover,
+} from '../components/shipments/FieldHistoryPopover'
+import { createPortal } from 'react-dom'
 import { indexHistoryByField, historyForField } from '../lib/history-grouping'
 import { pendingReviewAnnotations, type PendingAnnotation } from '../lib/pending-review'
 import { AlertCard } from '../components/alerts/AlertCard'
@@ -863,6 +869,75 @@ function DetailSection({ title, icon, children }: { title: string; icon: React.R
   )
 }
 
+/**
+ * The review-warning icon opens a hover CARD styled exactly like the change-history one (same
+ * shell, same portal + grace-close mechanics via useHoverPopover) — a native title tooltip beside
+ * a designed card read as two different products (ops 2026-07-24).
+ */
+function PendingIconPopover({ label, ann }: { label: string; ann: PendingAnnotation }) {
+  const { anchorRef, open, coords, openPopover, scheduleClose, clearClose } = useHoverPopover()
+  const heading = ann.level === 'miss' ? 'Master Miss' : 'Needs Review'
+  const panel =
+    open && coords
+      ? createPortal(
+          <div
+            role="region"
+            aria-label={`${label} — ${heading}`}
+            data-testid="pending-annotation-popover"
+            style={{
+              position: 'fixed',
+              top: coords.top,
+              left: coords.left,
+              maxHeight: coords.maxHeight,
+              transform: coords.placeAbove ? 'translateY(-100%)' : undefined,
+              zIndex: 9999,
+            }}
+            className={HOVER_CARD_CLASS}
+            onMouseEnter={clearClose}
+            onMouseLeave={scheduleClose}
+          >
+            <p
+              className={cn(
+                'mb-2 flex items-center gap-1 text-[11px] font-semibold',
+                ann.level === 'miss' ? 'text-status-critical' : 'text-status-warning',
+              )}
+            >
+              <AlertTriangle size={11} className="shrink-0" />
+              <span className="min-w-0 truncate">
+                {label} — {heading}
+              </span>
+            </p>
+            <div className="divide-y divide-border font-sans">
+              {ann.messages.map((m) => (
+                <p key={m} className="py-2 text-xs leading-snug text-text-secondary first:pt-0 last:pb-0">
+                  {m}
+                </p>
+              ))}
+            </div>
+          </div>,
+          document.body,
+        )
+      : null
+  return (
+    <>
+      <span
+        ref={anchorRef}
+        data-testid={`pending-icon-${ann.level}`}
+        onMouseEnter={openPopover}
+        onMouseLeave={scheduleClose}
+        className="ml-1 inline-flex cursor-help align-baseline"
+      >
+        <AlertTriangle
+          size={12}
+          aria-label={ann.level === 'miss' ? 'Master miss' : 'Pending review'}
+          className={ann.level === 'miss' ? 'text-status-critical' : 'text-status-warning'}
+        />
+      </span>
+      {panel}
+    </>
+  )
+}
+
 function DetailRow({
   label,
   value,
@@ -894,19 +969,7 @@ function DetailRow({
     ) : (
       shown
     )
-  const annIcon = ann ? (
-    <span
-      title={ann.messages.join('\n')}
-      data-testid={`pending-icon-${ann.level}`}
-      className="ml-1 inline-flex align-baseline"
-    >
-      <AlertTriangle
-        size={12}
-        aria-label={ann.level === 'miss' ? 'Master miss' : 'Pending review'}
-        className={ann.level === 'miss' ? 'text-status-critical' : 'text-status-warning'}
-      />
-    </span>
-  ) : null
+  const annIcon = ann ? <PendingIconPopover label={label} ann={ann} /> : null
   return (
     <div className="grid grid-cols-[8rem_1fr] items-baseline gap-x-3 sm:grid-cols-[10rem_1fr]">
       <span className="truncate text-sm text-text-muted">{label}</span>
@@ -927,7 +990,9 @@ function DetailRow({
           )
         ) : (
           <>
-            <span className="italic text-text-muted">
+            {/* Amber when a review-queue question hides an unconfirmed answer behind this
+                placeholder; muted grey for a plainly empty field. */}
+            <span className={cn('italic', ann?.mask ? 'text-status-warning' : 'text-text-muted')}>
               (pending)
               {hint && (
                 <span className="ml-1.5 font-sans text-sm not-italic text-text-muted/70">· {hint}</span>
