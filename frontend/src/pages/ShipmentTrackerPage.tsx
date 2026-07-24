@@ -4,6 +4,7 @@ import { ShipmentTable } from '../components/shipments/ShipmentTable'
 import { ShipmentFilters } from '../components/shipments/ShipmentFilters'
 import { NewShipmentModal } from '../components/shipments/NewShipmentModal'
 import { Pagination, usePagination, PageSizeSelect } from '../components/ui/Pagination'
+import { formatShipmentId } from '../lib/utils'
 import { Search, Plus } from 'lucide-react'
 
 export default function ShipmentTrackerPage() {
@@ -24,6 +25,7 @@ export default function ShipmentTrackerPage() {
     if (terms.length === 0) return list
     return list.filter((s) => {
       const fields = [
+        formatShipmentId(s.id, s.createdAt), // #348: what the Shipment ID column shows
         s.poNumbers,
         s.customer?.name,
         s.forwarder?.name,
@@ -89,7 +91,7 @@ export default function ShipmentTrackerPage() {
           type="text"
           value={search}
           onChange={(e) => handleSearch(e.target.value)}
-          placeholder="Search — PO#, customer, route, booking#, container, SCAC… (comma or space for multiple)"
+          placeholder="Search — shipment ID, PO#, customer, route, booking#, container, SCAC… (comma or space for multiple)"
           className="h-9 w-full rounded-lg border border-border bg-surface-800 pl-9 pr-3 text-sm text-text-primary placeholder:text-text-muted"
         />
       </div>
