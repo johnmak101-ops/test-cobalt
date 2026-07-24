@@ -69,7 +69,7 @@ describe('pendingReviewAnnotations — warn tooltips read as operator instructio
     })
     expect(ann.get('qty')?.level).toBe('warn')
     expect(ann.get('qty')?.messages[0]).toBe(
-      'Quantity stated under conflicting units (cartons vs packages vs pieces) — the per-PO figure was dropped. Please verify.',
+      'Emails state this quantity in different units (cartons vs packages vs pieces) — please verify.',
     )
   })
 })

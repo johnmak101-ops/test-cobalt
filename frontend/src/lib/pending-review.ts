@@ -50,9 +50,11 @@ function missColumn(reason: string): string | null {
 /** Committer prose → an operator instruction (ops 2026-07-24: tooltips must say what to DO —
  *  "per-PO qty dropped" reads as system internals; "Please verify" is the ask). */
 function humanizeWarnReason(r: string): string {
+  // Operators only ever see the TOTAL quantity — per-PO figures are internal LLM bookkeeping,
+  // so the tooltip must not mention them (ops 2026-07-24: "make it simple").
   const units = r.match(/conflicting units \(([^)]+)\)/i)?.[1]
   if (units) {
-    return `Quantity stated under conflicting units (${units}) — the per-PO figure was dropped. Please verify.`
+    return `Emails state this quantity in different units (${units}) — please verify.`
   }
   const stripped = r.replace(/^PO \d+:\s*/i, '').trim()
   return /verify/i.test(stripped) ? stripped : `${stripped} — please verify.`
