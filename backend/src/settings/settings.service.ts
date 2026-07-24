@@ -4,6 +4,8 @@ import { RoutingShadowRepository } from '../db/repositories/routing-shadow.repos
 import { CriticCalibrationRepository } from '../db/repositories/critic-calibration.repository'
 import { aggregateRoutingShadow } from './routing-shadow-report'
 import { aggregateCriticCalibration } from './critic-calibration-report'
+import { ETD_FALLBACK_AIR_KEY, ETD_FALLBACK_SEA_KEY, loadEtdFallback } from './etd-fallback'
+import type { EtdFallback } from '../reconcile/state'
 
 export const THRESHOLD_KEY = 'confidence_threshold'
 export const DEFAULT_THRESHOLD = 85
@@ -43,6 +45,16 @@ export class SettingsService {
 
   setCriticRoutingMode(value: CriticRoutingMode, updatedBy: string | null = null) {
     return this.repo.set(ROUTING_MODE_KEY, value, updatedBy)
+  }
+
+  /** Transit allowances for the no-arrival-data Delivered fallback (AIR/SEA days). */
+  etdFallback(): Promise<EtdFallback> {
+    return loadEtdFallback(this.repo)
+  }
+
+  async setEtdFallback(value: EtdFallback, updatedBy: string | null = null) {
+    await this.repo.set(ETD_FALLBACK_AIR_KEY, value.airDays, updatedBy)
+    await this.repo.set(ETD_FALLBACK_SEA_KEY, value.seaDays, updatedBy)
   }
 
   /** Gate vs band shadow-diff summary for the last N days (clamped 1–90, default 30). */

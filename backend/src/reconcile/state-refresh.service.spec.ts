@@ -17,7 +17,8 @@ function harness(legs: Leg[], typesByShipment: Record<string, string[]> = {}) {
     setState,
   }
   const audit = { write }
-  const svc = new StateRefreshService(shipments as never, audit as never)
+  const settings = { get: async () => null }
+  const svc = new StateRefreshService(shipments as never, audit as never, settings as never)
   return { svc, setState, write, shipments }
 }
 
