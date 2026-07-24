@@ -39,6 +39,9 @@ describe('buildShipmentSummary — pure per-shipment summary from preloaded rows
       route: 'CNYTN→GBFXT',
       customer: { name: 'Cole Haan' },
       consigneeName: 'Acme Consignee',
+      // #350: Shipment ID anchor fields — null here (fixture leg carries no emails / createdAt)
+      firstEmailAt: null,
+      createdAt: null,
     })
   })
 

@@ -369,6 +369,9 @@ describe('PresentationService.alerts + alertRules', () => {
       route: 'CNYTN→GBFXT',
       customer: { name: 'Cole Haan' },
       consigneeName: 'Acme Consignee',
+      // #350: Shipment ID anchor fields — null here (mock leg carries no emails / createdAt)
+      firstEmailAt: null,
+      createdAt: null,
     })
   })
 

@@ -115,6 +115,8 @@ export interface ShipmentLegRow {
   reviewReasons?: string[] | null
   dismissedAt?: Dateish
   criticReview?: CriticReview | null
+  /** min(shipment_emails.received_at) — the beginning email; null/absent when no dated source emails. */
+  firstEmailAt?: Dateish
   createdAt: Dateish
   updatedAt: Dateish
 }
@@ -191,6 +193,8 @@ export interface UiShipment {
   measurement: number | null
   htsCode: string | null
   criticReview: CriticReview | null
+  /** Beginning email received-at (#350) — anchors the Shipment ID month; null → UI falls back to createdAt. */
+  firstEmailAt: string | null
   createdAt: string | null
   updatedAt: string | null
   customer: MasterRef | null
@@ -266,6 +270,7 @@ export function toUiShipment(
     measurement: leg.measurement ?? null,
     htsCode: leg.htsCode ?? null,
     criticReview: leg.criticReview ?? null,
+    firstEmailAt: isoOrNull(leg.firstEmailAt),
     createdAt: isoOrNull(leg.createdAt),
     updatedAt: isoOrNull(leg.updatedAt),
     customer: input.customer ?? (leg.customerRaw ? { id: '', name: leg.customerRaw, code: leg.customerRaw } : null),

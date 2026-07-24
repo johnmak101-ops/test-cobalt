@@ -3,7 +3,7 @@ import { useAlerts } from '../hooks/use-alerts'
 import { AlertSection } from '../components/alerts/AlertSection'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Settings, Download, Calendar } from 'lucide-react'
-import { cn } from '../lib/utils'
+import { cn, formatShipmentId } from '../lib/utils'
 
 const filterTabs = [
   { key: 'all', label: 'All' },
@@ -96,6 +96,7 @@ export default function AlertsPage() {
         'Triggered At',
         'Read',
         // Shipment detail fields
+        'Shipment ID',
         'Booking No',
         'Shipment PO#s',
         'SO#',
@@ -138,6 +139,7 @@ export default function AlertsPage() {
           a.triggeredAt ? new Date(a.triggeredAt).toISOString() : '',
           a.readAt ? 'Yes' : 'No',
           // Shipment detail fields
+          s ? formatShipmentId(s.id, s.firstEmailAt ?? s.createdAt) : '',
           s?.bookingNo ?? '',
           s?.poNumbers ?? a.shipment?.poNumbers ?? '',
           s?.soNumber ?? '',

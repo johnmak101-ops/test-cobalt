@@ -275,6 +275,23 @@ describe('ShipmentRepository (SQL Server)', () => {
     expect(await repo.sourceGraphIdFor(randomUUID())).toBeNull()
   })
 
+  it('activeLegs / findByIds expose firstEmailAt = earliest source-email received_at (#350)', async () => {
+    const b = await seedBooking()
+    const s = await seedLeg({ bookingId: b, legNo: 61 })
+    const bare = await seedLeg({ bookingId: b, legNo: 62 }) // no emails → null (UI falls back to createdAt)
+    await repo.replaceEmails(s.id, [
+      { shipmentId: s.id, graphMessageId: 'fe-late', emailType: 'SO', receivedAt: new Date('2026-07-05T00:00:00.000Z') },
+      { shipmentId: s.id, graphMessageId: 'fe-first', emailType: 'Booking Request', receivedAt: new Date('2026-07-01T00:00:00.000Z') },
+      { shipmentId: s.id, graphMessageId: 'fe-undated', emailType: 'SO', receivedAt: null },
+    ])
+    const active = await repo.activeLegs()
+    expect(active.find((l) => l.id === s.id)?.firstEmailAt?.getTime()).toBe(new Date('2026-07-01T00:00:00.000Z').getTime()) // min; undated ignored
+    expect(active.find((l) => l.id === bare.id)?.firstEmailAt).toBeNull()
+    const byIds = await repo.findByIds([s.id, bare.id])
+    expect(byIds.get(s.id)?.firstEmailAt?.getTime()).toBe(new Date('2026-07-01T00:00:00.000Z').getTime())
+    expect(byIds.get(bare.id)?.firstEmailAt).toBeNull()
+  })
+
   it('replaceIdentifiers + identifiersFor (current first); replaceParties + partiesFor (primary first)', async () => {
     const b = await seedBooking()
     const s = await seedLeg({ bookingId: b })

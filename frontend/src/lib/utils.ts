@@ -73,14 +73,15 @@ export function formatPoHeader(poNumbers: string[]): string | null {
 }
 
 /**
- * Human-facing Shipment ID (#348): creation month + the row uuid's first 4 hex chars —
- * uuid 5393954C-8CED-…, created 2026-07 → "2026075393". Derived on render, never stored:
- * id + createdAt ride every shipment payload, so any surface shows the same ID without a
- * schema change. The month is read straight off the server's ISO string (UTC) — no Date
- * round-trip, so no timezone drift at month boundaries.
+ * Human-facing Shipment ID (#348, #350): anchor month + the row uuid's first 4 hex chars —
+ * uuid 5393954C-8CED-…, anchored 2026-07 → "2026075393". The anchor is the BEGINNING EMAIL
+ * (earliest shipment_emails.received_at); callers pass `firstEmailAt ?? createdAt` so legs
+ * with no dated source email (manual shipments) fall back to row creation. Derived on
+ * render, never stored. The month is read straight off the server's ISO string (UTC) —
+ * no Date round-trip, so no timezone drift at month boundaries.
  */
-export function formatShipmentId(id: string, createdAt: string | null | undefined): string {
-  const ym = /^(\d{4})-(\d{2})/.exec(createdAt ?? '')
+export function formatShipmentId(id: string, anchorAt: string | null | undefined): string {
+  const ym = /^(\d{4})-(\d{2})/.exec(anchorAt ?? '')
   const head = id.replace(/-/g, '').slice(0, 4).toUpperCase()
   return ym ? `${ym[1]}${ym[2]}${head}` : head
 }

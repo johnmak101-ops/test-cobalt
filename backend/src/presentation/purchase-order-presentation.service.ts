@@ -6,7 +6,7 @@ import { Injectable, NotFoundException } from '@nestjs/common'
 import { PurchaseOrderRepository } from '../db/repositories/purchase-order.repository'
 import { toUiPurchaseOrder, toUiPurchaseOrderDetail } from './mappers/po.mapper'
 import { type ShipmentMapperInput, type ShipmentLegRow } from './mappers/shipment.mapper'
-import { deriveRoute, portLabel } from './adapters/derive'
+import { deriveRoute, isoOrNull, portLabel } from './adapters/derive'
 import { stateToUiStatus } from './adapters/enums'
 
 @Injectable()
@@ -32,6 +32,9 @@ export class PurchaseOrderPresentationService {
     podCode: string | null
     polIata?: string | null
     podIata?: string | null
+    /** #350: anchor fields for the derived Shipment ID (firstEmailAt ?? createdAt + uuid head). */
+    firstEmailAt?: Date | string | null
+    shipmentCreatedAt?: Date | string | null
   }) {
     return {
       id: s.shipmentId,
@@ -45,6 +48,8 @@ export class PurchaseOrderPresentationService {
       status: stateToUiStatus(s.status, s.legStatus),
       reviewStatus: s.reviewStatus ?? null,
       linkedQuantity: s.linkedQuantity ?? null,
+      firstEmailAt: isoOrNull(s.firstEmailAt),
+      createdAt: isoOrNull(s.shipmentCreatedAt),
     }
   }
 
@@ -104,6 +109,7 @@ export class PurchaseOrderPresentationService {
           reviewStatus: l.reviewStatus, linkedQuantity: l.linkedQuantity, containerNo: l.containerNo,
           hbl: l.hbl, mbl: l.mbl, scacCode: l.scacCode, vesselName: l.vesselName,
           mode: l.mode, polCode: l.polCode, podCode: l.podCode, polIata: l.polIata, podIata: l.podIata,
+          firstEmailAt: l.firstEmailAt, shipmentCreatedAt: l.shipmentCreatedAt,
         }),
       ),
       linkedShipments: links.map((l) => ({
