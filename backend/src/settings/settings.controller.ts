@@ -12,6 +12,11 @@ class RoutingModeDto {
   @IsIn(['gate', 'band']) mode!: 'gate' | 'band'
 }
 
+class EtdFallbackDto {
+  @IsInt() @Min(0) @Max(365) airDays!: number
+  @IsInt() @Min(0) @Max(365) seaDays!: number
+}
+
 /** Admin config — review-gate confidence threshold + critic routing mode. Editors+ read; admins change. */
 @Controller('settings')
 export class SettingsController {
@@ -41,6 +46,20 @@ export class SettingsController {
   async setRoutingMode(@Body() dto: RoutingModeDto, @CurrentUser() actor: AuthUser) {
     await this.settings.setCriticRoutingMode(dto.mode, actor.id)
     return { mode: dto.mode }
+  }
+
+  /** No-arrival-data Delivered fallback: departure + these day allowances ⇒ Delivered. */
+  @Roles('EDITOR', 'ADMIN')
+  @Get('etd-fallback')
+  async getEtdFallback() {
+    return this.settings.etdFallback()
+  }
+
+  @Roles('ADMIN')
+  @Put('etd-fallback')
+  async setEtdFallback(@Body() dto: EtdFallbackDto, @CurrentUser() actor: AuthUser) {
+    await this.settings.setEtdFallback({ airDays: dto.airDays, seaDays: dto.seaDays }, actor.id)
+    return { airDays: dto.airDays, seaDays: dto.seaDays }
   }
 
   /** Gate vs band shadow-diff summary for the last N days (EDITOR+). */

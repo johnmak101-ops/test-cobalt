@@ -15,7 +15,7 @@ beforeAll(async () => {
   const t = await getTestDb()
   db = t.db
   const r = repos(db)
-  committer = new CommitterService(r.masters, r.booking, r.shipment, r.fieldLock, r.audit, r.evidence, r.purchaseOrder)
+  committer = new CommitterService(r.masters, r.booking, r.shipment, r.fieldLock, r.audit, r.evidence, r.purchaseOrder, r.settings)
   const queueLearning = { postCorrection: async () => undefined } as never
   shipments = new ShipmentsService(r.shipment, r.booking, r.fieldLock, r.audit, committer, queueLearning)
   pos = new PosService(r.purchaseOrder)

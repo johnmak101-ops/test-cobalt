@@ -17,6 +17,8 @@ import { BookingRepository } from '../db/repositories/booking.repository'
 import { PurchaseOrderRepository } from '../db/repositories/purchase-order.repository'
 import { ShipmentRepository } from '../db/repositories/shipment.repository'
 import { FieldLockRepository } from '../db/repositories/field-lock.repository'
+import { SettingsRepository } from '../db/repositories/settings.repository'
+import { loadEtdFallback } from '../settings/etd-fallback'
 import { AuditRepository } from '../db/repositories/audit.repository'
 import { EvidenceRepository } from '../db/repositories/evidence.repository'
 import { resolvePoEnrichment, unattributedBrandStyle } from './po-enrichment'
@@ -123,6 +125,7 @@ export class CommitterService {
     private readonly audit: AuditRepository,
     private readonly evidence: EvidenceRepository,
     private readonly purchaseOrders: PurchaseOrderRepository,
+    private readonly settings: SettingsRepository,
   ) {
     // nestjs-doctor-ignore-next-line architecture/no-manual-instantiation -- lightweight collaborator, not a Nest provider
     this.mastersResolver = new MasterResolver(masters)
@@ -197,7 +200,8 @@ export class CommitterService {
     const effForwarderId = guard.forwarderId
 
     const emailTypes = new Set(g.emailTypes)
-    const state = deriveState(emailTypes, f)
+    // Tunable transit allowances for the no-arrival-data Delivered fallback (Settings page).
+    const state = deriveState(emailTypes, f, new Date(), { etdFallback: await loadEtdFallback(this.settings) })
     // A cancelled booking is marked leg_status='CANCELLED' (the UI surfaces it as Cancelled); otherwise the
     // leg keeps the existing 'ACTIVE' default. This is a lifecycle flag, not a lockable field.
     const legStatus: 'ACTIVE' | 'CANCELLED' = g.cancelled ? 'CANCELLED' : 'ACTIVE'

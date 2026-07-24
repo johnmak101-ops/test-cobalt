@@ -3,6 +3,7 @@ import { cn } from '../lib/utils'
 import { useAuth } from '../hooks/use-auth'
 import { usePageAccess } from '../hooks/use-page-access'
 import { AlertRulesSettings } from '../components/settings/AlertRulesSettings'
+import { LifecycleSettings } from '../components/settings/LifecycleSettings'
 import { UsersSettings } from '../components/settings/UsersSettings'
 import { AccessControlSettings } from '../components/settings/AccessControlSettings'
 import AdminMeshMissesPage from './AdminMeshMissesPage'
@@ -70,7 +71,10 @@ export default function SettingsPage() {
         ) : isUsersSettings ? (
           <UsersSettings />
         ) : isAlertsSettings ? (
-          <AlertRulesSettings />
+          <div className="space-y-6">
+            <AlertRulesSettings />
+            <LifecycleSettings />
+          </div>
         ) : isMeshMisses ? (
           <AdminMeshMissesPage />
         ) : (
