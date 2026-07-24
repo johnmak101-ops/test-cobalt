@@ -81,7 +81,19 @@ export function pendingReviewAnnotations(
       )
     }
     for (const r of shipment.reviewReasons ?? []) {
-      if (MESH_MISS_RE.test(r)) add(missColumn(r), 'miss', r)
+      // Same wording as the review queue's Needs Attention line — the raw reason ("forwarder_name
+      // "LOGIMARK" did not exact-match a master (LLM matcher owns fuzzy; left unlinked)") is too
+      // long to read in a tooltip (ops 2026-07-24).
+      if (MESH_MISS_RE.test(r)) {
+        const name = r.match(/"([^"]+)"/)?.[1]
+        add(
+          missColumn(r),
+          'miss',
+          name
+            ? `"${name}" not found in Mesh Database — advise add in Mesh.`
+            : 'Not found in Mesh Database — advise add in Mesh.',
+        )
+      }
       else if (CONFLICT_REASON_RE.test(r)) for (const col of conflictColumns([r])) add(col, 'warn', r)
     }
     for (const m of shipment.criticReview?.masterMisses ?? []) {
