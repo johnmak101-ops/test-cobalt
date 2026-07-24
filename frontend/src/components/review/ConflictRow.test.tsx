@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { ConflictRow } from './ConflictRow'
 import type { CriticConflict } from '../../lib/critic-review'
 
@@ -64,6 +65,34 @@ describe('ConflictRow party master chips', () => {
     expect(chips.map((c) => c.textContent)).toEqual(['SOUOCE', 'ROKNFT'])
     expect(screen.getByText('SOUTH OCEAN KNITTERS LTD')).toBeInTheDocument()
     expect(screen.getByText('ROSE KNITTING FACTORY LIMITED')).toBeInTheDocument()
+  })
+
+  it('#360: picking a resolved candidate posts the master CODE, and the typing field stays blank', async () => {
+    const user = userEvent.setup()
+    const onChange = vi.fn()
+    render(
+      <table>
+        <tbody>
+          <ConflictRow
+            conflict={vendorTwoCandidates}
+            value="SOUOCE"
+            onChange={onChange}
+            editing
+            canEdit
+          />
+        </tbody>
+      </table>,
+    )
+    // the current value is the FIRST candidate's code — its radio reads selected
+    expect(
+      screen.getByLabelText('Select proposed candidate: SOUTH OCEAN KNITTERS LTD'),
+    ).toBeChecked()
+    // the free-typing input is blank while a candidate pick is active
+    expect(screen.getByLabelText('Proposed value for Vendor')).toHaveValue('')
+    // picking the other candidate posts ITS code, never the company full name
+    await user.click(screen.getByLabelText('Select proposed candidate: ROSE KNITTING FACTORY LIMITED'))
+    expect(onChange).toHaveBeenCalledWith('ROKNFT')
+    expect(onChange).not.toHaveBeenCalledWith('ROSE KNITTING FACTORY LIMITED')
   })
 
   it('renders a "not in Mesh" tag when the candidate has master: null', () => {

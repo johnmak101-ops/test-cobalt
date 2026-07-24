@@ -113,6 +113,35 @@ export function proposedValueOf(conflict: CriticConflict): string {
   return splitCandidates(conflict).proposed[0]?.value ?? ''
 }
 
+/** The value a pick POSTS (#360): the resolved master's CODE when the candidate carries one —
+ *  the party re-resolver (exactPartyId) matches code-exact FIRST, so codes re-link the booking
+ *  FK deterministically where full names depend on a unique normalized-name hit. Candidates
+ *  without a master (mesh miss / non-party fields) keep their raw value. */
+export function resolutionValueOf(candidate: { value: string; master?: { code: string } | null }): string {
+  return candidate.master?.code?.trim() || candidate.value
+}
+
+/** `v` identifies this candidate — as its resolution value (code) or its raw value. Tolerant on
+ *  purpose: reads accept either convention, writes always post resolutionValueOf (#360). */
+function candidateMatches(
+  candidate: { value: string; master?: { code: string } | null },
+  v: string,
+): boolean {
+  return resolutionValueOf(candidate) === v || candidate.value === v
+}
+
+/** What approving as-is posts — the first proposed candidate's resolution value (#360). */
+export function proposedResolutionOf(conflict: CriticConflict): string {
+  const first = splitCandidates(conflict).proposed[0]
+  return first ? resolutionValueOf(first) : ''
+}
+
+/** True when `v` IS one of the proposed candidates — a pick, not a custom override (picks never
+ *  require an override note). */
+export function isCandidateResolution(conflict: CriticConflict, v: string): boolean {
+  return splitCandidates(conflict).proposed.some((c) => candidateMatches(c, v))
+}
+
 /** True when committing this row would OVERWRITE a stored value — i.e. it is a real change. */
 export function changesStoredValue(conflict: CriticConflict, value: string): boolean {
   const v = value.trim()
@@ -151,7 +180,7 @@ export function ConflictRow({
   const changed = changesStoredValue(conflict, value)
   // The candidate the controlled value currently equals — chips come from IT, never from a
   // free-typed override (a custom value has no known master).
-  const activeProposed = proposed.find((p) => p.value === value) ?? null
+  const activeProposed = proposed.find((p) => candidateMatches(p, value)) ?? null
   const label = reviewFieldLabel(conflict.field, conflict.label)
   const column = mapCriticFieldToColumn(conflict.field)
   // POL/POD edit from the seeded ports master (searchable, free-text fallback) instead of a bare input.
@@ -314,7 +343,8 @@ export function ConflictRow({
               )}
             >
               {activeProposed?.master ? <MasterCodeChip code={activeProposed.master.code} /> : null}
-              {value}
+              {/* #360: a pick's stored value is the CODE (already on the chip) — show the company name */}
+              {activeProposed ? activeProposed.value : value}
               <Unit unit={proposedUnit} />
               {activeProposed?.master === null ? <MeshMissTag /> : null}
             </span>
@@ -642,7 +672,8 @@ function MultiCandidateProposed({
         className="space-y-1"
       >
         {proposed.map((c, i) => {
-          const selected = value === c.value || (!value && i === 0)
+          // #360: a pick is stored as the candidate's resolution value (master CODE when resolved)
+          const selected = candidateMatches(c, value) || (!value && i === 0)
           return (
             <li key={`${c.source}-${c.value}-${i}`}>
               {editing ? (
@@ -658,8 +689,8 @@ function MultiCandidateProposed({
                     type="radio"
                     name={groupName}
                     className="mt-0.5 shrink-0"
-                    checked={value === c.value}
-                    onChange={() => onChange(c.value)}
+                    checked={candidateMatches(c, value)}
+                    onChange={() => onChange(resolutionValueOf(c))}
                     aria-label={`Select proposed candidate: ${c.value}`}
                   />
                   <span className="field-value font-mono text-sm leading-snug text-text-primary">
@@ -707,7 +738,9 @@ function MultiCandidateProposed({
           <span className="inline-flex w-full items-center">
             <input
               aria-label={`Proposed value for ${label}`}
-              value={value}
+              /* #360: blank while a candidate pick is active — pre-filling the company full name
+                 here read as "this is what will be written". Typing switches to a custom value. */
+              value={proposed.some((c) => candidateMatches(c, value)) ? '' : value}
               onChange={(e) => onChange(e.target.value)}
               placeholder="—"
               className="h-8 w-full rounded-lg border border-border bg-surface-900 px-2.5 font-mono text-sm text-text-primary placeholder:text-text-muted focus:border-cobalt-primary focus:outline-none"
