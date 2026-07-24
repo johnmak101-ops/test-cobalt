@@ -18,7 +18,7 @@ import { Badge } from '../components/ui/Badge'
 import { ReviewCard } from '../components/review/ReviewCard'
 import { Pagination, usePagination, PageSizeSelect } from '../components/ui/Pagination'
 import { toast } from '../components/ui/Toast'
-import { cn, formatRelativeTime } from '../lib/utils'
+import { cn, formatRelativeTime, formatShipmentId } from '../lib/utils'
 import { mapCriticFieldsToColumns } from '../lib/review-fields'
 import {
   decisionPhrase,
@@ -243,9 +243,9 @@ export default function ReviewQueuePage() {
   const anyMutating = confirmMutation.isPending || correctMutation.isPending || restoreMutation.isPending
   const isActiveView = view === 'active'
   const isRejectedView = view === 'rejected'
-  // Active = band + customer + booking + route + status (5).
-  // Rejected/Approved = same + action (Restore / Open) (6).
-  const colSpan = isActiveView ? 5 : 6
+  // Active = shipment id + band + customer + booking + route + status (6).
+  // Rejected/Approved = same + action (Restore / Open) (7).
+  const colSpan = isActiveView ? 6 : 7
 
   const emptyCopy = (): string => {
     if (isActiveView) return 'No shipments awaiting review.'
@@ -311,9 +311,13 @@ export default function ReviewQueuePage() {
           <div className="max-w-full overflow-hidden rounded-xl border border-border bg-surface-800">
             <div className="overflow-x-auto">
               {/* table-fixed + col % keeps large-text / long names from blowing column widths */}
-              <table className="w-full min-w-[40rem] table-fixed">
+              <table className="w-full min-w-[46rem] table-fixed">
                 <thead>
                   <tr className="border-b border-border bg-surface-900/50">
+                    {/* #348/#350: the derived Shipment ID leads — same identity as tracker/detail/alerts/PO. */}
+                    <th className="w-[8rem] px-3 py-3 text-left text-xs font-medium text-text-muted sm:px-4">
+                      Shipment ID
+                    </th>
                     {/* "Band" is our word for the low/medium/high split, not the reader's. The value
                         IS criticReview.confidence.band, and Badge already calls the variant
                         'confidence' — only this header still leaked the jargon. The wire/domain name
@@ -321,10 +325,10 @@ export default function ReviewQueuePage() {
                     <th className="w-[7.5rem] px-3 py-3 text-left text-xs font-medium text-text-muted sm:px-4">
                       AI Confidence
                     </th>
-                    <th className="w-[28%] min-w-0 px-3 py-3 text-left text-xs font-medium text-text-muted sm:px-4">
+                    <th className="w-[24%] min-w-0 px-3 py-3 text-left text-xs font-medium text-text-muted sm:px-4">
                       Customer
                     </th>
-                    <th className="w-[22%] min-w-0 px-3 py-3 text-left text-xs font-medium text-text-muted sm:px-4">
+                    <th className="w-[19%] min-w-0 px-3 py-3 text-left text-xs font-medium text-text-muted sm:px-4">
                       Booking
                     </th>
                     <th className="w-[16%] min-w-0 px-3 py-3 text-left text-xs font-medium text-text-muted sm:px-4">
@@ -383,6 +387,10 @@ export default function ReviewQueuePage() {
                           }}
                           className="cursor-pointer border-b border-border last:border-0 transition-colors hover:bg-surface-700/50"
                         >
+                          {/* #348/#350: derived identity (beginning-email month + uuid head) */}
+                          <td className="whitespace-nowrap px-3 py-3 font-mono text-sm font-medium text-cobalt-primary-light sm:px-4">
+                            {formatShipmentId(s.id, s.firstEmailAt ?? s.createdAt)}
+                          </td>
                           <td className="px-3 py-3 sm:px-4">
                             {band ? (
                               <Badge variant="confidence" value={band} />

@@ -246,6 +246,8 @@ export class ShipmentRepository {
       'shipments.forwarderRaw as forwarderRaw', 'shipments.mode as mode', 'pol.unlocode as polCode', 'pod.unlocode as podCode',
       'pol.iata as polIata', 'pod.iata as podIata', 'shipments.polRaw as polRaw', 'shipments.podRaw as podRaw',
       sql<number>`(select count(*) from booking_pos bp where bp.booking_id = ${sql.ref('shipments.bookingId')})`.as('poCount'),
+      // #350: beginning email — anchors the derived Shipment ID the queue's first column shows
+      ShipmentRepository.receivedAtMinExpr().as('firstEmailAt'),
     ] as const
 
     if (view === 'approved') {

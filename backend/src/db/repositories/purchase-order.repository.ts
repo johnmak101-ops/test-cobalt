@@ -102,7 +102,7 @@ export class PurchaseOrderRepository {
         'pol.unlocode as polCode', 'pod.unlocode as podCode', 'pol.iata as polIata', 'pod.iata as podIata',
         'shipmentPos.createdAt as linkedAt', 'shipments.containerNo as containerNo', 'shipments.mbl as mbl',
         'shipments.scacCode as scacCode', 'shipments.vesselName as vesselName',
-        // #350: anchor fields for the derived Shipment ID on the detail's linked-shipment rows
+        // #350/#354: anchor fields for the derived Shipment ID on the detail's Linked Shipments rows
         'shipments.createdAt as shipmentCreatedAt',
         sql<Date | null>`(select min(se.received_at) from shipment_emails se where se.shipment_id = shipments.id)`.as('firstEmailAt'),
       ])
@@ -123,9 +123,6 @@ export class PurchaseOrderRepository {
         'shipments.hblAwbFcrNo as hbl', 'shipments.mbl as mbl', 'shipments.scacCode as scacCode',
         'shipments.vesselName as vesselName', 'shipments.mode as mode',
         'pol.unlocode as polCode', 'pod.unlocode as podCode', 'pol.iata as polIata', 'pod.iata as podIata',
-        // #350: anchor fields for the derived Shipment ID shown in the PO list's first column
-        'shipments.createdAt as shipmentCreatedAt',
-        sql<Date | null>`(select min(se.received_at) from shipment_emails se where se.shipment_id = shipments.id)`.as('firstEmailAt'),
       ])
       .execute()
   }

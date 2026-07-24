@@ -20,6 +20,8 @@ export interface ReviewShipment {
   reviewReasons: string[]
   /** Queue-safe AI critic projection (never raw confidence score). */
   criticReviewCompact: CriticReviewCompact | null
+  /** #350: beginning email — anchors the derived Shipment ID (UI falls back to createdAt). */
+  firstEmailAt?: string | null
   createdAt: string
   /** ISO timestamp for optimistic concurrency on confirm/correct. */
   updatedAt: string
