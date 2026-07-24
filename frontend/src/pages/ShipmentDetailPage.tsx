@@ -1,4 +1,4 @@
-import { useId, useMemo, useState, useContext } from 'react'
+import { createContext, useId, useMemo, useState, useContext } from 'react'
 import { useParams, useNavigate, useLocation, Link } from 'react-router-dom'
 import { useShipment, useUpdateShipment, type ShipmentDetail } from '../hooks/use-shipments'
 import { useShipmentHistory } from '../hooks/use-shipment-history'
@@ -11,6 +11,7 @@ import { PurchaseOrdersCard } from '../components/shipments/PurchaseOrdersCard'
 import { PortPicker } from '../components/shipments/PortPicker'
 import { FieldHistoryContext, FieldHistoryPopover } from '../components/shipments/FieldHistoryPopover'
 import { indexHistoryByField, historyForField } from '../lib/history-grouping'
+import { pendingReviewColumns } from '../lib/pending-review'
 import { AlertCard } from '../components/alerts/AlertCard'
 import { formatDate, formatDateTime, formatDateMaybeTime, cn } from '../lib/utils'
 import { parseSender } from '../lib/email-sender'
@@ -71,6 +72,13 @@ function toInputValue(v: unknown, type: EditType): string {
   return String(v)
 }
 
+/**
+ * Leg columns with something open for review (provisional conflicts + contested locks) — DetailRows
+ * read it by their own historyKey, same pattern as FieldHistoryContext, instead of threading a
+ * boolean through ~30 call sites.
+ */
+const PendingReviewContext = createContext<ReadonlySet<string>>(new Set())
+
 /** Sea modes show vessel/voyage; air modes show flight. Unknown mode shows all present fields. */
 function isAirMode(mode: string | null | undefined): boolean {
   return (mode ?? '').toUpperCase().startsWith('AIR')
@@ -128,6 +136,8 @@ export default function ShipmentDetailPage() {
   const { data: historyData } = useShipmentHistory(id!)
   // Index once; DetailRows read their field's history from context, the History tab groups it.
   const historyIndex = useMemo(() => indexHistoryByField(historyData?.history ?? []), [historyData])
+  // Which columns get the amber "something open for review" word-highlight.
+  const pendingReview = useMemo(() => pendingReviewColumns(shipment), [shipment])
   const [activeTab, setActiveTab] = useState<'details' | 'history'>('details')
   const update = useUpdateShipment(id!)
   const [editing, setEditing] = useState(false)
@@ -563,6 +573,7 @@ export default function ShipmentDetailPage() {
             </div>
           </>
         ) : (
+        <PendingReviewContext.Provider value={pendingReview}>
         <FieldHistoryContext.Provider value={historyIndex}>
         <div className="grid grid-cols-1 gap-x-8 gap-y-6 md:grid-cols-2">
           {/* Section 1: Order Info */}
@@ -657,6 +668,7 @@ export default function ShipmentDetailPage() {
           </DetailSection>
         </div>
         </FieldHistoryContext.Provider>
+        </PendingReviewContext.Provider>
         )}
       </Card>
 
@@ -849,6 +861,17 @@ function DetailRow({
 }) {
   const historyIndex = useContext(FieldHistoryContext)
   const entries = historyKey ? historyForField(historyKey, historyIndex) : []
+  const pendingReview = useContext(PendingReviewContext)
+  // Amber word-highlight only on a REAL stored value — "(pending)" and the date formatters'
+  // 'TBD' are placeholders, not values anyone can compare against the review item.
+  const valueNode =
+    value != null && value !== 'TBD' && historyKey && pendingReview.has(historyKey) ? (
+      <mark className="review-pending-value" title="Pending review">
+        {value}
+      </mark>
+    ) : (
+      value
+    )
   return (
     <div className="grid grid-cols-[8rem_1fr] items-baseline gap-x-3 sm:grid-cols-[10rem_1fr]">
       <span className="truncate text-sm text-text-muted">{label}</span>
@@ -856,10 +879,10 @@ function DetailRow({
         {value != null ? (
           entries.length > 0 ? (
             <FieldHistoryPopover label={label} entries={entries}>
-              {value}
+              {valueNode}
             </FieldHistoryPopover>
           ) : (
-            value
+            valueNode
           )
         ) : (
           <span className="italic text-text-muted">
