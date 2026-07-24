@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import { Badge } from '../ui/Badge'
-import { formatShortDate, formatRelativeTime, cn } from '../../lib/utils'
+import { formatShipmentId, formatShortDate, formatRelativeTime, cn } from '../../lib/utils'
 import { useNavigate } from 'react-router-dom'
 import { AlertTriangle, Package } from 'lucide-react'
 import type { LinkedPO, Shipment } from '../../hooks/use-shipments'
@@ -158,7 +158,7 @@ function CustomerPoChip({
   )
 }
 
-/** Sticky Booking ID divider, drawn ONLY once the table is actually scrolled sideways. */
+/** Sticky Shipment ID divider, drawn ONLY once the table is actually scrolled sideways. */
 const PINNED_DIVIDER = 'shadow-[inset_-1px_0_0_var(--color-border)]'
 
 export function ShipmentTable({ shipments }: ShipmentTableProps) {
@@ -184,14 +184,14 @@ export function ShipmentTable({ shipments }: ShipmentTableProps) {
     }
   }, [shipments.length])
 
-  // Columns: Booking · Customer PO# · Customer · Forwarder · Route · Status · ETD · ETA · Last · Risk
+  // Columns: Shipment ID · Customer PO# · Customer · Forwarder · Route · Status · ETD · ETA · Last · Risk
   // SO No removed from tracker (#119); detail pages still show SO.
   //
   // Priority ladder — a narrow screen keeps only what identifies and locates a shipment:
-  //   base  Booking ID · Route · Status
+  //   base  Shipment ID · Route · Status
   //   md    + Forwarder
   //   lg    + Customer PO# · Customer · ETD · ETA · Last Activity · Risk
-  // Everything dropped is on the shipment detail page a tap away. Booking ID stays pinned so a
+  // Everything dropped is on the shipment detail page a tap away. Shipment ID stays pinned so a
   // sideways scroll never loses which row you are reading.
   return (
     <div className="overflow-hidden rounded-xl border border-border bg-surface-800">
@@ -203,11 +203,11 @@ export function ShipmentTable({ shipments }: ShipmentTableProps) {
         <table className="w-full table-fixed md:min-w-[600px] lg:min-w-[1000px]">
           <thead>
             <tr className="border-b border-border bg-surface-850">
-              {/* Booking ID is pinned: once the table scrolls sideways, row identity must stay put.
+              {/* Shipment ID is pinned: once the table scrolls sideways, row identity must stay put.
                   Opaque bg (not a /50 tint) so scrolled cells cannot show through, and the right-hand
                   divider is an inset shadow — a border-r does not travel with a sticky cell once
                   Tailwind's preflight collapses table borders. */}
-              <th className={cn('sticky left-0 z-[1] w-[12%] bg-surface-850 px-3 py-3 text-left text-xs font-medium text-text-muted', scrolled && PINNED_DIVIDER)}>Booking ID</th>
+              <th className={cn('sticky left-0 z-[1] w-[12%] bg-surface-850 px-3 py-3 text-left text-xs font-medium text-text-muted', scrolled && PINNED_DIVIDER)}>Shipment ID</th>
               <th className="hidden w-[9%] px-3 py-3 text-left text-xs font-medium text-text-muted lg:table-cell">Customer PO#</th>
               <th className="hidden w-[12%] px-3 py-3 text-left text-xs font-medium text-text-muted lg:table-cell">Customer</th>
               <th className="hidden w-[11%] px-3 py-3 text-left text-xs font-medium text-text-muted md:table-cell">Forwarder</th>
@@ -229,8 +229,10 @@ export function ShipmentTable({ shipments }: ShipmentTableProps) {
                 {/* group-hover mirrors the row's hover onto the pinned cell — without it the sticky
                     column stays dark while the rest of the row lights up. */}
                 <td className={cn('sticky left-0 z-[1] truncate bg-surface-800 px-3 py-3 font-mono text-sm font-medium text-cobalt-primary-light transition-colors group-hover:bg-surface-700', scrolled && PINNED_DIVIDER)}>
-                  {/* parse-identity D1: same spine fallthrough as ReviewQueue/TopBar (booking → SO → HBL/HAWB) */}
-                  {s.bookingNo ?? s.soNumber ?? s.hblNumber ?? '—'}
+                  {/* #348: derived system identity — creation yyyymm + uuid head, one shape for every
+                      row (keyless shells included). The booking → SO → HBL spine stays searchable and
+                      on the detail page; ReviewQueue/TopBar still show it (parse-identity D1). */}
+                  {formatShipmentId(s.id, s.createdAt)}
                   {(s.legCount ?? 1) > 1 && (
                     <span className="ml-1 text-[11px] font-normal text-text-muted">
                       · Leg {s.legNo ?? 1}/{s.legCount}

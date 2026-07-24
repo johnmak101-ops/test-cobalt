@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { formatDateMaybeTime } from './utils'
+import { formatDateMaybeTime, formatShipmentId } from './utils'
 
 describe('formatDateMaybeTime — cut-off deadlines show their stated time', () => {
   it('shows date + HH:mm when a wall-clock time was stated (截仓时间 15:00)', () => {
@@ -23,5 +23,19 @@ describe('formatDateMaybeTime — cut-off deadlines show their stated time', () 
 
   it('a real stated time that is not UTC midnight still shows (12:00 local cut-off)', () => {
     expect(formatDateMaybeTime(new Date(2026, 5, 27, 12, 0))).toBe('27 Jun 2026 12:00')
+  })
+})
+
+describe('formatShipmentId — derived tracker identity (#348)', () => {
+  it('is creation yyyymm + the first 4 uuid hex chars', () => {
+    expect(formatShipmentId('5393954C-8CED-4329-BAC6-2868EE704C76', '2026-07-24T09:30:00.000Z')).toBe('2026075393')
+  })
+
+  it('uppercases the head so lowercase uuids render identically', () => {
+    expect(formatShipmentId('ab12cd34-0000-4000-8000-000000000000', '2026-02-01T00:00:00.000Z')).toBe('202602AB12')
+  })
+
+  it('degrades to the uuid head alone when createdAt is missing', () => {
+    expect(formatShipmentId('5393954C-8CED-4329-BAC6-2868EE704C76', null)).toBe('5393')
   })
 })
