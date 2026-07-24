@@ -50,13 +50,32 @@ function missColumn(reason: string): string | null {
 /** Committer prose → an operator instruction (ops 2026-07-24: tooltips must say what to DO —
  *  "per-PO qty dropped" reads as system internals; "Please verify" is the ask). */
 function humanizeWarnReason(r: string): string {
-  // Operators only ever see the TOTAL quantity — per-PO figures are internal LLM bookkeeping,
-  // so the tooltip must not mention them (ops 2026-07-24: "make it simple").
+  // Operators only ever see the TOTAL quantity — per-PO figures, db column names, and merge
+  // internals are LLM bookkeeping and must not reach a tooltip (ops 2026-07-24: "make it
+  // simple", "now leaking db fields"). The icon already sits ON the field, so a generic line
+  // beats naming columns.
   const units = r.match(/conflicting units \(([^)]+)\)/i)?.[1]
   if (units) {
     return `Emails state this quantity in different units (${units}) — please verify.`
   }
-  const stripped = r.replace(/^PO \d+:\s*/i, '').trim()
+  const total = r.match(/preferred document shipment total\s+([^\s(]+)/i)?.[1]
+  if (total) {
+    return `Total taken from the email's stated figure (${total}) — please verify.`
+  }
+  const du = r.match(/unit differs:\s*shipped in (\w+), ordered in (\w+)/i)
+  if (du) {
+    return `Shipped in ${du[1]} but the order says ${du[2]} — please verify.`
+  }
+  if (/backend conflict on /i.test(r)) {
+    return 'This email and the system disagree here — please verify.'
+  }
+  if (/locked field/i.test(r)) {
+    return 'A newer email wants to change this human-locked value — please verify.'
+  }
+  const stripped = r
+    .replace(/^PO \d+:\s*/i, '')
+    .replace(/^[a-z][a-z0-9_]*:\s*/, '')
+    .trim()
   return /verify/i.test(stripped) ? stripped : `${stripped} — please verify.`
 }
 
@@ -90,7 +109,9 @@ export function pendingReviewAnnotations(
       add(
         mapCriticFieldToColumn(c.field),
         'warn',
-        c.rationale?.trim() || 'Values disagree across emails — resolve in the review queue.',
+        c.rationale?.trim()
+          ? humanizeWarnReason(c.rationale.trim())
+          : 'Values disagree across emails — resolve in the review queue.',
       )
     }
     for (const r of shipment.reviewReasons ?? []) {

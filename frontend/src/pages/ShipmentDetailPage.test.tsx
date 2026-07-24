@@ -134,7 +134,7 @@ describe('ShipmentDetailPage — pending-review word highlight', () => {
 
     const warn = screen.getAllByTestId('pending-icon-warn')
     expect(warn.length).toBeGreaterThan(0)
-    expect(warn[0]).toHaveAttribute('title', 'test')
+    expect(warn[0]).toHaveAttribute('title', 'test — please verify.')
     const miss = screen.getByTestId('pending-icon-miss')
     expect(miss).toHaveAttribute('title', '"SOUOCE" not found in Mesh Database — advise add in Mesh.')
     // the vendor code value itself takes the amber colour, no wash

@@ -73,3 +73,51 @@ describe('pendingReviewAnnotations — warn tooltips read as operator instructio
     )
   })
 })
+
+describe('pendingReviewAnnotations — no DB field names leak into tooltips', () => {
+  it('rewrites the document-total rationale (critic conflict) into plain language', () => {
+    const ann = pendingReviewAnnotations({
+      reviewStatus: 'provisional',
+      criticReview: {
+        conflicts: [
+          {
+            field: 'qty',
+            rationale: 'qty: preferred document shipment total 207 (per-PO sum incomplete or absent)',
+          },
+        ],
+      },
+    })
+    expect(ann.get('qty')?.messages[0]).toBe(
+      "Total taken from the email's stated figure (207) — please verify.",
+    )
+  })
+  it('rewrites the shipped-vs-ordered unit reason and strips db-style prefixes generally', () => {
+    const ann = pendingReviewAnnotations({
+      reviewStatus: 'provisional',
+      reviewReasons: ['PO 1570988: qty_unit conflict — unit differs: shipped in cartons, ordered in pieces'],
+    })
+    const msgs = [...ann.values()].flatMap((a) => a.messages)
+    expect(msgs[0]).toBe('Shipped in cartons but the order says pieces — please verify.')
+  })
+})
+
+describe('pendingReviewAnnotations — remaining reason families read plainly', () => {
+  it('backend conflicts become a generic line (the icon already sits on the field)', () => {
+    const ann = pendingReviewAnnotations({
+      reviewStatus: 'provisional',
+      reviewReasons: ['backend conflict on qty, gross_weight, measurement'],
+    })
+    expect(ann.get('qty')?.messages[0]).toBe(
+      'This email and the system disagree here — please verify.',
+    )
+  })
+  it('locked-field clashes become a plain line', () => {
+    const ann = pendingReviewAnnotations({
+      reviewStatus: 'provisional',
+      reviewReasons: ['Would change locked field(s): etd'],
+    })
+    expect(ann.get('etd')?.messages[0]).toBe(
+      'A newer email wants to change this human-locked value — please verify.',
+    )
+  })
+})
