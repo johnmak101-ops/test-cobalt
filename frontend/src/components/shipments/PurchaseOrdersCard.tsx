@@ -6,6 +6,9 @@ import { toast } from '../ui/Toast'
 import { cn } from '../../lib/utils'
 import { interactiveProps } from '../../lib/interactive'
 import type { LinkedPO } from '../../hooks/use-shipments'
+// Same structured Item/Style affordance as the review queue (StyleListEditor/Display share the
+// parseStyleEntries vocabulary) — the card used to edit the list as one raw comma string (2026-07-24).
+import { StyleListDisplay, StyleListEditor } from '../review/ConflictRow'
 import {
   useCreatePurchaseOrder,
   useUpdatePurchaseOrder,
@@ -261,8 +264,8 @@ export function PurchaseOrdersCard({
                         {po.poNumber}
                       </span>
                     </td>
-                    <td className="field-value min-w-0 px-3 py-2.5 font-mono text-base text-text-secondary">
-                      {po.itemStyleNo?.trim() ? po.itemStyleNo : '—'}
+                    <td className="min-w-0 px-3 py-2.5">
+                      <StyleListDisplay value={po.itemStyleNo ?? ''} className="text-text-secondary" pairs={false} />
                     </td>
                     {crudMode && (
                       <td className="px-2 py-2">
@@ -372,7 +375,13 @@ function EditableRow({
         <input autoFocus className={inputCls} placeholder="PO number" value={f.poNumber} onChange={set('poNumber')} />
       </td>
       <td className="px-3 py-2">
-        <input className={inputCls} placeholder="Item / style" value={f.itemStyleNo} onChange={set('itemStyleNo')} />
+        <StyleListEditor
+          label="Item / Style"
+          value={f.itemStyleNo}
+          onChange={(v) => setF((prev) => ({ ...prev, itemStyleNo: v }))}
+          existingValue={po?.itemStyleNo ?? ''}
+          pairs={false}
+        />
       </td>
       <td className="px-2 py-2">
         <div className="flex justify-end gap-0.5">

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import { ConflictRow } from './ConflictRow'
 import type { CriticConflict } from '../../lib/critic-review'
 
@@ -28,6 +28,119 @@ function renderRow(overrides: { critical?: boolean; conflict?: CriticConflict } 
     </table>,
   )
 }
+
+function renderPartyRow(conflict: CriticConflict, value: string) {
+  return render(
+    <table>
+      <tbody>
+        <ConflictRow conflict={conflict} value={value} onChange={vi.fn()} editing={false} />
+      </tbody>
+    </table>,
+  )
+}
+
+describe('ConflictRow party master chips', () => {
+  const vendorTwoCandidates: CriticConflict = {
+    field: 'vendor_code',
+    label: 'Vendor',
+    candidates: [
+      {
+        value: 'SOUTH OCEAN KNITTERS LTD',
+        source: 'Booking Request',
+        master: { code: 'SOUOCE', name: 'SOUTH OCEAN KNITTERS LTD' },
+      },
+      {
+        value: 'ROSE KNITTING FACTORY LIMITED',
+        source: 'SO',
+        master: { code: 'ROKNFT', name: 'ROSE KNITTING FACTORY LIMITED' },
+      },
+    ],
+    rationale: 'Two vendor candidates from different emails.',
+  }
+
+  it('renders a code chip beside each resolved candidate name', () => {
+    renderPartyRow(vendorTwoCandidates, 'SOUTH OCEAN KNITTERS LTD')
+    const chips = screen.getAllByTestId('master-code-chip')
+    expect(chips.map((c) => c.textContent)).toEqual(['SOUOCE', 'ROKNFT'])
+    expect(screen.getByText('SOUTH OCEAN KNITTERS LTD')).toBeInTheDocument()
+    expect(screen.getByText('ROSE KNITTING FACTORY LIMITED')).toBeInTheDocument()
+  })
+
+  it('renders a "not in Mesh" tag when the candidate has master: null', () => {
+    const conflict: CriticConflict = {
+      field: 'vendor_code',
+      label: 'Vendor',
+      candidates: [
+        { value: 'GOLDEN SUN KNITTING FTY LTD', source: 'SO', master: null },
+        {
+          value: 'ROSE KNITTING FACTORY LIMITED',
+          source: 'SO',
+          master: { code: 'ROKNFT', name: 'ROSE KNITTING FACTORY LIMITED' },
+        },
+      ],
+      rationale: 'r',
+    }
+    renderPartyRow(conflict, 'GOLDEN SUN KNITTING FTY LTD')
+    expect(screen.getByTestId('mesh-miss-tag')).toHaveTextContent('not in Mesh')
+    expect(screen.getAllByTestId('master-code-chip')).toHaveLength(1)
+  })
+
+  it('renders neither chip nor tag when master is absent (non-party fields)', () => {
+    const conflict: CriticConflict = {
+      field: 'hbl_awb_fcr_no',
+      label: 'HBL',
+      candidates: [
+        { value: 'SE26061400005', source: 'Final B/L' },
+        { value: 'SE26061400006', source: 'Draft B/L' },
+      ],
+      rationale: 'r',
+    }
+    renderPartyRow(conflict, 'SE26061400005')
+    expect(screen.queryByTestId('master-code-chip')).toBeNull()
+    expect(screen.queryByTestId('mesh-miss-tag')).toBeNull()
+  })
+
+  it('renders the chip on the Current (System) side too', () => {
+    const conflict: CriticConflict = {
+      field: 'customer_code',
+      label: 'Customer',
+      candidates: [
+        {
+          value: 'WYSE LONDON LIMITED',
+          source: 'System',
+          master: { code: 'WYSE', name: 'WYSE LONDON LIMITED' },
+        },
+        {
+          value: 'MACAU FUNG TAI LIMITED',
+          source: 'SO',
+          master: { code: 'MACFUN', name: 'MACAU FUNG TAI LIMITED' },
+        },
+      ],
+      rationale: 'r',
+    }
+    const { container } = renderPartyRow(conflict, 'MACAU FUNG TAI LIMITED')
+    // td[0] is the field label — td[1] is the Current column.
+    const currentCell = container.querySelectorAll('td')[1] as HTMLElement
+    expect(within(currentCell).getByTestId('master-code-chip')).toHaveTextContent('WYSE')
+  })
+
+  it('renders the chip for a single proposed candidate (non-multi branch)', () => {
+    const conflict: CriticConflict = {
+      field: 'vendor_code',
+      label: 'Vendor',
+      candidates: [
+        {
+          value: 'SOUTH OCEAN KNITTERS LTD',
+          source: 'Booking Request',
+          master: { code: 'SOUOCE', name: 'SOUTH OCEAN KNITTERS LTD' },
+        },
+      ],
+      rationale: 'r',
+    }
+    renderPartyRow(conflict, 'SOUTH OCEAN KNITTERS LTD')
+    expect(screen.getByTestId('master-code-chip')).toHaveTextContent('SOUOCE')
+  })
+})
 
 describe('ConflictRow critical badge', () => {
   it('shows Critical badge when critical is true', () => {

@@ -46,6 +46,9 @@ export interface PurchaseOrderDetail extends PurchaseOrder {
     linkId: string
     linkedQuantity: number | null
     linkedAt: string
+    /** #350: anchor fields for the derived Shipment ID column (firstEmailAt ?? createdAt). */
+    firstEmailAt?: string | null
+    createdAt?: string | null
   }>
 }
 

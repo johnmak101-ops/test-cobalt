@@ -13,9 +13,15 @@ export interface CriticConflict {
      *  a related email's graphMessageId to open the exact source — absent when the queue could not
      *  attribute it (e.g. the 'System' side of a backend mismatch), and never guessed. */
     sourceEmailId?: string | null
+    /** Response-time Mesh master attachment (party fields only): object = resolved (code chip),
+     *  null = letter-bearing name not in the Mesh mirror ("not in Mesh" tag), absent = no claim. */
+    master?: { code: string; name: string } | null
   }[]
   rationale: string
 }
+
+/** One conflict candidate — the shape ConflictRow renders. */
+export type CriticCandidate = CriticConflict['candidates'][number]
 
 /** Closed-set multi-candidate legs from queue matcher (#129). */
 export interface MatchAmbiguityCandidate {

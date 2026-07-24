@@ -14,10 +14,19 @@ export function stateRank(state: string | null | undefined): number {
 
 const has = (v: unknown) => v != null && v !== ''
 
+/**
+ * Default transit allowances for the no-arrival-data departure fallback (ops 2026-07-24).
+ * Tunable at runtime via Settings (`delivered_fallback_{air,sea}_days`) — these apply when the
+ * setting is absent. Callers that already loaded the setting pass it via `opts.etdFallback`.
+ */
+export const ETD_FALLBACK_DEFAULTS = { airDays: 7, seaDays: 45 } as const
+export type EtdFallback = { airDays: number; seaDays: number }
+
 export function deriveState(
   emailTypes: Set<string>,
   fields: Record<string, unknown>,
   now: Date = new Date(),
+  opts: { etdFallback?: EtdFallback | null } = {},
 ): ShipmentState {
   let s: ShipmentState = 'BOOKED'
   const bump = (to: ShipmentState) => {
@@ -77,6 +86,26 @@ export function deriveState(
   if (has(fields.ata)) bump('DELIVERED')
   if (has(fields.in_dc_date)) bump('DELIVERED')
   if (has(fields.eta) && isPastOrToday(fields.eta, now)) bump('DELIVERED')
+
+  /*
+   * No-arrival-data fallback (ops 2026-07-24, "ETD + transit allowance, with settings"): a leg
+   * whose forwarder never stated ANY arrival signal — no eta, no ata, no in-DC — would sit at
+   * Departure forever (PO 1570988 flew SZX→FRA on 20 Apr and was still "Departure" in July).
+   * Once the departure (atd, else etd) is older than a mode-aware transit allowance the goods
+   * have certainly landed. The allowance is what keeps the rule above true: AIR clears in days,
+   * SEA in weeks — a 30-day ocean leg still must not read Delivered the day it sails. Unknown
+   * mode takes the SEA allowance (conservative). Any stated ETA routes through the passed-ETA
+   * rule instead — this fallback never argues with a real estimate.
+   */
+  const fb = opts.etdFallback === undefined ? ETD_FALLBACK_DEFAULTS : opts.etdFallback
+  if (fb && !has(fields.eta) && !has(fields.ata) && !has(fields.in_dc_date)) {
+    const dep = has(fields.atd) ? fields.atd : fields.etd
+    const t = dep == null ? NaN : new Date(String(dep)).getTime()
+    if (Number.isFinite(t)) {
+      const days = normMode(String(fields.mode ?? '')) === 'AIR' ? fb.airDays : fb.seaDays
+      if (t + days * 86400000 <= now.getTime()) bump('DELIVERED')
+    }
+  }
   return s
 }
 

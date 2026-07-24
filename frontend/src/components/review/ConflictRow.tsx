@@ -1,12 +1,14 @@
 import { useState } from 'react'
 import { Copy, Mail, Plus, X } from 'lucide-react'
-import type { CriticConflict } from '../../lib/critic-review'
+import type { CriticCandidate, CriticConflict } from '../../lib/critic-review'
 import {
   reviewFieldLabel,
   mapCriticFieldToColumn,
   isPortColumn,
   parseStyleEntries,
   serializeStyleEntries,
+  parseStyleTokens,
+  serializeStyleTokens,
   isMultiStylePaste,
   type StyleEntry,
 } from '../../lib/review-fields'
@@ -46,6 +48,32 @@ export interface ConflictRowProps {
 function Unit({ unit }: { unit?: string | null }) {
   if (!unit) return null
   return <span className="ml-1 text-[11px] text-text-muted">{unit}</span>
+}
+
+/** Mesh master code beside the party name (variant A) — the code is a chip, never part of the
+ *  committed value string. */
+function MasterCodeChip({ code }: { code: string }) {
+  return (
+    <span
+      data-testid="master-code-chip"
+      className="mr-1.5 inline-block shrink-0 rounded border border-cobalt-primary/40 bg-cobalt-primary/10 px-1 align-[1px] font-mono text-[11px] font-medium leading-4 text-cobalt-primary-light"
+    >
+      {code}
+    </span>
+  )
+}
+
+/** Letter-bearing party name with no Mesh master — honest miss marker (matches the Needs
+ *  Attention "not found in Mesh Database" panel; numeric leaks never get this, backend-guarded). */
+function MeshMissTag() {
+  return (
+    <span
+      data-testid="mesh-miss-tag"
+      className="ml-1.5 inline-block shrink-0 whitespace-nowrap rounded bg-status-warning/15 px-1.5 align-[1px] text-[11px] font-medium leading-4 text-status-warning"
+    >
+      not in Mesh
+    </span>
+  )
 }
 
 function isSystemSource(source: string): boolean {
@@ -121,6 +149,9 @@ export function ConflictRow({
 }: ConflictRowProps) {
   const { existing, proposed } = splitCandidates(conflict)
   const changed = changesStoredValue(conflict, value)
+  // The candidate the controlled value currently equals — chips come from IT, never from a
+  // free-typed override (a custom value has no known master).
+  const activeProposed = proposed.find((p) => p.value === value) ?? null
   const label = reviewFieldLabel(conflict.field, conflict.label)
   const column = mapCriticFieldToColumn(conflict.field)
   // POL/POD edit from the seeded ports master (searchable, free-text fallback) instead of a bare input.
@@ -184,8 +215,12 @@ export function ConflictRow({
           ) : (
             <span className="inline-flex max-w-full flex-wrap items-baseline gap-x-1.5">
               <span className="field-value font-mono text-sm leading-snug text-text-primary">
+                {!useLiveExisting && existing?.master ? (
+                  <MasterCodeChip code={existing.master.code} />
+                ) : null}
                 {existingDisplay}
                 <Unit unit={existingUnit} />
+                {!useLiveExisting && existing?.master === null ? <MeshMissTag /> : null}
               </span>
               <span className="text-[11px] text-text-muted">{existingSourceLabel}</span>
             </span>
@@ -278,8 +313,10 @@ export function ConflictRow({
                 changed ? 'font-medium text-ai-proposed' : 'text-text-primary',
               )}
             >
+              {activeProposed?.master ? <MasterCodeChip code={activeProposed.master.code} /> : null}
               {value}
               <Unit unit={proposedUnit} />
+              {activeProposed?.master === null ? <MeshMissTag /> : null}
             </span>
           </span>
         ) : (
@@ -381,9 +418,20 @@ function SourceEmailCell({
 }
 
 /** Read-only: one style (or PO/style) per line — never a mid-wrap comma blob.
- *  Long lists scroll inside a max-height box so they cannot blow out the review card. */
-export function StyleListDisplay({ value, className }: { value: string; className?: string }) {
-  const rows = parseStyleEntries(value)
+ *  Long lists scroll inside a max-height box so they cannot blow out the review card.
+ *  `pairs=false` = per-PO context: a slash is part of the style itself, never a PO prefix. */
+export function StyleListDisplay({
+  value,
+  className,
+  pairs = true,
+}: {
+  value: string
+  className?: string
+  pairs?: boolean
+}) {
+  const rows = pairs
+    ? parseStyleEntries(value)
+    : parseStyleTokens(value).map((style) => ({ po: '', style }))
   // Always set 13px — bare "—" must not inherit body 16px.
   if (rows.length === 0) {
     return <span className="font-mono text-sm text-text-muted">—</span>
@@ -431,28 +479,35 @@ export function StyleListEditor({
   value,
   onChange,
   existingValue,
+  pairs = true,
 }: {
   label: string
   value: string
   onChange: (v: string) => void
   /** System Existing list — used by Copy all (left → right). */
   existingValue?: string
+  /** false = per-PO context: tokens only, a slash stays inside the style, no PO# inputs. */
+  pairs?: boolean
 }) {
+  const parse = (v: string | null | undefined): StyleEntry[] =>
+    pairs ? parseStyleEntries(v) : parseStyleTokens(v).map((style) => ({ po: '', style }))
+  const serialize = (list: StyleEntry[]): string =>
+    pairs ? serializeStyleEntries(list) : serializeStyleTokens(list.map((r) => r.style))
   const [rows, setRows] = useState<StyleEntry[]>(() => {
-    const parsed = parseStyleEntries(value)
+    const parsed = parse(value)
     return parsed.length > 0 ? parsed : [{ po: '', style: '' }]
   })
   // Re-seed when the parent value is replaced from outside (e.g. conflict reseed, multi-candidate pick).
   const [seed, setSeed] = useState(value)
-  if (seed !== value && serializeStyleEntries(rows) !== value) {
+  if (seed !== value && serialize(rows) !== value) {
     setSeed(value)
-    const parsed = parseStyleEntries(value)
+    const parsed = parse(value)
     setRows(parsed.length > 0 ? parsed : [{ po: '', style: '' }])
   }
 
   const commit = (next: StyleEntry[]) => {
     setRows(next)
-    onChange(serializeStyleEntries(next))
+    onChange(serialize(next))
   }
 
   const update = (i: number, patch: Partial<StyleEntry>) => {
@@ -467,7 +522,7 @@ export function StyleListEditor({
   const add = () => commit([...rows, { po: '', style: '' }])
 
   const copyAllFromExisting = () => {
-    const parsed = parseStyleEntries(existingValue)
+    const parsed = parse(existingValue)
     if (parsed.length === 0) return
     commit(parsed)
   }
@@ -476,14 +531,14 @@ export function StyleListEditor({
   const handlePaste = (e: React.ClipboardEvent) => {
     const text = e.clipboardData.getData('text')
     if (!text || !isMultiStylePaste(text)) return // single token → default paste into the focused input
-    const parsed = parseStyleEntries(text)
+    const parsed = parse(text)
     if (parsed.length === 0) return
     e.preventDefault()
     commit(parsed)
   }
 
-  const showPo = rows.some((r) => r.po.trim())
-  const canCopyAll = parseStyleEntries(existingValue).length > 0
+  const showPo = pairs && rows.some((r) => r.po.trim())
+  const canCopyAll = parse(existingValue).length > 0
 
   return (
     <div
@@ -570,7 +625,7 @@ function MultiCandidateProposed({
   changed,
 }: {
   label: string
-  proposed: { value: string; source: string; sourceEmailId?: string | null }[]
+  proposed: CriticCandidate[]
   value: string
   onChange: (v: string) => void
   editing: boolean
@@ -608,8 +663,10 @@ function MultiCandidateProposed({
                     aria-label={`Select proposed candidate: ${c.value}`}
                   />
                   <span className="field-value font-mono text-sm leading-snug text-text-primary">
+                    {c.master ? <MasterCodeChip code={c.master.code} /> : null}
                     {c.value}
                     <Unit unit={proposedUnit} />
+                    {c.master === null ? <MeshMissTag /> : null}
                   </span>
                 </label>
               ) : (
@@ -633,8 +690,10 @@ function MultiCandidateProposed({
                           : 'text-text-secondary',
                     )}
                   >
+                    {c.master ? <MasterCodeChip code={c.master.code} /> : null}
                     {c.value}
                     <Unit unit={proposedUnit} />
+                    {c.master === null ? <MeshMissTag /> : null}
                   </span>
                 </div>
               )}

@@ -4,14 +4,26 @@
  * the input; this only reshapes. The production PO→Booking→Shipment model is never exposed.
  */
 import type { Band, CriticReview } from '../../decisions/critic-review.types'
+import { isNonPartyName } from '../../decisions/critic-review.types'
 import { stateToUiStatus } from '../adapters/enums'
 import { deriveRoute, portLabel, deriveOriginCountry, poNumbersJson, isoOrNull } from '../adapters/derive'
+import { normalizeEntityName } from '../hydrate-critic-entity-labels'
 import { filterPortMissReasons } from './port-miss-reasons'
 
 export interface MasterRef {
   id: string
   name: string
   code?: string | null
+  /** Mesh FullNameCh (0022) — carried so the mismatch check accepts a Chinese raw for its own master. */
+  nameCh?: string | null
+}
+
+/** The raw party twin names a DIFFERENT company than the resolved master ("flag, don't follow",
+ *  2026-07-24): the master keeps display; this makes the divergence visible on the detail rows. */
+export interface PartyMismatch {
+  raw: string
+  masterCode: string
+  masterName: string
 }
 
 type Dateish = Date | string | null | undefined
@@ -115,6 +127,8 @@ export interface ShipmentLegRow {
   reviewReasons?: string[] | null
   dismissedAt?: Dateish
   criticReview?: CriticReview | null
+  /** min(shipment_emails.received_at) — the beginning email; null/absent when no dated source emails. */
+  firstEmailAt?: Dateish
   createdAt: Dateish
   updatedAt: Dateish
 }
@@ -191,12 +205,36 @@ export interface UiShipment {
   measurement: number | null
   htsCode: string | null
   criticReview: CriticReview | null
+  /** Beginning email received-at (#350) — anchors the Shipment ID month; null → UI falls back to createdAt. */
+  firstEmailAt: string | null
   createdAt: string | null
   updatedAt: string | null
   customer: MasterRef | null
   vendor: MasterRef | null
   forwarder: MasterRef | null
+  /** Raw twin vs resolved master divergence — null when they agree (or no claim can be made). */
+  customerMismatch: PartyMismatch | null
+  vendorMismatch: PartyMismatch | null
   linkedPOs: unknown[]
+}
+
+/**
+ * No claim (null) without a master, without a raw, when raw IS the master (code / name / nameCh,
+ * normalized exact), or for a letterless numeric leak (isNonPartyName twin — a PO number in a
+ * party field is not a company statement).
+ */
+function partyMismatch(
+  raw: string | null | undefined,
+  master: MasterRef | null | undefined,
+): PartyMismatch | null {
+  const v = (raw ?? '').trim()
+  if (!v || !master) return null
+  if (isNonPartyName(v)) return null
+  if (v.toUpperCase() === (master.code ?? '').trim().toUpperCase()) return null
+  const key = normalizeEntityName(v)
+  if (key && key === normalizeEntityName(master.name ?? '')) return null
+  if (key && master.nameCh && key === normalizeEntityName(master.nameCh)) return null
+  return { raw: v, masterCode: (master.code ?? '').trim(), masterName: master.name }
 }
 
 export function toUiShipment(
@@ -266,11 +304,15 @@ export function toUiShipment(
     measurement: leg.measurement ?? null,
     htsCode: leg.htsCode ?? null,
     criticReview: leg.criticReview ?? null,
+    firstEmailAt: isoOrNull(leg.firstEmailAt),
     createdAt: isoOrNull(leg.createdAt),
     updatedAt: isoOrNull(leg.updatedAt),
     customer: input.customer ?? (leg.customerRaw ? { id: '', name: leg.customerRaw, code: leg.customerRaw } : null),
     vendor: input.vendor ?? (leg.vendorRaw ? { id: '', name: leg.vendorRaw, code: leg.vendorRaw } : null),
     forwarder: input.forwarder ?? (leg.forwarderRaw ? { id: '', name: leg.forwarderRaw } : null),
+    // vs the REAL master only — the raw stand-in above is built FROM the raw and can never diverge.
+    customerMismatch: partyMismatch(leg.customerRaw, input.customer ?? null),
+    vendorMismatch: partyMismatch(leg.vendorRaw, input.vendor ?? null),
     linkedPOs: input.linkedPOs ?? [],
   }
 }

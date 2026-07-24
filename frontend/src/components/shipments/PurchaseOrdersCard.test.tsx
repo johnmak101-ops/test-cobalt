@@ -76,7 +76,7 @@ describe('PurchaseOrdersCard — full CRUD', () => {
     await user.click(screen.getByTestId('po-add'))
     const row = screen.getByTestId('po-add-row')
     await user.type(within(row).getByPlaceholderText('PO number'), '99999')
-    await user.type(within(row).getByPlaceholderText('Item / style'), 'STYLE-9')
+    await user.type(within(row).getByPlaceholderText('Style / item no. — or paste a list'), 'STYLE-9')
     await user.click(within(row).getByRole('button', { name: 'Save' }))
     expect(createMutate).toHaveBeenCalledTimes(1)
     expect(createMutate.mock.calls[0][0]).toMatchObject({ poNumber: '99999', customerId: 'c1', itemStyleNo: 'STYLE-9' })
@@ -88,7 +88,7 @@ describe('PurchaseOrdersCard — full CRUD', () => {
     await enterCrudMode(user)
     await user.click(screen.getByRole('button', { name: 'Edit PO' }))
     const row = screen.getByTestId('po-edit-po1')
-    await user.type(within(row).getByPlaceholderText('Item / style'), 'STYLE-1')
+    await user.type(within(row).getByPlaceholderText('Style / item no. — or paste a list'), 'STYLE-1')
     await user.click(within(row).getByRole('button', { name: 'Save' }))
     expect(updateMutate.mock.calls[0][0]).toMatchObject({ id: 'po1', poNumber: '76075', itemStyleNo: 'STYLE-1' })
   })
@@ -129,5 +129,44 @@ describe('PurchaseOrdersCard — full CRUD', () => {
     expect(screen.queryByRole('button', { name: 'Edit PO' })).toBeNull()
     expect(screen.queryByTestId('po-add')).toBeNull()
     expect(screen.getByTestId('po-crud-edit')).toBeInTheDocument()
+  })
+})
+
+describe('PurchaseOrdersCard — Item/Style as a structured list (parity with the review queue)', () => {
+  it('renders a multi-style value one per line, keeping slashes inside a token intact', async () => {
+    const user = userEvent.setup()
+    renderCard([po({ itemStyleNo: 'C193/FERN JUMPER, 56572/SS26SW023' })])
+    await user.click(screen.getByTestId('pos-card-toggle'))
+
+    const display = screen.getByTestId('style-list-display')
+    const items = within(display).getAllByRole('listitem')
+    expect(items).toHaveLength(2)
+    // Within one PO a slash is part of the style itself — never re-parsed as a "PO/" prefix.
+    expect(items[0]).toHaveTextContent('C193/FERN JUMPER')
+    expect(items[1]).toHaveTextContent('56572/SS26SW023')
+  })
+
+  it('edits each style as ONE input per row (no PO prefix input) and saves the joined list', async () => {
+    const user = userEvent.setup()
+    renderCard([po({ itemStyleNo: 'C193/FERN JUMPER, 56572/SS26SW023' })])
+    await enterCrudMode(user)
+    await user.click(screen.getByTitle('Edit PO'))
+
+    const editor = screen.getByTestId('style-list-editor')
+    const styleInputs = within(editor).getAllByPlaceholderText('Style / item no. — or paste a list')
+    expect(styleInputs).toHaveLength(2)
+    expect((styleInputs[0] as HTMLInputElement).value).toBe('C193/FERN JUMPER')
+    // The row belongs to a known PO — no per-entry PO# inputs in this context.
+    expect(within(editor).queryByPlaceholderText('PO#')).toBeNull()
+
+    await user.click(within(editor).getByRole('button', { name: /add style/i }))
+    await user.type(within(editor).getByLabelText('Item / Style style 3'), 'C200/NEW CARDIGAN')
+    await user.click(screen.getByTitle('Save'))
+
+    expect(updateMutate.mock.calls[0][0]).toMatchObject({
+      id: 'po1',
+      poNumber: '76075',
+      itemStyleNo: 'C193/FERN JUMPER, 56572/SS26SW023, C200/NEW CARDIGAN',
+    })
   })
 })

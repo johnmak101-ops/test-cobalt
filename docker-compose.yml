@@ -34,6 +34,10 @@ services:
       SQL_SERVER_URL: "Server=db,1433;Database=cobalt;User Id=sa;Password=YourStrong!Passw0rd;Encrypt=false;TrustServerCertificate=true"
       PORT: "3000"
       STATIC_ROOT: /app/frontend/dist
+      # Email wall-clock + manual-edit strings are interpreted in the SERVER's zone — see Dockerfile.
+      TZ: "${TZ:-Asia/Hong_Kong}"
+      # Structured pino logs: JSON on stdout (docker logs) + rotating files in the volume below.
+      LOG_LEVEL: "${LOG_LEVEL:-info}"
       JWT_SECRET: "${JWT_SECRET:-cobalt-demo-jwt-secret-change-in-production-0123456789}"
       # Schema + prod-shape seed (users/ports/rules). Not demo emails.
       RUN_MIGRATIONS: "${RUN_MIGRATIONS:-1}"
@@ -61,6 +65,11 @@ services:
       PORTS_SYNC_INTERVAL_MS: "${PORTS_SYNC_INTERVAL_MS:-2592000000}"
     ports:
       - "${APP_PORT:-3000}:3000"
+    volumes:
+      # Rotating pino files (logs/backend.<date>.<n>.log, 14 kept) survive container recreation;
+      # `docker logs` still streams the same JSON from stdout.
+      - shiptrack_logs:/app/logs
 
 volumes:
   shiptrack_mssqldata:
+  shiptrack_logs:

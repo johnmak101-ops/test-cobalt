@@ -6,6 +6,7 @@ import type { BookingRepository } from '../db/repositories/booking.repository'
 import type { FieldLockRepository } from '../db/repositories/field-lock.repository'
 import type { AuditRepository } from '../db/repositories/audit.repository'
 import type { CriticCalibrationRepository } from '../db/repositories/critic-calibration.repository'
+import type { MastersRepository } from '../db/repositories/masters.repository'
 import type { QueueLearningClient, CorrectionPayload } from './queue-learning.client'
 import { normBookingKey } from '../reconcile/match-keys'
 
@@ -29,12 +30,19 @@ function makeService(legOverride: Record<string, unknown> | null = {}) {
   }
   const bookings = {
     findById: vi.fn(async () => null as { jobNo: string } | null),
+    update: vi.fn(async () => undefined),
   }
   const locks = { lock: vi.fn(async () => undefined) }
   const audit = { write: vi.fn(async () => undefined) }
   const queueLearning = { postCorrection: vi.fn(async (_payload: CorrectionPayload) => undefined) }
   const calibration = {
     insert: vi.fn(async () => undefined),
+  }
+  const masters = {
+    portIdByUnlocode: vi.fn(async (): Promise<string | null> => null),
+    vendorIdExact: vi.fn(async (): Promise<string | null> => null),
+    customerIdExact: vi.fn(async (): Promise<string | null> => null),
+    forwarderIdExact: vi.fn(async (): Promise<string | null> => null),
   }
   const svc = new ReviewService(
     shipments as unknown as ShipmentRepository,
@@ -43,8 +51,9 @@ function makeService(legOverride: Record<string, unknown> | null = {}) {
     audit as unknown as AuditRepository,
     queueLearning as unknown as QueueLearningClient,
     calibration as unknown as CriticCalibrationRepository,
+    masters as unknown as MastersRepository,
   )
-  return { svc, shipments, bookings, locks, audit, queueLearning, calibration }
+  return { svc, shipments, bookings, locks, audit, queueLearning, calibration, masters }
 }
 
 describe('ReviewService.confirm/correct — provisional-only + optimistic concurrency', () => {
@@ -223,6 +232,61 @@ describe('ReviewService.correct — coercion + human-wins locks', () => {
     expect(queueLearning.postCorrection).toHaveBeenCalledWith(expect.objectContaining({
       field: 'so_no', agentSaid: 'OLD-SO', humanCorrected: 'COSU123', kind: 'correction',
     }))
+  })
+})
+
+describe('ReviewService.correct — party/port corrections re-resolve the master FK (display follows)', () => {
+  it('sets the booking vendor FK when the corrected vendor resolves to a master', async () => {
+    const { svc, bookings, masters } = makeService({ bookingId: 'bk-1', vendorRaw: 'SOUOCE' })
+    masters.vendorIdExact.mockResolvedValueOnce('v-rose')
+    await svc.correct(
+      'leg-1',
+      { fields: { vendorRaw: 'ROSE KNITTING FACTORY LIMITED' }, reason: 'this is the correct one' },
+      'user-1',
+    )
+    expect(masters.vendorIdExact).toHaveBeenCalledWith('ROSE KNITTING FACTORY LIMITED')
+    expect(bookings.update).toHaveBeenCalledWith('bk-1', { vendorId: 'v-rose' })
+  })
+
+  it('unlinks the booking vendor FK when the corrected vendor matches no master', async () => {
+    const { svc, bookings, masters } = makeService({ bookingId: 'bk-1', vendorRaw: 'SOUOCE' })
+    masters.vendorIdExact.mockResolvedValueOnce(null)
+    await svc.correct('leg-1', { fields: { vendorRaw: 'BRAND NEW KNITTERS LTD' } }, 'user-1')
+    expect(bookings.update).toHaveBeenCalledWith('bk-1', { vendorId: null })
+  })
+
+  it('sets the booking customer FK for customer corrections', async () => {
+    const { svc, bookings, masters } = makeService({ bookingId: 'bk-1', customerRaw: 'WYSE' })
+    masters.customerIdExact.mockResolvedValueOnce('c-docc')
+    await svc.correct('leg-1', { fields: { customerRaw: 'DOCLASSE CO., LTD.' } }, 'user-1')
+    expect(bookings.update).toHaveBeenCalledWith('bk-1', { customerId: 'c-docc' })
+  })
+
+  it('re-links the leg forwarder FK inside the same leg patch', async () => {
+    const { svc, shipments, masters } = makeService({ forwarderRaw: 'FWD', forwarderId: 'f-old' })
+    masters.forwarderIdExact.mockResolvedValueOnce('f-logi')
+    await svc.correct('leg-1', { fields: { forwarderRaw: 'LOGIMARK' } }, 'user-1')
+    expect(shipments.updateLeg).toHaveBeenCalledWith(
+      'leg-1',
+      expect.objectContaining({ forwarderRaw: 'LOGIMARK', forwarderId: 'f-logi' }),
+    )
+  })
+
+  it('re-resolves the port FK on review POL corrections (same as the detail-edit fix)', async () => {
+    const { svc, shipments, masters } = makeService({ polRaw: 'JPOSA', polId: 'port-osa' })
+    masters.portIdByUnlocode.mockResolvedValueOnce('port-hkg')
+    await svc.correct('leg-1', { fields: { polRaw: 'HKHKG' } }, 'user-1')
+    expect(shipments.updateLeg).toHaveBeenCalledWith(
+      'leg-1',
+      expect.objectContaining({ polRaw: 'HKHKG', polId: 'port-hkg' }),
+    )
+  })
+
+  it('skips the booking write when the leg has no booking', async () => {
+    const { svc, bookings, masters } = makeService({ bookingId: null, vendorRaw: 'SOUOCE' })
+    masters.vendorIdExact.mockResolvedValueOnce(null)
+    await svc.correct('leg-1', { fields: { vendorRaw: 'ROSE KNITTING FACTORY LIMITED' } }, 'user-1')
+    expect(bookings.update).not.toHaveBeenCalled()
   })
 })
 

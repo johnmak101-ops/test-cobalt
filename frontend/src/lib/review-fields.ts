@@ -4,7 +4,7 @@
  * column = the leg column name POST /api/review/:id/correct expects (it updates the row and
  * field-locks by column). The backend coerces values (dates → Date, numerics → number).
  */
-import { MODE_OPTIONS, UOM_OPTIONS } from './enums'
+import { MODE_OPTIONS, MODE_EDIT_OPTIONS, UOM_OPTIONS } from './enums'
 
 export type FieldType = 'text' | 'number' | 'date'
 
@@ -39,6 +39,12 @@ export interface EditableField {
    */
   options?: readonly string[]
   /**
+   * Full legal enum when `options` is a deliberately SHORTER offer list (Mode shows SEA/AIR only).
+   * A current value in here but not in `options` is still valid — rendered selectable, never
+   * suffixed "(unrecognized)". Defaults to `options`.
+   */
+  allValues?: readonly string[]
+  /**
    * When set, the edit form and the review conflict row render a master picker instead of free text.
    * 'port' → a searchable UN/LOCODE dropdown (ports are a seeded, complete master), with a free-text
    * fallback for a port not yet in the catalog. The chosen value is written to the raw column.
@@ -48,8 +54,10 @@ export interface EditableField {
 
 export const EDITABLE_FIELDS: EditableField[] = [
   { section: 'Order Info', label: 'Booking No.', uiKey: 'bookingNo', column: 'bookingNo', type: 'text' },
-  // Combined display: soNo ?? warehouseSo (see displaySoNumber). Warehouse SO stays writable via critic map.
+  // Read view combines the two SOs into one row ("A · B", see displaySoNumber); the EDIT form keeps
+  // them apart — one input per column, so the warehouse (入仓) SO is editable on its own (2026-07-24).
   { section: 'Order Info', label: 'SO#', uiKey: 'soNumber', column: 'soNo', type: 'text' },
+  { section: 'Order Info', label: 'Warehouse SO', uiKey: 'warehouseSo', column: 'warehouseSo', type: 'text' },
   // Item / Style No. lives on Customer Purchase Orders (per-PO), not Order Details — see HIDDEN_FIELD_LABELS.
   { section: 'Cargo & Logistics', label: 'Total Quantity', uiKey: 'quantityShipped', column: 'qty', type: 'number' },
   { section: 'Cargo & Logistics', label: 'UOM', uiKey: 'quantityUnit', column: 'qtyUnit', type: 'text', options: UOM_OPTIONS },
@@ -64,9 +72,13 @@ export const EDITABLE_FIELDS: EditableField[] = [
   // POL/POD pick from the seeded ports master (picker:'port'); Customer/Vendor/Forwarder are free text
   // because their masters are the Mesh ERP mirror (synced ~every 2 months) — the raw column is the only
   // place to record the correct party until the master arrives, at which point the master wins display.
-  { section: 'Shipping', label: 'Mode', uiKey: 'mode', column: 'mode', type: 'text', options: MODE_OPTIONS },
-  { section: 'Shipping', label: 'POL', uiKey: 'polRaw', column: 'polRaw', type: 'text', picker: 'port' },
-  { section: 'Shipping', label: 'POD', uiKey: 'podRaw', column: 'podRaw', type: 'text', picker: 'port' },
+  //
+  // Intra-section ORDER is the read view's order too (parties → consignee → vessel → ports; dates in
+  // shipment chronology). The edit form is generated from this array, so a different order here makes
+  // the two modes of one card reshuffle under the user's cursor — the drift the derivation exists to
+  // prevent. Customer/Vendor have no raw row on the read view (codes live under Order Info); they sit
+  // with the other parties, between Mode and Forwarder.
+  { section: 'Shipping', label: 'Mode', uiKey: 'mode', column: 'mode', type: 'text', options: MODE_EDIT_OPTIONS, allValues: MODE_OPTIONS },
   { section: 'Shipping', label: 'Customer', uiKey: 'customerRaw', column: 'customerRaw', type: 'text' },
   { section: 'Shipping', label: 'Vendor', uiKey: 'vendorRaw', column: 'vendorRaw', type: 'text' },
   { section: 'Shipping', label: 'Forwarder', uiKey: 'forwarderRaw', column: 'forwarderRaw', type: 'text' },
@@ -75,14 +87,16 @@ export const EDITABLE_FIELDS: EditableField[] = [
   { section: 'Shipping', label: 'Vessel', uiKey: 'vesselName', column: 'vesselName', type: 'text' },
   { section: 'Shipping', label: 'Voyage', uiKey: 'voyageNumber', column: 'voyageNo', type: 'text' },
   { section: 'Shipping', label: 'Flight No.', uiKey: 'flightNo', column: 'flightNo', type: 'text' },
+  { section: 'Shipping', label: 'POL', uiKey: 'polRaw', column: 'polRaw', type: 'text', picker: 'port' },
+  { section: 'Shipping', label: 'POD', uiKey: 'podRaw', column: 'podRaw', type: 'text', picker: 'port' },
   { section: 'Key Dates', label: 'Cargo Ready Date', uiKey: 'crd', column: 'cargoReadyDate', type: 'date' },
+  { section: 'Key Dates', label: 'WH Start Date', uiKey: 'warehouseStartDate', column: 'warehouseStartDate', type: 'date' },
+  { section: 'Key Dates', label: 'WH End Date', uiKey: 'warehouseEndDate', column: 'warehouseEndDate', type: 'date' },
   { section: 'Key Dates', label: 'CFS Cut-off', uiKey: 'cfsCutoff', column: 'cfsCutoff', type: 'date' },
   { section: 'Key Dates', label: 'ETD', uiKey: 'etd', column: 'etd', type: 'date' },
   { section: 'Key Dates', label: 'ATD', uiKey: 'actualDeparture', column: 'atd', type: 'date' },
   { section: 'Key Dates', label: 'ETA', uiKey: 'eta', column: 'eta', type: 'date' },
   { section: 'Key Dates', label: 'ATA', uiKey: 'actualArrival', column: 'ata', type: 'date' },
-  { section: 'Key Dates', label: 'WH Start Date', uiKey: 'warehouseStartDate', column: 'warehouseStartDate', type: 'date' },
-  { section: 'Key Dates', label: 'WH End Date', uiKey: 'warehouseEndDate', column: 'warehouseEndDate', type: 'date' },
   { section: 'Key Dates', label: 'In DC Date', uiKey: 'inDcDate', column: 'inDcDate', type: 'date' },
 ]
 
@@ -208,6 +222,27 @@ export function parseStyleEntries(value: string | null | undefined): StyleEntry[
 /** True when clipboard text looks like a multi-style paste (Excel / comma list), not one token. */
 export function isMultiStylePaste(text: string): boolean {
   return /[,\n\r\t;，]/.test(text)
+}
+
+/**
+ * Per-PO style lists: split ONLY on list separators — a slash belongs to the style itself
+ * ("C193/FERN JUMPER" is one token). PO/STYLE pair semantics (parseStyleEntries) apply only to
+ * bag-level lists that span POs, where the prefix genuinely names a PO (2026-07-24).
+ */
+export function parseStyleTokens(value: string | null | undefined): string[] {
+  if (!value) return []
+  return String(value)
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n')
+    .replace(/[\t\n]+/g, ',')
+    .split(/[,;，]+/)
+    .map((t) => t.trim())
+    .filter(Boolean)
+}
+
+/** Inverse of parseStyleTokens — blank tokens dropped, comma-joined. */
+export function serializeStyleTokens(tokens: string[]): string {
+  return tokens.map((t) => t.trim()).filter(Boolean).join(', ')
 }
 
 /** Inverse of parseStyleEntries — empty rows dropped, 'po/style' or bare style, comma-joined. */
@@ -349,8 +384,6 @@ const HIDDEN_FIELD_LABELS: Record<string, string> = {
   grossWeight: 'Gross Weight',
   measurement: 'Measurement',
   htsCode: 'HTS Code',
-  // Combined into SO# on Order Details (soNo ?? warehouseSo)
-  warehouseSo: 'Warehouse SO',
   // Per-PO styles live on Purchase Orders card / ReviewPoStylesSection — not Order Details bag field
   itemStyleNo: 'Item / Style No.',
 }

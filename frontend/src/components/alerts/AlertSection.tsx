@@ -15,6 +15,9 @@ interface Alert {
     route: string | null
     consigneeName?: string | null
     customer?: { name: string } | null
+    /** #350: anchor fields for the derived Shipment ID (firstEmailAt ?? createdAt). */
+    firstEmailAt?: string | null
+    createdAt?: string | null
   }
 }
 

@@ -5,7 +5,15 @@ export type Band = 'low' | 'medium' | 'high'
 export interface CriticConflict {
   field: string
   label: string
-  candidates: { value: string; source: string; confidence?: Band }[]
+  candidates: {
+    value: string
+    source: string
+    confidence?: Band
+    /** Response-time Mesh master attachment (party fields only, hydrate-critic-entity-labels):
+     *  object = resolved (code chip), null = letter-bearing value not in the Mesh mirror
+     *  ("not in Mesh" tag), absent = no claim (non-party field, numeric leak, or ambiguous name). */
+    master?: { code: string; name: string } | null
+  }[]
   rationale: string
 }
 

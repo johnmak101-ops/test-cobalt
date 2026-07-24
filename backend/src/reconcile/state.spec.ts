@@ -41,7 +41,8 @@ describe('deriveState — 6-state staircase', () => {
 
   // ---- Departure (RELEASED) = the goods physically left. Badge label "Departure". ----
   it('actual departure (ATD) → RELEASED (badge "Departure"), not the Final BOL document stage', () => {
-    expect(deriveState(new Set(['Draft B/L']), { atd: '2026-02-10' })).toBe('RELEASED')
+    // pinned now: with the real clock a months-old ATD would (correctly) hit the transit-allowance fallback
+    expect(deriveState(new Set(['Draft B/L']), { atd: '2026-02-10' }, new Date('2026-02-15T00:00:00Z'))).toBe('RELEASED')
   })
   it('Departure Notice email type (On-board / Departure date keywords) → RELEASED', () => {
     expect(deriveState(new Set(['Departure Notice']), {})).toBe('RELEASED')
@@ -68,7 +69,7 @@ describe('deriveState — 6-state staircase', () => {
     )
   })
   it('a Final BOL that has also departed reaches Departure (highest reached wins)', () => {
-    expect(deriveState(new Set(['Final B/L']), { atd: '2026-02-10' })).toBe('RELEASED')
+    expect(deriveState(new Set(['Final B/L']), { atd: '2026-02-10' }, new Date('2026-02-15T00:00:00Z'))).toBe('RELEASED')
   })
 
   // ---- Delivered (ARRIVED) = arrival evidence, never a departure date. ----
@@ -108,6 +109,44 @@ describe('deriveState — 6-state staircase', () => {
     const now = new Date('2026-07-21T15:00:00Z')
     expect(deriveState(new Set(['SO']), { etd: '2026-07-21' }, now)).toBe('CONFIRMED')
     expect(deriveState(new Set(['SO']), { etd: '2026-07-21', atd: '2026-07-21' }, now)).toBe('RELEASED')
+  })
+
+  /**
+   * Ops decision 2026-07-24 ("ETD + transit allowance, with settings"): a leg with NO arrival
+   * signal at all (no eta / ata / in_dc_date) delivers once its departure (atd ?? etd) is older
+   * than a mode-aware transit allowance — AIR +7d, SEA +45d by default, tunable via Settings.
+   * The allowance is what keeps the rule above honest: a fresh departure still only means it left.
+   */
+  it('no arrival data at all: AIR departure older than the 7-day allowance → DELIVERED', () => {
+    const now = new Date('2026-07-21T15:00:00Z')
+    expect(deriveState(new Set(['SO']), { mode: 'AIR', etd: '2026-04-20' }, now)).toBe('DELIVERED')
+    expect(deriveState(new Set(['SO']), { mode: 'Air', atd: '2026-07-10' }, now)).toBe('DELIVERED')
+  })
+  it('AIR departure within the allowance stays at Departure; ATD outranks ETD as the reference', () => {
+    const now = new Date('2026-07-21T15:00:00Z')
+    expect(deriveState(new Set(['SO']), { mode: 'AIR', atd: '2026-07-18' }, now)).toBe('RELEASED')
+    // etd alone would have delivered (07-10 + 7d < now) — the fresher ATD holds it back
+    expect(deriveState(new Set(['SO']), { mode: 'AIR', etd: '2026-07-10', atd: '2026-07-16' }, now)).toBe('RELEASED')
+  })
+  it('SEA — and unknown mode, conservatively — use the 45-day allowance', () => {
+    const now = new Date('2026-07-21T15:00:00Z')
+    expect(deriveState(new Set(['SO']), { mode: 'SEA_LCL', atd: '2026-06-20' }, now)).toBe('RELEASED')
+    expect(deriveState(new Set(['SO']), { mode: 'Sea', atd: '2026-06-01' }, now)).toBe('DELIVERED')
+    expect(deriveState(new Set(['SO']), { etd: '2026-06-20' }, now)).toBe('CONFIRMED')
+    expect(deriveState(new Set(['SO']), { etd: '2026-05-01' }, now)).toBe('DELIVERED')
+  })
+  it('any stated ETA disables the fallback — the passed-ETA rule alone governs arrival estimates', () => {
+    const now = new Date('2026-07-21T15:00:00Z')
+    expect(deriveState(new Set(['SO']), { mode: 'AIR', atd: '2026-04-20', eta: '2026-07-30' }, now)).toBe('RELEASED')
+  })
+  it('the allowance is tunable, and an explicit null disables the fallback entirely', () => {
+    const now = new Date('2026-07-21T15:00:00Z')
+    expect(
+      deriveState(new Set(['SO']), { mode: 'AIR', atd: '2026-07-18' }, now, { etdFallback: { airDays: 1, seaDays: 45 } }),
+    ).toBe('DELIVERED')
+    expect(
+      deriveState(new Set(['SO']), { mode: 'AIR', atd: '2026-04-20' }, now, { etdFallback: null }),
+    ).toBe('RELEASED')
   })
 })
 

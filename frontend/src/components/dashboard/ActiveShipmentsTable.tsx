@@ -7,18 +7,15 @@ import { ALL_TIME, DateRangeSelect, inRange, type DateRange } from './DateRangeS
 import type { Shipment } from '../../hooks/use-shipments'
 
 /**
- * Shipments still in flight, filtered by a date range.
- *
- * ACTIVE means not finished and not cancelled — Delivered and Cancelled drop out, since a dashboard
- * is for what still needs watching. The KPI card above counts the same set.
+ * ALL shipments, filtered by a date range — Delivered/Cancelled included (ops 2026-07-24: with the
+ * ETD+allowance lifecycle rule most demo legs finish, and an "active only" table sat empty; the
+ * Status column keeps finished rows distinguishable). The KPI card above still counts ACTIVE only.
  *
  * The range filters ETD, the operational anchor the rest of the system keys off (alert rules fire N
  * days after ETD; the milestone timeline centres on it). A shipment with NO etd is kept when the
  * range is unbounded and dropped otherwise — a date filter that silently retains undated rows is
  * how "30 days" quietly becomes "30 days plus everything we know nothing about".
  */
-const FINISHED = new Set(['ARRIVED', 'DELIVERED', 'CANCELLED'])
-
 export function ActiveShipmentsTable({ shipments }: { shipments: Shipment[] }) {
   const navigate = useNavigate()
   /**
@@ -31,7 +28,6 @@ export function ActiveShipmentsTable({ shipments }: { shipments: Shipment[] }) {
 
   const rows = useMemo(() => {
     return shipments
-      .filter((s) => !FINISHED.has(s.status))
       .filter((s) => inRange(s.etd, range))
       .sort((a, b) => (b.etd ?? '') < (a.etd ?? '') ? 1 : -1)
   }, [shipments, range])
@@ -40,14 +36,14 @@ export function ActiveShipmentsTable({ shipments }: { shipments: Shipment[] }) {
     <div className="max-w-full overflow-hidden rounded-xl border border-border bg-surface-800">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-3">
         <h3 className="text-sm font-semibold text-text-primary">
-          Active Shipments
+          Shipments
           <span className="ml-2 text-xs font-normal text-text-muted">· {rows.length}</span>
         </h3>
         <DateRangeSelect value={range} onChange={setRange} label="ETD" />
       </div>
       {rows.length === 0 ? (
         <div className="px-5 py-10 text-center text-sm text-text-muted">
-          No active shipments with an ETD in this range.
+          No shipments with an ETD in this range.
         </div>
       ) : (
         <div className="overflow-x-auto">

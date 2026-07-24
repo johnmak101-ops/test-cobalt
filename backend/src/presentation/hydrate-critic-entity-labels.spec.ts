@@ -3,6 +3,7 @@ import type { CriticReview } from '../decisions/critic-review.types'
 import {
   entityCodeNameMapsFromRefs,
   hydrateCriticEntityLabels,
+  resolveEntityCodeDisplay,
   resolveEntityDisplayValue,
 } from './hydrate-critic-entity-labels'
 
@@ -82,6 +83,110 @@ describe('hydrateCriticEntityLabels', () => {
     expect(row.proposedValue).toBe('APL LOGISTICS LTD')
   })
 
+  it('attaches master {code, name} when a vendor candidate stores the Mesh code', () => {
+    const cr = sampleCr({
+      conflicts: [
+        {
+          field: 'vendor_code',
+          label: 'Vendor',
+          candidates: [{ value: 'V01', source: 'Booking Request' }],
+          rationale: 'r',
+        },
+      ],
+    })
+    const out = hydrateCriticEntityLabels(cr, maps)!
+    const cand = out.conflicts![0]!.candidates[0]!
+    expect(cand.value).toBe('Vendor One')
+    expect(cand.master).toEqual({ code: 'V01', name: 'Vendor One' })
+  })
+
+  it('attaches master via exact-name reverse lookup without changing the value', () => {
+    const cr = sampleCr({
+      conflicts: [
+        {
+          field: 'vendor_code',
+          label: 'Vendor',
+          candidates: [{ value: 'VENDOR ONE', source: 'SO' }],
+          rationale: 'r',
+        },
+        {
+          field: 'customer_code',
+          label: 'Customer',
+          candidates: [{ value: 'ascena retail', source: 'SO' }],
+          rationale: 'r',
+        },
+      ],
+    })
+    const out = hydrateCriticEntityLabels(cr, maps)!
+    const vendor = out.conflicts![0]!.candidates[0]!
+    expect(vendor.value).toBe('VENDOR ONE')
+    expect(vendor.master).toEqual({ code: 'V01', name: 'Vendor One' })
+    const customer = out.conflicts![1]!.candidates[0]!
+    expect(customer.value).toBe('ascena retail')
+    expect(customer.master).toEqual({ code: 'ASC', name: 'Ascena Retail' })
+  })
+
+  it('flags unresolved letter-bearing party candidates as master: null', () => {
+    const cr = sampleCr({
+      conflicts: [
+        {
+          field: 'vendor_code',
+          label: 'Vendor',
+          candidates: [{ value: 'GOLDEN SUN KNITTING FTY LTD', source: 'SO' }],
+          rationale: 'r',
+        },
+      ],
+    })
+    const out = hydrateCriticEntityLabels(cr, maps)!
+    expect(out.conflicts![0]!.candidates[0]!.master).toBeNull()
+  })
+
+  it('never flags numeric party values and never touches non-party fields', () => {
+    const cr = sampleCr({
+      conflicts: [
+        {
+          field: 'vendor_code',
+          label: 'Vendor',
+          candidates: [{ value: '1012485', source: 'SO' }],
+          rationale: 'r',
+        },
+        {
+          field: 'eta',
+          label: 'ETA',
+          candidates: [{ value: '2026-08-01', source: 'SO' }],
+          rationale: 'r',
+        },
+      ],
+    })
+    const out = hydrateCriticEntityLabels(cr, maps)!
+    expect(out.conflicts![0]!.candidates[0]!.master).toBeUndefined()
+    expect(out.conflicts![1]!.candidates[0]!.master).toBeUndefined()
+  })
+
+  it('skips reverse-name lookup when two masters share the normalized name', () => {
+    const dupMaps = entityCodeNameMapsFromRefs(
+      [],
+      undefined,
+      [
+        { code: 'A1', name: 'ACME LTD' },
+        { code: 'A2', name: 'Acme Ltd.' },
+      ],
+    )
+    const cr = sampleCr({
+      conflicts: [
+        {
+          field: 'vendor_code',
+          label: 'Vendor',
+          candidates: [{ value: 'ACME LTD', source: 'SO' }],
+          rationale: 'r',
+        },
+      ],
+    })
+    const out = hydrateCriticEntityLabels(cr, dupMaps)!
+    // Ambiguous is NOT missing — no chip, but no "not in Mesh" claim either.
+    expect(out.conflicts![0]!.candidates[0]!.master).toBeUndefined()
+  })
+
   it('returns null for null input and leaves non-entity conflicts untouched', () => {
     expect(hydrateCriticEntityLabels(null, maps)).toBeNull()
     const cr = sampleCr({
@@ -102,5 +207,23 @@ describe('hydrateCriticEntityLabels', () => {
       '2026-08-01',
       '2026-08-05',
     ])
+  })
+})
+
+describe('resolveEntityCodeDisplay — history rows under a "Code" label', () => {
+  it('prefers the master code for resolvable vendor/customer values', () => {
+    expect(resolveEntityCodeDisplay('vendorRaw', 'Vendor One', maps)).toBe('V01')
+    expect(resolveEntityCodeDisplay('vendorRaw', 'v01', maps)).toBe('V01')
+    expect(resolveEntityCodeDisplay('customer_code', 'ascena retail', maps)).toBe('ASC')
+  })
+
+  it('leaves unresolved values, forwarders, and non-party fields alone', () => {
+    expect(resolveEntityCodeDisplay('vendorRaw', 'GOLDEN SUN KNITTING FTY LTD', maps)).toBe(
+      'GOLDEN SUN KNITTING FTY LTD',
+    )
+    expect(resolveEntityCodeDisplay('forwarder_name', 'APL LOGISTICS LTD', maps)).toBe(
+      'APL LOGISTICS LTD',
+    )
+    expect(resolveEntityCodeDisplay('eta', '2026-08-01', maps)).toBe('2026-08-01')
   })
 })

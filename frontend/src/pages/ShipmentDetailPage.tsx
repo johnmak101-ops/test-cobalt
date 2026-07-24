@@ -1,4 +1,4 @@
-import { useId, useMemo, useState, useContext } from 'react'
+import { createContext, useId, useMemo, useState, useContext } from 'react'
 import { useParams, useNavigate, useLocation, Link } from 'react-router-dom'
 import { useShipment, useUpdateShipment, type ShipmentDetail } from '../hooks/use-shipments'
 import { useShipmentHistory } from '../hooks/use-shipment-history'
@@ -9,12 +9,19 @@ import { CategorizedShipmentHistory } from '../components/shipments/CategorizedS
 import { ContestedLockCard } from '../components/shipments/ContestedLockCard'
 import { PurchaseOrdersCard } from '../components/shipments/PurchaseOrdersCard'
 import { PortPicker } from '../components/shipments/PortPicker'
-import { FieldHistoryContext, FieldHistoryPopover } from '../components/shipments/FieldHistoryPopover'
+import {
+  FieldHistoryContext,
+  FieldHistoryPopover,
+  HOVER_CARD_CLASS,
+  useHoverPopover,
+} from '../components/shipments/FieldHistoryPopover'
+import { createPortal } from 'react-dom'
 import { indexHistoryByField, historyForField } from '../lib/history-grouping'
+import { pendingReviewAnnotations, type PendingAnnotation } from '../lib/pending-review'
 import { AlertCard } from '../components/alerts/AlertCard'
-import { formatDate, formatDateTime, formatDateMaybeTime, cn } from '../lib/utils'
+import { formatDate, formatDateTime, formatDateMaybeTime, formatShipmentId, cn } from '../lib/utils'
 import { parseSender } from '../lib/email-sender'
-import { EDITABLE_FIELDS, fieldLabel, numericFieldWarn, dateOrderWarn, type EditableField } from '../lib/review-fields'
+import { EDITABLE_FIELDS, fieldLabel, numericFieldWarn, dateOrderWarn, toInputValue, type EditableField } from '../lib/review-fields'
 import { toast } from '../components/ui/Toast'
 import { interactiveProps } from '../lib/interactive'
 import { Pagination, usePagination, PageSizeSelect } from '../components/ui/Pagination'
@@ -32,6 +39,8 @@ interface EditField {
   label: string
   type: EditType
   options?: readonly string[]
+  /** Full legal enum when options is a shorter offer list (Mode) — see EditableField.allValues. */
+  allValues?: readonly string[]
   picker?: 'port'
   get: (s: ShipmentDetail) => unknown
 }
@@ -51,6 +60,7 @@ const EDIT_SECTIONS: { title: string; fields: EditField[] }[] = (() => {
         label: f.label,
         type: f.type,
         options: f.options,
+        allValues: f.allValues,
         picker: f.picker,
         get: (s: ShipmentDetail) => {
           // Prefer free-text raw; fall back to resolved master name so edit is not blank when only FK is set.
@@ -64,12 +74,17 @@ const EDIT_SECTIONS: { title: string; fields: EditField[] }[] = (() => {
     }, []),
   }))
 })()
-/** A stored value → the string an <input> expects (date → YYYY-MM-DD). */
-function toInputValue(v: unknown, type: EditType): string {
-  if (v == null || v === '') return ''
-  if (type === 'date') { const d = new Date(String(v)); return Number.isNaN(d.getTime()) ? '' : d.toISOString().slice(0, 10) }
-  return String(v)
-}
+// Draft strings come from the shared lib/review-fields toInputValue: dates render as LOCAL
+// datetime-local ("2026-03-02T18:00"), so a timed cut-off (截仓 18:00) survives an edit — the old
+// page-local copy sliced toISOString() to date-only, which hid the time, saved it back as midnight,
+// and could even shift the DAY (UTC slice of a local midnight).
+
+/**
+ * Leg columns with something open for review (provisional conflicts + contested locks) — DetailRows
+ * read it by their own historyKey, same pattern as FieldHistoryContext, instead of threading a
+ * boolean through ~30 call sites.
+ */
+const PendingReviewContext = createContext<ReadonlyMap<string, PendingAnnotation>>(new Map())
 
 /** Sea modes show vessel/voyage; air modes show flight. Unknown mode shows all present fields. */
 function isAirMode(mode: string | null | undefined): boolean {
@@ -98,26 +113,6 @@ function houseBillLabel(mode: string | null | undefined): string {
   return isAirMode(mode) ? 'HAWB' : fieldLabel('hblAwbFcrNo')
 }
 
-/**
- * Single SO# display: forwarder SO if present, else warehouse (入仓) SO.
- * When both exist and differ (Set1 FEL + B126), show both joined.
- */
-function displaySoNumber(shipment: {
-  soNumber?: string | null
-  warehouseSo?: string | null
-}): string | null {
-  const so = shipment.soNumber?.trim() || null
-  const wh = shipment.warehouseSo?.trim() || null
-  if (!so && !wh) return null
-  if (so && wh) {
-    const a = so.toUpperCase().replace(/[^A-Z0-9]/g, '')
-    const b = wh.toUpperCase().replace(/[^A-Z0-9]/g, '')
-    if (a === b) return so
-    return `${so} · ${wh}`
-  }
-  return so ?? wh
-}
-
 export default function ShipmentDetailPage() {
   const fieldId = useId()
   const { id } = useParams<{ id: string }>()
@@ -128,6 +123,8 @@ export default function ShipmentDetailPage() {
   const { data: historyData } = useShipmentHistory(id!)
   // Index once; DetailRows read their field's history from context, the History tab groups it.
   const historyIndex = useMemo(() => indexHistoryByField(historyData?.history ?? []), [historyData])
+  // Which columns get the amber "something open for review" word-highlight.
+  const pendingReview = useMemo(() => pendingReviewAnnotations(shipment), [shipment])
   const [activeTab, setActiveTab] = useState<'details' | 'history'>('details')
   const update = useUpdateShipment(id!)
   const [editing, setEditing] = useState(false)
@@ -177,20 +174,13 @@ export default function ShipmentDetailPage() {
       .flatMap((e) => (e.receivedAt ? [e.receivedAt] : []))
       .sort()
       .at(-1) ?? null
-  // Title from MEANINGFUL identifiers — booking no / SO no (then a PO), never the opaque UUID.
-  // Display copy: "Booking ID" (not BK chip) — review/editor fields keep "Booking No." (#126).
-  // #151: multi-leg bookings show "B123 · Leg 1/2" in the Booking ID value.
-  const bookingTitleValue =
-    shipment.bookingNo &&
-    ((shipment.legCount ?? 1) > 1
-      ? `${shipment.bookingNo} · Leg ${shipment.legNo ?? 1}/${shipment.legCount}`
-      : shipment.bookingNo)
-  const soDisplay = displaySoNumber(shipment)
-  const titleIds = [
-    bookingTitleValue && { label: 'Booking ID', value: bookingTitleValue },
-    soDisplay && { label: 'SO', value: soDisplay },
-  ].filter(Boolean) as { label: string; value: string }[]
-  if (titleIds.length === 0 && linkedPOs[0]) titleIds.push({ label: 'PO', value: linkedPOs[0].poNumber })
+  // Title identity (#348/#350, trimmed 2026-07-24): ONLY the derived Shipment ID — always present,
+  // one shape for every leg, anchored to the beginning email (fallback: creation). #151's
+  // "· Leg n/N" ordinal rides it. Booking No. and the SO pair live in the Order Details rows.
+  const shipmentIdValue =
+    formatShipmentId(shipment.id, shipment.firstEmailAt ?? shipment.createdAt) +
+    ((shipment.legCount ?? 1) > 1 ? ` · Leg ${shipment.legNo ?? 1}/${shipment.legCount}` : '')
+  const titleIds = [{ label: 'Shipment ID', value: shipmentIdValue }]
   const activeAlerts = (shipment.alerts ?? []).filter((a) => a.status === 'ACTIVE')
   const criticalCount = activeAlerts.filter((a) => a.severity === 'CRITICAL').length
   const warningCount = activeAlerts.filter((a) => a.severity === 'WARNING').length
@@ -490,12 +480,53 @@ export default function ShipmentDetailPage() {
                         >
                           <option value="">—</option>
                           {cur && !(f.options as readonly string[]).includes(cur) && (
-                            <option value={cur}>{cur} (unrecognized)</option>
+                            <option value={cur}>
+                              {/* A value outside the offered list but inside the full enum (e.g.
+                                  agent-written SEA_LCL vs the SEA/AIR offer) is valid — only truly
+                                  unknown junk gets the suffix. */}
+                              {(f.allValues ?? f.options ?? []).includes(cur) ? cur : `${cur} (unrecognized)`}
+                            </option>
                           )}
                           {f.options.map((opt) => (
                             <option key={opt} value={opt}>{opt}</option>
                           ))}
                         </select>
+                      ) : f.type === 'date' ? (
+                        /* Date + optional time over ONE draft string ("YYYY-MM-DDTHH:mm"). NOT a
+                           datetime-local input: that control reports "" until BOTH parts are typed,
+                           so picking a day into an empty field never reached the draft and the edit
+                           silently vanished on Save. A bare day defaults to 00:00 (reads back as
+                           date-only); a stored cut-off time sits in the time box and survives
+                           day-only edits. Clearing the day clears the whole value. */
+                        (() => {
+                          const dateVal = cur.slice(0, 10)
+                          const timeVal = cur.slice(11, 16)
+                          const put = (d: string, t: string) =>
+                            setDraft((prev) => ({ ...prev, [f.db]: d ? `${d}T${t || '00:00'}` : '' }))
+                          return (
+                            <div className="flex gap-2">
+                              <div className="min-w-0 flex-1">
+                                <input
+                                  id={`${fieldId}-${f.db}`}
+                                  type="date"
+                                  value={dateVal}
+                                  onChange={(e) => put(e.target.value, timeVal)}
+                                  className={controlClass}
+                                />
+                              </div>
+                              <div className="w-24 flex-none">
+                                <input
+                                  type="time"
+                                  aria-label={`${f.label} time`}
+                                  value={timeVal}
+                                  disabled={!dateVal}
+                                  onChange={(e) => put(dateVal, e.target.value)}
+                                  className={cn(controlClass, 'disabled:opacity-40')}
+                                />
+                              </div>
+                            </div>
+                          )
+                        })()
                       ) : (
                         <input
                           id={`${fieldId}-${f.db}`}
@@ -563,13 +594,16 @@ export default function ShipmentDetailPage() {
             </div>
           </>
         ) : (
+        <PendingReviewContext.Provider value={pendingReview}>
         <FieldHistoryContext.Provider value={historyIndex}>
         <div className="grid grid-cols-1 gap-x-8 gap-y-6 md:grid-cols-2">
           {/* Section 1: Order Info */}
           <DetailSection title="Order Info" icon={<ClipboardList size={14} className="text-text-muted" />}>
-            {/* Codes only — full Customer/Vendor names live in the page header; Item/Style is on the PO table. */}
-            <DetailRow label="Customer Code" value={shipment.customer?.code ?? null} />
-            <DetailRow label="Vendor Code" value={shipment.vendor?.code ?? null} />
+            {/* Codes only — full Customer/Vendor names live in the page header; Item/Style is on the PO table.
+                historyKey = the raw twin: party conflicts and change history live on customerRaw/vendorRaw,
+                so the code row is where a pending party question glows (and where its history pops). */}
+            <DetailRow historyKey="customerRaw" label="Customer Code" value={shipment.customer?.code ?? null} />
+            <DetailRow historyKey="vendorRaw" label="Vendor Code" value={shipment.vendor?.code ?? null} />
             <DetailRow
               historyKey="bookingNo"
               label={fieldLabel('bookingNo')}
@@ -582,10 +616,11 @@ export default function ShipmentDetailPage() {
                     : 'awaiting the forwarder booking'
               }
             />
+            <DetailRow historyKey="soNo" label={fieldLabel('soNo')} value={shipment.soNumber} />
             <DetailRow
-              historyKey="soNo"
-              label={fieldLabel('soNo')}
-              value={displaySoNumber(shipment)}
+              historyKey="warehouseSo"
+              label={fieldLabel('warehouseSo')}
+              value={shipment.warehouseSo ?? null}
             />
             <DetailRow
               label="Last Email"
@@ -657,6 +692,7 @@ export default function ShipmentDetailPage() {
           </DetailSection>
         </div>
         </FieldHistoryContext.Provider>
+        </PendingReviewContext.Provider>
         )}
       </Card>
 
@@ -833,6 +869,75 @@ function DetailSection({ title, icon, children }: { title: string; icon: React.R
   )
 }
 
+/**
+ * The review-warning icon opens a hover CARD styled exactly like the change-history one (same
+ * shell, same portal + grace-close mechanics via useHoverPopover) — a native title tooltip beside
+ * a designed card read as two different products (ops 2026-07-24).
+ */
+function PendingIconPopover({ label, ann }: { label: string; ann: PendingAnnotation }) {
+  const { anchorRef, open, coords, openPopover, scheduleClose, clearClose } = useHoverPopover()
+  const heading = ann.level === 'miss' ? 'Master Miss' : 'Needs Review'
+  const panel =
+    open && coords
+      ? createPortal(
+          <div
+            role="region"
+            aria-label={`${label} — ${heading}`}
+            data-testid="pending-annotation-popover"
+            style={{
+              position: 'fixed',
+              top: coords.top,
+              left: coords.left,
+              maxHeight: coords.maxHeight,
+              transform: coords.placeAbove ? 'translateY(-100%)' : undefined,
+              zIndex: 9999,
+            }}
+            className={HOVER_CARD_CLASS}
+            onMouseEnter={clearClose}
+            onMouseLeave={scheduleClose}
+          >
+            <p
+              className={cn(
+                'mb-2 flex items-center gap-1 text-[11px] font-semibold',
+                ann.level === 'miss' ? 'text-status-critical' : 'text-status-warning',
+              )}
+            >
+              <AlertTriangle size={11} className="shrink-0" />
+              <span className="min-w-0 truncate">
+                {label} — {heading}
+              </span>
+            </p>
+            <div className="divide-y divide-border font-sans">
+              {ann.messages.map((m) => (
+                <p key={m} className="py-2 text-xs leading-snug text-text-secondary first:pt-0 last:pb-0">
+                  {m}
+                </p>
+              ))}
+            </div>
+          </div>,
+          document.body,
+        )
+      : null
+  return (
+    <>
+      <span
+        ref={anchorRef}
+        data-testid={`pending-icon-${ann.level}`}
+        onMouseEnter={openPopover}
+        onMouseLeave={scheduleClose}
+        className="ml-1 inline-flex cursor-help align-baseline"
+      >
+        <AlertTriangle
+          size={12}
+          aria-label={ann.level === 'miss' ? 'Master miss' : 'Pending review'}
+          className={ann.level === 'miss' ? 'text-status-critical' : 'text-status-warning'}
+        />
+      </span>
+      {panel}
+    </>
+  )
+}
+
 function DetailRow({
   label,
   value,
@@ -849,25 +954,52 @@ function DetailRow({
 }) {
   const historyIndex = useContext(FieldHistoryContext)
   const entries = historyKey ? historyForField(historyKey, historyIndex) : []
+  const ann = useContext(PendingReviewContext).get(historyKey ?? '')
+  // Unconfirmed-answer mask: commit-first wrote the LLM's preferred value into this column, but
+  // the operator hasn't decided — display the PRE-write value instead ("Apple" in amber), or fall
+  // through to the "(pending)" placeholder when there was none. The proposal lives in the review
+  // queue; raw dates from the critic pass through unformatted (they are already YYYY-MM-DD).
+  const shown = ann?.mask ? ann.mask.prior : value
+  // Amber colour only on a REAL stored value — "(pending)" and the date formatters' 'TBD' are
+  // placeholders. The warning icon beside the history clock is the primary cue (2026-07-24):
+  // yellow = open review question, red = master miss; hover shows the related message(s).
+  const valueNode =
+    shown != null && shown !== 'TBD' && ann ? (
+      <mark className="review-pending-value">{shown}</mark>
+    ) : (
+      shown
+    )
+  const annIcon = ann ? <PendingIconPopover label={label} ann={ann} /> : null
   return (
     <div className="grid grid-cols-[8rem_1fr] items-baseline gap-x-3 sm:grid-cols-[10rem_1fr]">
       <span className="truncate text-sm text-text-muted">{label}</span>
       <span className="field-value font-mono text-base leading-snug text-text-primary">
-        {value != null ? (
+        {shown != null ? (
           entries.length > 0 ? (
-            <FieldHistoryPopover label={label} entries={entries}>
-              {value}
-            </FieldHistoryPopover>
+            <>
+              <FieldHistoryPopover label={label} entries={entries}>
+                {valueNode}
+              </FieldHistoryPopover>
+              {annIcon}
+            </>
           ) : (
-            value
+            <>
+              {valueNode}
+              {annIcon}
+            </>
           )
         ) : (
-          <span className="italic text-text-muted">
-            (pending)
-            {hint && (
-              <span className="ml-1.5 font-sans text-sm not-italic text-text-muted/70">· {hint}</span>
-            )}
-          </span>
+          <>
+            {/* Amber when a review-queue question hides an unconfirmed answer behind this
+                placeholder; muted grey for a plainly empty field. */}
+            <span className={cn('italic', ann?.mask ? 'text-status-warning' : 'text-text-muted')}>
+              (pending)
+              {hint && (
+                <span className="ml-1.5 font-sans text-sm not-italic text-text-muted/70">· {hint}</span>
+              )}
+            </span>
+            {annIcon}
+          </>
         )}
       </span>
     </div>

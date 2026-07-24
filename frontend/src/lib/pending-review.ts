@@ -1,0 +1,233 @@
+import { mapCriticFieldToColumn, conflictColumns } from './review-fields'
+
+/**
+ * The slice of the shipment detail this derivation reads. Structural on purpose — importing
+ * ShipmentDetail from hooks/ would point a lib module at the data layer.
+ */
+export interface PendingReviewSource {
+  reviewStatus?: string | null
+  reviewReasons?: string[]
+  criticReview?: { conflicts?: Array<{ field: string }> } | null
+  contestedLocks?: Array<{ field: string }> | null
+  /** Raw party twin names a different company than the resolved master ("flag, don't follow"). */
+  customerMismatch?: PartyMismatchLike | null
+  vendorMismatch?: PartyMismatchLike | null
+}
+
+export type PartyMismatchLike = { raw: string; masterCode: string; masterName: string }
+
+/**
+ * Reasons that state a genuine disagreement. reviewReasons also carries system-decision notes
+ * ("ETD set to departure date …") whose prose names columns; parsing those would amber-light a
+ * field nobody has a question about, so only conflict-flavoured reasons feed conflictColumns.
+ */
+const CONFLICT_REASON_RE = /conflict|disagree|differ|already stored on|locked field/i
+
+/**
+ * Leg columns with something OPEN against them, for the Order Details word-highlight
+ * (.review-pending-value): the union of
+ *   - critic conflicts while the shipment is still provisional (approving/dismissing the review
+ *     item flips reviewStatus, so the highlight clears itself), and
+ *   - contested locks, which stay until Keep/Restore regardless of review status.
+ * Unknown critic fields are dropped, not invented — same rule as mapCriticFieldsToColumns.
+ */
+/** Per-column marker for the Order Details rows: 'warn' = open review question (yellow icon),
+ *  'miss' = master miss — party/port not in Mesh (red icon, outranks warn). Messages feed the
+ *  icon's hover tooltip. `mask` = commit-first wrote an UNCONFIRMED answer to this column — the
+ *  row must display `prior` (the pre-write value) instead, or the "(pending)" placeholder when
+ *  prior is null. Only set while the answer is genuinely undecided (see the mask rules below). */
+export type PendingAnnotation = {
+  level: 'warn' | 'miss'
+  messages: string[]
+  mask?: { prior: string | null }
+}
+
+const MESH_MISS_RE =
+  /did not exact(?:\/curated)?-match a (?:port )?master|not found in Mesh Database|Cannot match "[^"]+" in the (?:forwarder|customer|vendor|consignee) list|not in UN\/LOCODE masters/i
+
+/** Field token a mesh-miss reason starts with ("forwarder_name \"LOGWIN\" did not…") → column. */
+function missColumn(reason: string): string | null {
+  const token = reason.match(/^([a-z_]+)\s+"/i)?.[1]
+  if (token) return mapCriticFieldToColumn(token)
+  if (/forwarder/i.test(reason)) return 'forwarderRaw'
+  if (/vendor|factory/i.test(reason)) return 'vendorRaw'
+  if (/customer/i.test(reason)) return 'customerRaw'
+  if (/consignee/i.test(reason)) return 'consigneeName'
+  if (/\bpol\b/i.test(reason)) return 'polRaw'
+  if (/\bpod\b|port/i.test(reason)) return 'podRaw'
+  return null
+}
+
+/** Committer prose → an operator instruction (ops 2026-07-24: tooltips must say what to DO —
+ *  "per-PO qty dropped" reads as system internals; "Please verify" is the ask). */
+function humanizeWarnReason(r: string): string {
+  // Operators only ever see the TOTAL quantity — per-PO figures, db column names, and merge
+  // internals are LLM bookkeeping and must not reach a tooltip (ops 2026-07-24: "make it
+  // simple", "now leaking db fields"). The icon already sits ON the field, so a generic line
+  // beats naming columns.
+  const units = r.match(/conflicting units \(([^)]+)\)/i)?.[1]
+  if (units) {
+    return `Emails state this quantity in different units (${units}) — please verify.`
+  }
+  const total = r.match(/preferred document shipment total\s+([^\s(]+)/i)?.[1]
+  if (total) {
+    return `Total taken from the email's stated figure (${total}) — please verify.`
+  }
+  const du = r.match(/unit differs:\s*shipped in (\w+), ordered in (\w+)/i)
+  if (du) {
+    return `Shipped in ${du[1]} but the order says ${du[2]} — please verify.`
+  }
+  if (/backend conflict on /i.test(r)) {
+    return 'This email and the system disagree here — please verify.'
+  }
+  if (/locked field/i.test(r)) {
+    return 'A newer email wants to change this human-locked value — please verify.'
+  }
+  const stripped = r
+    .replace(/^PO \d+:\s*/i, '')
+    .replace(/^[a-z][a-z0-9_]*:\s*/, '')
+    .trim()
+  return /verify/i.test(stripped) ? stripped : `${stripped} — please verify.`
+}
+
+/** Column → annotation for the detail rows (see PendingAnnotation). Same sources as
+ *  pendingReviewColumns, plus master misses (criticReview.masterMisses + mesh reasons). */
+export function pendingReviewAnnotations(
+  shipment:
+    | (PendingReviewSource & {
+        criticReview?: {
+          confidence?: { band?: string }
+          conflicts?: Array<{
+            field: string
+            label?: string
+            rationale?: string
+            candidates?: Array<{
+              value: string
+              source: string
+              master?: { code: string; name: string } | null
+            }>
+          }>
+          masterMisses?: Array<{ type: string; rawName: string; field: string }>
+        } | null
+        contestedLocks?: Array<{ field: string; yourValue?: string | null; newValue?: string | null }> | null
+        humanLockedFields?: string[]
+      })
+    | null
+    | undefined,
+): Map<string, PendingAnnotation> {
+  const out = new Map<string, PendingAnnotation>()
+  if (!shipment) return out
+  const add = (col: string | null, level: 'warn' | 'miss', msg: string) => {
+    if (!col) return
+    const cur = out.get(col)
+    if (!cur) out.set(col, { level, messages: [msg] })
+    else {
+      if (!cur.messages.includes(msg)) cur.messages.push(msg)
+      if (level === 'miss') cur.level = 'miss'
+    }
+  }
+  if (shipment.reviewStatus === 'provisional') {
+    for (const c of shipment.criticReview?.conflicts ?? []) {
+      add(
+        mapCriticFieldToColumn(c.field),
+        'warn',
+        c.rationale?.trim()
+          ? humanizeWarnReason(c.rationale.trim())
+          : 'Values disagree across emails — resolve in the review queue.',
+      )
+    }
+    // Commit-first wrote the LLM's preferred answer into these columns, but the operator has not
+    // chosen yet — the detail row must not assert it. Mask back to the pre-write (System) value,
+    // or to the "(pending)" placeholder when there was none. Never for high band (auto-confirm
+    // path stays firm) and never for human-locked fields (a manual edit IS the settled answer).
+    if (shipment.criticReview?.confidence?.band !== 'high') {
+      const locked = new Set(shipment.humanLockedFields ?? [])
+      for (const c of shipment.criticReview?.conflicts ?? []) {
+        const col = mapCriticFieldToColumn(c.field)
+        if (!col || locked.has(col)) continue
+        const cur = out.get(col)
+        if (!cur || cur.mask) continue
+        const sys = (c.candidates ?? []).find((k) => k.source.trim().toLowerCase() === 'system')
+        const sysValue = sys?.value?.trim() || null
+        // The party rows are labelled Customer/Vendor CODE — show the prior's code when known.
+        const prior =
+          (col === 'vendorRaw' || col === 'customerRaw') && sys?.master?.code
+            ? sys.master.code
+            : sysValue
+        cur.mask = { prior }
+      }
+    }
+    for (const r of shipment.reviewReasons ?? []) {
+      // Same wording as the review queue's Needs Attention line — the raw reason ("forwarder_name
+      // "LOGIMARK" did not exact-match a master (LLM matcher owns fuzzy; left unlinked)") is too
+      // long to read in a tooltip (ops 2026-07-24).
+      if (MESH_MISS_RE.test(r)) {
+        const name = r.match(/"([^"]+)"/)?.[1]
+        // A "party" with no letter in any script is a leaked PO/booking/container number, not a
+        // company — "advise add in Mesh" is unactionable for it, so no icon at all. Twin of
+        // isNonPartyName (needs-attention.ts / backend critic-review.types.ts) — keep in step.
+        if (name && !/\p{L}/u.test(name)) continue
+        add(
+          missColumn(r),
+          'miss',
+          name
+            ? `"${name}" not found in Mesh Database — advise add in Mesh.`
+            : 'Not found in Mesh Database — advise add in Mesh.',
+        )
+      }
+      else if (CONFLICT_REASON_RE.test(r))
+        for (const col of conflictColumns([r])) add(col, 'warn', humanizeWarnReason(r))
+    }
+    for (const m of shipment.criticReview?.masterMisses ?? []) {
+      if (!/\p{L}/u.test(m.rawName ?? '')) continue // numeric leak — see the comment above
+      add(
+        mapCriticFieldToColumn(m.field) ?? missColumn(m.field + ' "x"'),
+        'miss',
+        `"${m.rawName}" not found in Mesh Database — advise add in Mesh.`,
+      )
+    }
+  }
+  for (const lock of shipment.contestedLocks ?? []) {
+    add(
+      mapCriticFieldToColumn(lock.field) ?? lock.field,
+      'warn',
+      `A newer email changed your edit (${lock.yourValue ?? '—'} → ${lock.newValue ?? '—'}) — keep or restore below.`,
+    )
+  }
+  // "Flag, don't follow" (2026-07-24): an agent raw-party write never moves the resolved master, so
+  // when they diverge the master keeps display and this amber says so. Outside the provisional gate —
+  // the divergence persists after confirm, unlike open review questions.
+  for (const [col, m] of [
+    ['customerRaw', shipment.customerMismatch],
+    ['vendorRaw', shipment.vendorMismatch],
+  ] as const) {
+    if (!m) continue
+    add(
+      col,
+      'warn',
+      `Emails say "${m.raw}" but the resolved master ${m.masterCode} — ${m.masterName} — is kept for display. Edit here or correct in review if wrong.`,
+    )
+  }
+  return out
+}
+
+export function pendingReviewColumns(
+  shipment: PendingReviewSource | null | undefined,
+): Set<string> {
+  const cols = new Set<string>()
+  if (!shipment) return cols
+  if (shipment.reviewStatus === 'provisional') {
+    for (const c of shipment.criticReview?.conflicts ?? []) {
+      const col = mapCriticFieldToColumn(c.field)
+      if (col) cols.add(col)
+    }
+    const conflictReasons = (shipment.reviewReasons ?? []).filter((r) =>
+      CONFLICT_REASON_RE.test(r),
+    )
+    for (const col of conflictColumns(conflictReasons)) cols.add(col)
+  }
+  for (const lock of shipment.contestedLocks ?? []) {
+    cols.add(mapCriticFieldToColumn(lock.field) ?? lock.field)
+  }
+  return cols
+}

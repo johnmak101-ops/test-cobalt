@@ -31,7 +31,7 @@ beforeAll(async () => {
   db = t.db
   const r = repos(db)
   shipment = r.shipment
-  committer = new CommitterService(r.masters, r.booking, r.shipment, r.fieldLock, r.audit, r.evidence, r.purchaseOrder)
+  committer = new CommitterService(r.masters, r.booking, r.shipment, r.fieldLock, r.audit, r.evidence, r.purchaseOrder, r.settings)
 })
 afterAll(closeTestDb)
 beforeEach(() => resetDb(db))

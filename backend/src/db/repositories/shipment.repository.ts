@@ -147,6 +147,7 @@ export class ShipmentRepository {
       .where('legStatus', 'in', ['ACTIVE', 'CANCELLED'])
       .where('dismissedAt', 'is', null)
       .selectAll()
+      .select(ShipmentRepository.receivedAtMinExpr().as('firstEmailAt'))
       .execute()
   }
   /** Active AND confirmed — provisional (low-confidence) legs are excluded from alerts/automation. */
@@ -245,6 +246,8 @@ export class ShipmentRepository {
       'shipments.forwarderRaw as forwarderRaw', 'shipments.mode as mode', 'pol.unlocode as polCode', 'pod.unlocode as podCode',
       'pol.iata as polIata', 'pod.iata as podIata', 'shipments.polRaw as polRaw', 'shipments.podRaw as podRaw',
       sql<number>`(select count(*) from booking_pos bp where bp.booking_id = ${sql.ref('shipments.bookingId')})`.as('poCount'),
+      // #350: beginning email — anchors the derived Shipment ID the queue's first column shows
+      ShipmentRepository.receivedAtMinExpr().as('firstEmailAt'),
     ] as const
 
     if (view === 'approved') {
@@ -286,18 +289,27 @@ export class ShipmentRepository {
     return this.db.selectFrom('shipments').where('bookingId', '=', bookingId).orderBy('legNo', 'asc').selectAll().execute()
   }
 
+  /** Lean by design — this also runs inside committer/edit transactions, so no shipment_emails
+   *  subquery here (it widens lock interleavings). List/alert reads carry firstEmailAt via
+   *  activeLegs()/findByIds(); the detail derives it from its already-loaded related emails (#350). */
   async findById(id: string) {
     const row = await this.db.selectFrom('shipments').where('id', '=', id).selectAll().executeTakeFirst()
     return row ?? null
   }
 
-  /** Fetch many legs in ONE query (id -> leg) — replaces per-item findById in read loops (alert summaries). */
-  async findByIds(ids: string[]): Promise<Map<string, NonNullable<Awaited<ReturnType<ShipmentRepository['findById']>>>>> {
-    const map = new Map<string, NonNullable<Awaited<ReturnType<ShipmentRepository['findById']>>>>()
-    if (!ids.length) return map
-    const rows = await this.db.selectFrom('shipments').where('id', 'in', ids).selectAll().execute()
-    for (const s of rows) map.set(s.id, s)
-    return map
+  /** Fetch many legs in ONE query (id -> leg) — replaces per-item findById in read loops (alert
+   *  summaries). Unlike findById it carries firstEmailAt (the beginning email) so alert summaries can
+   *  anchor the derived Shipment ID (#350) — these are pure reads, never inside a write transaction. */
+  async findByIds(ids: string[]) {
+    const rows = ids.length
+      ? await this.db
+          .selectFrom('shipments')
+          .where('id', 'in', ids)
+          .selectAll()
+          .select(ShipmentRepository.receivedAtMinExpr().as('firstEmailAt'))
+          .execute()
+      : []
+    return new Map(rows.map((s) => [s.id, s] as const))
   }
 
   /** matchKeys + reviewReasons + criticReview are JSON nvarchar(max) columns — stringify when present
@@ -670,6 +682,11 @@ export class ShipmentRepository {
 
   private static receivedAtMaxExpr(tableAlias = 'shipments') {
     return sql<Date | null>`(select max(se.received_at) from shipment_emails se where se.shipment_id = ${sql.ref(tableAlias)}.id)`
+  }
+
+  /** Earliest source-email received_at — the beginning email; anchors the derived Shipment ID month (#350). */
+  private static receivedAtMinExpr(tableAlias = 'shipments') {
+    return sql<Date | null>`(select min(se.received_at) from shipment_emails se where se.shipment_id = ${sql.ref(tableAlias)}.id)`
   }
 
   /**

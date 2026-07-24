@@ -2,7 +2,7 @@ import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import { usePurchaseOrder } from '../hooks/use-purchase-orders'
 import { Card } from '../components/ui/Card'
 import { Badge } from '../components/ui/Badge'
-import { cn, formatShortDate, parsePONumbers } from '../lib/utils'
+import { cn, formatShipmentId, formatShortDate } from '../lib/utils'
 import { poProgress, progressLabel } from '../lib/po-progress'
 import { ArrowLeft, AlertTriangle, Package, Ship } from 'lucide-react'
 import { Link } from 'react-router-dom'
@@ -179,8 +179,10 @@ export default function PurchaseOrderDetailPage() {
             <table className="w-full">
               <thead>
                 <tr className="border-b border-border bg-surface-900/50">
+                  {/* #348/#350: each linked row IS a shipment — identify it by the derived Shipment ID
+                      (the old "Shipment PO#" column repeated this page's own PO number on every row). */}
                   <th className="px-4 py-3 text-left text-xs font-medium text-text-muted">
-                    Shipment PO#
+                    Shipment ID
                   </th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-text-muted">
                     Status
@@ -209,8 +211,8 @@ UOM
                     {...interactiveProps(() => navigate(`/shipments/${shipment.id}`))}
                     className="cursor-pointer border-b border-border last:border-0 transition-colors hover:bg-surface-700"
                   >
-                    <td className="px-4 py-3 font-mono text-sm font-medium text-cobalt-primary-light">
-                      {parsePONumbers(shipment.poNumbers).join(', ')}
+                    <td className="whitespace-nowrap px-4 py-3 font-mono text-sm font-medium text-cobalt-primary-light">
+                      {formatShipmentId(shipment.id, shipment.firstEmailAt ?? shipment.createdAt)}
                     </td>
                     <td className="px-4 py-3">
                       <span className="inline-flex items-center gap-1.5">

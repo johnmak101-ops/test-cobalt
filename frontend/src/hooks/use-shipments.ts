@@ -82,6 +82,8 @@ export interface Shipment {
   htsCode: string | null
   /** Full agent critic payload on detail (queue uses criticReviewCompact only). */
   criticReview?: CriticReview | null
+  /** Beginning email received-at (#350) — anchors the Shipment ID month; null/absent → use createdAt. */
+  firstEmailAt?: string | null
   createdAt: string
   updatedAt: string
   customer?: { id: string; name: string; code: string } | null
@@ -127,6 +129,12 @@ export interface ShipmentDetail extends Shipment {
   /** Fields where a newer email overrode a human edit (the leg column now differs from the locked
    *  value). Surfaced as a prompt to keep the new value or restore the edit. */
   contestedLocks?: Array<{ field: string; yourValue: string | null; newValue: string | null }>
+  /** Raw party twin names a different company than the resolved master ("flag, don't follow") —
+   *  the master keeps display; the detail row shows an amber marker with this context. */
+  customerMismatch?: { raw: string; masterCode: string; masterName: string } | null
+  vendorMismatch?: { raw: string; masterCode: string; masterName: string } | null
+  /** Human-locked leg columns (manual/review edits) — settled answers, never masked as unconfirmed. */
+  humanLockedFields?: string[]
 }
 
 interface ShipmentsResponse {

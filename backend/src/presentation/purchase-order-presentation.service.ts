@@ -112,6 +112,8 @@ export class PurchaseOrderPresentationService {
             id: l.shipmentId, state: l.status, legStatus: l.legStatus, reviewStatus: l.reviewStatus,
             bookingNo: l.bookingNo, soNo: l.so, hblAwbFcrNo: l.hbl, mode: l.mode,
             etd: l.etd, eta: l.eta, containerNo: l.containerNo, mbl: l.mbl, scacCode: l.scacCode, vesselName: l.vesselName,
+            // #350/#354: Shipment ID anchors for the detail's Linked Shipments column
+            firstEmailAt: l.firstEmailAt, createdAt: l.shipmentCreatedAt,
           } as unknown as ShipmentLegRow,
           booking: null,
           polPort: l.polCode ? { unlocode: l.polCode, iata: l.polIata } : null,

@@ -11,6 +11,7 @@ vi.mock('../hooks/use-page-access', () => ({
 }))
 vi.mock('../components/settings/UsersSettings', () => ({ UsersSettings: () => <div>users</div> }))
 vi.mock('../components/settings/AlertRulesSettings', () => ({ AlertRulesSettings: () => <div>alerts</div> }))
+vi.mock('../components/settings/LifecycleSettings', () => ({ LifecycleSettings: () => <div>lifecycle</div> }))
 vi.mock('../components/settings/AccessControlSettings', () => ({ AccessControlSettings: () => <div>access</div> }))
 
 describe('SettingsPage nav (access-aware)', () => {
@@ -24,6 +25,20 @@ describe('SettingsPage nav (access-aware)', () => {
     expect(screen.queryByRole('link', { name: /mesh misses/i })).not.toBeInTheDocument()
     expect(screen.queryByRole('link', { name: /^vendors$/i })).not.toBeInTheDocument()
     expect(screen.queryByRole('link', { name: /review policy/i })).not.toBeInTheDocument()
+  })
+  it('Lifecycle is its own ADMIN-visible tab and renders alone on its route', () => {
+    mockUser.role = 'ADMIN'
+    render(<MemoryRouter initialEntries={['/settings/lifecycle']}><SettingsPage /></MemoryRouter>)
+    expect(screen.getByRole('link', { name: /lifecycle/i })).toBeInTheDocument()
+    expect(screen.getByText('lifecycle')).toBeInTheDocument()
+    expect(screen.queryByText('alerts')).not.toBeInTheDocument()
+  })
+  it('an EDITOR neither sees the Lifecycle tab nor its card on the alerts tab', () => {
+    mockUser.role = 'EDITOR'
+    render(<MemoryRouter initialEntries={['/settings/alerts']}><SettingsPage /></MemoryRouter>)
+    expect(screen.queryByRole('link', { name: /lifecycle/i })).not.toBeInTheDocument()
+    expect(screen.queryByText('lifecycle')).not.toBeInTheDocument()
+    expect(screen.getByText('alerts')).toBeInTheDocument()
   })
   it('a SUPERADMIN sees Users, Access Control, Mesh misses but not Resolution, Vendors, or Review Policy', () => {
     mockUser.role = 'SUPERADMIN'

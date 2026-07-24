@@ -15,6 +15,8 @@ import {
   reviewGroupOf,
   toInputValue,
   parseStyleEntries,
+  parseStyleTokens,
+  serializeStyleTokens,
   serializeStyleEntries,
   numericFieldWarn,
   dateOrderWarn,
@@ -45,9 +47,24 @@ describe('EDITABLE_FIELDS', () => {
     expect(mapCriticFieldToColumn('mode')).toBe('mode')
   })
 
-  it('wires UOM and Mode as enum dropdown option lists (mirrors backend enums)', () => {
+  it('offers only SEA / AIR in the Mode dropdown but keeps the full enum as known values', () => {
+    const mode = EDITABLE_FIELDS.find((f) => f.column === 'mode')
+    expect(mode?.options).toEqual(['SEA', 'AIR'])
+    // SEA_FCL / SEA_LCL stay agent-writable and must not read as "unrecognized" in the edit select.
+    expect(mode?.allValues).toEqual([...MODE_OPTIONS])
     expect(EDITABLE_FIELDS.find((f) => f.column === 'qtyUnit')?.options).toEqual([...UOM_OPTIONS])
-    expect(EDITABLE_FIELDS.find((f) => f.column === 'mode')?.options).toEqual([...MODE_OPTIONS])
+  })
+
+  it('exposes Warehouse SO as its own Order Info edit row, right after SO#', () => {
+    expect(EDITABLE_FIELDS.find((f) => f.column === 'warehouseSo')).toMatchObject({
+      section: 'Order Info',
+      label: 'Warehouse SO',
+      uiKey: 'warehouseSo',
+      type: 'text',
+    })
+    expect(
+      EDITABLE_FIELDS.filter((f) => f.section === 'Order Info').map((f) => f.column),
+    ).toEqual(['bookingNo', 'soNo', 'warehouseSo'])
   })
 
   it('makes Customer / Vendor editable free-text (Mesh-lag stand-in) under Shipping', () => {
@@ -78,6 +95,43 @@ describe('EDITABLE_FIELDS', () => {
     // free-text parties keep NO picker — their masters are Mesh-lagged, so there is no list to pick from
     expect(EDITABLE_FIELDS.find((f) => f.column === 'customerRaw')?.picker).toBeUndefined()
     expect(EDITABLE_FIELDS.find((f) => f.column === 'forwarderRaw')?.picker).toBeUndefined()
+  })
+})
+
+describe('EDITABLE_FIELDS — intra-section order mirrors the Order Details READ view', () => {
+  // The edit form is generated from this array; the read view is the page users read most, so its
+  // order is the convention (same rule as labels/sections in the docstring above the array).
+  const columnsIn = (section: string) =>
+    EDITABLE_FIELDS.filter((f) => f.section === section).map((f) => f.column)
+
+  it('Key Dates follow the read chronology (CRD → warehouse window → cut-off → voyage → DC)', () => {
+    expect(columnsIn('Key Dates')).toEqual([
+      'cargoReadyDate',
+      'warehouseStartDate',
+      'warehouseEndDate',
+      'cfsCutoff',
+      'etd',
+      'atd',
+      'eta',
+      'ata',
+      'inDcDate',
+    ])
+  })
+
+  it('Shipping keeps the read order for shared fields (parties → consignee → vessel → ports)', () => {
+    expect(columnsIn('Shipping')).toEqual([
+      'mode',
+      'customerRaw',
+      'vendorRaw',
+      'forwarderRaw',
+      'consigneeName',
+      'consigneeAddress',
+      'vesselName',
+      'voyageNo',
+      'flightNo',
+      'polRaw',
+      'podRaw',
+    ])
   })
 })
 
@@ -158,6 +212,25 @@ describe('buildCorrections — dirty-diff keyed by leg column', () => {
   it('returns {} when nothing changed', () => {
     const edited = { bookingNo: 'BX123', quantityShipped: '5', grossWeight: '7', etd: '2026-07-10T00:00', consigneeName: '' }
     expect(buildCorrections(original, edited)).toEqual({})
+  })
+})
+
+describe('parseStyleTokens — per-PO style lists (NO PO/STYLE pair splitting)', () => {
+  it('keeps a slash inside a token intact — within one PO a slash is part of the style', () => {
+    expect(parseStyleTokens('C193/FERN JUMPER')).toEqual(['C193/FERN JUMPER'])
+  })
+  it('splits on commas / Excel separators like the pair parser', () => {
+    expect(parseStyleTokens('56571/SS26SW022, 56572/SS26SW023')).toEqual([
+      '56571/SS26SW022',
+      '56572/SS26SW023',
+    ])
+    expect(parseStyleTokens('A\tB\nC')).toEqual(['A', 'B', 'C'])
+  })
+  it('round-trips through serializeStyleTokens unchanged', () => {
+    const v = '56571/SS26SW022, 56572/SS26SW023'
+    expect(serializeStyleTokens(parseStyleTokens(v))).toBe(v)
+    expect(parseStyleTokens(null)).toEqual([])
+    expect(serializeStyleTokens([' ', ''])).toBe('')
   })
 })
 
@@ -391,11 +464,12 @@ describe('fieldLabel — the one vocabulary, used by every surface that names a 
       expect(fieldLabel(c)).not.toBe(c)
     }
     expect(fieldLabel('qty')).toBe('Total Quantity')
-    // Gross weight / Measurement / HTS / separate Warehouse SO / bag Item·Style removed from Order Details form
+    // Gross weight / Measurement / HTS / bag Item·Style removed from Order Details form.
+    // Warehouse SO returned 2026-07-24 as its own Order Info edit row (read stays combined "A · B").
     expect(EDITABLE_FIELDS.some((f) => f.column === 'grossWeight')).toBe(false)
     expect(EDITABLE_FIELDS.some((f) => f.column === 'measurement')).toBe(false)
     expect(EDITABLE_FIELDS.some((f) => f.column === 'htsCode')).toBe(false)
-    expect(EDITABLE_FIELDS.some((f) => f.column === 'warehouseSo')).toBe(false)
+    expect(EDITABLE_FIELDS.some((f) => f.column === 'warehouseSo')).toBe(true)
     expect(EDITABLE_FIELDS.some((f) => f.column === 'itemStyleNo')).toBe(false)
     expect(fieldLabel('warehouseSo')).toBe('Warehouse SO')
     expect(fieldLabel('itemStyleNo')).toBe('Item / Style No.')

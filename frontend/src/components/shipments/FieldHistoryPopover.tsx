@@ -24,15 +24,12 @@ export const FieldHistoryContext = createContext<Map<string, HistoryEntry[]>>(ne
  * so the surrounding card's overflow can't clip it. Renders `children` unchanged when `entries` is
  * empty — the caller decides which fields have history.
  */
-export function FieldHistoryPopover({
-  label,
-  entries,
-  children,
-}: {
-  label: string
-  entries: HistoryEntry[]
-  children: ReactNode
-}) {
+/**
+ * The hover state machine + fixed placement shared by every Order Details hover card
+ * (change history, review-warning). One implementation so the cards open, place, and
+ * grace-close identically.
+ */
+export function useHoverPopover() {
   const anchorRef = useRef<HTMLSpanElement>(null)
   const [open, setOpen] = useState(false)
   const [coords, setCoords] = useState<{
@@ -68,7 +65,6 @@ export function FieldHistoryPopover({
   }, [])
 
   const openPopover = () => {
-    if (entries.length === 0) return
     clearClose()
     place()
     setOpen(true)
@@ -87,6 +83,24 @@ export function FieldHistoryPopover({
 
   useEffect(() => () => clearClose(), [])
 
+  return { anchorRef, open, coords, openPopover, scheduleClose, clearClose }
+}
+
+/** The shared card shell (size, surface, border, shadow) — both hover cards look like ONE system. */
+export const HOVER_CARD_CLASS =
+  'w-72 overflow-y-auto rounded-lg border border-border bg-surface-800 p-3 shadow-xl'
+
+export function FieldHistoryPopover({
+  label,
+  entries,
+  children,
+}: {
+  label: string
+  entries: HistoryEntry[]
+  children: ReactNode
+}) {
+  const { anchorRef, open, coords, openPopover, scheduleClose, clearClose } = useHoverPopover()
+
   if (entries.length === 0) return <>{children}</>
 
   const panel =
@@ -104,7 +118,7 @@ export function FieldHistoryPopover({
               transform: coords.placeAbove ? 'translateY(-100%)' : undefined,
               zIndex: 9999,
             }}
-            className="w-72 overflow-y-auto rounded-lg border border-border bg-surface-800 p-3 shadow-xl"
+            className={HOVER_CARD_CLASS}
             onMouseEnter={clearClose}
             onMouseLeave={scheduleClose}
           >

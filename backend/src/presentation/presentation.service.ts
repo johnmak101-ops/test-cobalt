@@ -44,9 +44,11 @@ import { makeTtlCache } from '../common/ttl-cache'
 import {
   entityCodeNameMapsFromRefs,
   hydrateCriticEntityLabels,
+  resolveEntityCodeDisplay,
 } from './hydrate-critic-entity-labels'
 
-type Ref = { id: string; code?: string | null; name: string }
+// nameCh rides along (repo selectAll) — the mapper's party-mismatch check accepts a Chinese raw.
+type Ref = { id: string; code?: string | null; name: string; nameCh?: string | null }
 type PortRow = { id: string; unlocode?: string | null; country?: string | null; iata?: string | null }
 type BookingRow = { id: string; customerId: string | null; vendorId: string | null }
 type LinkedPoRow = {
@@ -108,6 +110,9 @@ export function buildShipmentSummary(
     polId: string | null
     podId: string | null
     consigneeName?: string | null
+    /** Beginning email (min shipment_emails.received_at) — rides findByIds rows (#350). */
+    firstEmailAt?: Date | string | null
+    createdAt?: Date | string | null
   },
   booking: { customerId: string | null } | null,
   poNumbers: string[],
@@ -123,6 +128,9 @@ export function buildShipmentSummary(
     route: deriveRoute(portLabel(leg.mode, pol?.unlocode, pol?.iata), portLabel(leg.mode, pod?.unlocode, pod?.iata)),
     customer: customer ? { name: customer.name } : null,
     consigneeName: consignee || null,
+    // #350: the alert card derives the Shipment ID from these (firstEmailAt ?? createdAt + uuid head).
+    firstEmailAt: isoOrNull(leg.firstEmailAt),
+    createdAt: isoOrNull(leg.createdAt),
   }
 }
 
@@ -433,7 +441,14 @@ export class PresentationService {
       legQty: (p as { legQty?: number | null }).legQty ?? null,
       legUnit: (p as { legQtyUnit?: string | null }).legQtyUnit ?? null,
     }))
-    const base = toUiShipment(this.assembleInput(leg, booking, maps, linkedPosWithLeg), {
+    // #350: the beginning email anchors the derived Shipment ID. findById stays lean (it also runs
+    // inside committer/edit transactions), and the related emails are already loaded here — derive
+    // the anchor from them instead of adding a second shipment_emails query.
+    const firstEmailAt = relatedEmails.reduce<string | null>((min, e) => {
+      const at = e.receivedAt != null ? new Date(e.receivedAt as string | Date).toISOString() : null
+      return at != null && (min == null || at < min) ? at : min
+    }, null)
+    const base = toUiShipment(this.assembleInput({ ...leg, firstEmailAt }, booking, maps, linkedPosWithLeg), {
       legNo: (leg as { legNo?: number | null }).legNo ?? 1,
       legCount: siblings.length,
     })
@@ -588,9 +603,27 @@ export class PresentationService {
       notes: c.subject ? `${c.subject}`.slice(0, 140) : null,
     }))
     const audit = rows.map(toUiHistoryEntry)
+    // The detail rows label these fields "Customer/Vendor Code", so their history speaks in codes:
+    // any old/new value that resolves to a master (code or exact name) displays as the CODE
+    // ("SOUOCE → ROKNFT", not "SOUOCE → ROSE KNITTING FACTORY LIMITED"). Response-time only —
+    // audit rows keep the values that were actually written.
+    const parties = await this.partyMaps()
+    const codeMaps = entityCodeNameMapsFromRefs(
+      parties.forwarders.values(),
+      parties.customers.values(),
+      parties.vendors.values(),
+    )
+    const codeify = <T extends { field: string | null; oldValue: string | null; newValue: string | null }>(h: T): T =>
+      h.field
+        ? {
+            ...h,
+            oldValue: h.oldValue ? resolveEntityCodeDisplay(h.field, h.oldValue, codeMaps) : h.oldValue,
+            newValue: h.newValue ? resolveEntityCodeDisplay(h.field, h.newValue, codeMaps) : h.newValue,
+          }
+        : h
     const history = [...audit, ...emailEntries].sort((a, b) =>
       (b.changedAt ?? '') < (a.changedAt ?? '') ? -1 : 1,
-    )
+    ).map(codeify)
     return { history }
   }
 
@@ -626,6 +659,8 @@ export class PresentationService {
         }),
         // compact only — never project raw confidence score (sort stays server-side on confidence ASC)
         criticReviewCompact: compactCriticReview(r.criticReview as CriticReview | null | undefined),
+        // #350: Shipment ID anchor (beginning email; UI falls back to createdAt)
+        firstEmailAt: isoOrNull(r.firstEmailAt),
         createdAt: isoOrNull(r.createdAt),
         updatedAt: isoOrNull(r.updatedAt),
         poCount: r.poCount ?? 0,

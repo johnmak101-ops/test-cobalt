@@ -2,6 +2,8 @@ import { Injectable, Logger } from '@nestjs/common'
 import { deriveState, stateRank, type ShipmentState } from './state'
 import { ShipmentRepository } from '../db/repositories/shipment.repository'
 import { AuditRepository } from '../db/repositories/audit.repository'
+import { SettingsRepository } from '../db/repositories/settings.repository'
+import { loadEtdFallback } from '../settings/etd-fallback'
 
 export type StatePromotion = {
   shipmentId: string
@@ -56,19 +58,22 @@ export class StateRefreshService {
   constructor(
     private readonly shipments: ShipmentRepository,
     private readonly audit: AuditRepository,
+    private readonly settings: SettingsRepository,
   ) {}
 
   async refresh(now: Date = new Date(), opts: { dryRun?: boolean } = {}): Promise<StateRefreshResult> {
     const dryRun = opts.dryRun === true
     const legs = await this.shipments.legsForStateRefresh()
     const typesByShipment = await this.shipments.emailTypesForShipments(legs.map((l) => l.id))
+    // Loaded once per run — the Settings-page transit allowances for the no-arrival-data fallback.
+    const etdFallback = await loadEtdFallback(this.settings)
 
     const promotions: StatePromotion[] = []
     const regressions: StatePromotion[] = []
     for (const leg of legs) {
       const emailTypes = typesByShipment.get(leg.id) ?? new Set<string>()
       const fields = legFields(leg)
-      const next = deriveState(emailTypes, fields, now)
+      const next = deriveState(emailTypes, fields, now, { etdFallback })
       const delta = stateRank(next) - stateRank(leg.state)
       if (delta === 0) continue
       const row: StatePromotion = {
@@ -148,7 +153,8 @@ function reasonFor(
   if (next === 'DELIVERED') {
     if (fields.ata) return 'ATA recorded'
     if (fields.in_dc_date) return 'in-DC date recorded'
-    return 'ETA has passed'
+    if (fields.eta) return 'ETA has passed'
+    return 'no arrival data — departure older than the transit allowance'
   }
   if (next === 'RELEASED') {
     if (fields.atd) return 'ATD recorded'

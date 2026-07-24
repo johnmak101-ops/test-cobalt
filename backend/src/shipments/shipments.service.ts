@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common'
 import { ShipmentRepository } from '../db/repositories/shipment.repository'
+import { MastersRepository } from '../db/repositories/masters.repository'
 import { BookingRepository } from '../db/repositories/booking.repository'
 import { FieldLockRepository } from '../db/repositories/field-lock.repository'
 import { AuditRepository } from '../db/repositories/audit.repository'
@@ -111,6 +112,7 @@ export class ShipmentsService {
     private readonly audit: AuditRepository,
     private readonly committer: CommitterService,
     private readonly queueLearning: QueueLearningClient,
+    private readonly masters: MastersRepository,
   ) {}
 
   /**
@@ -197,7 +199,33 @@ export class ShipmentsService {
       .map(([field, raw]) => [field, coerceLegField(field, raw)] as const)
     for (const [field, value] of coerced) {
       if (asStr(current[field]) === asStr(value)) continue // no-op edit — skip lock/audit noise
-      await this.shipments.updateLeg(id, { [field]: value })
+      const patch: Record<string, unknown> = { [field]: value }
+      // A human port edit must carry the master FK with it: route (and the port label) derive from
+      // polCode ?? polRaw, so a stale pol_id would keep winning over the operator's new port. The
+      // picker emits UN/LOCODEs (strict lookup); free text or no match unlinks the master and the
+      // raw value drives display until resolution catches up.
+      if (field === 'polRaw' || field === 'podRaw') {
+        const fk = field === 'polRaw' ? 'polId' : 'podId'
+        patch[fk] = value == null ? null : await this.masters.portIdByUnlocode(String(value))
+      }
+      // Same stale-FK class for the forwarder: display prefers the resolved master, so the human's
+      // raw edit re-links it (code or exact name) or unlinks it — never leaves the old master winning.
+      if (field === 'forwarderRaw') {
+        patch.forwarderId = value == null ? null : await this.masters.forwarderIdExact(String(value))
+      }
+      await this.shipments.updateLeg(id, patch)
+      // Customer/Vendor masters hang off the BOOKING, not the leg — re-point (or unlink) there.
+      if ((field === 'vendorRaw' || field === 'customerRaw') && current.bookingId) {
+        const masterId =
+          value == null
+            ? null
+            : field === 'vendorRaw'
+              ? await this.masters.vendorIdExact(String(value))
+              : await this.masters.customerIdExact(String(value))
+        await this.bookings.update(String(current.bookingId), {
+          [field === 'vendorRaw' ? 'vendorId' : 'customerId']: masterId,
+        })
+      }
       await this.fieldLocks.lock('shipment', id, field, asStr(value), actorId)
       await this.audit.write({
         entityType: 'shipment', entityId: id, field,
@@ -262,6 +290,13 @@ export class ShipmentsService {
       .filter((l) => l.entityType === 'shipment')
       .map((l) => ({ field: l.field, yourValue: l.lockedValue, newValue: asStr(row[l.field]) }))
       .filter((c) => c.newValue !== c.yourValue)
+  }
+
+  /** Human-locked leg columns (manual/review edits). The detail page treats these as settled —
+   *  the unconfirmed-answer mask never applies to them. */
+  async lockedFields(id: string): Promise<string[]> {
+    const locks = await this.fieldLocks.forEntity(id)
+    return locks.filter((l) => l.entityType === 'shipment').map((l) => l.field)
   }
 
   /**

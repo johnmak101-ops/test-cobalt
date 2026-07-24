@@ -15,7 +15,9 @@ vi.mock('react-router-dom', async () => {
 
 function baseShipment(over: Partial<Shipment> = {}): Shipment {
   return {
-    id: 'leg-1',
+    // Real-shaped uuid: the pinned column derives its ID from the anchor month (firstEmailAt ?? createdAt,
+    // here 2026-02) + this head → 2026025393 (#348/#350)
+    id: '5393954C-8CED-4329-BAC6-2868EE704C76',
     poNumbers: '["10261406"]',
     customerId: 'c1',
     vendorId: null,
@@ -51,6 +53,7 @@ function baseShipment(over: Partial<Shipment> = {}): Shipment {
     grossWeight: null,
     measurement: null,
     htsCode: null,
+    firstEmailAt: null,
     createdAt: '2026-02-01T00:00:00.000Z',
     updatedAt: '2026-02-10T00:00:00.000Z',
     customer: { id: 'c1', name: 'Cole Haan', code: 'COLE' },
@@ -119,34 +122,34 @@ describe('ShipmentTable — Customer PO popover (#118)', () => {
 })
 
 describe('ShipmentTable — column layout (#119)', () => {
-  it('does not render a separate SO No column (SO may still appear as Booking ID fallback)', () => {
+  it('does not render a separate SO No column (SO lives on the detail page)', () => {
     renderTable([baseShipment({ soNumber: 'SO-SHOULD-NOT-SHOW' })])
     expect(screen.queryByRole('columnheader', { name: /so no/i })).not.toBeInTheDocument()
-    // bookingNo present → SO not used as Booking ID label
     expect(screen.queryByText('SO-SHOULD-NOT-SHOW')).not.toBeInTheDocument()
-    expect(screen.getByText('BY058417')).toBeInTheDocument()
+    expect(screen.getByText('2026025393')).toBeInTheDocument()
   })
 
-  it('Booking ID falls through bookingNo → soNumber → hblNumber (parse-identity D1)', () => {
+  it('anchors the Shipment ID month to the beginning email, falling back to creation (#348/#350)', () => {
     renderTable([
-      baseShipment({ id: 'a', bookingNo: null, soNumber: 'S2600144827', hblNumber: 'SNZ260004243' }),
-      baseShipment({ id: 'b', bookingNo: null, soNumber: null, hblNumber: 'SZA26050003' }),
-      baseShipment({ id: 'c', bookingNo: null, soNumber: null, hblNumber: null }),
+      // beginning email Apr 2026 wins over the May createdAt
+      baseShipment({ id: 'AAAA1111-0000-4000-8000-000000000001', firstEmailAt: '2026-04-18T10:00:00.000Z', createdAt: '2026-05-02T00:00:00.000Z' }),
+      // keyless shell, no emails: still a real identity — creation-month fallback, not —
+      baseShipment({ id: 'BBBB2222-0000-4000-8000-000000000002', createdAt: '2026-07-24T00:00:00.000Z', bookingNo: null, soNumber: null, hblNumber: null }),
     ])
-    expect(screen.getByText('S2600144827')).toBeInTheDocument()
-    expect(screen.getByText('SZA26050003')).toBeInTheDocument()
-    // pure keyless shell still —
-    expect(screen.getAllByText('—').length).toBeGreaterThan(0)
+    expect(screen.getByText('202604AAAA')).toBeInTheDocument()
+    expect(screen.getByText('202607BBBB')).toBeInTheDocument()
+    // booking/SO/HBL are search + detail-page data now, never the pinned cell text
+    expect(screen.queryByText('BY058417')).not.toBeInTheDocument()
   })
 
   // JSDOM applies no CSS, so these assert the class contract; real rendering is measured in-browser.
-  it('pins the Booking ID column for horizontal scroll (sticky left, opaque bg)', () => {
+  it('pins the Shipment ID column for horizontal scroll (sticky left, opaque bg)', () => {
     renderTable([baseShipment()])
 
-    const th = screen.getByRole('columnheader', { name: /booking id/i })
+    const th = screen.getByRole('columnheader', { name: /shipment id/i })
     expect(th).toHaveClass('sticky', 'left-0', 'bg-surface-850')
 
-    const td = screen.getByText('BY058417').closest('td')!
+    const td = screen.getByText('2026025393').closest('td')!
     expect(td).toHaveClass('sticky', 'left-0', 'bg-surface-800', 'group-hover:bg-surface-700')
     // the pinned cell mirrors row hover via the row being a Tailwind group
     expect(td.closest('tr')!).toHaveClass('group')
@@ -162,12 +165,12 @@ describe('ShipmentTable — column layout (#119)', () => {
     expect(screen.getByRole('columnheader', { name: /^forwarder$/i })).toHaveClass('hidden', 'md:table-cell')
 
     // What survives at every width: which shipment, where it is going, where it has got to.
-    for (const name of [/booking id/i, /^route$/i, /^status$/i]) {
+    for (const name of [/shipment id/i, /^route$/i, /^status$/i]) {
       expect(screen.getByRole('columnheader', { name })).not.toHaveClass('hidden')
     }
 
     // body cells hide in lockstep with their headers (0-indexed: 3 = Forwarder at md, rest at lg)
-    const bodyRow = screen.getByText('BY058417').closest('tr')!
+    const bodyRow = screen.getByText('2026025393').closest('tr')!
     const cells = within(bodyRow).getAllByRole('cell')
     expect(cells[3]).toHaveClass('hidden', 'md:table-cell')
     for (const i of [1, 2, 6, 7, 8, 9]) expect(cells[i]).toHaveClass('hidden', 'lg:table-cell')
@@ -186,8 +189,8 @@ describe('ShipmentTable — column layout (#119)', () => {
   it('draws no pinned divider until the table is scrolled sideways', () => {
     renderTable([baseShipment()])
     const divider = 'shadow-[inset_-1px_0_0_var(--color-border)]'
-    expect(screen.getByRole('columnheader', { name: /booking id/i })).not.toHaveClass(divider)
-    expect(screen.getByText('BY058417').closest('td')!).not.toHaveClass(divider)
+    expect(screen.getByRole('columnheader', { name: /shipment id/i })).not.toHaveClass(divider)
+    expect(screen.getByText('2026025393').closest('td')!).not.toHaveClass(divider)
   })
 
   it('puts the provisional awaiting-review icon in Risk, not next to Status', () => {

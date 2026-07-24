@@ -23,6 +23,15 @@
      flips it to the brand blue. Overridden in [data-theme="light"] below — keep the two in sync. */
   --color-ai-proposed: #F59E0B; /* = status-warning */
 
+  /* A STORED value with something open against it (a provisional review conflict or a contested
+     lock) — the Order Details word-highlight. Distinct from ai-proposed, which colours the
+     PROPOSED value on review surfaces: this marks the current value under question, so it keeps
+     the amber attention hue in BOTH themes. Light only darkens the text — raw #F59E0B on white
+     is ~2.2:1, unreadable — while the wash stays raw amber in both. Overridden in
+     [data-theme="light"] below — keep the two in sync. */
+  --color-review-pending: #F59E0B; /* = status-warning */
+  --color-review-pending-bg: rgba(245, 158, 11, 0.10);
+
   /* Shipment State Colors */
   --color-state-booked: #E6A23C;
   --color-state-confirmed: #67C23A;
@@ -83,6 +92,10 @@
 
   /* see @theme: amber reads as a warning on a light surface — blue reads as a suggestion */
   --color-ai-proposed: #2563EB; /* = cobalt-primary-light */
+
+  /* see @theme: darker amber text for contrast on white (AA); wash stays raw amber */
+  --color-review-pending: #B45309;
+  --color-review-pending-bg: rgba(245, 158, 11, 0.12);
 }
 
 /* ============================================
@@ -154,6 +167,17 @@ body {
   overflow-wrap: break-word;
   word-break: normal;
   hyphens: none;
+}
+
+/* Order Details value with something open for review (see lib/pending-review.ts). Amber word
+   over a soft amber wash, on a <mark> so the browser's yellow/black defaults never leak through.
+   The negative margin cancels the left padding so the word stays column-aligned with unmarked
+   values; clone keeps the wash on every fragment of a wrapped value (addresses). */
+/* 2026-07-24: wash removed by request — colour only; the per-field warning icon (DetailRow)
+   carries the non-colour cue and the hover message. */
+.review-pending-value {
+  color: var(--color-review-pending);
+  background: transparent; /* a bare <mark> defaults to UA yellow */
 }
 
 /* Gentle "breathing" pulse for the in-progress milestone node (a shipment that has departed but
