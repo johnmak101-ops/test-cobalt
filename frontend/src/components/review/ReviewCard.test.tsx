@@ -786,8 +786,10 @@ describe('conflict table — read-only by default, Edit to change values', () =>
     await user.click(screen.getByRole('button', { name: /^edit$/i }))
     expect(screen.getByTestId('proposed-column-header')).toHaveTextContent('Resolution')
     expect((screen.getByLabelText(/proposed value for eta/i) as HTMLInputElement).value).toBe('2026-07-23')
-    // hbl has NO system candidate and two proposals → first pre-fills, both are visible (not buried in a datalist)
-    expect((screen.getByLabelText(/proposed value for hbl/i) as HTMLInputElement).value).toBe('SE26061400005')
+    // hbl has NO system candidate and two proposals → the FIRST is the pick (radio below), both visible.
+    // #360: the free-typing input stays blank while a pick is active — the pick lives in the radio,
+    // and pre-filling it read as "this text will be written".
+    expect((screen.getByLabelText(/proposed value for hbl/i) as HTMLInputElement).value).toBe('')
     const multi = screen.getByTestId('multi-candidate-proposed')
     expect(within(multi).getByText('SE26061400005')).toBeInTheDocument()
     expect(within(multi).getByText('SE26061400006')).toBeInTheDocument()

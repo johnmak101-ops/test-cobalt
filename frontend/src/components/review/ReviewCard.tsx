@@ -7,6 +7,8 @@ import {
   ConflictRow,
   changesStoredValue,
   existingValueOf,
+  isCandidateResolution,
+  proposedResolutionOf,
   proposedValueOf,
 } from './ConflictRow'
 import {
@@ -167,7 +169,8 @@ function initialResolutions(conflicts: CriticConflict[]): Record<string, string>
   // Seeded with the agent's proposal: the table reads as a diff, and approving accepts it. A queued
   // conflict still has no safe AUTO-pick, so the primary button NAMES the number of stored values it
   // would overwrite ("Approve 3 changes") — pre-filled must not read as pre-approved.
-  for (const c of conflicts) out[c.field] = proposedValueOf(c)
+  // #360: the seed is the RESOLUTION value — the master CODE for resolved party candidates.
+  for (const c of conflicts) out[c.field] = proposedResolutionOf(c)
   return out
 }
 
@@ -423,7 +426,8 @@ export function ReviewCard({
     () =>
       conflicts.filter((c) => {
         const v = (resolutions[c.field] ?? '').trim()
-        return v !== '' && v !== existingValue(c) && v !== proposedValueOf(c)
+        // #360: ANY candidate pick is not an override — only a free-typed custom value needs a note.
+        return v !== '' && v !== existingValue(c) && !isCandidateResolution(c, v)
       }),
     [conflicts, resolutions],
   )
@@ -431,7 +435,7 @@ export function ReviewCard({
   /** Any cell diverged from the agent's proposal (operator applied a different value). */
   const hasHumanEdits = useMemo(
     () =>
-      conflicts.some((c) => (resolutions[c.field] ?? '').trim() !== proposedValueOf(c).trim()),
+      conflicts.some((c) => (resolutions[c.field] ?? '').trim() !== proposedResolutionOf(c).trim()),
     [conflicts, resolutions],
   )
   // Column 3 label tracks state: agent default → edit mode → human-applied values.
