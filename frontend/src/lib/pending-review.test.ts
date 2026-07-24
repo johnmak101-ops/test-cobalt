@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { pendingReviewColumns } from './pending-review'
+import { pendingReviewColumns, pendingReviewAnnotations } from './pending-review'
 
 const critic = (fields: string[]) => ({ conflicts: fields.map((field) => ({ field })) })
 
@@ -56,5 +56,20 @@ describe('pendingReviewColumns — which Order Details columns carry something o
   it('returns an empty set for a missing shipment', () => {
     expect(pendingReviewColumns(undefined).size).toBe(0)
     expect(pendingReviewColumns(null).size).toBe(0)
+  })
+})
+
+describe('pendingReviewAnnotations — warn tooltips read as operator instructions', () => {
+  it('humanizes the per-PO-dropped units conflict into a "please verify" line', () => {
+    const ann = pendingReviewAnnotations({
+      reviewStatus: 'provisional',
+      reviewReasons: [
+        'PO 1570988: qty 3 stated under conflicting units (cartons vs packages vs pieces) — per-PO qty dropped',
+      ],
+    })
+    expect(ann.get('qty')?.level).toBe('warn')
+    expect(ann.get('qty')?.messages[0]).toBe(
+      'Quantity stated under conflicting units (cartons vs packages vs pieces) — the per-PO figure was dropped. Please verify.',
+    )
   })
 })
