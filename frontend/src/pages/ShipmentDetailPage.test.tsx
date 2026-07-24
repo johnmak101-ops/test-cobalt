@@ -88,8 +88,7 @@ function renderPage() {
   )
 }
 
-const pendingMarks = () =>
-  screen.queryAllByTitle('Pending review').filter((el) => el.tagName === 'MARK')
+const pendingMarks = () => [...document.querySelectorAll('mark.review-pending-value')]
 
 describe('ShipmentDetailPage — pending-review word highlight', () => {
   beforeEach(() => {
@@ -118,6 +117,28 @@ describe('ShipmentDetailPage — pending-review word highlight', () => {
     for (const el of screen.getAllByText('GZL26261147')) {
       expect(el.closest('mark')).toBeNull()
     }
+  })
+
+  it('shows a yellow icon (hover = the message) for review questions, red for master misses', () => {
+    mockUseShipment.mockReturnValue({
+      data: fixture({
+        reviewStatus: 'provisional',
+        criticReview: {
+          ...criticWithConflicts(['etd']),
+          masterMisses: [{ type: 'vendor', rawName: 'SOUOCE', field: 'vendor_code' }],
+        },
+      }),
+      isLoading: false,
+    })
+    renderPage()
+
+    const warn = screen.getAllByTestId('pending-icon-warn')
+    expect(warn.length).toBeGreaterThan(0)
+    expect(warn[0]).toHaveAttribute('title', 'test')
+    const miss = screen.getByTestId('pending-icon-miss')
+    expect(miss).toHaveAttribute('title', '"SOUOCE" not found in Mesh Database — advise add in Mesh.')
+    // the vendor code value itself takes the amber colour, no wash
+    expect(pendingMarks().some((m) => m.textContent === 'MACFUN')).toBe(true)
   })
 
   it('marks the Customer/Vendor Code rows when a party conflict is pending (raw-twin mapping)', () => {
