@@ -31,9 +31,6 @@ export interface PurchaseOrder {
     reviewStatus?: string | null
     /** per-shipment split from shipment_pos — feeds lifecycle-weighted progress (absent on older backends) */
     linkedQuantity?: number | null
-    /** #350: anchor fields for the derived Shipment ID (firstEmailAt ?? createdAt). */
-    firstEmailAt?: string | null
-    createdAt?: string | null
   }>
 }
 
@@ -49,6 +46,9 @@ export interface PurchaseOrderDetail extends PurchaseOrder {
     linkId: string
     linkedQuantity: number | null
     linkedAt: string
+    /** #350: anchor fields for the derived Shipment ID column (firstEmailAt ?? createdAt). */
+    firstEmailAt?: string | null
+    createdAt?: string | null
   }>
 }
 

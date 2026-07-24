@@ -659,6 +659,8 @@ export class PresentationService {
         }),
         // compact only — never project raw confidence score (sort stays server-side on confidence ASC)
         criticReviewCompact: compactCriticReview(r.criticReview as CriticReview | null | undefined),
+        // #350: Shipment ID anchor (beginning email; UI falls back to createdAt)
+        firstEmailAt: isoOrNull(r.firstEmailAt),
         createdAt: isoOrNull(r.createdAt),
         updatedAt: isoOrNull(r.updatedAt),
         poCount: r.poCount ?? 0,
