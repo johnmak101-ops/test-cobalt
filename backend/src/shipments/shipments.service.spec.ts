@@ -7,6 +7,7 @@ import type { FieldLockRepository } from '../db/repositories/field-lock.reposito
 import type { AuditRepository } from '../db/repositories/audit.repository'
 import type { CommitterService } from '../reconcile/committer.service'
 import type { QueueLearningClient, CorrectionPayload } from '../review/queue-learning.client'
+import type { MastersRepository } from '../db/repositories/masters.repository'
 
 function makeService(legOverride: Record<string, unknown> = {}, graphId: string | null = 'graph-1') {
   const shipments = {
@@ -29,6 +30,7 @@ function makeService(legOverride: Record<string, unknown> = {}, graphId: string 
     apply: vi.fn(async () => ({ shipmentId: 'new-leg', jobNo: 'J1', state: 'provisional', action: 'created' })),
   }
   const queueLearning = { postCorrection: vi.fn(async (_p: CorrectionPayload) => undefined) }
+  const masters = { portIdByUnlocode: vi.fn(async (): Promise<string | null> => null) }
   const svc = new ShipmentsService(
     shipments as unknown as ShipmentRepository,
     {} as unknown as BookingRepository,
@@ -36,8 +38,9 @@ function makeService(legOverride: Record<string, unknown> = {}, graphId: string 
     audit as unknown as AuditRepository,
     committer as unknown as CommitterService,
     queueLearning as unknown as QueueLearningClient,
+    masters as unknown as MastersRepository,
   )
-  return { svc, shipments, fieldLocks, audit, committer, queueLearning }
+  return { svc, shipments, fieldLocks, audit, committer, queueLearning, masters }
 }
 
 describe('ShipmentsService.editFields — numeric sanity gate (manual edit path)', () => {
@@ -65,6 +68,39 @@ describe('ShipmentsService.editFields — numeric sanity gate (manual edit path)
       svc.editFields('leg-1', { grossWeight: '-5' }, 'user-1', 'weight'),
     ).rejects.toBeInstanceOf(BadRequestException)
     expect(shipments.updateLeg).not.toHaveBeenCalled()
+  })
+})
+
+describe('ShipmentsService.editFields — POL/POD edits re-resolve the port master (route follows)', () => {
+  it('sets polId when the edited POL is a known UN/LOCODE', async () => {
+    const { svc, shipments, masters } = makeService()
+    masters.portIdByUnlocode.mockResolvedValueOnce('port-hkg')
+    await svc.editFields('leg-1', { polRaw: 'HKHKG' }, 'user-1', 'moved to HK')
+    expect(masters.portIdByUnlocode).toHaveBeenCalledWith('HKHKG')
+    expect(shipments.updateLeg).toHaveBeenCalledWith(
+      'leg-1',
+      expect.objectContaining({ polRaw: 'HKHKG', polId: 'port-hkg' }),
+    )
+  })
+
+  it('clears podId when the edited POD is free text with no master match', async () => {
+    const { svc, shipments, masters } = makeService({ podRaw: 'JPOSA', podId: 'port-osa' })
+    masters.portIdByUnlocode.mockResolvedValueOnce(null)
+    await svc.editFields('leg-1', { podRaw: 'Shekou Wharf 3' }, 'user-1', 'free-text pod')
+    expect(shipments.updateLeg).toHaveBeenCalledWith(
+      'leg-1',
+      expect.objectContaining({ podRaw: 'Shekou Wharf 3', podId: null }),
+    )
+  })
+
+  it('clears the port FK when the raw value is cleared', async () => {
+    const { svc, shipments, masters } = makeService({ polRaw: 'CNSHK', polId: 'port-shk' })
+    await svc.editFields('leg-1', { polRaw: '' }, 'user-1', 'wrong port removed')
+    expect(masters.portIdByUnlocode).not.toHaveBeenCalled()
+    expect(shipments.updateLeg).toHaveBeenCalledWith(
+      'leg-1',
+      expect.objectContaining({ polRaw: null, polId: null }),
+    )
   })
 })
 

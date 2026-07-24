@@ -33,6 +33,8 @@ interface EditField {
   label: string
   type: EditType
   options?: readonly string[]
+  /** Full legal enum when options is a shorter offer list (Mode) — see EditableField.allValues. */
+  allValues?: readonly string[]
   picker?: 'port'
   get: (s: ShipmentDetail) => unknown
 }
@@ -52,6 +54,7 @@ const EDIT_SECTIONS: { title: string; fields: EditField[] }[] = (() => {
         label: f.label,
         type: f.type,
         options: f.options,
+        allValues: f.allValues,
         picker: f.picker,
         get: (s: ShipmentDetail) => {
           // Prefer free-text raw; fall back to resolved master name so edit is not blank when only FK is set.
@@ -498,7 +501,12 @@ export default function ShipmentDetailPage() {
                         >
                           <option value="">—</option>
                           {cur && !(f.options as readonly string[]).includes(cur) && (
-                            <option value={cur}>{cur} (unrecognized)</option>
+                            <option value={cur}>
+                              {/* A value outside the offered list but inside the full enum (e.g.
+                                  agent-written SEA_LCL vs the SEA/AIR offer) is valid — only truly
+                                  unknown junk gets the suffix. */}
+                              {(f.allValues ?? f.options ?? []).includes(cur) ? cur : `${cur} (unrecognized)`}
+                            </option>
                           )}
                           {f.options.map((opt) => (
                             <option key={opt} value={opt}>{opt}</option>

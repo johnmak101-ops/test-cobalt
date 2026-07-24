@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom'
 import { X, PlusCircle, Loader2 } from 'lucide-react'
 import { useCreateShipment, type CreateShipmentInput } from '../../hooks/use-shipments'
 import { fieldLabel, numericFieldWarn } from '../../lib/review-fields'
-import { MODE_OPTIONS, UOM_OPTIONS } from '../../lib/enums'
+import { MODE_EDIT_OPTIONS, UOM_OPTIONS } from '../../lib/enums'
 
 /**
  * Manually create a shipment the pipeline never saw (e.g. the original booking email / attachment was
@@ -33,7 +33,7 @@ const IDENTITY: Field[] = [
 const ROUTE: Field[] = [
   { key: 'customerCode', label: 'Customer Code' },
   { key: 'forwarderName', label: 'Forwarder' },
-  { key: 'mode', options: MODE_OPTIONS },
+  { key: 'mode', options: MODE_EDIT_OPTIONS },
   { key: 'pol', label: 'POL', placeholder: 'e.g. HKG' },
   { key: 'pod', label: 'POD', placeholder: 'e.g. FRA' },
 ]
