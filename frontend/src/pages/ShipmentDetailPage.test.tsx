@@ -120,6 +120,21 @@ describe('ShipmentDetailPage — pending-review word highlight', () => {
     }
   })
 
+  it('marks the Customer/Vendor Code rows when a party conflict is pending (raw-twin mapping)', () => {
+    mockUseShipment.mockReturnValue({
+      data: fixture({
+        reviewStatus: 'provisional',
+        criticReview: criticWithConflicts(['vendor_code', 'customer']),
+      }),
+      isLoading: false,
+    })
+    renderPage()
+
+    const texts = pendingMarks().map((m) => m.textContent ?? '')
+    expect(texts).toContain('MACFUN')
+    expect(texts).toContain('WYSE')
+  })
+
   it('shows no marks once the review is confirmed', () => {
     mockUseShipment.mockReturnValue({
       data: fixture({
