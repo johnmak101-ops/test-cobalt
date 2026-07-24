@@ -170,3 +170,94 @@ describe("pendingReviewAnnotations — party mismatch (flag, don't follow)", () 
     expect(ann.get('vendorRaw')?.level).toBe('miss')
   })
 })
+
+describe('pendingReviewAnnotations — unconfirmed answers mask the display (commit-first, display-second)', () => {
+  it('masks a conflicted field back to the prior System value', () => {
+    const ann = pendingReviewAnnotations({
+      reviewStatus: 'provisional',
+      criticReview: {
+        confidence: { band: 'medium' },
+        conflicts: [
+          {
+            field: 'eta',
+            candidates: [
+              { value: '2026-07-20', source: 'System' },
+              { value: '2026-07-23', source: 'SO' },
+            ],
+          },
+        ],
+      },
+    })
+    expect(ann.get('eta')?.mask).toEqual({ prior: '2026-07-20' })
+  })
+
+  it('masks to (pending) when there was no prior value', () => {
+    const ann = pendingReviewAnnotations({
+      reviewStatus: 'provisional',
+      criticReview: {
+        confidence: { band: 'medium' },
+        conflicts: [
+          {
+            field: 'vendor_code',
+            candidates: [
+              { value: 'SOUTH OCEAN KNITTERS LTD', source: 'Booking Request' },
+              { value: 'ROSE KNITTING FACTORY LIMITED', source: 'SO' },
+            ],
+          },
+        ],
+      },
+    })
+    expect(ann.get('vendorRaw')?.mask).toEqual({ prior: null })
+  })
+
+  it('prefers the master CODE for the party prior (the row is labelled Vendor Code)', () => {
+    const ann = pendingReviewAnnotations({
+      reviewStatus: 'provisional',
+      criticReview: {
+        confidence: { band: 'medium' },
+        conflicts: [
+          {
+            field: 'vendor_code',
+            candidates: [
+              {
+                value: 'MACAU FUNG TAI LIMITED',
+                source: 'System',
+                master: { code: 'MACFUN', name: 'MACAU FUNG TAI LIMITED' },
+              },
+              { value: 'ROSE KNITTING FACTORY LIMITED', source: 'SO' },
+            ],
+          },
+        ],
+      },
+    })
+    expect(ann.get('vendorRaw')?.mask).toEqual({ prior: 'MACFUN' })
+  })
+
+  it('never masks high band or human-locked fields (manual edits stay firm)', () => {
+    const conflicts = [
+      {
+        field: 'eta',
+        candidates: [
+          { value: '2026-07-20', source: 'System' },
+          { value: '2026-07-23', source: 'SO' },
+        ],
+      },
+    ]
+    const high = pendingReviewAnnotations({
+      reviewStatus: 'provisional',
+      criticReview: { confidence: { band: 'high' }, conflicts },
+    })
+    expect(high.get('eta')?.mask).toBeUndefined()
+    const locked = pendingReviewAnnotations({
+      reviewStatus: 'provisional',
+      criticReview: { confidence: { band: 'medium' }, conflicts },
+      humanLockedFields: ['eta'],
+    })
+    expect(locked.get('eta')?.mask).toBeUndefined()
+    const confirmed = pendingReviewAnnotations({
+      reviewStatus: 'confirmed',
+      criticReview: { confidence: { band: 'medium' }, conflicts },
+    })
+    expect(confirmed.get('eta')).toBeUndefined()
+  })
+})

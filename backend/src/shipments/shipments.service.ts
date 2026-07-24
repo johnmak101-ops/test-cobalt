@@ -292,6 +292,13 @@ export class ShipmentsService {
       .filter((c) => c.newValue !== c.yourValue)
   }
 
+  /** Human-locked leg columns (manual/review edits). The detail page treats these as settled —
+   *  the unconfirmed-answer mask never applies to them. */
+  async lockedFields(id: string): Promise<string[]> {
+    const locks = await this.fieldLocks.forEntity(id)
+    return locks.filter((l) => l.entityType === 'shipment').map((l) => l.field)
+  }
+
   /**
    * Resolve a contested lock by KEEPING the newer email value: relock the field to the current column
    * value so `column === lock` again (no longer contested), and audit the acceptance.

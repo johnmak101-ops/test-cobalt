@@ -24,7 +24,10 @@ function makeService(legOverride: Record<string, unknown> = {}, graphId: string 
     replaceMatchKeys: vi.fn(async () => undefined),
     sourceGraphIdFor: vi.fn(async () => graphId),
   }
-  const fieldLocks = { lock: vi.fn(async () => undefined) }
+  const fieldLocks = {
+    lock: vi.fn(async () => undefined),
+    forEntity: vi.fn(async (): Promise<Array<Record<string, unknown>>> => []),
+  }
   const audit = { write: vi.fn(async () => undefined) }
   const committer = {
     apply: vi.fn(async () => ({ shipmentId: 'new-leg', jobNo: 'J1', state: 'provisional', action: 'created' })),
@@ -212,5 +215,17 @@ describe('ShipmentsService.createManual — same gate on the New shipment form (
       svc.createManual({ bookingNo: 'BK1', mode: 'banana' }, 'user-1'),
     ).rejects.toBeInstanceOf(BadRequestException)
     expect(committer.apply).not.toHaveBeenCalled()
+  })
+})
+
+describe('ShipmentsService.lockedFields — human-locked columns for the detail DTO', () => {
+  it('returns shipment-scope lock fields only', async () => {
+    const { svc, fieldLocks } = makeService()
+    fieldLocks.forEntity.mockResolvedValueOnce([
+      { entityType: 'shipment', field: 'eta' },
+      { entityType: 'shipment', field: 'vendorRaw' },
+      { entityType: 'booking', field: 'qty' },
+    ])
+    await expect(svc.lockedFields('leg-1')).resolves.toEqual(['eta', 'vendorRaw'])
   })
 })

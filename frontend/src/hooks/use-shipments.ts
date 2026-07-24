@@ -131,6 +131,8 @@ export interface ShipmentDetail extends Shipment {
    *  the master keeps display; the detail row shows an amber marker with this context. */
   customerMismatch?: { raw: string; masterCode: string; masterName: string } | null
   vendorMismatch?: { raw: string; masterCode: string; masterName: string } | null
+  /** Human-locked leg columns (manual/review edits) — settled answers, never masked as unconfirmed. */
+  humanLockedFields?: string[]
 }
 
 interface ShipmentsResponse {

@@ -42,11 +42,12 @@ export class ShipmentsController {
   }
 
   @Get(':id') async getOne(@Param('id') id: string) {
-    const [dto, contestedLocks] = await Promise.all([
+    const [dto, contestedLocks, humanLockedFields] = await Promise.all([
       this.ui.shipment(id),
       this.shipments.contestedLocks(id),
+      this.shipments.lockedFields(id),
     ])
-    return { ...dto, contestedLocks }
+    return { ...dto, contestedLocks, humanLockedFields }
   }
 
   /**

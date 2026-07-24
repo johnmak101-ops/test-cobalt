@@ -908,14 +908,19 @@ function DetailRow({
   const historyIndex = useContext(FieldHistoryContext)
   const entries = historyKey ? historyForField(historyKey, historyIndex) : []
   const ann = useContext(PendingReviewContext).get(historyKey ?? '')
+  // Unconfirmed-answer mask: commit-first wrote the LLM's preferred value into this column, but
+  // the operator hasn't decided — display the PRE-write value instead ("Apple" in amber), or fall
+  // through to the "(pending)" placeholder when there was none. The proposal lives in the review
+  // queue; raw dates from the critic pass through unformatted (they are already YYYY-MM-DD).
+  const shown = ann?.mask ? ann.mask.prior : value
   // Amber colour only on a REAL stored value — "(pending)" and the date formatters' 'TBD' are
   // placeholders. The warning icon beside the history clock is the primary cue (2026-07-24):
   // yellow = open review question, red = master miss; hover shows the related message(s).
   const valueNode =
-    value != null && value !== 'TBD' && ann ? (
-      <mark className="review-pending-value">{value}</mark>
+    shown != null && shown !== 'TBD' && ann ? (
+      <mark className="review-pending-value">{shown}</mark>
     ) : (
-      value
+      shown
     )
   const annIcon = ann ? (
     <span
@@ -934,7 +939,7 @@ function DetailRow({
     <div className="grid grid-cols-[8rem_1fr] items-baseline gap-x-3 sm:grid-cols-[10rem_1fr]">
       <span className="truncate text-sm text-text-muted">{label}</span>
       <span className="field-value font-mono text-base leading-snug text-text-primary">
-        {value != null ? (
+        {shown != null ? (
           entries.length > 0 ? (
             <>
               <FieldHistoryPopover label={label} entries={entries}>

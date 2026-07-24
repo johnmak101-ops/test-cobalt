@@ -7,6 +7,7 @@ const make = () => {
     listForTracker: vi.fn(),
     getOne: vi.fn(),
     contestedLocks: vi.fn().mockResolvedValue([]),
+    lockedFields: vi.fn().mockResolvedValue([]),
   }
   const ui = {
     shipments: vi.fn().mockResolvedValue('ui-list'),
