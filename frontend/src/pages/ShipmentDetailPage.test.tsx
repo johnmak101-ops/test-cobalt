@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Routes, Route } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { CriticReview } from '../lib/critic-review'
@@ -22,6 +23,8 @@ vi.mock('../hooks/use-shipment-history', () => ({
 vi.mock('../components/shipments/PurchaseOrdersCard', () => ({
   PurchaseOrdersCard: () => null,
 }))
+// PortPicker mounts in edit mode; without this its query would hit the real backend from jsdom.
+vi.mock('../hooks/use-ports', () => ({ usePorts: () => ({ data: [] }) }))
 vi.mock('../components/ui/Toast', () => ({
   toast: Object.assign(vi.fn(), { success: vi.fn(), error: vi.fn() }),
 }))
@@ -151,5 +154,60 @@ describe('ShipmentDetailPage — pending-review word highlight', () => {
     })
     renderPage()
     expect(pendingMarks()).toHaveLength(0)
+  })
+})
+
+/** First-column texts (labels) of every row in the titled Order Details section, in DOM order. */
+function sectionLabels(title: string): string[] {
+  const section = screen.getByText(title).closest('div')!.parentElement!
+  return [...section.querySelectorAll('div.grid > :first-child')].map(
+    (el) => el.textContent?.trim() ?? '',
+  )
+}
+
+describe('ShipmentDetailPage — read view and edit form stay in step', () => {
+  beforeEach(() => {
+    mockUseShipment.mockReset()
+  })
+
+  it('lists Key Dates rows in the same order in both modes', async () => {
+    mockUseShipment.mockReturnValue({ data: fixture(), isLoading: false })
+    const user = userEvent.setup()
+    renderPage()
+
+    const readOrder = sectionLabels('Key Dates')
+    expect(readOrder).toHaveLength(9)
+    await user.click(screen.getByRole('button', { name: /edit/i }))
+    expect(sectionLabels('Key Dates')).toEqual(readOrder)
+  })
+
+  it('lists shared Shipping rows in the same relative order in both modes', async () => {
+    mockUseShipment.mockReturnValue({ data: fixture(), isLoading: false })
+    const user = userEvent.setup()
+    renderPage()
+
+    const readOrder = sectionLabels('Shipping')
+    await user.click(screen.getByRole('button', { name: /edit/i }))
+    const editOrder = sectionLabels('Shipping')
+    // Each mode has legitimate extras (read: Route / Origin Country; edit: Customer / Vendor raw) —
+    // the fields present in BOTH must not reshuffle.
+    expect(editOrder.filter((l) => readOrder.includes(l))).toEqual(
+      readOrder.filter((l) => editOrder.includes(l)),
+    )
+  })
+
+  it('renders date fields as datetime-local so a timed cut-off survives editing', async () => {
+    mockUseShipment.mockReturnValue({
+      // Local wall-clock string on purpose (no Z): datetime-local inputs are local time.
+      data: fixture({ warehouseEndDate: '2026-03-02T18:00:00' }),
+      isLoading: false,
+    })
+    const user = userEvent.setup()
+    renderPage()
+    await user.click(screen.getByRole('button', { name: /edit/i }))
+
+    const input = screen.getByLabelText('WH End Date') as HTMLInputElement
+    expect(input).toHaveAttribute('type', 'datetime-local')
+    expect(input.value).toBe('2026-03-02T18:00')
   })
 })

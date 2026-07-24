@@ -64,9 +64,13 @@ export const EDITABLE_FIELDS: EditableField[] = [
   // POL/POD pick from the seeded ports master (picker:'port'); Customer/Vendor/Forwarder are free text
   // because their masters are the Mesh ERP mirror (synced ~every 2 months) — the raw column is the only
   // place to record the correct party until the master arrives, at which point the master wins display.
+  //
+  // Intra-section ORDER is the read view's order too (parties → consignee → vessel → ports; dates in
+  // shipment chronology). The edit form is generated from this array, so a different order here makes
+  // the two modes of one card reshuffle under the user's cursor — the drift the derivation exists to
+  // prevent. Customer/Vendor have no raw row on the read view (codes live under Order Info); they sit
+  // with the other parties, between Mode and Forwarder.
   { section: 'Shipping', label: 'Mode', uiKey: 'mode', column: 'mode', type: 'text', options: MODE_OPTIONS },
-  { section: 'Shipping', label: 'POL', uiKey: 'polRaw', column: 'polRaw', type: 'text', picker: 'port' },
-  { section: 'Shipping', label: 'POD', uiKey: 'podRaw', column: 'podRaw', type: 'text', picker: 'port' },
   { section: 'Shipping', label: 'Customer', uiKey: 'customerRaw', column: 'customerRaw', type: 'text' },
   { section: 'Shipping', label: 'Vendor', uiKey: 'vendorRaw', column: 'vendorRaw', type: 'text' },
   { section: 'Shipping', label: 'Forwarder', uiKey: 'forwarderRaw', column: 'forwarderRaw', type: 'text' },
@@ -75,14 +79,16 @@ export const EDITABLE_FIELDS: EditableField[] = [
   { section: 'Shipping', label: 'Vessel', uiKey: 'vesselName', column: 'vesselName', type: 'text' },
   { section: 'Shipping', label: 'Voyage', uiKey: 'voyageNumber', column: 'voyageNo', type: 'text' },
   { section: 'Shipping', label: 'Flight No.', uiKey: 'flightNo', column: 'flightNo', type: 'text' },
+  { section: 'Shipping', label: 'POL', uiKey: 'polRaw', column: 'polRaw', type: 'text', picker: 'port' },
+  { section: 'Shipping', label: 'POD', uiKey: 'podRaw', column: 'podRaw', type: 'text', picker: 'port' },
   { section: 'Key Dates', label: 'Cargo Ready Date', uiKey: 'crd', column: 'cargoReadyDate', type: 'date' },
+  { section: 'Key Dates', label: 'WH Start Date', uiKey: 'warehouseStartDate', column: 'warehouseStartDate', type: 'date' },
+  { section: 'Key Dates', label: 'WH End Date', uiKey: 'warehouseEndDate', column: 'warehouseEndDate', type: 'date' },
   { section: 'Key Dates', label: 'CFS Cut-off', uiKey: 'cfsCutoff', column: 'cfsCutoff', type: 'date' },
   { section: 'Key Dates', label: 'ETD', uiKey: 'etd', column: 'etd', type: 'date' },
   { section: 'Key Dates', label: 'ATD', uiKey: 'actualDeparture', column: 'atd', type: 'date' },
   { section: 'Key Dates', label: 'ETA', uiKey: 'eta', column: 'eta', type: 'date' },
   { section: 'Key Dates', label: 'ATA', uiKey: 'actualArrival', column: 'ata', type: 'date' },
-  { section: 'Key Dates', label: 'WH Start Date', uiKey: 'warehouseStartDate', column: 'warehouseStartDate', type: 'date' },
-  { section: 'Key Dates', label: 'WH End Date', uiKey: 'warehouseEndDate', column: 'warehouseEndDate', type: 'date' },
   { section: 'Key Dates', label: 'In DC Date', uiKey: 'inDcDate', column: 'inDcDate', type: 'date' },
 ]
 
