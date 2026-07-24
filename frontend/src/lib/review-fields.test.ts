@@ -81,6 +81,43 @@ describe('EDITABLE_FIELDS', () => {
   })
 })
 
+describe('EDITABLE_FIELDS — intra-section order mirrors the Order Details READ view', () => {
+  // The edit form is generated from this array; the read view is the page users read most, so its
+  // order is the convention (same rule as labels/sections in the docstring above the array).
+  const columnsIn = (section: string) =>
+    EDITABLE_FIELDS.filter((f) => f.section === section).map((f) => f.column)
+
+  it('Key Dates follow the read chronology (CRD → warehouse window → cut-off → voyage → DC)', () => {
+    expect(columnsIn('Key Dates')).toEqual([
+      'cargoReadyDate',
+      'warehouseStartDate',
+      'warehouseEndDate',
+      'cfsCutoff',
+      'etd',
+      'atd',
+      'eta',
+      'ata',
+      'inDcDate',
+    ])
+  })
+
+  it('Shipping keeps the read order for shared fields (parties → consignee → vessel → ports)', () => {
+    expect(columnsIn('Shipping')).toEqual([
+      'mode',
+      'customerRaw',
+      'vendorRaw',
+      'forwarderRaw',
+      'consigneeName',
+      'consigneeAddress',
+      'vesselName',
+      'voyageNo',
+      'flightNo',
+      'polRaw',
+      'podRaw',
+    ])
+  })
+})
+
 describe('numericFieldWarn — mirrors backend coerceLegField numeric rules', () => {
   it('qty: negative → error', () => {
     expect(numericFieldWarn('qty', '-20')).toBe('Total Quantity cannot be negative')

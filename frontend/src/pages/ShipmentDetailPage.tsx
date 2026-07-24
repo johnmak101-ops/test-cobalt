@@ -15,7 +15,7 @@ import { pendingReviewColumns } from '../lib/pending-review'
 import { AlertCard } from '../components/alerts/AlertCard'
 import { formatDate, formatDateTime, formatDateMaybeTime, cn } from '../lib/utils'
 import { parseSender } from '../lib/email-sender'
-import { EDITABLE_FIELDS, fieldLabel, numericFieldWarn, dateOrderWarn, type EditableField } from '../lib/review-fields'
+import { EDITABLE_FIELDS, fieldLabel, numericFieldWarn, dateOrderWarn, toInputValue, type EditableField } from '../lib/review-fields'
 import { toast } from '../components/ui/Toast'
 import { interactiveProps } from '../lib/interactive'
 import { Pagination, usePagination, PageSizeSelect } from '../components/ui/Pagination'
@@ -65,12 +65,10 @@ const EDIT_SECTIONS: { title: string; fields: EditField[] }[] = (() => {
     }, []),
   }))
 })()
-/** A stored value → the string an <input> expects (date → YYYY-MM-DD). */
-function toInputValue(v: unknown, type: EditType): string {
-  if (v == null || v === '') return ''
-  if (type === 'date') { const d = new Date(String(v)); return Number.isNaN(d.getTime()) ? '' : d.toISOString().slice(0, 10) }
-  return String(v)
-}
+// Draft strings come from the shared lib/review-fields toInputValue: dates render as LOCAL
+// datetime-local ("2026-03-02T18:00"), so a timed cut-off (截仓 18:00) survives an edit — the old
+// page-local copy sliced toISOString() to date-only, which hid the time, saved it back as midnight,
+// and could even shift the DAY (UTC slice of a local midnight).
 
 /**
  * Leg columns with something open for review (provisional conflicts + contested locks) — DetailRows
@@ -509,7 +507,7 @@ export default function ShipmentDetailPage() {
                       ) : (
                         <input
                           id={`${fieldId}-${f.db}`}
-                          type={f.type}
+                          type={f.type === 'date' ? 'datetime-local' : f.type}
                           min={f.type === 'number' ? 0 : undefined}
                           step={f.db === 'qty' ? 1 : f.type === 'number' ? 'any' : undefined}
                           value={cur}
