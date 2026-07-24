@@ -224,6 +224,27 @@ export function isMultiStylePaste(text: string): boolean {
   return /[,\n\r\t;，]/.test(text)
 }
 
+/**
+ * Per-PO style lists: split ONLY on list separators — a slash belongs to the style itself
+ * ("C193/FERN JUMPER" is one token). PO/STYLE pair semantics (parseStyleEntries) apply only to
+ * bag-level lists that span POs, where the prefix genuinely names a PO (2026-07-24).
+ */
+export function parseStyleTokens(value: string | null | undefined): string[] {
+  if (!value) return []
+  return String(value)
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n')
+    .replace(/[\t\n]+/g, ',')
+    .split(/[,;，]+/)
+    .map((t) => t.trim())
+    .filter(Boolean)
+}
+
+/** Inverse of parseStyleTokens — blank tokens dropped, comma-joined. */
+export function serializeStyleTokens(tokens: string[]): string {
+  return tokens.map((t) => t.trim()).filter(Boolean).join(', ')
+}
+
 /** Inverse of parseStyleEntries — empty rows dropped, 'po/style' or bare style, comma-joined. */
 export function serializeStyleEntries(rows: StyleEntry[]): string {
   return rows

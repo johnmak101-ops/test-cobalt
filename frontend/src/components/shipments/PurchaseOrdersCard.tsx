@@ -265,7 +265,7 @@ export function PurchaseOrdersCard({
                       </span>
                     </td>
                     <td className="min-w-0 px-3 py-2.5">
-                      <StyleListDisplay value={po.itemStyleNo ?? ''} className="text-text-secondary" />
+                      <StyleListDisplay value={po.itemStyleNo ?? ''} className="text-text-secondary" pairs={false} />
                     </td>
                     {crudMode && (
                       <td className="px-2 py-2">
@@ -380,6 +380,7 @@ function EditableRow({
           value={f.itemStyleNo}
           onChange={(v) => setF((prev) => ({ ...prev, itemStyleNo: v }))}
           existingValue={po?.itemStyleNo ?? ''}
+          pairs={false}
         />
       </td>
       <td className="px-2 py-2">

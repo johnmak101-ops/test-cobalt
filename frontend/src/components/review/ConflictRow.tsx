@@ -7,6 +7,8 @@ import {
   isPortColumn,
   parseStyleEntries,
   serializeStyleEntries,
+  parseStyleTokens,
+  serializeStyleTokens,
   isMultiStylePaste,
   type StyleEntry,
 } from '../../lib/review-fields'
@@ -381,9 +383,20 @@ function SourceEmailCell({
 }
 
 /** Read-only: one style (or PO/style) per line — never a mid-wrap comma blob.
- *  Long lists scroll inside a max-height box so they cannot blow out the review card. */
-export function StyleListDisplay({ value, className }: { value: string; className?: string }) {
-  const rows = parseStyleEntries(value)
+ *  Long lists scroll inside a max-height box so they cannot blow out the review card.
+ *  `pairs=false` = per-PO context: a slash is part of the style itself, never a PO prefix. */
+export function StyleListDisplay({
+  value,
+  className,
+  pairs = true,
+}: {
+  value: string
+  className?: string
+  pairs?: boolean
+}) {
+  const rows = pairs
+    ? parseStyleEntries(value)
+    : parseStyleTokens(value).map((style) => ({ po: '', style }))
   // Always set 13px — bare "—" must not inherit body 16px.
   if (rows.length === 0) {
     return <span className="font-mono text-sm text-text-muted">—</span>
@@ -431,28 +444,35 @@ export function StyleListEditor({
   value,
   onChange,
   existingValue,
+  pairs = true,
 }: {
   label: string
   value: string
   onChange: (v: string) => void
   /** System Existing list — used by Copy all (left → right). */
   existingValue?: string
+  /** false = per-PO context: tokens only, a slash stays inside the style, no PO# inputs. */
+  pairs?: boolean
 }) {
+  const parse = (v: string | null | undefined): StyleEntry[] =>
+    pairs ? parseStyleEntries(v) : parseStyleTokens(v).map((style) => ({ po: '', style }))
+  const serialize = (list: StyleEntry[]): string =>
+    pairs ? serializeStyleEntries(list) : serializeStyleTokens(list.map((r) => r.style))
   const [rows, setRows] = useState<StyleEntry[]>(() => {
-    const parsed = parseStyleEntries(value)
+    const parsed = parse(value)
     return parsed.length > 0 ? parsed : [{ po: '', style: '' }]
   })
   // Re-seed when the parent value is replaced from outside (e.g. conflict reseed, multi-candidate pick).
   const [seed, setSeed] = useState(value)
-  if (seed !== value && serializeStyleEntries(rows) !== value) {
+  if (seed !== value && serialize(rows) !== value) {
     setSeed(value)
-    const parsed = parseStyleEntries(value)
+    const parsed = parse(value)
     setRows(parsed.length > 0 ? parsed : [{ po: '', style: '' }])
   }
 
   const commit = (next: StyleEntry[]) => {
     setRows(next)
-    onChange(serializeStyleEntries(next))
+    onChange(serialize(next))
   }
 
   const update = (i: number, patch: Partial<StyleEntry>) => {
@@ -467,7 +487,7 @@ export function StyleListEditor({
   const add = () => commit([...rows, { po: '', style: '' }])
 
   const copyAllFromExisting = () => {
-    const parsed = parseStyleEntries(existingValue)
+    const parsed = parse(existingValue)
     if (parsed.length === 0) return
     commit(parsed)
   }
@@ -476,14 +496,14 @@ export function StyleListEditor({
   const handlePaste = (e: React.ClipboardEvent) => {
     const text = e.clipboardData.getData('text')
     if (!text || !isMultiStylePaste(text)) return // single token → default paste into the focused input
-    const parsed = parseStyleEntries(text)
+    const parsed = parse(text)
     if (parsed.length === 0) return
     e.preventDefault()
     commit(parsed)
   }
 
-  const showPo = rows.some((r) => r.po.trim())
-  const canCopyAll = parseStyleEntries(existingValue).length > 0
+  const showPo = pairs && rows.some((r) => r.po.trim())
+  const canCopyAll = parse(existingValue).length > 0
 
   return (
     <div
