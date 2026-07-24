@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
+import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { usePorts, type PortMaster } from '../../hooks/use-ports'
 
 interface PortPickerProps {
@@ -27,6 +27,7 @@ export function PortPicker({ value, onChange, id, ariaLabel, placeholder, classN
   const [open, setOpen] = useState(false)
   const [active, setActive] = useState(0)
   const rootRef = useRef<HTMLDivElement>(null)
+  const listboxId = useId()
 
   const text = value ?? ''
 
@@ -50,7 +51,12 @@ export function PortPicker({ value, onChange, id, ariaLabel, placeholder, classN
     [ports, text],
   )
 
-  useEffect(() => setActive(0), [text])
+  // Reset highlight when the query text changes (render-time adjust — no effect lag).
+  const [prevText, setPrevText] = useState(text)
+  if (text !== prevText) {
+    setPrevText(text)
+    setActive(0)
+  }
 
   // Close on outside click (blur alone races with the option's mousedown).
   useEffect(() => {
@@ -95,6 +101,7 @@ export function PortPicker({ value, onChange, id, ariaLabel, placeholder, classN
         className={className}
         role="combobox"
         aria-expanded={open}
+        aria-controls={listboxId}
         aria-autocomplete="list"
         autoComplete="off"
         onChange={(e) => {
@@ -111,6 +118,7 @@ export function PortPicker({ value, onChange, id, ariaLabel, placeholder, classN
       )}
       {open && matches.length > 0 && (
         <ul
+          id={listboxId}
           role="listbox"
           className="absolute z-30 mt-1 max-h-60 w-full overflow-auto rounded-lg border border-border bg-surface-800 py-1 shadow-lg"
         >

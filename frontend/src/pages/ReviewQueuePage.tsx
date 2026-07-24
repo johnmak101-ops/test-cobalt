@@ -354,13 +354,17 @@ export default function ReviewQueuePage() {
                     const band = s.criticReviewCompact?.band
                     const bookingLabel = s.bookingNo ?? s.soNo ?? s.hblAwbFcrNo ?? '—'
                     const compact = s.criticReviewCompact
+                    const reasonSet =
+                      s.reviewReasons != null && s.reviewReasons.length > 0
+                        ? new Set(s.reviewReasons)
+                        : null
                     const phrase = decisionPhrase({
                       candidates: compact?.candidateCount,
                       weakIdentity: s.reviewReasons?.some(isWeakIdentityReason),
-                      conflictField: compact?.topConflictType?.includes('conflict')
+                      conflictField: compact?.topConflictType && /conflict/i.test(compact.topConflictType)
                         ? compact.topConflictType.replace(/\s*conflict$/i, '')
                         : null,
-                      aiLowReason: s.reviewReasons?.includes(AI_CONFIDENCE_LOW_REASON),
+                      aiLowReason: reasonSet?.has(AI_CONFIDENCE_LOW_REASON) ?? false,
                     })
                     const shadow = isShadowEligible(compact)
                     // T2-4 / T3-A: never one-click confirm when the row still shows an open decision

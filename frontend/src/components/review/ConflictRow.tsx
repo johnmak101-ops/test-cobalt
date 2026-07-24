@@ -391,10 +391,10 @@ function SourceEmailCell({
   }
   return (
     <ul className="space-y-1" aria-label="Source email per proposed candidate">
-      {candidates.map((c, i) => {
+      {candidates.map((c) => {
         const link = resolve?.(c.sourceEmailId) ?? null
         return (
-          <li key={`${c.source}-${c.value}-${i}`}>
+          <li key={`${c.sourceEmailId ?? ''}\0${c.source}\0${c.value}`}>
             {/*
               Matches MultiCandidateProposed's box metrics (border + px-2, py-1 editing / py-0.5
               read) so each icon sits on its value's line rather than drifting up the stack.
@@ -470,9 +470,9 @@ export function StyleListDisplay({
     <div className="min-w-0 max-w-full" data-testid="style-list-display">
       <div className="max-h-40 overflow-y-auto overscroll-contain pr-1">
         <ul className="space-y-0.5">
-          {rows.map((r, i) => (
+          {rows.map((r) => (
             <li
-              key={`${r.po}-${r.style}-${i}`}
+              key={`${r.po}\0${r.style}`}
               className={cn(
                 'field-value font-mono text-sm leading-snug',
                 className ?? 'text-text-primary',
@@ -504,6 +504,23 @@ export function StyleListDisplay({
  * Bulk UX: **Copy all** fills from Existing; paste a comma list or Excel column/row into any field
  * and the whole list is parsed (tabs + newlines count as separators).
  */
+/** Stable row id for the style editor — content keys remount inputs while typing. */
+let styleEditorRowSeq = 0
+function nextStyleEditorRowId(): string {
+  styleEditorRowSeq += 1
+  return `style-row-${styleEditorRowSeq}`
+}
+
+type EditorStyleRow = StyleEntry & { rowId: string }
+
+function toEditorRows(entries: StyleEntry[]): EditorStyleRow[] {
+  return entries.map((r) => ({ ...r, rowId: nextStyleEditorRowId() }))
+}
+
+function emptyEditorRow(): EditorStyleRow {
+  return { po: '', style: '', rowId: nextStyleEditorRowId() }
+}
+
 export function StyleListEditor({
   label,
   value,
@@ -523,19 +540,19 @@ export function StyleListEditor({
     pairs ? parseStyleEntries(v) : parseStyleTokens(v).map((style) => ({ po: '', style }))
   const serialize = (list: StyleEntry[]): string =>
     pairs ? serializeStyleEntries(list) : serializeStyleTokens(list.map((r) => r.style))
-  const [rows, setRows] = useState<StyleEntry[]>(() => {
+  const [rows, setRows] = useState<EditorStyleRow[]>(() => {
     const parsed = parse(value)
-    return parsed.length > 0 ? parsed : [{ po: '', style: '' }]
+    return parsed.length > 0 ? toEditorRows(parsed) : [emptyEditorRow()]
   })
   // Re-seed when the parent value is replaced from outside (e.g. conflict reseed, multi-candidate pick).
   const [seed, setSeed] = useState(value)
   if (seed !== value && serialize(rows) !== value) {
     setSeed(value)
     const parsed = parse(value)
-    setRows(parsed.length > 0 ? parsed : [{ po: '', style: '' }])
+    setRows(parsed.length > 0 ? toEditorRows(parsed) : [emptyEditorRow()])
   }
 
-  const commit = (next: StyleEntry[]) => {
+  const commit = (next: EditorStyleRow[]) => {
     setRows(next)
     onChange(serialize(next))
   }
@@ -546,15 +563,15 @@ export function StyleListEditor({
 
   const remove = (i: number) => {
     const next = rows.filter((_, j) => j !== i)
-    commit(next.length > 0 ? next : [{ po: '', style: '' }])
+    commit(next.length > 0 ? next : [emptyEditorRow()])
   }
 
-  const add = () => commit([...rows, { po: '', style: '' }])
+  const add = () => commit([...rows, emptyEditorRow()])
 
   const copyAllFromExisting = () => {
     const parsed = parse(existingValue)
     if (parsed.length === 0) return
-    commit(parsed)
+    commit(toEditorRows(parsed))
   }
 
   /** Bulk paste from Excel / comma list replaces the whole Resolution list. */
@@ -564,7 +581,7 @@ export function StyleListEditor({
     const parsed = parse(text)
     if (parsed.length === 0) return
     e.preventDefault()
-    commit(parsed)
+    commit(toEditorRows(parsed))
   }
 
   const showPo = pairs && rows.some((r) => r.po.trim())
@@ -578,7 +595,7 @@ export function StyleListEditor({
     >
       <div className="max-h-48 space-y-1.5 overflow-y-auto overscroll-contain pr-1">
         {rows.map((r, i) => (
-          <div key={i} className="flex min-w-0 items-center gap-1.5">
+          <div key={r.rowId} className="flex min-w-0 items-center gap-1.5">
             {showPo && (
               <input
                 aria-label={`${label} PO ${i + 1}`}
@@ -675,7 +692,7 @@ function MultiCandidateProposed({
           // #360: a pick is stored as the candidate's resolution value (master CODE when resolved)
           const selected = candidateMatches(c, value) || (!value && i === 0)
           return (
-            <li key={`${c.source}-${c.value}-${i}`}>
+            <li key={`${c.sourceEmailId ?? ''}\0${c.source}\0${c.value}`}>
               {editing ? (
                 <label
                   className={cn(

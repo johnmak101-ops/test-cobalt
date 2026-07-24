@@ -372,7 +372,7 @@ function EditableRow({
   return (
     <tr className="border-b border-border bg-surface-900/40" data-testid={po ? `po-edit-${po.id}` : 'po-add-row'}>
       <td className="px-3 py-2">
-        <input autoFocus className={inputCls} placeholder="PO number" value={f.poNumber} onChange={set('poNumber')} />
+        <input className={inputCls} placeholder="PO number" value={f.poNumber} onChange={set('poNumber')} />
       </td>
       <td className="px-3 py-2">
         <StyleListEditor

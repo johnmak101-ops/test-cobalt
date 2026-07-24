@@ -19,8 +19,11 @@ const MAX_CARDS = 5
 export function selectLiveAlerts(alerts: Alert[]): Alert[] {
   const now = Date.now()
   return alerts
-    .filter((a) => a.status === 'ACTIVE')
-    .filter((a) => !a.snoozedUntil || new Date(a.snoozedUntil).getTime() <= now)
+    .filter(
+      (a) =>
+        a.status === 'ACTIVE' &&
+        (!a.snoozedUntil || new Date(a.snoozedUntil).getTime() <= now),
+    )
     // Worst first, then newest — an operator reads top-down and should hit CRITICAL first.
     .sort((a, b) => {
       const rank = (s: string) => (s === 'CRITICAL' ? 0 : s === 'WARNING' ? 1 : 2)

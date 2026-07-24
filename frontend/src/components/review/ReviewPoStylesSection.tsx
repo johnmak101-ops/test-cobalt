@@ -119,14 +119,8 @@ export function ReviewPoStylesSection({
   const busy =
     create.isPending || update.isPending || unlink.isPending || link.isPending
 
-  // View mode: stay synced with server. Edit mode: local drafts only.
-  useEffect(() => {
-    if (!canEdit) {
-      setDrafts(draftsFromPos(linkedPOs))
-      setAdding(false)
-      setConfirmUnlinkId(null)
-    }
-  }, [linkedPOs, canEdit])
+  // View mode: derive from server (no effect mirror). Edit mode: local drafts only.
+  const displayDrafts = canEdit ? drafts : draftsFromPos(linkedPOs)
 
   // Enter edit → seed drafts. Leave (Done editing) → save dirty POs.
   useEffect(() => {
@@ -291,7 +285,7 @@ export function ReviewPoStylesSection({
         )}
         {sorted.map((po) => {
           const proposed = proposedStyleForPo(po.poNumber, reviewReasons)
-          const draft = drafts[po.id] ?? {
+          const draft = displayDrafts[po.id] ?? {
             poNumber: po.poNumber,
             itemStyleNo: po.itemStyleNo?.trim() ?? '',
           }
@@ -470,7 +464,6 @@ function AddRow({
     <tr className="border-b border-border bg-surface-900/40" data-testid="review-po-add-row">
       <td className={cn(REVIEW_COL.label, REVIEW_TD)}>
         <input
-          autoFocus
           className={inputCls}
           placeholder="PO number"
           value={f.poNumber}

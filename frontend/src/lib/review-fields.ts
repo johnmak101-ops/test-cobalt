@@ -242,7 +242,12 @@ export function parseStyleTokens(value: string | null | undefined): string[] {
 
 /** Inverse of parseStyleTokens — blank tokens dropped, comma-joined. */
 export function serializeStyleTokens(tokens: string[]): string {
-  return tokens.map((t) => t.trim()).filter(Boolean).join(', ')
+  return tokens
+    .flatMap((t) => {
+      const s = t.trim()
+      return s ? [s] : []
+    })
+    .join(', ')
 }
 
 /** Inverse of parseStyleEntries — empty rows dropped, 'po/style' or bare style, comma-joined. */
@@ -321,7 +326,10 @@ export function isWritableLegColumn(column: string): boolean {
   return WRITABLE_COLUMN_SET.has(column)
 }
 
-const PORT_PICKER_COLUMNS = new Set(EDITABLE_FIELDS.filter((f) => f.picker === 'port').map((f) => f.column))
+const PORT_PICKER_COLUMNS = new Set<string>()
+for (const f of EDITABLE_FIELDS) {
+  if (f.picker === 'port') PORT_PICKER_COLUMNS.add(f.column)
+}
 
 /** True when this leg column (POL/POD) should be edited via the seeded ports-master picker, not free text. */
 export function isPortColumn(column: string | null | undefined): boolean {
