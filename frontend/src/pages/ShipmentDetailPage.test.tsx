@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, fireEvent } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Routes, Route } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -9,11 +9,14 @@ import ShipmentDetailPage from './ShipmentDetailPage'
 
 // Data + mutation seams are mocked; DetailRow / FieldHistoryPopover / ContestedLockCard render for
 // real, so this exercises the actual Order Details grid the highlight lands on.
-const { mockUseShipment } = vi.hoisted(() => ({ mockUseShipment: vi.fn() }))
+const { mockUseShipment, mutateSpy } = vi.hoisted(() => ({
+  mockUseShipment: vi.fn(),
+  mutateSpy: vi.fn(),
+}))
 
 vi.mock('../hooks/use-shipments', () => ({
   useShipment: mockUseShipment,
-  useUpdateShipment: () => ({ mutate: vi.fn(), isPending: false }),
+  useUpdateShipment: () => ({ mutate: mutateSpy, isPending: false }),
   useResolveContestedLock: () => ({ mutate: vi.fn(), isPending: false }),
 }))
 vi.mock('../hooks/use-shipment-history', () => ({
@@ -91,6 +94,7 @@ const pendingMarks = () =>
 describe('ShipmentDetailPage — pending-review word highlight', () => {
   beforeEach(() => {
     mockUseShipment.mockReset()
+    mutateSpy.mockClear()
   })
 
   it('marks the values of fields named in provisional critic conflicts, and only those', () => {
@@ -168,6 +172,7 @@ function sectionLabels(title: string): string[] {
 describe('ShipmentDetailPage — read view and edit form stay in step', () => {
   beforeEach(() => {
     mockUseShipment.mockReset()
+    mutateSpy.mockClear()
   })
 
   it('lists Key Dates rows in the same order in both modes', async () => {
@@ -196,9 +201,9 @@ describe('ShipmentDetailPage — read view and edit form stay in step', () => {
     )
   })
 
-  it('renders date fields as datetime-local so a timed cut-off survives editing', async () => {
+  it('shows a timed cut-off as date + time inputs, prefilled', async () => {
     mockUseShipment.mockReturnValue({
-      // Local wall-clock string on purpose (no Z): datetime-local inputs are local time.
+      // Local wall-clock string on purpose (no Z): the inputs are local time.
       data: fixture({ warehouseEndDate: '2026-03-02T18:00:00' }),
       isLoading: false,
     })
@@ -206,8 +211,50 @@ describe('ShipmentDetailPage — read view and edit form stay in step', () => {
     renderPage()
     await user.click(screen.getByRole('button', { name: /edit/i }))
 
-    const input = screen.getByLabelText('WH End Date') as HTMLInputElement
-    expect(input).toHaveAttribute('type', 'datetime-local')
-    expect(input.value).toBe('2026-03-02T18:00')
+    const date = screen.getByLabelText('WH End Date') as HTMLInputElement
+    const time = screen.getByLabelText('WH End Date time') as HTMLInputElement
+    expect(date).toHaveAttribute('type', 'date')
+    expect(time).toHaveAttribute('type', 'time')
+    expect(date.value).toBe('2026-03-02')
+    expect(time.value).toBe('18:00')
+  })
+
+  it('saves a day picked into a PREVIOUSLY EMPTY date field — no time required', async () => {
+    // datetime-local regression: an incomplete date+time reported "" and the edit silently vanished.
+    mockUseShipment.mockReturnValue({
+      data: fixture({ actualArrival: null }),
+      isLoading: false,
+    })
+    const user = userEvent.setup()
+    renderPage()
+    await user.click(screen.getByRole('button', { name: /edit/i }))
+
+    fireEvent.change(screen.getByLabelText('ATA'), { target: { value: '2026-02-25' } })
+    await user.type(screen.getByLabelText(/note for the agent/i), 'ata from carrier portal')
+    await user.click(screen.getByRole('button', { name: /save/i }))
+
+    expect(mutateSpy).toHaveBeenCalledTimes(1)
+    expect(mutateSpy.mock.calls[0]![0]).toMatchObject({
+      fields: { ata: '2026-02-25T00:00' },
+    })
+  })
+
+  it('keeps the stored cut-off time when only the day is changed', async () => {
+    mockUseShipment.mockReturnValue({
+      data: fixture({ warehouseEndDate: '2026-03-02T18:00:00' }),
+      isLoading: false,
+    })
+    const user = userEvent.setup()
+    renderPage()
+    await user.click(screen.getByRole('button', { name: /edit/i }))
+
+    fireEvent.change(screen.getByLabelText('WH End Date'), { target: { value: '2026-03-05' } })
+    await user.type(screen.getByLabelText(/note for the agent/i), 'CFS moved by forwarder')
+    await user.click(screen.getByRole('button', { name: /save/i }))
+
+    expect(mutateSpy).toHaveBeenCalledTimes(1)
+    expect(mutateSpy.mock.calls[0]![0]).toMatchObject({
+      fields: { warehouseEndDate: '2026-03-05T18:00' },
+    })
   })
 })

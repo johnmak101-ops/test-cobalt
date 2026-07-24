@@ -504,10 +504,46 @@ export default function ShipmentDetailPage() {
                             <option key={opt} value={opt}>{opt}</option>
                           ))}
                         </select>
+                      ) : f.type === 'date' ? (
+                        /* Date + optional time over ONE draft string ("YYYY-MM-DDTHH:mm"). NOT a
+                           datetime-local input: that control reports "" until BOTH parts are typed,
+                           so picking a day into an empty field never reached the draft and the edit
+                           silently vanished on Save. A bare day defaults to 00:00 (reads back as
+                           date-only); a stored cut-off time sits in the time box and survives
+                           day-only edits. Clearing the day clears the whole value. */
+                        (() => {
+                          const dateVal = cur.slice(0, 10)
+                          const timeVal = cur.slice(11, 16)
+                          const put = (d: string, t: string) =>
+                            setDraft((prev) => ({ ...prev, [f.db]: d ? `${d}T${t || '00:00'}` : '' }))
+                          return (
+                            <div className="flex gap-2">
+                              <div className="min-w-0 flex-1">
+                                <input
+                                  id={`${fieldId}-${f.db}`}
+                                  type="date"
+                                  value={dateVal}
+                                  onChange={(e) => put(e.target.value, timeVal)}
+                                  className={controlClass}
+                                />
+                              </div>
+                              <div className="w-24 flex-none">
+                                <input
+                                  type="time"
+                                  aria-label={`${f.label} time`}
+                                  value={timeVal}
+                                  disabled={!dateVal}
+                                  onChange={(e) => put(dateVal, e.target.value)}
+                                  className={cn(controlClass, 'disabled:opacity-40')}
+                                />
+                              </div>
+                            </div>
+                          )
+                        })()
                       ) : (
                         <input
                           id={`${fieldId}-${f.db}`}
-                          type={f.type === 'date' ? 'datetime-local' : f.type}
+                          type={f.type}
                           min={f.type === 'number' ? 0 : undefined}
                           step={f.db === 'qty' ? 1 : f.type === 'number' ? 'any' : undefined}
                           value={cur}
