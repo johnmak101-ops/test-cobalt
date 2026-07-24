@@ -3,6 +3,7 @@ import type { CriticReview } from '../decisions/critic-review.types'
 import {
   entityCodeNameMapsFromRefs,
   hydrateCriticEntityLabels,
+  resolveEntityCodeDisplay,
   resolveEntityDisplayValue,
 } from './hydrate-critic-entity-labels'
 
@@ -206,5 +207,23 @@ describe('hydrateCriticEntityLabels', () => {
       '2026-08-01',
       '2026-08-05',
     ])
+  })
+})
+
+describe('resolveEntityCodeDisplay — history rows under a "Code" label', () => {
+  it('prefers the master code for resolvable vendor/customer values', () => {
+    expect(resolveEntityCodeDisplay('vendorRaw', 'Vendor One', maps)).toBe('V01')
+    expect(resolveEntityCodeDisplay('vendorRaw', 'v01', maps)).toBe('V01')
+    expect(resolveEntityCodeDisplay('customer_code', 'ascena retail', maps)).toBe('ASC')
+  })
+
+  it('leaves unresolved values, forwarders, and non-party fields alone', () => {
+    expect(resolveEntityCodeDisplay('vendorRaw', 'GOLDEN SUN KNITTING FTY LTD', maps)).toBe(
+      'GOLDEN SUN KNITTING FTY LTD',
+    )
+    expect(resolveEntityCodeDisplay('forwarder_name', 'APL LOGISTICS LTD', maps)).toBe(
+      'APL LOGISTICS LTD',
+    )
+    expect(resolveEntityCodeDisplay('eta', '2026-08-01', maps)).toBe('2026-08-01')
   })
 })

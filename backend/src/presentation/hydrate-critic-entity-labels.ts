@@ -99,6 +99,24 @@ export function resolveEntityMaster(
   return null
 }
 
+/**
+ * Vendor/customer values shown under a "Code" label (detail-row change history): prefer the master
+ * CODE for any value that resolves (code or exact name); unresolved raw text stays as written.
+ * Forwarder/port kinds excluded — their rows display names, and codes like "058" are unreadable.
+ */
+export function resolveEntityCodeDisplay(
+  field: string,
+  value: string,
+  maps: EntityCodeNameMaps,
+): string {
+  const kind = entityKindForField(field)
+  if (kind !== 'customer' && kind !== 'vendor') return value
+  const v = String(value ?? '').trim()
+  if (!v) return value
+  const code = resolveEntityMaster(field, v, maps)?.code?.trim()
+  return code || value
+}
+
 function hydrateConflict(c: CriticConflict, maps: EntityCodeNameMaps): CriticConflict {
   return {
     ...c,

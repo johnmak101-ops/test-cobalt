@@ -44,6 +44,7 @@ import { makeTtlCache } from '../common/ttl-cache'
 import {
   entityCodeNameMapsFromRefs,
   hydrateCriticEntityLabels,
+  resolveEntityCodeDisplay,
 } from './hydrate-critic-entity-labels'
 
 // nameCh rides along (repo selectAll) — the mapper's party-mismatch check accepts a Chinese raw.
@@ -589,9 +590,27 @@ export class PresentationService {
       notes: c.subject ? `${c.subject}`.slice(0, 140) : null,
     }))
     const audit = rows.map(toUiHistoryEntry)
+    // The detail rows label these fields "Customer/Vendor Code", so their history speaks in codes:
+    // any old/new value that resolves to a master (code or exact name) displays as the CODE
+    // ("SOUOCE → ROKNFT", not "SOUOCE → ROSE KNITTING FACTORY LIMITED"). Response-time only —
+    // audit rows keep the values that were actually written.
+    const parties = await this.partyMaps()
+    const codeMaps = entityCodeNameMapsFromRefs(
+      parties.forwarders.values(),
+      parties.customers.values(),
+      parties.vendors.values(),
+    )
+    const codeify = <T extends { field: string | null; oldValue: string | null; newValue: string | null }>(h: T): T =>
+      h.field
+        ? {
+            ...h,
+            oldValue: h.oldValue ? resolveEntityCodeDisplay(h.field, h.oldValue, codeMaps) : h.oldValue,
+            newValue: h.newValue ? resolveEntityCodeDisplay(h.field, h.newValue, codeMaps) : h.newValue,
+          }
+        : h
     const history = [...audit, ...emailEntries].sort((a, b) =>
       (b.changedAt ?? '') < (a.changedAt ?? '') ? -1 : 1,
-    )
+    ).map(codeify)
     return { history }
   }
 
