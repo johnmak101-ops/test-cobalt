@@ -127,6 +127,10 @@ export interface ShipmentDetail extends Shipment {
   /** Fields where a newer email overrode a human edit (the leg column now differs from the locked
    *  value). Surfaced as a prompt to keep the new value or restore the edit. */
   contestedLocks?: Array<{ field: string; yourValue: string | null; newValue: string | null }>
+  /** Raw party twin names a different company than the resolved master ("flag, don't follow") —
+   *  the master keeps display; the detail row shows an amber marker with this context. */
+  customerMismatch?: { raw: string; masterCode: string; masterName: string } | null
+  vendorMismatch?: { raw: string; masterCode: string; masterName: string } | null
 }
 
 interface ShipmentsResponse {

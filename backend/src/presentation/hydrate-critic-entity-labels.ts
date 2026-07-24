@@ -47,8 +47,9 @@ function nameMapFor(kind: EntityKind, maps: EntityCodeNameMaps) {
   return maps.vendorByName
 }
 
-/** Same spirit as the repository's norm_exact tier, but Unicode-aware so CJK names survive. */
-function normalizeEntityName(s: string): string {
+/** Same spirit as the repository's norm_exact tier, but Unicode-aware so CJK names survive.
+ *  Shared with the mapper's party-mismatch check — one normalization, one answer. */
+export function normalizeEntityName(s: string): string {
   return s.toUpperCase().replace(/[^\p{L}\p{N}]/gu, '')
 }
 
@@ -96,6 +97,24 @@ export function resolveEntityMaster(
   // company — same guard as the Mesh-miss worklist; never claim "not in Mesh" for it.
   if (isNonPartyName(v)) return undefined
   return null
+}
+
+/**
+ * Vendor/customer values shown under a "Code" label (detail-row change history): prefer the master
+ * CODE for any value that resolves (code or exact name); unresolved raw text stays as written.
+ * Forwarder/port kinds excluded — their rows display names, and codes like "058" are unreadable.
+ */
+export function resolveEntityCodeDisplay(
+  field: string,
+  value: string,
+  maps: EntityCodeNameMaps,
+): string {
+  const kind = entityKindForField(field)
+  if (kind !== 'customer' && kind !== 'vendor') return value
+  const v = String(value ?? '').trim()
+  if (!v) return value
+  const code = resolveEntityMaster(field, v, maps)?.code?.trim()
+  return code || value
 }
 
 function hydrateConflict(c: CriticConflict, maps: EntityCodeNameMaps): CriticConflict {

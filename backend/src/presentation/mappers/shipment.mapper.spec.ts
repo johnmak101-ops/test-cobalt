@@ -330,3 +330,42 @@ describe('shortLabelForRisk — full catalog coverage', () => {
     expect(shortLabelForRisk('SOME_FUTURE_CODE')).toBe('Needs review')
   })
 })
+
+describe("toUiShipment — party mismatch flags (raw vs resolved master; flag, don't follow)", () => {
+  it('flags a vendorRaw that names a different company than the booking master', () => {
+    const s = toUiShipment({ ...fullInput(), leg: leg({ vendorRaw: 'SOUOCE' }) })
+    expect(s.vendorMismatch).toEqual({ raw: 'SOUOCE', masterCode: 'ROKNFT', masterName: 'Rose Knit' })
+  })
+
+  it('no flag when raw equals the master code or name (case/punct-insensitive)', () => {
+    expect(toUiShipment({ ...fullInput(), leg: leg({ vendorRaw: 'roknft' }) }).vendorMismatch).toBeNull()
+    expect(toUiShipment({ ...fullInput(), leg: leg({ vendorRaw: 'Rose Knit.' }) }).vendorMismatch).toBeNull()
+  })
+
+  it('no flag when raw equals the Chinese master name (nameCh)', () => {
+    const input = {
+      ...fullInput(),
+      vendor: { id: 'ven-1', name: 'Rose Knit', code: 'ROKNFT', nameCh: '玫瑰針織廠有限公司' },
+      leg: leg({ vendorRaw: '玫瑰針織廠有限公司' }),
+    }
+    expect(toUiShipment(input).vendorMismatch).toBeNull()
+  })
+
+  it('no flag without a master, without a raw, or for a numeric leak', () => {
+    const noMaster = {
+      ...fullInput(),
+      vendor: null,
+      booking: { customerId: 'cust-1', vendorId: null },
+      leg: leg({ vendorRaw: 'SOUOCE' }),
+    }
+    expect(toUiShipment(noMaster).vendorMismatch).toBeNull()
+    expect(toUiShipment(fullInput()).vendorMismatch).toBeNull()
+    expect(toUiShipment({ ...fullInput(), leg: leg({ vendorRaw: '1012485' }) }).vendorMismatch).toBeNull()
+  })
+
+  it('customer twin', () => {
+    const s = toUiShipment({ ...fullInput(), leg: leg({ customerRaw: 'WYSE' }) })
+    expect(s.customerMismatch).toEqual({ raw: 'WYSE', masterCode: 'COLE', masterName: 'Cole Haan' })
+    expect(s.vendorMismatch).toBeNull()
+  })
+})

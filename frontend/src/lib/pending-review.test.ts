@@ -140,3 +140,33 @@ describe('pendingReviewAnnotations — numeric "parties" never become Mesh-miss 
     expect(ann.get('vendorRaw')?.level).toBe('miss')
   })
 })
+
+describe("pendingReviewAnnotations — party mismatch (flag, don't follow)", () => {
+  it('ambers vendorRaw with the kept-master message', () => {
+    const ann = pendingReviewAnnotations({
+      reviewStatus: 'confirmed',
+      vendorMismatch: { raw: 'SOUOCE', masterCode: 'MACFUN', masterName: 'MACAU FUNG TAI LIMITED' },
+    })
+    const a = ann.get('vendorRaw')
+    expect(a?.level).toBe('warn')
+    expect(a?.messages[0]).toContain('SOUOCE')
+    expect(a?.messages[0]).toContain('MACFUN')
+  })
+
+  it('shows regardless of review status and covers the customer twin', () => {
+    const ann = pendingReviewAnnotations({
+      customerMismatch: { raw: 'DOCC', masterCode: 'WYSE', masterName: 'WYSE LONDON LIMITED' },
+    })
+    expect(ann.get('customerRaw')?.level).toBe('warn')
+    expect(ann.get('vendorRaw')).toBeUndefined()
+  })
+
+  it('a master miss on the same column outranks the mismatch amber', () => {
+    const ann = pendingReviewAnnotations({
+      reviewStatus: 'provisional',
+      criticReview: { masterMisses: [{ type: 'vendor', rawName: 'NEW KNITTERS', field: 'vendor_code' }] },
+      vendorMismatch: { raw: 'NEW KNITTERS', masterCode: 'MACFUN', masterName: 'MACAU FUNG TAI LIMITED' },
+    })
+    expect(ann.get('vendorRaw')?.level).toBe('miss')
+  })
+})
