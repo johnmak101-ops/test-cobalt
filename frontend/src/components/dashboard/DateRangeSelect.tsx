@@ -66,13 +66,13 @@ export function DateRangeSelect({
 }: {
   value: DateRange
   onChange: (r: DateRange) => void
-  /** What the range filters on, e.g. "ETD" — named so the operator is never guessing. */
+  /** What the range filters on, e.g. "ETD" — aria-only since 2026-07-24 (ops: the visible tag
+   *  read as noise beside the presets); screen readers still hear "ETD from / ETD to". */
   label: string
 }) {
   const active = activePreset(value)
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <span className="text-xs text-text-muted">{label}</span>
       <div className="flex items-center gap-1">
         {PRESETS.map((p) => (
           <button
