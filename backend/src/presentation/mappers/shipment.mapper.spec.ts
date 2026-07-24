@@ -166,6 +166,13 @@ describe('toUiShipment — flat active-leg projection', () => {
     ).toBe('2026-07-14T00:00:00.000Z')
   })
 
+  it('passes firstEmailAt (the beginning email) through as ISO — null when the leg has none (#350)', () => {
+    expect(toUiShipment(fullInput()).firstEmailAt).toBeNull()
+    expect(
+      toUiShipment({ ...fullInput(), leg: leg({ firstEmailAt: new Date('2026-03-09T08:00:00Z') }) }).firstEmailAt,
+    ).toBe('2026-03-09T08:00:00.000Z')
+  })
+
   it('AIR legs route by IATA airport code; sea legs keep the UN/LOCODE', () => {
     const air = toUiShipment({
       ...fullInput(),

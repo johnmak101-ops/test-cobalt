@@ -26,8 +26,8 @@ describe('formatDateMaybeTime — cut-off deadlines show their stated time', () 
   })
 })
 
-describe('formatShipmentId — derived tracker identity (#348)', () => {
-  it('is creation yyyymm + the first 4 uuid hex chars', () => {
+describe('formatShipmentId — derived tracker identity (#348; #350: anchor = beginning email, callers coalesce)', () => {
+  it('is anchor yyyymm + the first 4 uuid hex chars', () => {
     expect(formatShipmentId('5393954C-8CED-4329-BAC6-2868EE704C76', '2026-07-24T09:30:00.000Z')).toBe('2026075393')
   })
 
@@ -35,7 +35,7 @@ describe('formatShipmentId — derived tracker identity (#348)', () => {
     expect(formatShipmentId('ab12cd34-0000-4000-8000-000000000000', '2026-02-01T00:00:00.000Z')).toBe('202602AB12')
   })
 
-  it('degrades to the uuid head alone when createdAt is missing', () => {
+  it('degrades to the uuid head alone when the anchor is missing', () => {
     expect(formatShipmentId('5393954C-8CED-4329-BAC6-2868EE704C76', null)).toBe('5393')
   })
 })

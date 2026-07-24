@@ -229,10 +229,11 @@ export function ShipmentTable({ shipments }: ShipmentTableProps) {
                 {/* group-hover mirrors the row's hover onto the pinned cell — without it the sticky
                     column stays dark while the rest of the row lights up. */}
                 <td className={cn('sticky left-0 z-[1] truncate bg-surface-800 px-3 py-3 font-mono text-sm font-medium text-cobalt-primary-light transition-colors group-hover:bg-surface-700', scrolled && PINNED_DIVIDER)}>
-                  {/* #348: derived system identity — creation yyyymm + uuid head, one shape for every
-                      row (keyless shells included). The booking → SO → HBL spine stays searchable and
-                      on the detail page; ReviewQueue/TopBar still show it (parse-identity D1). */}
-                  {formatShipmentId(s.id, s.createdAt)}
+                  {/* #348/#350: derived system identity — beginning-email yyyymm (creation month when
+                      no dated email) + uuid head, one shape for every row (keyless shells included).
+                      The booking → SO → HBL spine stays searchable and on the detail page;
+                      ReviewQueue/TopBar still show it (parse-identity D1). */}
+                  {formatShipmentId(s.id, s.firstEmailAt ?? s.createdAt)}
                   {(s.legCount ?? 1) > 1 && (
                     <span className="ml-1 text-[11px] font-normal text-text-muted">
                       · Leg {s.legNo ?? 1}/{s.legCount}

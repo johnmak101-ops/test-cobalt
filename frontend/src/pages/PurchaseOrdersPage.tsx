@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { usePurchaseOrders } from '../hooks/use-purchase-orders'
-import { cn } from '../lib/utils'
+import { cn, formatShipmentId } from '../lib/utils'
 import { formatDate } from '../lib/utils'
 import { poProgress, furthestStatusLabel, type PoShipmentLink } from '../lib/po-progress'
 import { Package, Search, Download, Calendar, AlertTriangle } from 'lucide-react'
@@ -33,6 +33,7 @@ export default function PurchaseOrdersPage() {
           po.notes,
         ]
         const shipmentFields = (po.shipmentSummary ?? []).flatMap((s) => [
+          formatShipmentId(s.id, s.firstEmailAt ?? s.createdAt), // #350: what the Shipment ID column shows
           s.bookingNo,
           s.route,
           s.containerNo,
@@ -340,6 +341,8 @@ export default function PurchaseOrdersPage() {
             <table className="w-full">
               <thead>
                 <tr className="border-b border-border bg-surface-900/50">
+                  {/* #348/#350: derived shipment identity leads — same shape as the tracker column */}
+                  <th className="px-4 py-3 text-left text-xs font-medium text-text-muted">Shipment ID</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-text-muted">Customer PO#</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-text-muted">
                     Customer
@@ -373,6 +376,8 @@ UOM
                   const progress = poProgress(po.totalQuantity, links).pct
                   const pctRounded = Math.round(Math.min(100, Math.max(0, progress)))
                   const hasProgress = !!(po.totalQuantity || links.length > 0)
+                  // #348/#350: one derived ID per linked leg; the cell shows the first (+N), all in the tooltip
+                  const shipIds = (po.shipmentSummary ?? []).map((s) => formatShipmentId(s.id, s.firstEmailAt ?? s.createdAt))
 
                   return (
                     <tr
@@ -380,6 +385,18 @@ UOM
                       {...interactiveProps(() => navigate(`/purchase-orders/${po.id}`))}
                       className="cursor-pointer border-b border-border last:border-0 transition-colors hover:bg-surface-700"
                     >
+                      <td className="whitespace-nowrap px-4 py-3 font-mono text-sm font-medium text-cobalt-primary-light">
+                        {shipIds.length === 0 ? (
+                          <span className="font-normal text-text-muted">—</span>
+                        ) : (
+                          <span title={shipIds.join(', ')}>
+                            {shipIds[0]}
+                            {shipIds.length > 1 && (
+                              <span className="ml-1 text-[11px] font-normal text-text-muted">+{shipIds.length - 1}</span>
+                            )}
+                          </span>
+                        )}
+                      </td>
                       <td className="px-4 py-3 font-mono text-sm font-medium text-cobalt-primary-light">
                         {po.poNumber}
                       </td>

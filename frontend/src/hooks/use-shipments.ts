@@ -82,6 +82,8 @@ export interface Shipment {
   htsCode: string | null
   /** Full agent critic payload on detail (queue uses criticReviewCompact only). */
   criticReview?: CriticReview | null
+  /** Beginning email received-at (#350) — anchors the Shipment ID month; null/absent → use createdAt. */
+  firstEmailAt?: string | null
   createdAt: string
   updatedAt: string
   customer?: { id: string; name: string; code: string } | null

@@ -1,5 +1,5 @@
 import { Badge } from '../ui/Badge'
-import { parsePONumbers, formatPoHeader, formatRelativeTime } from '../../lib/utils'
+import { parsePONumbers, formatPoHeader, formatRelativeTime, formatShipmentId } from '../../lib/utils'
 import { useNavigate } from 'react-router-dom'
 import { useMarkAlertRead, useMarkAlertUnread } from '../../hooks/use-alerts'
 import { MailOpen } from 'lucide-react'
@@ -22,6 +22,9 @@ interface AlertCardProps {
       route: string | null
       consigneeName?: string | null
       customer?: { name: string } | null
+      /** #350: anchor fields for the derived Shipment ID (firstEmailAt ?? createdAt). */
+      firstEmailAt?: string | null
+      createdAt?: string | null
     }
   }
   compact?: boolean
@@ -42,8 +45,12 @@ export function AlertCard({ alert, compact }: AlertCardProps) {
   const poHeader = alert.shipment ? formatPoHeader(parsePONumbers(alert.shipment.poNumbers)) : null
   const route = alert.shipment?.route?.trim() || null
   const consignee = alert.shipment?.consigneeName?.trim() || null
+  // #348/#350: lead with the derived Shipment ID — the same identity the tracker + detail title show.
+  const shipmentIdLabel = alert.shipment
+    ? formatShipmentId(alert.shipment.id, alert.shipment.firstEmailAt ?? alert.shipment.createdAt)
+    : null
 
-  const titleParts = [poHeader, route].filter(Boolean)
+  const titleParts = [shipmentIdLabel, poHeader, route].filter(Boolean)
   const title = titleParts.length > 0 ? titleParts.join(' | ') : null
 
   const openAlert = () => {

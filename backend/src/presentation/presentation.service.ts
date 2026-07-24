@@ -110,6 +110,9 @@ export function buildShipmentSummary(
     polId: string | null
     podId: string | null
     consigneeName?: string | null
+    /** Beginning email (min shipment_emails.received_at) — rides findByIds rows (#350). */
+    firstEmailAt?: Date | string | null
+    createdAt?: Date | string | null
   },
   booking: { customerId: string | null } | null,
   poNumbers: string[],
@@ -125,6 +128,9 @@ export function buildShipmentSummary(
     route: deriveRoute(portLabel(leg.mode, pol?.unlocode, pol?.iata), portLabel(leg.mode, pod?.unlocode, pod?.iata)),
     customer: customer ? { name: customer.name } : null,
     consigneeName: consignee || null,
+    // #350: the alert card derives the Shipment ID from these (firstEmailAt ?? createdAt + uuid head).
+    firstEmailAt: isoOrNull(leg.firstEmailAt),
+    createdAt: isoOrNull(leg.createdAt),
   }
 }
 
@@ -435,7 +441,14 @@ export class PresentationService {
       legQty: (p as { legQty?: number | null }).legQty ?? null,
       legUnit: (p as { legQtyUnit?: string | null }).legQtyUnit ?? null,
     }))
-    const base = toUiShipment(this.assembleInput(leg, booking, maps, linkedPosWithLeg), {
+    // #350: the beginning email anchors the derived Shipment ID. findById stays lean (it also runs
+    // inside committer/edit transactions), and the related emails are already loaded here — derive
+    // the anchor from them instead of adding a second shipment_emails query.
+    const firstEmailAt = relatedEmails.reduce<string | null>((min, e) => {
+      const at = e.receivedAt != null ? new Date(e.receivedAt as string | Date).toISOString() : null
+      return at != null && (min == null || at < min) ? at : min
+    }, null)
+    const base = toUiShipment(this.assembleInput({ ...leg, firstEmailAt }, booking, maps, linkedPosWithLeg), {
       legNo: (leg as { legNo?: number | null }).legNo ?? 1,
       legCount: siblings.length,
     })

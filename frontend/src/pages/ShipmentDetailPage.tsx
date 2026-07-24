@@ -13,7 +13,7 @@ import { FieldHistoryContext, FieldHistoryPopover } from '../components/shipment
 import { indexHistoryByField, historyForField } from '../lib/history-grouping'
 import { pendingReviewAnnotations, type PendingAnnotation } from '../lib/pending-review'
 import { AlertCard } from '../components/alerts/AlertCard'
-import { formatDate, formatDateTime, formatDateMaybeTime, cn } from '../lib/utils'
+import { formatDate, formatDateTime, formatDateMaybeTime, formatShipmentId, cn } from '../lib/utils'
 import { parseSender } from '../lib/email-sender'
 import { EDITABLE_FIELDS, fieldLabel, numericFieldWarn, dateOrderWarn, toInputValue, type EditableField } from '../lib/review-fields'
 import { toast } from '../components/ui/Toast'
@@ -189,20 +189,19 @@ export default function ShipmentDetailPage() {
       .flatMap((e) => (e.receivedAt ? [e.receivedAt] : []))
       .sort()
       .at(-1) ?? null
-  // Title from MEANINGFUL identifiers — booking no / SO no (then a PO), never the opaque UUID.
-  // Display copy: "Booking ID" (not BK chip) — review/editor fields keep "Booking No." (#126).
-  // #151: multi-leg bookings show "B123 · Leg 1/2" in the Booking ID value.
-  const bookingTitleValue =
-    shipment.bookingNo &&
-    ((shipment.legCount ?? 1) > 1
-      ? `${shipment.bookingNo} · Leg ${shipment.legNo ?? 1}/${shipment.legCount}`
-      : shipment.bookingNo)
+  // Title identity (#348/#350): the derived Shipment ID leads — always present, one shape for every
+  // leg, anchored to the beginning email (fallback: creation). #151's "· Leg n/N" ordinal rides it.
+  // Booking follows under its editor name "Booking No." (#126); SO keeps its slot. The old PO
+  // fallback is gone — with the Shipment ID the title can never be empty.
+  const shipmentIdValue =
+    formatShipmentId(shipment.id, shipment.firstEmailAt ?? shipment.createdAt) +
+    ((shipment.legCount ?? 1) > 1 ? ` · Leg ${shipment.legNo ?? 1}/${shipment.legCount}` : '')
   const soDisplay = displaySoNumber(shipment)
   const titleIds = [
-    bookingTitleValue && { label: 'Booking ID', value: bookingTitleValue },
+    { label: 'Shipment ID', value: shipmentIdValue },
+    shipment.bookingNo && { label: 'Booking No.', value: shipment.bookingNo },
     soDisplay && { label: 'SO', value: soDisplay },
   ].filter(Boolean) as { label: string; value: string }[]
-  if (titleIds.length === 0 && linkedPOs[0]) titleIds.push({ label: 'PO', value: linkedPOs[0].poNumber })
   const activeAlerts = (shipment.alerts ?? []).filter((a) => a.status === 'ACTIVE')
   const criticalCount = activeAlerts.filter((a) => a.severity === 'CRITICAL').length
   const warningCount = activeAlerts.filter((a) => a.severity === 'WARNING').length

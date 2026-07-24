@@ -25,7 +25,7 @@ export default function ShipmentTrackerPage() {
     if (terms.length === 0) return list
     return list.filter((s) => {
       const fields = [
-        formatShipmentId(s.id, s.createdAt), // #348: what the Shipment ID column shows
+        formatShipmentId(s.id, s.firstEmailAt ?? s.createdAt), // #348/#350: what the Shipment ID column shows
         s.poNumbers,
         s.customer?.name,
         s.forwarder?.name,
