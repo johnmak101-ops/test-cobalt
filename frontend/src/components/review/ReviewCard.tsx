@@ -926,7 +926,6 @@ export function ReviewCard({
                     readOnly={readOnly}
                     editing={canEditGrid}
                     embedded
-                    showColumnHeader={!sharedThead}
                     proposedColumnLabel={proposedColumnLabel}
                   />
                 )}
