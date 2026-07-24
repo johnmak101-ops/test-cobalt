@@ -42,10 +42,13 @@ export function poShipmentTotalFromLinked(
 }
 
 function nonSystemValues(c: CriticConflict): number[] {
-  return c.candidates
-    .filter((x) => x.source.trim().toLowerCase() !== 'system')
-    .map((x) => normalizeQty(x.value))
-    .filter((n): n is number => n != null)
+  const out: number[] = []
+  for (const x of c.candidates) {
+    if (x.source.trim().toLowerCase() === 'system') continue
+    const n = normalizeQty(x.value)
+    if (n != null) out.push(n)
+  }
+  return out
 }
 
 function allCandidateValues(c: CriticConflict): number[] {

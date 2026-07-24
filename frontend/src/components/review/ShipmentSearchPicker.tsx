@@ -70,7 +70,6 @@ export function ShipmentSearchPicker({
           value={input}
           onChange={(e) => setInput(e.target.value)}
           placeholder="Search booking#, SO, HBL, container, PO…"
-          autoFocus
           className="h-9 w-full rounded-lg border border-border bg-surface-800 pl-9 pr-3 text-sm text-text-primary placeholder:text-text-muted"
           aria-label="Search shipments"
         />
@@ -93,7 +92,7 @@ export function ShipmentSearchPicker({
         ) : (
           <ul className="space-y-1" role="listbox" aria-label="Shipment search results">
             {results.map((hit) => (
-              <li key={hit.id} role="option">
+              <li key={hit.id} role="option" aria-selected={false}>
                 <button
                   type="button"
                   onClick={() => onSelect(hit.id, hit)}

@@ -85,15 +85,19 @@ export function AlertRulesSettings() {
     // Server owns identity fields; send only what is editable (the whitelist pipe strips the rest anyway).
     mutationFn: (rules: AlertRule[]) =>
       api.put('/alert-rules', {
-        rules: rules
-          .filter((r) => !r.locked)
-          .map((r) => ({
-            id: r.id,
-            thresholdDays: r.thresholdDays,
-            severity: r.severity,
-            enabled: r.enabled,
-            countryThresholds: r.countryThresholds,
-          })),
+        rules: rules.flatMap((r) =>
+          r.locked
+            ? []
+            : [
+                {
+                  id: r.id,
+                  thresholdDays: r.thresholdDays,
+                  severity: r.severity,
+                  enabled: r.enabled,
+                  countryThresholds: r.countryThresholds,
+                },
+              ],
+        ),
       }),
     onSuccess: () => {
       setDraft(null)

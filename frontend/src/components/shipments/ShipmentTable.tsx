@@ -113,27 +113,19 @@ function CustomerPoChip({
             </p>
             <div className="divide-y divide-border">
               {sortedPOs.map((po) => (
-                <div
+                <a
                   key={po.id}
-                  role="link"
-                  tabIndex={0}
+                  href={`/purchase-orders/${po.id}`}
                   onClick={(e) => {
+                    e.preventDefault()
                     e.stopPropagation()
                     setOpen(false)
                     onSelectPo(po.id, shipmentId)
                   }}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' || e.key === ' ') {
-                      e.preventDefault()
-                      e.stopPropagation()
-                      setOpen(false)
-                      onSelectPo(po.id, shipmentId)
-                    }
-                  }}
-                  className="cursor-pointer rounded-md px-2 py-2 transition-colors hover:bg-surface-700"
+                  className="block cursor-pointer rounded-md px-2 py-2 transition-colors hover:bg-surface-700"
                 >
                   <span className="font-mono text-xs font-medium text-cobalt-primary-light">{po.poNumber}</span>
-                </div>
+                </a>
               ))}
             </div>
           </div>,

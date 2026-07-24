@@ -471,6 +471,12 @@ export default function ShipmentDetailPage() {
                           className={controlClass}
                         />
                       ) : f.options ? (
+                        (() => {
+                          const optionSet = new Set(f.options as readonly string[])
+                          const allValueSet = new Set(
+                            (f.allValues ?? f.options ?? []) as readonly string[],
+                          )
+                          return (
                         <select
                           id={`${fieldId}-${f.db}`}
                           data-testid={`edit-select-${f.db}`}
@@ -479,18 +485,20 @@ export default function ShipmentDetailPage() {
                           className={controlClass}
                         >
                           <option value="">—</option>
-                          {cur && !(f.options as readonly string[]).includes(cur) && (
+                          {cur && !optionSet.has(cur) && (
                             <option value={cur}>
                               {/* A value outside the offered list but inside the full enum (e.g.
                                   agent-written SEA_LCL vs the SEA/AIR offer) is valid — only truly
                                   unknown junk gets the suffix. */}
-                              {(f.allValues ?? f.options ?? []).includes(cur) ? cur : `${cur} (unrecognized)`}
+                              {allValueSet.has(cur) ? cur : `${cur} (unrecognized)`}
                             </option>
                           )}
                           {f.options.map((opt) => (
                             <option key={opt} value={opt}>{opt}</option>
                           ))}
                         </select>
+                          )
+                        })()
                       ) : f.type === 'date' ? (
                         /* Date + optional time over ONE draft string ("YYYY-MM-DDTHH:mm"). NOT a
                            datetime-local input: that control reports "" until BOTH parts are typed,
