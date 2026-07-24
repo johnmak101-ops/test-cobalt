@@ -620,9 +620,11 @@ export default function ShipmentDetailPage() {
         <div className="grid grid-cols-1 gap-x-8 gap-y-6 md:grid-cols-2">
           {/* Section 1: Order Info */}
           <DetailSection title="Order Info" icon={<ClipboardList size={14} className="text-text-muted" />}>
-            {/* Codes only — full Customer/Vendor names live in the page header; Item/Style is on the PO table. */}
-            <DetailRow label="Customer Code" value={shipment.customer?.code ?? null} />
-            <DetailRow label="Vendor Code" value={shipment.vendor?.code ?? null} />
+            {/* Codes only — full Customer/Vendor names live in the page header; Item/Style is on the PO table.
+                historyKey = the raw twin: party conflicts and change history live on customerRaw/vendorRaw,
+                so the code row is where a pending party question glows (and where its history pops). */}
+            <DetailRow historyKey="customerRaw" label="Customer Code" value={shipment.customer?.code ?? null} />
+            <DetailRow historyKey="vendorRaw" label="Vendor Code" value={shipment.vendor?.code ?? null} />
             <DetailRow
               historyKey="bookingNo"
               label={fieldLabel('bookingNo')}
