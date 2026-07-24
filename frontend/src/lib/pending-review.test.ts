@@ -121,3 +121,22 @@ describe('pendingReviewAnnotations — remaining reason families read plainly', 
     )
   })
 })
+
+describe('pendingReviewAnnotations — numeric "parties" never become Mesh-miss icons', () => {
+  it('suppresses a quoted all-digit name (a leaked PO/booking number, not a company)', () => {
+    const ann = pendingReviewAnnotations({
+      reviewStatus: 'provisional',
+      reviewReasons: ['customer_code "1012485" did not exact-match a master (left unlinked)'],
+      criticReview: { masterMisses: [{ type: 'vendor', rawName: '2867408', field: 'vendor_code' }] },
+    })
+    expect(ann.get('customerRaw')).toBeUndefined()
+    expect(ann.get('vendorRaw')).toBeUndefined()
+  })
+  it('still flags names that contain letters (CJK and letter+digit brands included)', () => {
+    const ann = pendingReviewAnnotations({
+      reviewStatus: 'provisional',
+      criticReview: { masterMisses: [{ type: 'vendor', rawName: '3M', field: 'vendor_code' }] },
+    })
+    expect(ann.get('vendorRaw')?.level).toBe('miss')
+  })
+})
