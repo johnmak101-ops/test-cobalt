@@ -5,6 +5,8 @@
  * NOTE: compute_tz='vessel' (A2/A3) is computed in UTC for the POC — a port→timezone map is a
  * later refinement; alert thresholds are coarse (hours/days) so the margin is small.
  */
+import { legDay } from '../common/leg-day'
+
 export interface Rule {
   id: string
   /** When set, leg must be in this staircase state for the rule to apply. */
@@ -164,7 +166,9 @@ function formatElapsedHours(hours: number): string {
 }
 
 function dayStamp(d: Date): string {
-  return d.toISOString().slice(0, 10)
+  // Local, not UTC — see legDay: an HK-midnight leg date is stored on the previous UTC day, so
+  // toISOString() would put yesterday's date in an operator-facing alert.
+  return legDay(d)
 }
 
 /**
@@ -215,7 +219,9 @@ export interface CrdRevisionFinding {
   current: Date
 }
 
-const dayOf = (d: Date): string => d.toISOString().slice(0, 10)
+// Both sides of every comparison below shift equally, so UTC was not WRONG here — aligned
+// anyway so a future mixed comparison against a displayed day cannot drift.
+const dayOf = (d: Date): string => legDay(d)
 
 /**
  * "Please revise the delivery date of these 8 bookings to July 08th" — an email asks for a LATER
