@@ -3,9 +3,10 @@ import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
 import { X, PlusCircle, Loader2 } from 'lucide-react'
 import { useCreateShipment, type CreateShipmentInput } from '../../hooks/use-shipments'
-import { fieldLabel, numericFieldWarn, isNumericColumn, isDateColumn } from '../../lib/review-fields'
+import { fieldLabel, fieldUnit, numericFieldWarn, isNumericColumn, isDateColumn } from '../../lib/review-fields'
 import { MODE_EDIT_OPTIONS, UOM_OPTIONS } from '../../lib/enums'
 import { DateTimeField } from './DateTimeField'
+import { NumberField } from './NumberField'
 
 /**
  * Manually create a shipment the pipeline never saw (e.g. the original booking email / attachment was
@@ -119,19 +120,23 @@ export function NewShipmentModal({ onClose }: { onClose: () => void }) {
             label={fld.label ?? fieldLabel(fld.key)}
             className={controlClass}
           />
+        ) : NUMERIC.includes(fld.key) ? (
+          <NumberField
+            ariaLabel={fld.label ?? fieldLabel(fld.key)}
+            value={cur}
+            onChange={(v) => set(fld.key, v)}
+            decimals={fld.key !== 'qty'}
+            unit={fld.key === 'qty' ? form.qtyUnit || null : fieldUnit(String(fld.key))}
+            error={numErr}
+            className={controlClass}
+          />
         ) : (
           <input
             value={cur}
             onChange={(e) => set(fld.key, e.target.value)}
             placeholder={fld.placeholder}
-            type={NUMERIC.includes(fld.key) ? 'number' : undefined}
-            min={NUMERIC.includes(fld.key) ? 0 : undefined}
-            step={fld.key === 'qty' ? 1 : NUMERIC.includes(fld.key) ? 'any' : undefined}
             className={controlClass}
           />
-        )}
-        {numErr && (
-          <p className="text-xs text-status-critical" data-testid={`create-err-${fld.key}`}>{numErr}</p>
         )}
       </label>
     )

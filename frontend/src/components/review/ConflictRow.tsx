@@ -18,6 +18,7 @@ import {
   isDateColumn,
 } from '../../lib/review-fields'
 import { PortPicker } from '../shipments/PortPicker'
+import { NumberField } from '../shipments/NumberField'
 import { PartyPicker } from '../shipments/PartyPicker'
 import { cn } from '../../lib/utils'
 import { REVIEW_COL, REVIEW_TD } from './review-table-layout'
@@ -352,6 +353,18 @@ export function ConflictRow({
               className="h-8 w-full rounded-lg border border-border bg-surface-900 px-2.5 font-mono text-sm text-text-primary placeholder:text-text-muted focus:border-cobalt-primary focus:outline-none"
             />
           ) : (
+            isNumeric ? (
+              <NumberField
+                ariaLabel={`Proposed value for ${label}`}
+                value={value}
+                onChange={onChange}
+                decimals={column !== 'qty'}
+                unit={proposedUnit}
+                error={numErr}
+                placeholder="—"
+                className="h-8 w-full rounded-lg border border-border bg-surface-900 px-2.5 font-mono text-sm text-text-primary placeholder:text-text-muted focus:border-cobalt-primary focus:outline-none"
+              />
+            ) : (
             <span className="inline-flex w-full flex-wrap items-center">
               <input
                 aria-label={`Proposed value for ${label}`}
@@ -362,9 +375,6 @@ export function ConflictRow({
                  * silently WIPED the quantity. That function's docstring justifies the null with
                  * "the number <input> already blocks that at entry"; this is the input it meant.
                  */
-                type={isNumeric ? 'number' : 'text'}
-                min={isNumeric ? 0 : undefined}
-                step={column === 'qty' ? 1 : isNumeric ? 'any' : undefined}
                 value={value}
                 onChange={(e) => onChange(e.target.value)}
                 placeholder="—"
@@ -372,12 +382,8 @@ export function ConflictRow({
               />
               {/* The unit is NOT part of the editable text — the operator types a number, not '87 KGS'. */}
               <Unit unit={proposedUnit} />
-              {numErr && (
-                <span className="mt-1 w-full text-xs text-status-critical" data-testid="conflict-num-err">
-                  {numErr}
-                </span>
-              )}
             </span>
+            )
           )
         ) : value ? (
           <span className="inline-flex max-w-full flex-wrap items-center gap-x-1.5">

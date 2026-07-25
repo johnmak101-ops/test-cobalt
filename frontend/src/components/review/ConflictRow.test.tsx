@@ -262,13 +262,14 @@ describe('ConflictRow numeric fields — restrict on entry, group on display', (
       </table>,
     )
 
-  it('editing a numeric field gives a restricted number input, not free text', () => {
+  it('editing a numeric field gives the numeric field, not free text', () => {
     renderQty({ editing: true, value: '1240' })
     const input = screen.getByLabelText('Proposed value for Total Quantity')
-    // Without this the row was plain text and coerceLegField turned "1,240" into NULL on save.
-    expect(input).toHaveAttribute('type', 'number')
-    expect(input).toHaveAttribute('min', '0')
-    expect(input).toHaveAttribute('step', '1')
+    // A TEXT input on purpose: type=number mutates on scroll-wheel and blanks a pasted "1,240".
+    expect(input).toHaveAttribute('type', 'text')
+    expect(input).toHaveAttribute('inputmode', 'numeric')
+    // Grouped for readback while the caller still holds raw digits.
+    expect((input as HTMLInputElement).value).toBe('1,240')
   })
 
   it('groups both columns for reading', () => {
@@ -277,19 +278,40 @@ describe('ConflictRow numeric fields — restrict on entry, group on display', (
     expect(screen.getByText('1,240')).toBeInTheDocument()
   })
 
-  it('surfaces the zero/fractional warning the edit form already showed', () => {
+  it('holds the zero/fractional warning until the field is left', async () => {
+    const user = userEvent.setup()
     renderQty({ editing: true, value: '0' })
-    expect(screen.getByTestId('conflict-num-err')).toHaveTextContent(/whole number greater than 0/)
+    // "0" is a normal keystroke on the way to "10" — no shouting mid-word.
+    expect(screen.queryByTestId('number-field-error')).not.toBeInTheDocument()
+    await user.click(screen.getByLabelText('Proposed value for Total Quantity'))
+    await user.tab()
+    expect(screen.getByTestId('number-field-error')).toHaveTextContent(/whole number greater than 0/)
   })
 
-  it('surfaces the negative warning', () => {
-    renderQty({ editing: true, value: '-5' })
-    expect(screen.getByTestId('conflict-num-err')).toHaveTextContent(/cannot be negative/)
-  })
-
-  it('shows no warning for a valid count', () => {
+  it('shows no warning for a valid count', async () => {
+    const user = userEvent.setup()
     renderQty({ editing: true, value: '1240' })
-    expect(screen.queryByTestId('conflict-num-err')).not.toBeInTheDocument()
+    await user.click(screen.getByLabelText('Proposed value for Total Quantity'))
+    await user.tab()
+    expect(screen.queryByTestId('number-field-error')).not.toBeInTheDocument()
+  })
+
+  it('echoes the leg UOM beside the number', () => {
+    render(
+      <table>
+        <tbody>
+          <ConflictRow
+            conflict={qtyConflict('1180', '1240')}
+            value="1240"
+            onChange={vi.fn()}
+            editing
+            canEdit
+            proposedUnit="cartons"
+          />
+        </tbody>
+      </table>,
+    )
+    expect(screen.getByTestId('number-field-unit')).toHaveTextContent('cartons')
   })
 
   it('leaves a non-numeric field as a plain text input', () => {
@@ -303,7 +325,9 @@ describe('ConflictRow numeric fields — restrict on entry, group on display', (
       ],
     }
     renderQty({ editing: true, value: 'EVER GIVEN', conflict: vessel })
-    expect(screen.getByLabelText('Proposed value for Vessel')).toHaveAttribute('type', 'text')
+    // A plain input, not the numeric field — no grouping, no unit slot.
+    expect(screen.queryByTestId('number-field')).not.toBeInTheDocument()
+    expect(screen.getByLabelText('Proposed value for Vessel')).toBeInTheDocument()
   })
 })
 
