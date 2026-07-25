@@ -106,6 +106,15 @@ html {
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  /* Native controls — the date/time picker indicators, the calendar popup, select menus, spinners —
+     are painted by the browser from color-scheme, NOT from our CSS variables. Without this the app
+     renders dark while the browser still assumes light, so the calendar glyph is a dark icon on our
+     dark surface (invisible) and the picker popup opens white. Default matches getInitialTheme(). */
+  color-scheme: dark;
+}
+
+html[data-theme='light'] {
+  color-scheme: light;
 }
 
 /* Larger-text accessibility mode (users are mainly 40–60). Scales the root font RELATIVE to the
