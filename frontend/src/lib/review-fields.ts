@@ -48,8 +48,12 @@ export interface EditableField {
    * When set, the edit form and the review conflict row render a master picker instead of free text.
    * 'port' → a searchable UN/LOCODE dropdown (ports are a seeded, complete master), with a free-text
    * fallback for a port not yet in the catalog. The chosen value is written to the raw column.
+   * 'customer' | 'vendor' | 'forwarder' → the Mesh party mirror, same free-text fallback (the mirror
+   * lags the ERP by ~2 months). Customer/Vendor picks write the master CODE — the tier exactPartyId
+   * resolves first, and what the read view shows as "Customer Code" / "Vendor Code". Forwarder picks
+   * write the NAME instead: its read row renders the master name and its codes are numeric ERP ids.
    */
-  picker?: 'port'
+  picker?: 'port' | 'customer' | 'vendor' | 'forwarder'
 }
 
 export const EDITABLE_FIELDS: EditableField[] = [
@@ -79,9 +83,12 @@ export const EDITABLE_FIELDS: EditableField[] = [
   // prevent. Customer/Vendor have no raw row on the read view (codes live under Order Info); they sit
   // with the other parties, between Mode and Forwarder.
   { section: 'Shipping', label: 'Mode', uiKey: 'mode', column: 'mode', type: 'text', options: MODE_EDIT_OPTIONS, allValues: MODE_OPTIONS },
-  { section: 'Shipping', label: 'Customer', uiKey: 'customerRaw', column: 'customerRaw', type: 'text' },
-  { section: 'Shipping', label: 'Vendor', uiKey: 'vendorRaw', column: 'vendorRaw', type: 'text' },
-  { section: 'Shipping', label: 'Forwarder', uiKey: 'forwarderRaw', column: 'forwarderRaw', type: 'text' },
+  // "…Code", not bare "Customer"/"Vendor": a pick now stores the master CODE, and the read view rows
+  // are already labelled this way, so all three surfaces (read, edit, review conflict row) agree on
+  // both the name and the thing named. Forwarder keeps the bare label — it stores a NAME.
+  { section: 'Shipping', label: 'Customer Code', uiKey: 'customerRaw', column: 'customerRaw', type: 'text', picker: 'customer' },
+  { section: 'Shipping', label: 'Vendor Code', uiKey: 'vendorRaw', column: 'vendorRaw', type: 'text', picker: 'vendor' },
+  { section: 'Shipping', label: 'Forwarder', uiKey: 'forwarderRaw', column: 'forwarderRaw', type: 'text', picker: 'forwarder' },
   { section: 'Shipping', label: 'Consignee Name', uiKey: 'consigneeName', column: 'consigneeName', type: 'text' },
   { section: 'Shipping', label: 'Consignee Address', uiKey: 'consigneeAddress', column: 'consigneeAddress', type: 'text' },
   { section: 'Shipping', label: 'Vessel', uiKey: 'vesselName', column: 'vesselName', type: 'text' },
@@ -334,6 +341,24 @@ for (const f of EDITABLE_FIELDS) {
 /** True when this leg column (POL/POD) should be edited via the seeded ports-master picker, not free text. */
 export function isPortColumn(column: string | null | undefined): boolean {
   return !!column && PORT_PICKER_COLUMNS.has(column)
+}
+
+const PARTY_PICKER_COLUMNS = new Map<string, 'customer' | 'vendor' | 'forwarder'>()
+for (const f of EDITABLE_FIELDS) {
+  if (f.picker === 'customer' || f.picker === 'vendor' || f.picker === 'forwarder') {
+    PARTY_PICKER_COLUMNS.set(f.column, f.picker)
+  }
+}
+
+/**
+ * Which party master backs this leg column, or null when it is plain free text. Derived from
+ * EDITABLE_FIELDS so the shipment edit form and the review conflict row cannot drift — the two
+ * surfaces disagreeing about how a field is edited is exactly the bug this centralises away.
+ */
+export function partyPickerKind(
+  column: string | null | undefined,
+): 'customer' | 'vendor' | 'forwarder' | null {
+  return (column && PARTY_PICKER_COLUMNS.get(column)) || null
 }
 
 /**

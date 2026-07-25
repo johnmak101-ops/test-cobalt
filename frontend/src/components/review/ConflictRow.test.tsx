@@ -88,7 +88,7 @@ describe('ConflictRow party master chips', () => {
       screen.getByLabelText('Select proposed candidate: SOUTH OCEAN KNITTERS LTD'),
     ).toBeChecked()
     // the free-typing input is blank while a candidate pick is active
-    expect(screen.getByLabelText('Proposed value for Vendor')).toHaveValue('')
+    expect(screen.getByLabelText('Proposed value for Vendor Code')).toHaveValue('')
     // picking the other candidate posts ITS code, never the company full name
     await user.click(screen.getByLabelText('Select proposed candidate: ROSE KNITTING FACTORY LIMITED'))
     expect(onChange).toHaveBeenCalledWith('ROKNFT')
@@ -181,5 +181,57 @@ describe('ConflictRow critical badge', () => {
   it('hides Critical badge when critical is false or omitted', () => {
     renderRow({ critical: false })
     expect(screen.queryByTestId('conflict-critical-badge')).not.toBeInTheDocument()
+  })
+})
+
+// The Mesh mirror behind the party picker — mocked so the row renders without a network call.
+vi.mock('../../hooks/use-parties', () => ({
+  useParties: (kind: 'customer' | 'vendor' | 'forwarder') => ({
+    data:
+      kind === 'forwarder'
+        ? [{ id: 'f1', code: '002', name: 'LOGIMARK INTERNATIONAL LIMITED' }]
+        : [{ id: 'c1', code: 'WYSE', name: 'WYSE LONDON LIMITED', country: 'United Kingdom' }],
+  }),
+}))
+
+describe('ConflictRow party picker — same master list as the shipment edit form', () => {
+  const partyConflict = (field: string, label: string): CriticConflict => ({
+    field,
+    label,
+    rationale: 'Parties differ',
+    candidates: [
+      { value: 'OLD NAME', source: 'system' },
+      { value: 'NEW NAME', source: 'agent' },
+    ],
+  })
+
+  const renderEditing = (conflict: CriticConflict) =>
+    render(
+      <table>
+        <tbody>
+          <ConflictRow conflict={conflict} value="" onChange={vi.fn()} editing canEdit />
+        </tbody>
+      </table>,
+    )
+
+  it('renders the customer picker instead of a bare input', () => {
+    renderEditing(partyConflict('customer', 'Customer'))
+    expect(screen.getByTestId('party-picker-customer')).toBeInTheDocument()
+  })
+
+  it('renders the vendor picker', () => {
+    renderEditing(partyConflict('vendor_code', 'Vendor'))
+    expect(screen.getByTestId('party-picker-vendor')).toBeInTheDocument()
+  })
+
+  it('renders the forwarder picker', () => {
+    renderEditing(partyConflict('forwarder_name', 'Forwarder'))
+    expect(screen.getByTestId('party-picker-forwarder')).toBeInTheDocument()
+  })
+
+  it('leaves a non-party field as a plain input', () => {
+    renderEditing(partyConflict('vessel_name', 'Vessel'))
+    expect(screen.queryByTestId('party-picker-customer')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('party-picker-vendor')).not.toBeInTheDocument()
   })
 })

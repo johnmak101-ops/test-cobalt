@@ -9,6 +9,7 @@ import { CategorizedShipmentHistory } from '../components/shipments/CategorizedS
 import { ContestedLockCard } from '../components/shipments/ContestedLockCard'
 import { PurchaseOrdersCard } from '../components/shipments/PurchaseOrdersCard'
 import { PortPicker } from '../components/shipments/PortPicker'
+import { PartyPicker } from '../components/shipments/PartyPicker'
 import {
   FieldHistoryContext,
   FieldHistoryPopover,
@@ -41,7 +42,7 @@ interface EditField {
   options?: readonly string[]
   /** Full legal enum when options is a shorter offer list (Mode) — see EditableField.allValues. */
   allValues?: readonly string[]
-  picker?: 'port'
+  picker?: EditableField['picker']
   get: (s: ShipmentDetail) => unknown
 }
 /**
@@ -468,6 +469,15 @@ export default function ShipmentDetailPage() {
                           value={cur}
                           onChange={(v) => setDraft((d) => ({ ...d, [f.db]: v }))}
                           placeholder="Search ports — UN/LOCODE or name"
+                          className={controlClass}
+                        />
+                      ) : f.picker === 'customer' || f.picker === 'vendor' || f.picker === 'forwarder' ? (
+                        <PartyPicker
+                          kind={f.picker}
+                          id={`${fieldId}-${f.db}`}
+                          value={cur}
+                          onChange={(v) => setDraft((d) => ({ ...d, [f.db]: v }))}
+                          placeholder={`Search ${f.picker}s — code or name`}
                           className={controlClass}
                         />
                       ) : f.options ? (
