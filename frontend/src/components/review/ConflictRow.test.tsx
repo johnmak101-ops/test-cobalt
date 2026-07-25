@@ -306,3 +306,49 @@ describe('ConflictRow numeric fields — restrict on entry, group on display', (
     expect(screen.getByLabelText('Proposed value for Vessel')).toHaveAttribute('type', 'text')
   })
 })
+
+describe('ConflictRow date fields — the calendar the row never had', () => {
+  const etdConflict: CriticConflict = {
+    field: 'etd',
+    label: 'ETD',
+    rationale: 'Dates differ',
+    candidates: [
+      { value: '2026-08-14', source: 'system' },
+      { value: '2026-08-11', source: 'Booking Confirmation' },
+    ],
+  }
+
+  const renderEtd = (editing: boolean) =>
+    render(
+      <table>
+        <tbody>
+          <ConflictRow
+            conflict={etdConflict}
+            value="2026-08-11"
+            onChange={vi.fn()}
+            editing={editing}
+            canEdit
+          />
+        </tbody>
+      </table>,
+    )
+
+  it('editing a date gives the shared calendar + clock, not a text box', () => {
+    renderEtd(true)
+    expect(screen.getByTestId('datetime-date')).toHaveAttribute('type', 'date')
+    expect(screen.getByTestId('datetime-time')).toHaveAttribute('type', 'time')
+    // The bare text input it used to render must be gone.
+    expect(screen.queryByLabelText('Proposed value for ETD')).toBe(screen.getByTestId('datetime-date'))
+  })
+
+  it('splits the proposed value across the two boxes', () => {
+    renderEtd(true)
+    expect((screen.getByTestId('datetime-date') as HTMLInputElement).value).toBe('2026-08-11')
+  })
+
+  it('reads as plain text when not editing', () => {
+    renderEtd(false)
+    expect(screen.queryByTestId('datetime-date')).not.toBeInTheDocument()
+    expect(screen.getByText('2026-08-11')).toBeInTheDocument()
+  })
+})

@@ -3,8 +3,9 @@ import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
 import { X, PlusCircle, Loader2 } from 'lucide-react'
 import { useCreateShipment, type CreateShipmentInput } from '../../hooks/use-shipments'
-import { fieldLabel, numericFieldWarn, isNumericColumn } from '../../lib/review-fields'
+import { fieldLabel, numericFieldWarn, isNumericColumn, isDateColumn } from '../../lib/review-fields'
 import { MODE_EDIT_OPTIONS, UOM_OPTIONS } from '../../lib/enums'
+import { DateTimeField } from './DateTimeField'
 
 /**
  * Manually create a shipment the pipeline never saw (e.g. the original booking email / attachment was
@@ -111,6 +112,13 @@ export function NewShipmentModal({ onClose }: { onClose: () => void }) {
               <option key={opt} value={opt}>{opt}</option>
             ))}
           </select>
+        ) : isDateColumn(String(fld.key)) ? (
+          <DateTimeField
+            value={cur}
+            onChange={(v) => set(fld.key, v)}
+            label={fld.label ?? fieldLabel(fld.key)}
+            className={controlClass}
+          />
         ) : (
           <input
             value={cur}

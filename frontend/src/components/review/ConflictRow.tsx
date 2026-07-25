@@ -15,11 +15,13 @@ import {
   serializeStyleTokens,
   isMultiStylePaste,
   type StyleEntry,
+  isDateColumn,
 } from '../../lib/review-fields'
 import { PortPicker } from '../shipments/PortPicker'
 import { PartyPicker } from '../shipments/PartyPicker'
 import { cn } from '../../lib/utils'
 import { REVIEW_COL, REVIEW_TD } from './review-table-layout'
+import { DateTimeField } from '../shipments/DateTimeField'
 
 export interface ConflictRowProps {
   conflict: CriticConflict
@@ -196,6 +198,8 @@ export function ConflictRow({
   // Numeric columns restrict on entry and group on display — same rules the edit form applies.
   const isNumeric = isNumericColumn(column)
   const numErr = isNumeric && column ? numericFieldWarn(column, value) : null
+  // Dates get the shared calendar+clock control; they used to fall through to a bare text box.
+  const isDate = isDateColumn(column)
   const isStyles = isItemStyleField(conflict.field)
   const multi = proposed.length > 1
   const existingStyles = existing?.value ?? ''
@@ -338,6 +342,13 @@ export function ConflictRow({
               onChange={onChange}
               ariaLabel={`Proposed value for ${label}`}
               placeholder="—"
+              className="h-8 w-full rounded-lg border border-border bg-surface-900 px-2.5 font-mono text-sm text-text-primary placeholder:text-text-muted focus:border-cobalt-primary focus:outline-none"
+            />
+          ) : isDate ? (
+            <DateTimeField
+              value={value}
+              onChange={onChange}
+              label={`Proposed value for ${label}`}
               className="h-8 w-full rounded-lg border border-border bg-surface-900 px-2.5 font-mono text-sm text-text-primary placeholder:text-text-muted focus:border-cobalt-primary focus:outline-none"
             />
           ) : (
