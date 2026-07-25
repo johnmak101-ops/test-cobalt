@@ -8,6 +8,7 @@ import {
   countryOnlyPortMissText,
   weakIdentityText,
   isNonPartyName,
+  portsLinkedFromRoute,
 } from './needs-attention'
 
 describe('isNonPartyName — Master miss must never advise adding a number to Mesh', () => {
@@ -1183,5 +1184,56 @@ describe('buildNeedsAttention country-only port miss', () => {
     expect(items.some((i) => /UN\/LOCODE|not in master|add or alias|left unlinked/i.test(i.text))).toBe(
       true,
     )
+  })
+})
+
+describe('portsLinkedFromRoute — air legs render IATA, not UN/LOCODE', () => {
+  it('reads a sea route of UN/LOCODEs', () => {
+    expect(portsLinkedFromRoute('CNYTN→VNSGN')).toEqual({ pol: true, pod: true })
+    expect(portsLinkedFromRoute('CNYTN -> VNSGN')).toEqual({ pol: true, pod: true })
+  })
+
+  it('reads an air route of IATA codes (was unlinked on both sides)', () => {
+    expect(portsLinkedFromRoute('CAN→LHR')).toEqual({ pol: true, pod: true })
+    expect(portsLinkedFromRoute('SZX→JFK')).toEqual({ pol: true, pod: true })
+  })
+
+  it('trusts IATA/ISO-3 collisions only as an air pair', () => {
+    // Both 3-letter: an air pair, so CAN reads as Guangzhou and HKG as Hong Kong airport.
+    expect(portsLinkedFromRoute('HKG→CAN')).toEqual({ pol: true, pod: true })
+    // Alone beside a LOCODE or a name, the same token reads as the country — not a linked port.
+    expect(portsLinkedFromRoute('CHN→VNSGN')).toEqual({ pol: false, pod: true })
+    expect(portsLinkedFromRoute('CAN→VIETNAM')).toEqual({ pol: false, pod: false })
+  })
+
+  it('is empty for missing, half, or non-code routes', () => {
+    expect(portsLinkedFromRoute(null)).toEqual({ pol: false, pod: false })
+    expect(portsLinkedFromRoute('  ')).toEqual({ pol: false, pod: false })
+    expect(portsLinkedFromRoute('VIETNAM→Ho Chi Minh City')).toEqual({ pol: false, pod: false })
+    expect(portsLinkedFromRoute('CNYTN→-')).toEqual({ pol: true, pod: false })
+  })
+})
+
+describe('per-email port-miss free text is stale once the slot is filled', () => {
+  const reason = 'No destination port/airport stated in this email'
+
+  it('drops it when the route already names a destination', () => {
+    const items = buildNeedsAttention({
+      conflictsCount: 0,
+      portsLinked: portsLinkedFromRoute('CAN→LHR'),
+      riskFlags: [],
+      reviewReasons: [reason],
+    })
+    expect(items.some((i) => /destination port\/airport/i.test(i.text))).toBe(false)
+  })
+
+  it('keeps it when no port is linked', () => {
+    const items = buildNeedsAttention({
+      conflictsCount: 0,
+      portsLinked: portsLinkedFromRoute('CAN→-'),
+      riskFlags: [],
+      reviewReasons: [reason],
+    })
+    expect(items.some((i) => /destination port\/airport/i.test(i.text))).toBe(true)
   })
 })

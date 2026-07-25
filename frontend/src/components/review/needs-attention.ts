@@ -1474,6 +1474,9 @@ function collapsePoOnlyAndThin(byLine: Map<string, NeedsAttentionItem>): void {
 /** UN/LOCODE (5-char) — used to detect that a port slot already auto-matched. */
 const LOCODE_RE = /^[A-Z]{2}[A-Z0-9]{3}$/i
 
+/** IATA airport code (3-letter) — air legs render these instead of a UN/LOCODE. */
+const IATA_RE = /^[A-Z]{3}$/i
+
 /** ISO-3166 alpha-2 codes commonly seen as pol/pod blobs (not exhaustive of world). */
 const ISO2_COUNTRY = new Set(
   [
@@ -1587,17 +1590,35 @@ export function looksLikeLocode(value: string | null | undefined): boolean {
   return !!value && LOCODE_RE.test(String(value).trim())
 }
 
+/** True when a free-text looks like an IATA airport code (e.g. LHR, SZX). Shape only — see
+ *  {@link portsLinkedFromRoute} for the country-collision rule that decides if it counts. */
+export function looksLikeIata(value: string | null | undefined): boolean {
+  return !!value && IATA_RE.test(String(value).trim())
+}
+
 /**
- * Infer linked ports from a UI route string like "CNYTN→VNSGN" or "CNYTN -> VNSGN".
- * Review-queue rows only carry `route`, not polId/podId.
+ * Infer linked ports from a UI route string like "CNYTN→VNSGN" or "CAN→LHR".
+ * Review-queue rows only carry `route`, not polId/podId. Air legs render IATA, not
+ * UN/LOCODE (portLabel prefers `iata` when mode === 'AIR'), so a LOCODE-only test
+ * reported every air leg unlinked and the port-miss suppression never fired on air.
  */
 export function portsLinkedFromRoute(route: string | null | undefined): { pol: boolean; pod: boolean } {
   if (!route?.trim()) return { pol: false, pod: false }
   const parts = route.split(/\s*(?:→|->|—|–)\s*/).map((s) => s.trim()).filter(Boolean)
-  return {
-    pol: looksLikeLocode(parts[0]),
-    pod: looksLikeLocode(parts[1]),
+  const [pol, pod] = parts
+  /**
+   * Some IATA codes collide with ISO-3 country tokens (CAN = Guangzhou *and* Canada; HKG, USA).
+   * A lone "CHN" next to a LOCODE or a country name reads as the country and stays unlinked —
+   * that is what countryOnlyPortMissText exists for. But a route of two 3-letter codes is an air
+   * pair: the raw fallback spells countries out ("VIETNAM"), never as "XXX→YYY".
+   */
+  const airPair = looksLikeIata(pol) && looksLikeIata(pod)
+  const linked = (v: string | undefined): boolean => {
+    if (looksLikeLocode(v)) return true
+    if (!looksLikeIata(v)) return false
+    return airPair || !ISO3_COUNTRY.has(String(v).trim().toUpperCase())
   }
+  return { pol: linked(pol), pod: linked(pod) }
 }
 
 /** Port-miss Needs-attention lines (country/city synonyms after LOCODE auto-match). */
@@ -1608,6 +1629,9 @@ function isPortMissLine(hit: { lineId: string; text: string }): boolean {
     /UN\/LOCODE/i.test(hit.text) ||
     /not in UN\/LOCODE/i.test(hit.text) ||
     /did not match a known port/i.test(hit.text) ||
+    // Queue free text, judged per-email: "No destination port/airport stated in this email".
+    // The card aggregates a whole thread, so it is stale once the slot is filled.
+    /\bno\s+(?:(?:origin|destination|loading|discharge)\s+)?(?:port|airport)\b/i.test(hit.text) ||
     (/not in master data/i.test(hit.text) && /raw value kept|raw kept/i.test(hit.text))
   )
 }
