@@ -6,22 +6,36 @@ import { PartyPicker } from './PartyPicker'
 
 // The Mesh party mirror, mocked. The picker's point is picking a CODE from it while still allowing a
 // party that the ~2-month-lagged mirror has not caught up with to be typed as free text.
+// The Mesh party mirror, mocked. Forwarder codes are numeric on purpose — that is the real shape
+// (853 of 874 rows), and it is why a forwarder pick stores the NAME while customer/vendor store the
+// CODE. Searching still accepts either, for all three kinds.
 vi.mock('../../hooks/use-parties', () => ({
-  useParties: (kind: 'customer' | 'vendor') => ({
+  useParties: (kind: 'customer' | 'vendor' | 'forwarder') => ({
     data:
       kind === 'customer'
         ? [
             { id: 'c1', code: 'WYSE', name: 'WYSE LONDON LIMITED', country: 'United Kingdom', nameCh: null },
             { id: 'c2', code: 'STRA', name: 'STRAUSS OPERATIONS Gmbh & Co. KG', country: 'Germany', nameCh: null },
           ]
-        : [
-            { id: 'v1', code: 'ROKNFT', name: 'ROSE KNITTING FACTORY LIMITED', type: 'factory', nameCh: '玫瑰針織廠有限公司' },
-            { id: 'v2', code: 'GLDSUN', name: 'GOLDEN SUN KNITTING FTY LTD', type: 'factory', nameCh: null },
-          ],
+        : kind === 'forwarder'
+          ? [
+              { id: 'f1', code: '366', name: 'LOGWIN AIR & OCEAN CHINA LTD.SHENZHEN BRANCH', nameCh: null },
+              { id: 'f2', code: 'LEADWAY', name: 'LEADWAY EXPRESS LIMITED', nameCh: null },
+            ]
+          : [
+              { id: 'v1', code: 'ROKNFT', name: 'ROSE KNITTING FACTORY LIMITED', type: 'factory', nameCh: '玫瑰針織廠有限公司' },
+              { id: 'v2', code: 'GLDSUN', name: 'GOLDEN SUN KNITTING FTY LTD', type: 'factory', nameCh: null },
+            ],
   }),
 }))
 
-function Harness({ kind = 'customer' as const, initial = '' }: { kind?: 'customer' | 'vendor'; initial?: string }) {
+function Harness({
+  kind = 'customer' as const,
+  initial = '',
+}: {
+  kind?: 'customer' | 'vendor' | 'forwarder'
+  initial?: string
+}) {
   const [v, setV] = useState(initial)
   return <PartyPicker kind={kind} value={v} onChange={setV} ariaLabel="Customer" />
 }
@@ -74,5 +88,46 @@ describe('PartyPicker', () => {
     await user.click(input)
     await user.keyboard('{Escape}')
     expect(screen.getByText('WYSE')).toBeInTheDocument()
+  })
+})
+
+describe('PartyPicker — forwarder searches by code OR name, but stores the name', () => {
+  it('finds a forwarder by its numeric code and stores the NAME', async () => {
+    const user = userEvent.setup()
+    render(<Harness kind="forwarder" />)
+    const input = screen.getByLabelText('Customer')
+    // An operator who knows the ERP number can type it…
+    await user.type(input, '366')
+    const option = screen.getByRole('option', { name: /LOGWIN/ })
+    expect(within(option).getByText('366')).toBeInTheDocument()
+    await user.click(option)
+    // …but what lands in forwarderRaw is the readable name, never "366".
+    expect((input as HTMLInputElement).value).toBe('LOGWIN AIR & OCEAN CHINA LTD.SHENZHEN BRANCH')
+  })
+
+  it('finds the same forwarder by name', async () => {
+    const user = userEvent.setup()
+    render(<Harness kind="forwarder" />)
+    const input = screen.getByLabelText('Customer')
+    await user.type(input, 'logwin')
+    await user.click(screen.getByRole('option', { name: /LOGWIN/ }))
+    expect((input as HTMLInputElement).value).toBe('LOGWIN AIR & OCEAN CHINA LTD.SHENZHEN BRANCH')
+  })
+
+  it('finds a mnemonic-coded forwarder too (21 of 874 have one)', async () => {
+    const user = userEvent.setup()
+    render(<Harness kind="forwarder" />)
+    await user.type(screen.getByLabelText('Customer'), 'leadway')
+    expect(screen.getByRole('option', { name: /LEADWAY EXPRESS/ })).toBeInTheDocument()
+  })
+
+  it('typing a bare code shows which forwarder it is before picking', async () => {
+    const user = userEvent.setup()
+    render(<Harness kind="forwarder" initial="366" />)
+    const input = screen.getByLabelText('Customer')
+    await user.click(input)
+    await user.keyboard('{Escape}')
+    // The hint resolves 366 -> the company, so a typed code is never left opaque.
+    expect(screen.getByText(/LOGWIN AIR & OCEAN/)).toBeInTheDocument()
   })
 })
