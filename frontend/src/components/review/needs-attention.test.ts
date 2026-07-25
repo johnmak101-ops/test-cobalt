@@ -8,6 +8,7 @@ import {
   countryOnlyPortMissText,
   weakIdentityText,
   isNonPartyName,
+  portsLinkedFromRoute,
 } from './needs-attention'
 
 describe('isNonPartyName — Master miss must never advise adding a number to Mesh', () => {
@@ -1183,5 +1184,144 @@ describe('buildNeedsAttention country-only port miss', () => {
     expect(items.some((i) => /UN\/LOCODE|not in master|add or alias|left unlinked/i.test(i.text))).toBe(
       true,
     )
+  })
+})
+
+describe('portsLinkedFromRoute — air legs render IATA, not UN/LOCODE', () => {
+  /** Only the linked flags matter to these cases; tokens are asserted separately below. */
+  const linkage = (route: string | null) => {
+    const { pol, pod } = portsLinkedFromRoute(route)
+    return { pol, pod }
+  }
+
+  it('reads a sea route of UN/LOCODEs', () => {
+    expect(linkage('CNYTN→VNSGN')).toEqual({ pol: true, pod: true })
+    expect(linkage('CNYTN -> VNSGN')).toEqual({ pol: true, pod: true })
+  })
+
+  it('reads an air route of IATA codes (was unlinked on both sides)', () => {
+    expect(linkage('CAN→LHR')).toEqual({ pol: true, pod: true })
+    expect(linkage('SZX→JFK')).toEqual({ pol: true, pod: true })
+  })
+
+  it('trusts IATA/ISO-3 collisions only as an air pair', () => {
+    // Both 3-letter: an air pair, so CAN reads as Guangzhou and HKG as Hong Kong airport.
+    expect(linkage('HKG→CAN')).toEqual({ pol: true, pod: true })
+    // Alone beside a LOCODE or a name, the same token reads as the country — not a linked port.
+    expect(linkage('CHN→VNSGN')).toEqual({ pol: false, pod: true })
+    expect(linkage('CAN→VIETNAM')).toEqual({ pol: false, pod: false })
+  })
+
+  it('is empty for missing, half, or non-code routes', () => {
+    expect(linkage(null)).toEqual({ pol: false, pod: false })
+    expect(linkage('  ')).toEqual({ pol: false, pod: false })
+    expect(linkage('VIETNAM→Ho Chi Minh City')).toEqual({ pol: false, pod: false })
+    expect(linkage('CNYTN→-')).toEqual({ pol: true, pod: false })
+  })
+
+  it('carries the rendered tokens so unlabelled lines can be attributed', () => {
+    expect(portsLinkedFromRoute('CNYTN→VIETNAM')).toEqual({
+      pol: true,
+      pod: false,
+      polToken: 'CNYTN',
+      podToken: 'VIETNAM',
+    })
+    expect(portsLinkedFromRoute(null)).toEqual({
+      pol: false,
+      pod: false,
+      polToken: null,
+      podToken: null,
+    })
+  })
+})
+
+describe('port-miss suppression is per-field, not any-slot', () => {
+  const podMiss = {
+    code: 'PARTY_OPS',
+    severity: 'low',
+    message:
+      'Cannot match "VIETNAM" as a port UN/LOCODE. Add or alias the port in ShipTrack port masters (UN/LOCODE), then rematch.',
+  }
+
+  it('keeps a POD miss when only the POL resolved', () => {
+    const items = buildNeedsAttention({
+      conflictsCount: 0,
+      // POL linked, POD still raw — the quoted value matches the POD token.
+      portsLinked: portsLinkedFromRoute('CNYTN→VIETNAM'),
+      riskFlags: [podMiss],
+      reviewReasons: [],
+    })
+    expect(items.some((i) => /VIETNAM/i.test(i.text))).toBe(true)
+  })
+
+  it('drops the same line once the POD itself resolves', () => {
+    const items = buildNeedsAttention({
+      conflictsCount: 0,
+      portsLinked: portsLinkedFromRoute('CNYTN→VNSGN'),
+      riskFlags: [podMiss],
+      reviewReasons: [],
+    })
+    expect(items.some((i) => /VIETNAM/i.test(i.text))).toBe(false)
+  })
+
+  it('attributes by the rendered slot label when the line carries one', () => {
+    const keep = buildNeedsAttention({
+      conflictsCount: 0,
+      // Only POL resolved; the reason names POD, so it must survive.
+      portsLinked: { pol: true, pod: false },
+      riskFlags: [],
+      reviewReasons: ['pod "USA" did not exact-match a port master'],
+    })
+    expect(keep.some((i) => /POD/i.test(i.text))).toBe(true)
+
+    const drop = buildNeedsAttention({
+      conflictsCount: 0,
+      portsLinked: { pol: false, pod: true },
+      riskFlags: [],
+      reviewReasons: ['pod "USA" did not exact-match a port master'],
+    })
+    expect(drop.some((i) => /POD/i.test(i.text))).toBe(false)
+  })
+
+  it('keeps the any-slot rule for lines that name no slot', () => {
+    const items = buildNeedsAttention({
+      conflictsCount: 0,
+      // Neither the copy nor the lineId value ties this to a slot, so the older
+      // any-slot rule still applies and one linked slot is enough to drop it.
+      portsLinked: portsLinkedFromRoute('CNYTN→VNSGN'),
+      riskFlags: [
+        {
+          code: 'PARTY_OPS',
+          severity: 'low',
+          message: 'Cannot match "Ho Chi Minh City" as a port UN/LOCODE. Add alias, then rematch.',
+        },
+      ],
+      reviewReasons: [],
+    })
+    expect(items.some((i) => /Ho Chi Minh/i.test(i.text))).toBe(false)
+  })
+})
+
+describe('per-email port-miss free text is stale once the slot is filled', () => {
+  const reason = 'No destination port/airport stated in this email'
+
+  it('drops it when the route already names a destination', () => {
+    const items = buildNeedsAttention({
+      conflictsCount: 0,
+      portsLinked: portsLinkedFromRoute('CAN→LHR'),
+      riskFlags: [],
+      reviewReasons: [reason],
+    })
+    expect(items.some((i) => /destination port\/airport/i.test(i.text))).toBe(false)
+  })
+
+  it('keeps it when no port is linked', () => {
+    const items = buildNeedsAttention({
+      conflictsCount: 0,
+      portsLinked: portsLinkedFromRoute('CAN→-'),
+      riskFlags: [],
+      reviewReasons: [reason],
+    })
+    expect(items.some((i) => /destination port\/airport/i.test(i.text))).toBe(true)
   })
 })
