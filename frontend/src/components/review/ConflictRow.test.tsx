@@ -357,12 +357,37 @@ describe('ConflictRow date fields — the calendar the row never had', () => {
       </table>,
     )
 
-  it('editing a date gives the shared calendar + clock, not a text box', () => {
+  it('editing a date gives the shared calendar, not a text box', () => {
     renderEtd(true)
     expect(screen.getByTestId('datetime-date')).toHaveAttribute('type', 'date')
-    expect(screen.getByTestId('datetime-time')).toHaveAttribute('type', 'time')
     // The bare text input it used to render must be gone.
     expect(screen.queryByLabelText('Proposed value for ETD')).toBe(screen.getByTestId('datetime-date'))
+  })
+
+  it('ETD is day-level, so it gets NO time box', () => {
+    renderEtd(true)
+    expect(screen.queryByTestId('datetime-time')).not.toBeInTheDocument()
+  })
+
+  it('a cut-off date DOES get the time box', () => {
+    const cutoff: CriticConflict = {
+      field: 'cfs_cutoff',
+      label: 'CFS Cut-off',
+      rationale: 'Cut-off moved',
+      candidates: [
+        { value: '2026-08-07T18:00', source: 'system' },
+        { value: '2026-08-09T18:00', source: 'Booking Confirmation' },
+      ],
+    }
+    render(
+      <table>
+        <tbody>
+          <ConflictRow conflict={cutoff} value="2026-08-09T18:00" onChange={vi.fn()} editing canEdit />
+        </tbody>
+      </table>,
+    )
+    expect(screen.getByTestId('datetime-time')).toHaveAttribute('type', 'time')
+    expect((screen.getByTestId('datetime-time') as HTMLInputElement).value).toBe('18:00')
   })
 
   it('splits the proposed value across the two boxes', () => {

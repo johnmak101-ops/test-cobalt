@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
 import { X, PlusCircle, Loader2 } from 'lucide-react'
 import { useCreateShipment, type CreateShipmentInput } from '../../hooks/use-shipments'
-import { fieldLabel, fieldUnit, numericFieldWarn, isNumericColumn, isDateColumn } from '../../lib/review-fields'
+import { fieldLabel, fieldUnit, numericFieldWarn, isNumericColumn, isDateColumn, dateColumnHasTime } from '../../lib/review-fields'
 import { MODE_EDIT_OPTIONS, UOM_OPTIONS } from '../../lib/enums'
 import { DateTimeField } from './DateTimeField'
 import { NumberField } from './NumberField'
@@ -117,6 +117,7 @@ export function NewShipmentModal({ onClose }: { onClose: () => void }) {
           <DateTimeField
             value={cur}
             onChange={(v) => set(fld.key, v)}
+            showTime={dateColumnHasTime(String(fld.key))}
             label={fld.label ?? fieldLabel(fld.key)}
             className={controlClass}
           />

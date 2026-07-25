@@ -54,6 +54,14 @@ export interface EditableField {
    * write the NAME instead: its read row renders the master name and its codes are numeric ERP ids.
    */
   picker?: 'port' | 'customer' | 'vendor' | 'forwarder'
+  /**
+   * A date column that genuinely carries a clock time, so its editor shows a time box beside the
+   * calendar. Only the warehouse/CFS cut-off family does: 截仓/入仓 windows are stated to the hour
+   * (4 of 5 stored warehouse_end_date values carry one), while ETD/ATD/ETA/ATA/CRD/In-DC are
+   * day-level and had zero. A time box on a day-level field is noise, and it invites a spurious
+   * 08:00 to be read as meaningful.
+   */
+  withTime?: true
 }
 
 export const EDITABLE_FIELDS: EditableField[] = [
@@ -97,9 +105,9 @@ export const EDITABLE_FIELDS: EditableField[] = [
   { section: 'Shipping', label: 'POL', uiKey: 'polRaw', column: 'polRaw', type: 'text', picker: 'port' },
   { section: 'Shipping', label: 'POD', uiKey: 'podRaw', column: 'podRaw', type: 'text', picker: 'port' },
   { section: 'Key Dates', label: 'Cargo Ready Date', uiKey: 'crd', column: 'cargoReadyDate', type: 'date' },
-  { section: 'Key Dates', label: 'WH Start Date', uiKey: 'warehouseStartDate', column: 'warehouseStartDate', type: 'date' },
-  { section: 'Key Dates', label: 'WH End Date', uiKey: 'warehouseEndDate', column: 'warehouseEndDate', type: 'date' },
-  { section: 'Key Dates', label: 'CFS Cut-off', uiKey: 'cfsCutoff', column: 'cfsCutoff', type: 'date' },
+  { section: 'Key Dates', label: 'WH Start Date', uiKey: 'warehouseStartDate', column: 'warehouseStartDate', type: 'date', withTime: true },
+  { section: 'Key Dates', label: 'WH End Date', uiKey: 'warehouseEndDate', column: 'warehouseEndDate', type: 'date', withTime: true },
+  { section: 'Key Dates', label: 'CFS Cut-off', uiKey: 'cfsCutoff', column: 'cfsCutoff', type: 'date', withTime: true },
   { section: 'Key Dates', label: 'ETD', uiKey: 'etd', column: 'etd', type: 'date' },
   { section: 'Key Dates', label: 'ATD', uiKey: 'actualDeparture', column: 'atd', type: 'date' },
   { section: 'Key Dates', label: 'ETA', uiKey: 'eta', column: 'eta', type: 'date' },
@@ -385,6 +393,16 @@ export function formatNumericDisplay(value: string | null | undefined): string {
 const DATE_COLUMNS = new Set<string>()
 for (const f of EDITABLE_FIELDS) {
   if (f.type === 'date') DATE_COLUMNS.add(f.column)
+}
+
+const DATE_TIME_COLUMNS = new Set<string>()
+for (const f of EDITABLE_FIELDS) {
+  if (f.type === 'date' && f.withTime) DATE_TIME_COLUMNS.add(f.column)
+}
+
+/** True when a date column also carries a clock time (the cut-off family) — show the time box. */
+export function dateColumnHasTime(column: string | null | undefined): boolean {
+  return !!column && DATE_TIME_COLUMNS.has(column)
 }
 
 /** True when this leg column holds a date — edit it with DateTimeField, never a bare text box. */

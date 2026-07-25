@@ -16,6 +16,7 @@ import {
   isMultiStylePaste,
   type StyleEntry,
   isDateColumn,
+  dateColumnHasTime,
 } from '../../lib/review-fields'
 import { PortPicker } from '../shipments/PortPicker'
 import { NumberField } from '../shipments/NumberField'
@@ -349,6 +350,7 @@ export function ConflictRow({
             <DateTimeField
               value={value}
               onChange={onChange}
+              showTime={dateColumnHasTime(column)}
               label={`Proposed value for ${label}`}
               className="h-8 w-full rounded-lg border border-border bg-surface-900 px-2.5 font-mono text-sm text-text-primary placeholder:text-text-muted focus:border-cobalt-primary focus:outline-none"
             />

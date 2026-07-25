@@ -14,6 +14,7 @@ import {
   partyPickerKind,
   isNumericColumn,
   isDateColumn,
+  dateColumnHasTime,
   normalizeNumericInput,
   formatNumericDisplay,
   isWritableLegColumn,
@@ -575,5 +576,26 @@ describe('isDateColumn — dates get the shared calendar control', () => {
       expect(partyPickerKind(c)).toBeNull()
       expect(isPortColumn(c)).toBe(false)
     }
+  })
+})
+
+describe('dateColumnHasTime — only the cut-off family states a clock time', () => {
+  it('flags the warehouse window and CFS cut-off', () => {
+    expect(dateColumnHasTime('warehouseStartDate')).toBe(true)
+    expect(dateColumnHasTime('warehouseEndDate')).toBe(true)
+    expect(dateColumnHasTime('cfsCutoff')).toBe(true)
+  })
+
+  it('leaves the day-level dates alone', () => {
+    // Zero stored rows carry a time on any of these; a time box would be noise.
+    for (const c of ['etd', 'atd', 'eta', 'ata', 'cargoReadyDate', 'inDcDate']) {
+      expect(isDateColumn(c)).toBe(true)
+      expect(dateColumnHasTime(c)).toBe(false)
+    }
+  })
+
+  it('is false for non-dates', () => {
+    expect(dateColumnHasTime('qty')).toBe(false)
+    expect(dateColumnHasTime(null)).toBe(false)
   })
 })

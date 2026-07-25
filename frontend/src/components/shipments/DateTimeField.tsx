@@ -9,6 +9,12 @@ interface DateTimeFieldProps {
   label: string
   className?: string
   disabled?: boolean
+  /**
+   * Show the time box. Only the cut-off family (warehouse window, CFS) states a clock time; ETD /
+   * ATD / ETA / ATA / CRD / In-DC are day-level, where a time box is noise and an incidental 08:00
+   * reads as if someone meant it. Default true so an unflagged caller keeps the full control.
+   */
+  showTime?: boolean
 }
 
 /**
@@ -34,6 +40,7 @@ export function DateTimeField({
   label,
   className,
   disabled = false,
+  showTime = true,
 }: DateTimeFieldProps) {
   const dateVal = value.slice(0, 10)
   const timeVal = value.slice(11, 16)
@@ -53,6 +60,7 @@ export function DateTimeField({
           data-testid="datetime-date"
         />
       </div>
+      {showTime && (
       <div className="w-24 flex-none">
         <input
           type="time"
@@ -65,6 +73,7 @@ export function DateTimeField({
           data-testid="datetime-time"
         />
       </div>
+      )}
     </div>
   )
 }

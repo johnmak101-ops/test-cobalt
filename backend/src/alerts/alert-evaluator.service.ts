@@ -12,6 +12,7 @@ import { AlertRepository } from '../db/repositories/alert.repository'
 import { ShipmentRepository } from '../db/repositories/shipment.repository'
 import { EmailRepository } from '../db/repositories/email.repository'
 import { EvidenceRepository } from '../db/repositories/evidence.repository'
+import { legDay } from '../common/leg-day'
 
 /** Past the point where a cargo-ready revision is still actionable (Final BOL cut or later). */
 const POST_DOCUMENT_STATES = new Set(['SAILED', 'RELEASED', 'DELIVERED'])
@@ -176,7 +177,8 @@ export class AlertEvaluatorService {
         }))
       const finding = crdRevisionNotReflected(statements, leg.cargoReadyDate)
       if (!finding) continue
-      const day = (d: Date) => d.toISOString().slice(0, 10)
+      // Local day — a UTC slice named yesterday's date in the operator's alert (see legDay).
+      const day = (d: Date) => legDay(d)
       const isNew = await this.alerts.insertDeduped({
         ruleId: 'A7',
         bookingId: leg.bookingId,

@@ -71,3 +71,24 @@ describe('DateTimeField', () => {
     expect(screen.getByLabelText('ETD time')).toBe(timeBox())
   })
 })
+
+describe('DateTimeField showTime — day-level fields get no time box', () => {
+  it('hides the time box when showTime is false', () => {
+    render(<DateTimeField value="2026-08-11T00:00" onChange={vi.fn()} label="ETA" showTime={false} />)
+    expect(screen.getByTestId('datetime-date')).toBeInTheDocument()
+    expect(screen.queryByTestId('datetime-time')).not.toBeInTheDocument()
+  })
+
+  it('still stores the T00:00 shape, so the value is unchanged by hiding the box', () => {
+    const onChange = vi.fn()
+    render(<DateTimeField value="" onChange={onChange} label="ETA" showTime={false} />)
+    fireEvent.change(screen.getByTestId('datetime-date'), { target: { value: '2026-08-11' } })
+    // Local midnight, same as a time-bearing field — hiding the box is presentation, not semantics.
+    expect(onChange).toHaveBeenCalledWith('2026-08-11T00:00')
+  })
+
+  it('defaults to showing the time box', () => {
+    render(<DateTimeField value="" onChange={vi.fn()} label="CFS Cut-off" />)
+    expect(screen.getByTestId('datetime-time')).toBeInTheDocument()
+  })
+})
