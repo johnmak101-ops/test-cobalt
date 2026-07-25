@@ -235,3 +235,74 @@ describe('ConflictRow party picker — same master list as the shipment edit for
     expect(screen.queryByTestId('party-picker-vendor')).not.toBeInTheDocument()
   })
 })
+
+describe('ConflictRow numeric fields — restrict on entry, group on display', () => {
+  const qtyConflict = (system: string, proposed: string): CriticConflict => ({
+    field: 'qty',
+    label: 'Quantity',
+    rationale: 'Counts differ',
+    candidates: [
+      { value: system, source: 'system' },
+      { value: proposed, source: 'Packing List' },
+    ],
+  })
+
+  const renderQty = (opts: { editing: boolean; value: string; conflict?: CriticConflict }) =>
+    render(
+      <table>
+        <tbody>
+          <ConflictRow
+            conflict={opts.conflict ?? qtyConflict('1180', '1240')}
+            value={opts.value}
+            onChange={vi.fn()}
+            editing={opts.editing}
+            canEdit
+          />
+        </tbody>
+      </table>,
+    )
+
+  it('editing a numeric field gives a restricted number input, not free text', () => {
+    renderQty({ editing: true, value: '1240' })
+    const input = screen.getByLabelText('Proposed value for Total Quantity')
+    // Without this the row was plain text and coerceLegField turned "1,240" into NULL on save.
+    expect(input).toHaveAttribute('type', 'number')
+    expect(input).toHaveAttribute('min', '0')
+    expect(input).toHaveAttribute('step', '1')
+  })
+
+  it('groups both columns for reading', () => {
+    renderQty({ editing: false, value: '1240' })
+    expect(screen.getByText('1,180')).toBeInTheDocument()
+    expect(screen.getByText('1,240')).toBeInTheDocument()
+  })
+
+  it('surfaces the zero/fractional warning the edit form already showed', () => {
+    renderQty({ editing: true, value: '0' })
+    expect(screen.getByTestId('conflict-num-err')).toHaveTextContent(/whole number greater than 0/)
+  })
+
+  it('surfaces the negative warning', () => {
+    renderQty({ editing: true, value: '-5' })
+    expect(screen.getByTestId('conflict-num-err')).toHaveTextContent(/cannot be negative/)
+  })
+
+  it('shows no warning for a valid count', () => {
+    renderQty({ editing: true, value: '1240' })
+    expect(screen.queryByTestId('conflict-num-err')).not.toBeInTheDocument()
+  })
+
+  it('leaves a non-numeric field as a plain text input', () => {
+    const vessel: CriticConflict = {
+      field: 'vessel_name',
+      label: 'Vessel',
+      rationale: 'x',
+      candidates: [
+        { value: 'EVER GLORY', source: 'system' },
+        { value: 'EVER GIVEN', source: 'Draft B/L' },
+      ],
+    }
+    renderQty({ editing: true, value: 'EVER GIVEN', conflict: vessel })
+    expect(screen.getByLabelText('Proposed value for Vessel')).toHaveAttribute('type', 'text')
+  })
+})

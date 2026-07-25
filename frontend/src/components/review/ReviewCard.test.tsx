@@ -1094,7 +1094,8 @@ describe('units — a bare number is unreadable, but a fabricated unit is worse'
     const row = screen.getByText('Total Quantity').closest('tr')!
     // stored side keeps its unit — we know that one
     expect(within(row).getAllByText('cartons')).toHaveLength(1)
-    expect(within(row).getByText('13516')).toBeInTheDocument()
+    // Numbers group for reading: 13516 renders as 13,516 (display only — the input keeps digits).
+    expect(within(row).getByText('13,516')).toBeInTheDocument()
   })
 })
 

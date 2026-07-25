@@ -7,6 +7,7 @@ import { poProgress, furthestStatusLabel, type PoShipmentLink } from '../lib/po-
 import { Package, Search, Download, Calendar, AlertTriangle } from 'lucide-react'
 import { Pagination, usePagination, PageSizeSelect } from '../components/ui/Pagination'
 import { interactiveProps } from '../lib/interactive'
+import { formatNumericDisplay } from '../lib/review-fields'
 
 export default function PurchaseOrdersPage() {
   const navigate = useNavigate()
@@ -390,7 +391,7 @@ UOM
                         {po.vendor?.name ?? '—'}
                       </td>
                       <td className="px-4 py-3 font-mono text-sm text-right text-text-secondary">
-                        {po.shippedQuantity || po.totalQuantity || '—'}
+                        {formatNumericDisplay(String(po.shippedQuantity || po.totalQuantity || '')) || '—'}
                       </td>
                       <td className="px-4 py-3 text-sm text-text-muted">
                         {po.quantityUnit ?? po.shippedUnit ?? '—'}

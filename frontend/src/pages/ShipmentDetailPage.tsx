@@ -22,7 +22,7 @@ import { pendingReviewAnnotations, type PendingAnnotation } from '../lib/pending
 import { AlertCard } from '../components/alerts/AlertCard'
 import { formatDate, formatDateTime, formatDateMaybeTime, formatShipmentId, cn } from '../lib/utils'
 import { parseSender } from '../lib/email-sender'
-import { EDITABLE_FIELDS, fieldLabel, numericFieldWarn, dateOrderWarn, toInputValue, type EditableField } from '../lib/review-fields'
+import { EDITABLE_FIELDS, fieldLabel, numericFieldWarn, dateOrderWarn, toInputValue, type EditableField , formatNumericDisplay} from '../lib/review-fields'
 import { toast } from '../components/ui/Toast'
 import { interactiveProps } from '../lib/interactive'
 import { Pagination, usePagination, PageSizeSelect } from '../components/ui/Pagination'
@@ -649,7 +649,17 @@ export default function ShipmentDetailPage() {
 
           {/* Section 2: Cargo & Logistics */}
           <DetailSection title="Cargo & Logistics" icon={<Package size={14} className="text-text-muted" />}>
-            <DetailRow historyKey="qty" label={fieldLabel('qty')} value={shipment.quantityShipped != null ? String(shipment.quantityShipped) : null} />
+            {/* Grouped for reading, same as the review conflict row. Display only — the edit form
+                below seeds from the raw number, and search/CSV keep the ungrouped digits. */}
+            <DetailRow
+              historyKey="qty"
+              label={fieldLabel('qty')}
+              value={
+                shipment.quantityShipped != null
+                  ? formatNumericDisplay(String(shipment.quantityShipped))
+                  : null
+              }
+            />
             <DetailRow historyKey="qtyUnit" label={fieldLabel('qtyUnit')} value={shipment.quantityUnit ?? null} />
             <DetailRow
               historyKey="containerNo"

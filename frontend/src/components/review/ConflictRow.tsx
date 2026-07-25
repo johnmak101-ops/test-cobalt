@@ -6,6 +6,9 @@ import {
   mapCriticFieldToColumn,
   isPortColumn,
   partyPickerKind,
+  isNumericColumn,
+  numericFieldWarn,
+  formatNumericDisplay,
   parseStyleEntries,
   serializeStyleEntries,
   parseStyleTokens,
@@ -190,6 +193,9 @@ export function ConflictRow({
   // Customer/Vendor/Forwarder do the same over the Mesh party mirror — derived from EDITABLE_FIELDS
   // so this row and the shipment edit form cannot disagree about how a field is edited.
   const partyKind = partyPickerKind(column)
+  // Numeric columns restrict on entry and group on display — same rules the edit form applies.
+  const isNumeric = isNumericColumn(column)
+  const numErr = isNumeric && column ? numericFieldWarn(column, value) : null
   const isStyles = isItemStyleField(conflict.field)
   const multi = proposed.length > 1
   const existingStyles = existing?.value ?? ''
@@ -252,7 +258,7 @@ export function ConflictRow({
                 {!useLiveExisting && existing?.master ? (
                   <MasterCodeChip code={existing.master.code} />
                 ) : null}
-                {existingDisplay}
+                {isNumeric ? formatNumericDisplay(existingDisplay) : existingDisplay}
                 <Unit unit={existingUnit} />
                 {!useLiveExisting && existing?.master === null ? <MeshMissTag /> : null}
               </span>
@@ -335,9 +341,19 @@ export function ConflictRow({
               className="h-8 w-full rounded-lg border border-border bg-surface-900 px-2.5 font-mono text-sm text-text-primary placeholder:text-text-muted focus:border-cobalt-primary focus:outline-none"
             />
           ) : (
-            <span className="inline-flex w-full items-center">
+            <span className="inline-flex w-full flex-wrap items-center">
               <input
                 aria-label={`Proposed value for ${label}`}
+                /**
+                 * Numeric columns restrict at entry, matching the Order Details edit form. Without
+                 * this the row was plain text, and coerceLegField turns anything Number() cannot
+                 * read into NULL — so an operator typing "1,240" (or pasting it off a packing list)
+                 * silently WIPED the quantity. That function's docstring justifies the null with
+                 * "the number <input> already blocks that at entry"; this is the input it meant.
+                 */
+                type={isNumeric ? 'number' : 'text'}
+                min={isNumeric ? 0 : undefined}
+                step={column === 'qty' ? 1 : isNumeric ? 'any' : undefined}
                 value={value}
                 onChange={(e) => onChange(e.target.value)}
                 placeholder="—"
@@ -345,6 +361,11 @@ export function ConflictRow({
               />
               {/* The unit is NOT part of the editable text — the operator types a number, not '87 KGS'. */}
               <Unit unit={proposedUnit} />
+              {numErr && (
+                <span className="mt-1 w-full text-xs text-status-critical" data-testid="conflict-num-err">
+                  {numErr}
+                </span>
+              )}
             </span>
           )
         ) : value ? (
@@ -357,8 +378,16 @@ export function ConflictRow({
               )}
             >
               {activeProposed?.master ? <MasterCodeChip code={activeProposed.master.code} /> : null}
-              {/* #360: a pick's stored value is the CODE (already on the chip) — show the company name */}
-              {activeProposed ? activeProposed.value : value}
+              {/* #360: a pick's stored value is the CODE (already on the chip) — show the company name.
+                  Numbers group for reading ("1180" → "1,180"); the grouped form is display-only and
+                  never seeds the input, since Number() cannot read it back. */}
+              {activeProposed
+                ? isNumeric
+                  ? formatNumericDisplay(activeProposed.value)
+                  : activeProposed.value
+                : isNumeric
+                  ? formatNumericDisplay(value)
+                  : value}
               <Unit unit={proposedUnit} />
               {activeProposed?.master === null ? <MeshMissTag /> : null}
             </span>
