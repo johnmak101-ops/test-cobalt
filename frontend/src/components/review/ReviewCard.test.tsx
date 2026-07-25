@@ -454,7 +454,7 @@ describe('ReviewCard', () => {
     )
 
     await user.click(screen.getByRole('button', { name: /^edit$/i }))
-    const resolution = screen.getByLabelText(/proposed value for eta/i) as HTMLInputElement
+    const resolution = screen.getByTestId('datetime-date') as HTMLInputElement
     // Pre-filled with the agent's proposal — the operator accepts or edits it.
     expect(resolution.value).toBe('2026-07-23')
 
@@ -474,7 +474,10 @@ describe('ReviewCard', () => {
     expect(onSave).toHaveBeenCalledTimes(1)
     const payload = onSave.mock.calls[0][0]
     expect(payload.note).toMatch(/Operator override/)
-    expect(payload.fields).toMatchObject({ eta: '2026-07-25' })
+    // A day-only pick carries T00:00 — the local-midnight form DateTimeField emits and the Order
+    // Details form has always sent. A bare '2026-07-25' would reach `new Date()` on the backend as
+    // UTC midnight, i.e. 08:00 in the pinned HK zone.
+    expect(payload.fields).toMatchObject({ eta: '2026-07-25T00:00' })
     expect(payload.expectedUpdatedAt).toBe('2026-07-10T12:00:00.000Z')
   })
 
@@ -785,7 +788,7 @@ describe('conflict table — read-only by default, Edit to change values', () =>
     expect(screen.getByTestId('proposed-column-header')).toHaveTextContent('AI Proposed')
     await user.click(screen.getByRole('button', { name: /^edit$/i }))
     expect(screen.getByTestId('proposed-column-header')).toHaveTextContent('Resolution')
-    expect((screen.getByLabelText(/proposed value for eta/i) as HTMLInputElement).value).toBe('2026-07-23')
+    expect((screen.getByTestId('datetime-date') as HTMLInputElement).value).toBe('2026-07-23')
     // hbl has NO system candidate and two proposals → the FIRST is the pick (radio below), both visible.
     // #360: the free-typing input stays blank while a pick is active — the pick lives in the radio,
     // and pre-filling it read as "this text will be written".
@@ -840,7 +843,7 @@ describe('conflict table — read-only by default, Edit to change values', () =>
       </MemoryRouter>,
     )
     await user.click(screen.getByRole('button', { name: /^edit$/i }))
-    const eta = screen.getByLabelText(/proposed value for eta/i)
+    const eta = screen.getByTestId('datetime-date')
     await user.clear(eta)
     await user.type(eta, '2026-07-25')
     // mid-edit the column reads Resolution
@@ -917,7 +920,7 @@ describe('conflict table — read-only by default, Edit to change values', () =>
       </MemoryRouter>,
     )
     await user.click(screen.getByRole('button', { name: /^edit$/i }))
-    const eta = screen.getByLabelText(/proposed value for eta/i)
+    const eta = screen.getByTestId('datetime-date')
     await user.clear(eta)
     await user.type(eta, '2026-07-25')
 
@@ -929,7 +932,7 @@ describe('conflict table — read-only by default, Edit to change values', () =>
 
     await user.click(approve)
     expect(onSave.mock.calls[0][0].corrections).toEqual([
-      { field: 'eta', existing: '2026-07-20', aiProposed: '2026-07-23', humanFinal: '2026-07-25' },
+      { field: 'eta', existing: '2026-07-20', aiProposed: '2026-07-23', humanFinal: '2026-07-25T00:00' },
     ])
   })
 

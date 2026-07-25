@@ -13,6 +13,7 @@ import {
   isPortColumn,
   partyPickerKind,
   isNumericColumn,
+  isDateColumn,
   normalizeNumericInput,
   formatNumericDisplay,
   isWritableLegColumn,
@@ -548,5 +549,31 @@ describe('numeric columns — restrict on entry, group on display', () => {
     // Non-numeric passes through untouched — a bad value must stay visible, not become "NaN".
     expect(formatNumericDisplay('abc')).toBe('abc')
     expect(normalizeNumericInput(formatNumericDisplay('13516'))).toBe('13516')
+  })
+})
+
+describe('isDateColumn — dates get the shared calendar control', () => {
+  it('covers every Key Dates column', () => {
+    for (const c of ['cargoReadyDate', 'warehouseStartDate', 'warehouseEndDate', 'cfsCutoff',
+                     'etd', 'atd', 'eta', 'ata', 'inDcDate']) {
+      expect(isDateColumn(c)).toBe(true)
+    }
+  })
+
+  it('excludes non-dates', () => {
+    expect(isDateColumn('qty')).toBe(false)
+    expect(isDateColumn('bookingNo')).toBe(false)
+    expect(isDateColumn('polRaw')).toBe(false)
+    expect(isDateColumn(null)).toBe(false)
+    expect(isDateColumn(undefined)).toBe(false)
+  })
+
+  it('is disjoint from the numeric and party sets — one control per column', () => {
+    const dates = ['etd', 'eta', 'atd', 'ata', 'cargoReadyDate', 'cfsCutoff']
+    for (const c of dates) {
+      expect(isNumericColumn(c)).toBe(false)
+      expect(partyPickerKind(c)).toBeNull()
+      expect(isPortColumn(c)).toBe(false)
+    }
   })
 })

@@ -382,6 +382,16 @@ export function formatNumericDisplay(value: string | null | undefined): string {
   return n.toLocaleString('en-US', { maximumFractionDigits: 3 })
 }
 
+const DATE_COLUMNS = new Set<string>()
+for (const f of EDITABLE_FIELDS) {
+  if (f.type === 'date') DATE_COLUMNS.add(f.column)
+}
+
+/** True when this leg column holds a date — edit it with DateTimeField, never a bare text box. */
+export function isDateColumn(column: string | null | undefined): boolean {
+  return !!column && DATE_COLUMNS.has(column)
+}
+
 const PARTY_PICKER_COLUMNS = new Map<string, 'customer' | 'vendor' | 'forwarder'>()
 for (const f of EDITABLE_FIELDS) {
   if (f.picker === 'customer' || f.picker === 'vendor' || f.picker === 'forwarder') {

@@ -19,6 +19,7 @@ import {
   normalizeNumericInput,
   parseStyleEntries,
   serializeStyleEntries,
+  dateOrderWarn,
 } from '../../lib/review-fields'
 import {
   existingQtyDisplay,
@@ -441,6 +442,26 @@ export function ReviewCard({
     [conflicts, resolutions],
   )
   const noteRequired = overrides.length > 0 && !note.trim()
+  /**
+   * Cross-field date sanity — the same check the Order Details form runs, which this table never had.
+   * A contested date reads from the live resolution; one that is NOT contested falls back to what the
+   * shipment already stores, so "ETA moved before the stored ETD" is caught. Queue rows carry no
+   * dates, so there it only fires when both sides of a comparison are contested.
+   */
+  const dateError = useMemo(() => {
+    const stored = shipment as Partial<ShipmentDetail>
+    const fallback: Record<string, string | null | undefined> = {
+      etd: stored.etd,
+      atd: stored.actualDeparture,
+      eta: stored.eta,
+      ata: stored.actualArrival,
+    }
+    const pick = (col: 'etd' | 'atd' | 'eta' | 'ata') => {
+      const c = conflicts.find((x) => mapCriticFieldToColumn(x.field) === col)
+      return (c ? resolutions[c.field] : fallback[col]) ?? undefined
+    }
+    return dateOrderWarn({ etd: pick('etd'), atd: pick('atd'), eta: pick('eta'), ata: pick('ata') })
+  }, [conflicts, resolutions, shipment])
   /** Any cell diverged from the agent's proposal (operator applied a different value). */
   const hasHumanEdits = useMemo(
     () =>
@@ -467,6 +488,8 @@ export function ReviewCard({
   const canSave =
     !readOnly &&
     !noteRequired &&
+    // An arrival before its departure is impossible — same block the Order Details Save applies.
+    dateError == null &&
     !busy &&
     (multiCandNeedsTarget
       ? linkTargetReady
@@ -1020,6 +1043,15 @@ export function ReviewCard({
                   </span>
                 )}
               </label>
+              {dateError && (
+                <p
+                  className="mb-1.5 text-xs text-status-critical"
+                  data-testid="review-date-error"
+                  role="alert"
+                >
+                  {dateError}
+                </p>
+              )}
               <textarea
                 id={`review-note-${shipment.id}`}
                 aria-label="Note"
