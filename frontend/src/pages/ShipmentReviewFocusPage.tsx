@@ -14,6 +14,7 @@ import { ReviewCard, type ReviewCardSavePayload } from '../components/review/Rev
 import { Badge } from '../components/ui/Badge'
 import { Card } from '../components/ui/Card'
 import { mapCriticFieldsToColumns } from '../lib/review-fields'
+import { formatShipmentId } from '../lib/utils'
 import { toast } from '../components/ui/Toast'
 
 /**
@@ -79,7 +80,15 @@ export default function ShipmentReviewFocusPage() {
   // A confirmed/dismissed leg opened directly by URL is shown read-only (no approve/edit actions).
   const readOnly = shipment.reviewStatus !== 'provisional'
   const backToShipment = `/shipments/${shipment.id}`
-  const bookingLabel = shipment.bookingNo ?? shipment.soNumber ?? shipment.id.slice(0, 8)
+  // Title identity matches ShipmentDetailPage (#348/#350/#355): the derived Shipment ID, anchored
+  // to the beginning email, with #151's leg ordinal riding it. This page used to lead with the
+  // booking number, so the same leg answered to two different names depending on which surface
+  // you opened. The booking moves to the subtitle — it is the only place it appears here (the
+  // ReviewCard prints it in its COLLAPSED header, which this page never renders).
+  const shipmentIdValue =
+    formatShipmentId(shipment.id, shipment.firstEmailAt ?? shipment.createdAt) +
+    ((shipment.legCount ?? 1) > 1 ? ` · Leg ${shipment.legNo ?? 1}/${shipment.legCount}` : '')
+  const bookingLabel = shipment.bookingNo ?? shipment.soNumber ?? null
 
   const handleStale = async (err: unknown) => {
     if (!isStaleConflict(err)) throw err
@@ -154,12 +163,13 @@ export default function ShipmentReviewFocusPage() {
           <div className="min-w-0">
             <h1 className="text-lg font-semibold text-text-primary">
               Review{' '}
-              <span className="font-mono text-cobalt-primary-light">{bookingLabel}</span>
+              <span className="font-mono text-cobalt-primary-light">{shipmentIdValue}</span>
             </h1>
             <p className="mt-0.5 text-sm text-text-secondary">
               {shipment.customer?.name ?? 'Unknown Customer'}
               {shipment.forwarder?.name && ` · ${shipment.forwarder.name}`}
               {shipment.route && ` · ${shipment.route}`}
+              {bookingLabel && ` · ${bookingLabel}`}
             </p>
           </div>
           {/* No "Open full shipment" here — the review card below carries its own Open shipment
