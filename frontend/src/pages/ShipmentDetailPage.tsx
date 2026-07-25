@@ -22,12 +22,13 @@ import { pendingReviewAnnotations, type PendingAnnotation } from '../lib/pending
 import { AlertCard } from '../components/alerts/AlertCard'
 import { formatDate, formatDateTime, formatDateMaybeTime, formatShipmentId, cn } from '../lib/utils'
 import { parseSender } from '../lib/email-sender'
-import { EDITABLE_FIELDS, fieldLabel, numericFieldWarn, dateOrderWarn, toInputValue, type EditableField, formatNumericDisplay, dateColumnHasTime } from '../lib/review-fields'
+import { EDITABLE_FIELDS, fieldLabel, fieldUnit, numericFieldWarn, dateOrderWarn, toInputValue, type EditableField, formatNumericDisplay, dateColumnHasTime } from '../lib/review-fields'
 import { toast } from '../components/ui/Toast'
 import { interactiveProps } from '../lib/interactive'
 import { Pagination, usePagination, PageSizeSelect } from '../components/ui/Pagination'
 import { ArrowLeft, Mail, Clock, ClipboardList, Package, Ship, Calendar, AlertTriangle, AlertCircle, Info, Pencil, Check, X, NotebookPen } from 'lucide-react'
 import { DateTimeField } from '../components/shipments/DateTimeField'
+import { NumberField } from '../components/shipments/NumberField'
 
 // The human-editable leg fields, grouped like the read-only card. `db` = the backend column the PATCH writes
 // (+ locks + audits); `get` reads the current value off the loaded shipment (whose UI names differ from db).
@@ -521,12 +522,23 @@ export default function ShipmentDetailPage() {
                           onChange={(v) => setDraft((prev) => ({ ...prev, [f.db]: v }))}
                           className={controlClass}
                         />
+                      ) : f.type === 'number' ? (
+                        <NumberField
+                          id={`${fieldId}-${f.db}`}
+                          ariaLabel={f.label}
+                          value={cur}
+                          onChange={(v) => setDraft((d) => ({ ...d, [f.db]: v }))}
+                          decimals={f.db !== 'qty'}
+                          /* qty's unit is the leg's own UOM (an editable field beside it); weight
+                             and measurement carry a fixed one from EDITABLE_FIELDS. */
+                          unit={f.db === 'qty' ? draft.qtyUnit || null : fieldUnit(f.db)}
+                          error={numErr}
+                          className={controlClass}
+                        />
                       ) : (
                         <input
                           id={`${fieldId}-${f.db}`}
                           type={f.type}
-                          min={f.type === 'number' ? 0 : undefined}
-                          step={f.db === 'qty' ? 1 : f.type === 'number' ? 'any' : undefined}
                           value={cur}
                           onChange={(e) => setDraft((d) => ({ ...d, [f.db]: e.target.value }))}
                           placeholder={
@@ -539,11 +551,7 @@ export default function ShipmentDetailPage() {
                           className={controlClass}
                         />
                       )}
-                      {numErr && (
-                        <p className="col-start-2 mt-1 text-xs text-status-critical" data-testid={`edit-err-${f.db}`}>
-                          {numErr}
-                        </p>
-                      )}
+                      {/* numeric errors render inside NumberField (after blur) — see its docstring */}
                     </div>
                       )]
                   })}

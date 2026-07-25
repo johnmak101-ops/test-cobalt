@@ -25,16 +25,14 @@ function renderModal() {
 const inputFor = (label: string) => screen.getByText(label).closest('label')!.querySelector('input')!
 
 describe('NewShipmentModal numeric fields — derived from isNumericColumn, not hand-listed', () => {
-  it('renders each numeric field as a restricted number input', () => {
+  it('renders each numeric field as the numeric field, not type=number', () => {
     renderModal()
     for (const label of ['Total Quantity', 'Gross Weight']) {
-      const input = inputFor(label)
-      expect(input).toHaveAttribute('type', 'number')
-      expect(input).toHaveAttribute('min', '0')
+      expect(inputFor(label)).toHaveAttribute('type', 'text')
     }
-    // qty is a physical count — whole numbers only; gross weight is a measure, so fractions are legal.
-    expect(inputFor('Total Quantity')).toHaveAttribute('step', '1')
-    expect(inputFor('Gross Weight')).toHaveAttribute('step', 'any')
+    // qty is a physical count — the keypad has no decimal point; gross weight is a measure.
+    expect(inputFor('Total Quantity')).toHaveAttribute('inputmode', 'numeric')
+    expect(inputFor('Gross Weight')).toHaveAttribute('inputmode', 'decimal')
   })
 
   it('leaves text fields alone', () => {
@@ -43,10 +41,13 @@ describe('NewShipmentModal numeric fields — derived from isNumericColumn, not 
     expect(inputFor('Container No.')).not.toHaveAttribute('type', 'number')
   })
 
-  it('shows the range warning on a bad count', async () => {
+  it('holds the range warning until the field is left', async () => {
     const user = userEvent.setup()
     renderModal()
-    await user.type(inputFor('Total Quantity'), '-5')
-    expect(screen.getByTestId('create-err-qty')).toHaveTextContent(/cannot be negative/)
+    // A minus sign never even reaches the value now — it is not a digit.
+    await user.type(inputFor('Total Quantity'), '0')
+    expect(screen.queryByTestId('number-field-error')).not.toBeInTheDocument()
+    await user.tab()
+    expect(screen.getByTestId('number-field-error')).toHaveTextContent(/whole number greater than 0/)
   })
 })
