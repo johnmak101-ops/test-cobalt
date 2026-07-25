@@ -13,6 +13,7 @@ import { coerceLegField } from '../shipments/coerce-field'
 import { keysOverlap, normBookingKey, normKey, strongKeys } from '../reconcile/match-keys'
 import type { CorrectDto, IdentifyDto, LinkDto } from './dto'
 import { logAmbiguityPickFromLink } from './ambiguity-pick-log'
+import { legDay } from '../common/leg-day'
 
 /** IdentifyDto snake_case strong-key field → camelCase shipment column. */
 const KEY_TO_LEG_COLUMN: Record<IdentifyDto['field'], string> = {
@@ -66,7 +67,9 @@ function confirmValue(isDate: boolean, value: unknown): string | null {
   if (value == null || value === '') return null
   if (isDate) {
     const d = value instanceof Date ? value : new Date(String(value))
-    return Number.isNaN(d.getTime()) ? null : d.toISOString().slice(0, 10)
+    // Local day: a UTC slice froze the PREVIOUS day, so the later soul re-parse compared against
+    // a date the reviewer never saw and could never match (see legDay).
+    return Number.isNaN(d.getTime()) ? null : legDay(d)
   }
   return String(value)
 }
