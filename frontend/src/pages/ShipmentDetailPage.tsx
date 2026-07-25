@@ -22,7 +22,7 @@ import { pendingReviewAnnotations, type PendingAnnotation } from '../lib/pending
 import { AlertCard } from '../components/alerts/AlertCard'
 import { formatDate, formatDateTime, formatDateMaybeTime, formatShipmentId, cn } from '../lib/utils'
 import { parseSender } from '../lib/email-sender'
-import { EDITABLE_FIELDS, fieldLabel, numericFieldWarn, dateOrderWarn, toInputValue, type EditableField , formatNumericDisplay} from '../lib/review-fields'
+import { EDITABLE_FIELDS, fieldLabel, numericFieldWarn, dateOrderWarn, toInputValue, type EditableField, formatNumericDisplay, dateColumnHasTime } from '../lib/review-fields'
 import { toast } from '../components/ui/Toast'
 import { interactiveProps } from '../lib/interactive'
 import { Pagination, usePagination, PageSizeSelect } from '../components/ui/Pagination'
@@ -515,6 +515,7 @@ export default function ShipmentDetailPage() {
                            for why this is a date+time PAIR and not a datetime-local input. */
                         <DateTimeField
                           id={`${fieldId}-${f.db}`}
+                          showTime={dateColumnHasTime(f.db)}
                           label={f.label}
                           value={cur}
                           onChange={(v) => setDraft((prev) => ({ ...prev, [f.db]: v }))}
