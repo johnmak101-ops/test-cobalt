@@ -5,6 +5,7 @@ import {
   reviewFieldLabel,
   mapCriticFieldToColumn,
   isPortColumn,
+  partyPickerKind,
   parseStyleEntries,
   serializeStyleEntries,
   parseStyleTokens,
@@ -13,6 +14,7 @@ import {
   type StyleEntry,
 } from '../../lib/review-fields'
 import { PortPicker } from '../shipments/PortPicker'
+import { PartyPicker } from '../shipments/PartyPicker'
 import { cn } from '../../lib/utils'
 import { REVIEW_COL, REVIEW_TD } from './review-table-layout'
 
@@ -185,6 +187,9 @@ export function ConflictRow({
   const column = mapCriticFieldToColumn(conflict.field)
   // POL/POD edit from the seeded ports master (searchable, free-text fallback) instead of a bare input.
   const isPort = isPortColumn(column)
+  // Customer/Vendor/Forwarder do the same over the Mesh party mirror — derived from EDITABLE_FIELDS
+  // so this row and the shipment edit form cannot disagree about how a field is edited.
+  const partyKind = partyPickerKind(column)
   const isStyles = isItemStyleField(conflict.field)
   const multi = proposed.length > 1
   const existingStyles = existing?.value ?? ''
@@ -314,6 +319,15 @@ export function ConflictRow({
         ) : editing ? (
           isPort ? (
             <PortPicker
+              value={value}
+              onChange={onChange}
+              ariaLabel={`Proposed value for ${label}`}
+              placeholder="—"
+              className="h-8 w-full rounded-lg border border-border bg-surface-900 px-2.5 font-mono text-sm text-text-primary placeholder:text-text-muted focus:border-cobalt-primary focus:outline-none"
+            />
+          ) : partyKind ? (
+            <PartyPicker
+              kind={partyKind}
               value={value}
               onChange={onChange}
               ariaLabel={`Proposed value for ${label}`}

@@ -1271,7 +1271,8 @@ describe('qty live-leg settle on decision table', () => {
     )
     const grid = screen.getByTestId('review-decision-grid')
     expect(within(grid).queryByText('Total Quantity')).toBeNull()
-    expect(within(grid).getByText('Vendor')).toBeInTheDocument()
+    // Row label follows EDITABLE_FIELDS, which names the party fields by what they store (a code).
+    expect(within(grid).getByText('Vendor Code')).toBeInTheDocument()
     // Qty settled — Approve must not double-count it as a second change. The label is now a plain
     // verb, so the count lives in the tooltip; assert there rather than losing the guard.
     expect(screen.getByRole('button', { name: /^approve$/i })).toHaveAttribute(

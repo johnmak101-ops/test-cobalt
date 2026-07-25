@@ -11,6 +11,7 @@ import {
   mapCriticFieldToColumn,
   mapCriticFieldsToColumns,
   isPortColumn,
+  partyPickerKind,
   isWritableLegColumn,
   reviewGroupOf,
   toInputValue,
@@ -67,16 +68,16 @@ describe('EDITABLE_FIELDS', () => {
     ).toEqual(['bookingNo', 'soNo', 'warehouseSo'])
   })
 
-  it('makes Customer / Vendor editable free-text (Mesh-lag stand-in) under Shipping', () => {
+  it('makes Customer / Vendor editable (Mesh-lag stand-in) under Shipping, labelled as codes', () => {
     expect(EDITABLE_FIELDS.find((f) => f.column === 'customerRaw')).toMatchObject({
       section: 'Shipping',
-      label: 'Customer',
+      label: 'Customer Code',
       uiKey: 'customerRaw',
       type: 'text',
     })
     expect(EDITABLE_FIELDS.find((f) => f.column === 'vendorRaw')).toMatchObject({
       section: 'Shipping',
-      label: 'Vendor',
+      label: 'Vendor Code',
       uiKey: 'vendorRaw',
     })
     // parties route to Shipping via the column mapping (no dedicated regex that would swallow customer_po)
@@ -92,9 +93,25 @@ describe('EDITABLE_FIELDS', () => {
     expect(isPortColumn('forwarderRaw')).toBe(false)
     expect(isPortColumn('customerRaw')).toBe(false)
     expect(isPortColumn(null)).toBe(false)
-    // free-text parties keep NO picker — their masters are Mesh-lagged, so there is no list to pick from
-    expect(EDITABLE_FIELDS.find((f) => f.column === 'customerRaw')?.picker).toBeUndefined()
-    expect(EDITABLE_FIELDS.find((f) => f.column === 'forwarderRaw')?.picker).toBeUndefined()
+    // Customer/Vendor DO pick from the Mesh mirror (reversing the earlier "no list to pick from"
+    // rule): the mirror holds ~850 customers / ~1.5k vendors, so the lag makes it INCOMPLETE, not
+    // absent — and PartyPicker keeps the same free-text fallback PortPicker has, so a party the
+    // mirror has not caught up with is still enterable. A pick stores the master CODE, the tier
+    // exactPartyId resolves first and the value the read view shows as "Customer Code".
+    expect(EDITABLE_FIELDS.find((f) => f.column === 'customerRaw')?.picker).toBe('customer')
+    expect(EDITABLE_FIELDS.find((f) => f.column === 'vendorRaw')?.picker).toBe('vendor')
+    expect(EDITABLE_FIELDS.find((f) => f.column === 'forwarderRaw')?.picker).toBe('forwarder')
+  })
+
+  it('partyPickerKind drives both the edit form and the review conflict row from one list', () => {
+    expect(partyPickerKind('customerRaw')).toBe('customer')
+    expect(partyPickerKind('vendorRaw')).toBe('vendor')
+    expect(partyPickerKind('forwarderRaw')).toBe('forwarder')
+    // Ports have their own picker; everything else is plain free text.
+    expect(partyPickerKind('polRaw')).toBeNull()
+    expect(partyPickerKind('vesselName')).toBeNull()
+    expect(partyPickerKind(null)).toBeNull()
+    expect(partyPickerKind(undefined)).toBeNull()
   })
 })
 
