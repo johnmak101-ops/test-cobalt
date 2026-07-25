@@ -343,6 +343,45 @@ export function isPortColumn(column: string | null | undefined): boolean {
   return !!column && PORT_PICKER_COLUMNS.has(column)
 }
 
+const NUMERIC_COLUMNS = new Set<string>()
+for (const f of EDITABLE_FIELDS) {
+  if (f.type === 'number') NUMERIC_COLUMNS.add(f.column)
+}
+// grossWeight / measurement are numeric leg columns that EDITABLE_FIELDS deliberately omits from the
+// Order Details form, but a critic conflict can still carry them — they must not fall through to a
+// free-text input, so the numeric set covers them too (mirrors backend NUMERIC_FIELDS).
+for (const c of ['grossWeight', 'measurement']) NUMERIC_COLUMNS.add(c)
+
+/** True when this leg column holds a number — the input must restrict, and the display may group. */
+export function isNumericColumn(column: string | null | undefined): boolean {
+  return !!column && NUMERIC_COLUMNS.has(column)
+}
+
+/**
+ * Strip thousands separators so an agent value like "1,240" (a packing list writes them) seeds a
+ * number input instead of rendering blank. Anything that is not a clean number after stripping is
+ * returned untouched, so junk stays visible for the operator to see rather than silently vanishing.
+ */
+export function normalizeNumericInput(value: string | null | undefined): string {
+  const raw = (value ?? '').trim()
+  if (!raw) return ''
+  const stripped = raw.replace(/,/g, '')
+  return /^-?\d*\.?\d+$/.test(stripped) ? stripped : raw
+}
+
+/**
+ * Group a numeric value for READ display ("1180" → "1,180"). Display only — never fed back into an
+ * input, because the grouped form is exactly what Number() chokes on. Non-numeric input is passed
+ * through unchanged so a bad value is shown as-is rather than mangled.
+ */
+export function formatNumericDisplay(value: string | null | undefined): string {
+  const raw = (value ?? '').trim()
+  if (!raw) return ''
+  const n = Number(raw.replace(/,/g, ''))
+  if (!Number.isFinite(n)) return raw
+  return n.toLocaleString('en-US', { maximumFractionDigits: 3 })
+}
+
 const PARTY_PICKER_COLUMNS = new Map<string, 'customer' | 'vendor' | 'forwarder'>()
 for (const f of EDITABLE_FIELDS) {
   if (f.picker === 'customer' || f.picker === 'vendor' || f.picker === 'forwarder') {

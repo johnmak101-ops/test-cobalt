@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
 import { X, PlusCircle, Loader2 } from 'lucide-react'
 import { useCreateShipment, type CreateShipmentInput } from '../../hooks/use-shipments'
-import { fieldLabel, numericFieldWarn } from '../../lib/review-fields'
+import { fieldLabel, numericFieldWarn, isNumericColumn } from '../../lib/review-fields'
 import { MODE_EDIT_OPTIONS, UOM_OPTIONS } from '../../lib/enums'
 
 /**
@@ -51,8 +51,15 @@ const DATES: Field[] = [
 ]
 
 const STRONG: (keyof CreateShipmentInput)[] = ['bookingNo', 'soNo', 'hblAwbFcrNo', 'mbl', 'containerNo']
-/** Rendered as number inputs with min=0 (the backend rejects negatives / bad counts regardless). */
-const NUMERIC: (keyof CreateShipmentInput)[] = ['qty', 'grossWeight']
+/**
+ * Rendered as number inputs with min=0 (the backend rejects negatives / bad counts regardless).
+ * Derived from isNumericColumn rather than hand-listed: a hand-list silently misses a field the
+ * moment one is added above, and a numeric field that falls through to free text reaches
+ * coerceLegField, which turns anything Number() cannot read into NULL.
+ */
+const NUMERIC: (keyof CreateShipmentInput)[] = [...IDENTITY, ...ROUTE, ...CARGO, ...DATES]
+  .map((f) => f.key)
+  .filter((k) => isNumericColumn(String(k)))
 
 const controlClass =
   'h-9 rounded-lg border border-border bg-surface-900 px-3 text-sm text-text-primary placeholder:text-text-muted focus:border-cobalt-primary focus:outline-none'

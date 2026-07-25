@@ -15,6 +15,8 @@ import {
   fieldUnit,
   groupConflictFields,
   mapCriticFieldToColumn,
+  isNumericColumn,
+  normalizeNumericInput,
   parseStyleEntries,
   serializeStyleEntries,
 } from '../../lib/review-fields'
@@ -170,7 +172,14 @@ function initialResolutions(conflicts: CriticConflict[]): Record<string, string>
   // conflict still has no safe AUTO-pick, so the primary button NAMES the number of stored values it
   // would overwrite ("Approve 3 changes") — pre-filled must not read as pre-approved.
   // #360: the seed is the RESOLUTION value — the master CODE for resolved party candidates.
-  for (const c of conflicts) out[c.field] = proposedResolutionOf(c)
+  // Numeric columns are normalised first: an agent value off a packing list arrives grouped
+  // ("1,240"), and a number <input> renders a grouped string as BLANK — which would look like the
+  // agent proposed nothing. Strip the separators so the seed survives; display re-groups it.
+  for (const c of conflicts) {
+    const raw = proposedResolutionOf(c)
+    const column = mapCriticFieldToColumn(c.field)
+    out[c.field] = isNumericColumn(column) ? normalizeNumericInput(raw) : raw
+  }
   return out
 }
 

@@ -7,6 +7,7 @@ import { poProgress, progressLabel } from '../lib/po-progress'
 import { ArrowLeft, AlertTriangle, Package, Ship } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { interactiveProps } from '../lib/interactive'
+import { formatNumericDisplay } from '../lib/review-fields'
 
 export default function PurchaseOrderDetailPage() {
   const { id } = useParams<{ id: string }>()
@@ -77,7 +78,7 @@ export default function PurchaseOrderDetailPage() {
           <div>
             <span className="text-xs text-text-muted">Total Quantity</span>
             <p className="mt-0.5 font-mono text-lg font-semibold text-text-primary">
-              {po.totalQuantity != null ? po.totalQuantity : '—'}
+              {po.totalQuantity != null ? formatNumericDisplay(String(po.totalQuantity)) : '—'}
             </p>
           </div>
           <div>
@@ -239,7 +240,7 @@ UOM
                       {formatShortDate(shipment.eta)}
                     </td>
                     <td className="px-4 py-3 font-mono text-sm text-right text-text-secondary">
-                      {shipment.linkedQuantity ?? '—'}
+                      {shipment.linkedQuantity != null ? formatNumericDisplay(String(shipment.linkedQuantity)) : '—'}
                     </td>
                     <td className="px-4 py-3 text-sm text-text-muted">
                       {po.quantityUnit ?? '—'}

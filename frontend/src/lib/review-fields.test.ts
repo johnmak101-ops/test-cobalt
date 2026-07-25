@@ -12,6 +12,9 @@ import {
   mapCriticFieldsToColumns,
   isPortColumn,
   partyPickerKind,
+  isNumericColumn,
+  normalizeNumericInput,
+  formatNumericDisplay,
   isWritableLegColumn,
   reviewGroupOf,
   toInputValue,
@@ -508,5 +511,42 @@ describe('fieldUnit — the Order Details convention: unit lives in the VALUE', 
     expect(fieldUnit('qty')).toBeNull()
     expect(fieldUnit('bookingNo')).toBeNull()
     expect(fieldUnit('notAColumn')).toBeNull()
+  })
+})
+
+describe('numeric columns — restrict on entry, group on display', () => {
+  it('knows which leg columns are numeric, including ones the form omits', () => {
+    expect(isNumericColumn('qty')).toBe(true)
+    // Not on the Order Details form, but a critic conflict can still carry them.
+    expect(isNumericColumn('grossWeight')).toBe(true)
+    expect(isNumericColumn('measurement')).toBe(true)
+    expect(isNumericColumn('bookingNo')).toBe(false)
+    expect(isNumericColumn('etd')).toBe(false)
+    expect(isNumericColumn(null)).toBe(false)
+  })
+
+  it('strips thousands separators so a grouped agent value can seed a number input', () => {
+    // A packing list writes 1,240 — a number <input> renders that as BLANK, losing the proposal.
+    expect(normalizeNumericInput('1,240')).toBe('1240')
+    expect(normalizeNumericInput('13,516')).toBe('13516')
+    expect(normalizeNumericInput('1240')).toBe('1240')
+    expect(normalizeNumericInput('12.5')).toBe('12.5')
+    expect(normalizeNumericInput('')).toBe('')
+    expect(normalizeNumericInput(null)).toBe('')
+    // Junk is left visible rather than silently mangled into something plausible.
+    expect(normalizeNumericInput('abc')).toBe('abc')
+    expect(normalizeNumericInput('1,2a4')).toBe('1,2a4')
+  })
+
+  it('groups for display and round-trips with normalize', () => {
+    expect(formatNumericDisplay('13516')).toBe('13,516')
+    expect(formatNumericDisplay('1240')).toBe('1,240')
+    expect(formatNumericDisplay('999')).toBe('999')
+    expect(formatNumericDisplay('')).toBe('')
+    // Already grouped input is not double-grouped.
+    expect(formatNumericDisplay('1,240')).toBe('1,240')
+    // Non-numeric passes through untouched — a bad value must stay visible, not become "NaN".
+    expect(formatNumericDisplay('abc')).toBe('abc')
+    expect(normalizeNumericInput(formatNumericDisplay('13516'))).toBe('13516')
   })
 })
