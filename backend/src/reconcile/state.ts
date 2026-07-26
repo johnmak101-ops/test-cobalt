@@ -221,12 +221,22 @@ export const DERIVED_MILESTONE_OF: Array<{ field: string; milestone: string }> =
   { field: 'atd', milestone: 'SAILED' },
 ]
 
-/** Normalize the parser's mode label to the schema enum. */
+/**
+ * Normalize the parser's mode label to the schema enum — SEA or AIR, nothing finer.
+ *
+ * Ops track sea vs air only; FCL/LCL is a container-loading detail nobody filters or reports on.
+ * Carrying it was actively harmful: leg identity partitions on (mode, pod), so one shipment split
+ * into TWO legs whenever two documents described the same move at different granularity — the
+ * booking saying `Sea` and the B/L saying `Sea-LCL`. That produced 11 duplicate-HBL pairs in a
+ * single day of real mail.
+ *
+ * This mirrors the queue's `modeCore` (cobalt-queue src/matcher/match-keys.ts) deliberately,
+ * including the AIR-before-SEA test order — the two repos must agree on mode identity or a leg
+ * matched on one side splits on the other.
+ */
 export function normMode(mode: string | null): string | null {
   if (!mode) return null
-  const m: Record<string, string> = { Sea: 'SEA', 'Sea-FCL': 'SEA_FCL', 'Sea-LCL': 'SEA_LCL', Air: 'AIR' }
-  if (m[mode]) return m[mode]
-  if (mode.toLowerCase().startsWith('sea')) return 'SEA'
-  if (mode.toLowerCase().startsWith('air')) return 'AIR'
+  if (/air/i.test(mode)) return 'AIR'
+  if (/sea|fcl|lcl/i.test(mode)) return 'SEA'
   return null
 }

@@ -99,9 +99,17 @@ describe('coerceLegField — human-edit coercion + numeric sanity gate', () => {
     }
   })
 
-  it('accepts valid modes SEA / SEA_FCL / SEA_LCL / AIR', () => {
-    for (const m of ['SEA', 'SEA_FCL', 'SEA_LCL', 'AIR']) {
+  it('accepts valid modes SEA / AIR', () => {
+    for (const m of ['SEA', 'AIR']) {
       expect(coerceLegField('mode', m)).toBe(m)
+    }
+  })
+
+  // FCL/LCL was dropped end-to-end (migration 0023): ops track sea vs air only, and keeping the
+  // granularity split one shipment into two legs when two documents stated it differently.
+  it('rejects the retired granular modes', () => {
+    for (const m of ['SEA_FCL', 'SEA_LCL']) {
+      expect(() => coerceLegField('mode', m)).toThrow(BadRequestException)
     }
   })
 

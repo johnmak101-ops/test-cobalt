@@ -183,7 +183,7 @@ describe('toUiShipment — flat active-leg projection', () => {
     expect(air.route).toBe('CAN→AMS')
     const sea = toUiShipment({
       ...fullInput(),
-      leg: leg({ mode: 'SEA_LCL' }),
+      leg: leg({ mode: 'SEA' }),
       polPort: { unlocode: 'KHPNH', country: 'KH', iata: 'PNH' },
       podPort: { unlocode: 'USLAX', country: 'US', iata: 'LAX' },
     })

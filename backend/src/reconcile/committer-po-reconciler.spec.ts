@@ -127,14 +127,17 @@ describe('planPoReconcile (PoQtyReconciler pure plan)', () => {
       poEnrichment: null,
       unattributed: [],
       gk: new Set(),
-      siblingPoHbls: [{ po: '1570988', hbl: 'SNZ260004243', mode: 'SEA_LCL' }],
+      siblingPoHbls: [{ po: '1570988', hbl: 'SNZ260004243', mode: 'SEA' }],
     })
     expect(plan.links.map((l) => l.poNo)).toContain('1570988')
     expect(plan.poFlagReasons.some((r) => /PO 1570988: also on sibling HAWB SNZ260004243 \(cross-mode split\)/i.test(r))).toBe(true)
     expect(plan.poFlagReasons.some((r) => /exclusive to sibling HAWB/i.test(r))).toBe(false)
   })
 
-  it('same MODE FAMILY sibling claim still skips (SEA_FCL vs SEA_LCL are one family)', () => {
+  // normMode now collapses every sea variant to SEA, so these values should never reach here.
+  // The family collapse is kept as defence-in-depth for legacy rows written before migration 0023
+  // and for any caller that bypasses normMode — a granular value must never read as a cross-mode split.
+  it('same MODE FAMILY sibling claim still skips (legacy SEA_FCL vs SEA_LCL are one family)', () => {
     const plan = planPoReconcile({
       pos: ['28739'],
       fields: { qty: 29, customer_code: 'WYSE', hbl_awb_fcr_no: 'GZL26258522', mode: 'SEA_FCL' },

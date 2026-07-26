@@ -14,14 +14,18 @@ export const UOM_OPTIONS = [
   'sets',
 ] as const
 
-export const MODE_OPTIONS = ['SEA', 'SEA_FCL', 'SEA_LCL', 'AIR'] as const
-
 /**
- * What the human-edit Mode dropdowns OFFER — just the two families, easier to scan (2026-07-24).
- * The agent still writes SEA_FCL / SEA_LCL (MODE_OPTIONS mirrors the DB CHECK), and an existing
- * granular value stays selectable in the dropdown without being flagged unrecognized.
+ * Sea vs air — nothing finer. FCL/LCL was dropped end-to-end (2026-07-26): ops never filtered or
+ * reported on it, and because leg identity partitions on (mode, pod) it split one shipment into two
+ * legs whenever two documents stated the same move at different granularity. The agent now writes
+ * only SEA/AIR (`normMode`), migration 0023 rewrote existing rows and narrowed the DB CHECK.
  */
-export const MODE_EDIT_OPTIONS = ['SEA', 'AIR'] as const
+export const MODE_OPTIONS = ['SEA', 'AIR'] as const
+
+/** What the human-edit Mode dropdowns OFFER. Identical to MODE_OPTIONS now that the granular values
+ *  are gone; kept as a separate name so the edit-surface and the validation vocabulary can diverge
+ *  again without touching every call site. */
+export const MODE_EDIT_OPTIONS = MODE_OPTIONS
 
 export type UomOption = (typeof UOM_OPTIONS)[number]
 export type ModeOption = (typeof MODE_OPTIONS)[number]
