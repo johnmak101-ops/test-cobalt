@@ -2,6 +2,7 @@ import { Inject, Injectable } from '@nestjs/common'
 import { sql, type Kysely } from 'kysely'
 import type { DB } from '../kysely/db'
 import { KYSELY } from '../kysely.provider'
+import { isUniqueViolation } from '../../common/db-errors'
 import { evidencePoNorm } from '../../reconcile/evidence-po-norm'
 import { resolveAttachmentRawBytes } from './attachment-bytes-carry'
 
@@ -28,6 +29,9 @@ export interface EvidenceInput {
   attachments?: { graphAttachmentId: string; filename: string; declaredMime?: string; sizeBytes?: number; sourceKind?: string; rawBytesB64?: string | null }[]
 }
 
+/** Attempts allowed for one message's write when a concurrent post keeps winning the insert. */
+const WRITE_MAX_ATTEMPTS = 3
+
 /**
  * Kysely/SQL Server port of IngestRepository. Persists per-email parsed records + metadata into the
  * `ingest` mirror (email_message / email_attachment / parsed_record) — the RECEIVE side of cobalt-queue's
@@ -39,7 +43,8 @@ export interface EvidenceInput {
  *     but rawBytes are carried forward when re-POST has none (#177 / queue #151 purge re-match).
  *   - parsed_record upserts on (graph_message_id, record_idx).
  *
- * Each evidence entry's writes run in ONE transaction (atomic: a crash can't leave half-written children).
+ * Each evidence entry's writes run in ONE transaction (atomic: a crash can't leave half-written children),
+ * retried as a whole on a lost insert race — see {@link writeMessage}.
  */
 @Injectable()
 export class IngestRepository {
@@ -61,108 +66,139 @@ export class IngestRepository {
     }
 
     for (const [graphMessageId, entries] of byMsg) {
-      const head = entries[0]! // subject/sender/graphId/etc. are identical across a message's records
-      const bodyE = entries.find((e) => e.bodyText != null || e.bodyHtml != null) ?? head
-      const attE = entries.find((e) => e.attachments?.length) ?? head
-      await this.db.transaction().execute(async (tx) => {
-        const receivedAt = head.receivedAt ? new Date(head.receivedAt) : null
-        const attachmentCount = attE.attachments?.length ?? 0
+      await this.writeMessage(graphMessageId, entries)
+    }
+  }
 
-        // email_message upsert on graph_message_id — also stores body + Graph item id for "view original"
-        const existing = await tx.selectFrom('emailMessage').where('graphMessageId', '=', graphMessageId).select('id').executeTakeFirst()
-        let msgId: string
-        const emailPatch = {
-          subject: head.subject ?? null,
-          sender: head.sender ?? null,
-          receivedAt,
-          conversationId: head.conversationId ?? null,
-          sourceFile: head.sourceFile ?? null,
-          attachmentCount,
-          graphId: head.graphId ?? null,
-          bodyText: bodyE.bodyText ?? null,
-          bodyHtml: bodyE.bodyHtml ?? null,
-        }
-        if (existing) {
-          await tx.updateTable('emailMessage').set(emailPatch).where('id', '=', existing.id).execute()
-          msgId = existing.id
-        } else {
-          const inserted = await tx.insertInto('emailMessage').values({
-            graphMessageId,
-            ...emailPatch,
-            status: 'DONE',
-          }).output('inserted.id').executeTakeFirstOrThrow()
-          msgId = inserted.id
-        }
+  /**
+   * One message's mirror write, retried as a WHOLE on a lost insert race.
+   *
+   * The check-then-insert on `email_message` (unique `graph_message_id`) and `parsed_record` (unique
+   * `graph_message_id, record_idx`) is not atomic, and one email routinely fans out into several decision
+   * groups — the queue posts N concurrent requests naming the same message, so a loser hits SQL 2627.
+   *
+   * The whole transaction is retried rather than the failing statement caught in place: on the second pass
+   * the `existing` lookup finds the winner's row, so the message takes the UPDATE path AND `priorAtts` is
+   * populated — which is what carries stored `rawBytes` forward (#177 / queue #151). Catching mid-transaction
+   * would leave `existing` null and let the attachment delete+insert drop the winner's bytes. Every write
+   * here is an upsert, so replaying it is safe.
+   */
+  private async writeMessage(graphMessageId: string, entries: EvidenceInput[]): Promise<void> {
+    let lastErr: unknown
+    for (let attempt = 0; attempt < WRITE_MAX_ATTEMPTS; attempt++) {
+      try {
+        await this.writeMessageTx(graphMessageId, entries)
+        return
+      } catch (e) {
+        if (!isUniqueViolation(e)) throw e
+        lastErr = e
+      }
+    }
+    throw lastErr
+  }
 
-        // attachments: replace-in-place (no natural unique key), but KEEP stored rawBytes when the
-        // re-POST omits them (queue RETENTION purge + full re-match — queue #151 / shiptrack #177).
-        const priorAtts = existing
-          ? await tx
-              .selectFrom('emailAttachment')
-              .where('messageId', '=', msgId)
-              .select(['graphAttachmentId', 'filename', 'sizeBytes', 'rawBytes'])
-              .execute()
-          : []
-        const priorBytes = priorAtts.map((p) => ({
-          graphAttachmentId: p.graphAttachmentId ?? null,
-          filename: p.filename,
-          sizeBytes: p.sizeBytes ?? null,
-          rawBytes: (p.rawBytes as Buffer | null) ?? null,
-        }))
+  private async writeMessageTx(graphMessageId: string, entries: EvidenceInput[]): Promise<void> {
+    const head = entries[0]! // subject/sender/graphId/etc. are identical across a message's records
+    const bodyE = entries.find((e) => e.bodyText != null || e.bodyHtml != null) ?? head
+    const attE = entries.find((e) => e.attachments?.length) ?? head
+    await this.db.transaction().execute(async (tx) => {
+      const receivedAt = head.receivedAt ? new Date(head.receivedAt) : null
+      const attachmentCount = attE.attachments?.length ?? 0
 
-        await tx.deleteFrom('emailAttachment').where('messageId', '=', msgId).execute()
-        if (attE.attachments?.length) {
-          await tx.insertInto('emailAttachment').values(
-            attE.attachments.map((a) => {
-              const carried = resolveAttachmentRawBytes(
-                {
-                  graphAttachmentId: a.graphAttachmentId,
-                  filename: a.filename,
-                  sizeBytes: a.sizeBytes ?? null,
-                  rawBytesB64: a.rawBytesB64 ?? null,
-                },
-                priorBytes,
-              )
-              return {
-                messageId: msgId,
+      // email_message upsert on graph_message_id — also stores body + Graph item id for "view original"
+      const existing = await tx.selectFrom('emailMessage').where('graphMessageId', '=', graphMessageId).select('id').executeTakeFirst()
+      let msgId: string
+      const emailPatch = {
+        subject: head.subject ?? null,
+        sender: head.sender ?? null,
+        receivedAt,
+        conversationId: head.conversationId ?? null,
+        sourceFile: head.sourceFile ?? null,
+        attachmentCount,
+        graphId: head.graphId ?? null,
+        bodyText: bodyE.bodyText ?? null,
+        bodyHtml: bodyE.bodyHtml ?? null,
+      }
+      if (existing) {
+        await tx.updateTable('emailMessage').set(emailPatch).where('id', '=', existing.id).execute()
+        msgId = existing.id
+      } else {
+        const inserted = await tx.insertInto('emailMessage').values({
+          graphMessageId,
+          ...emailPatch,
+          status: 'DONE',
+        }).output('inserted.id').executeTakeFirstOrThrow()
+        msgId = inserted.id
+      }
+
+      // attachments: replace-in-place (no natural unique key), but KEEP stored rawBytes when the
+      // re-POST omits them (queue RETENTION purge + full re-match — queue #151 / shiptrack #177).
+      const priorAtts = existing
+        ? await tx
+            .selectFrom('emailAttachment')
+            .where('messageId', '=', msgId)
+            .select(['graphAttachmentId', 'filename', 'sizeBytes', 'rawBytes'])
+            .execute()
+        : []
+      const priorBytes = priorAtts.map((p) => ({
+        graphAttachmentId: p.graphAttachmentId ?? null,
+        filename: p.filename,
+        sizeBytes: p.sizeBytes ?? null,
+        rawBytes: (p.rawBytes as Buffer | null) ?? null,
+      }))
+
+      await tx.deleteFrom('emailAttachment').where('messageId', '=', msgId).execute()
+      if (attE.attachments?.length) {
+        await tx.insertInto('emailAttachment').values(
+          attE.attachments.map((a) => {
+            const carried = resolveAttachmentRawBytes(
+              {
                 graphAttachmentId: a.graphAttachmentId,
                 filename: a.filename,
-                declaredMime: a.declaredMime ?? null,
-                sizeBytes: a.sizeBytes ?? 0,
-                sourceKind: a.sourceKind ?? null,
-                // CRITICAL (MSSQL varbinary trap): bare JS null binds as nvarchar — use typed NULL.
-                rawBytes: carried
-                  ? carried
-                  : sql<Buffer | null>`CAST(NULL AS varbinary(max))`,
-              }
-            }),
-          ).execute()
-        }
+                sizeBytes: a.sizeBytes ?? null,
+                rawBytesB64: a.rawBytesB64 ?? null,
+              },
+              priorBytes,
+            )
+            return {
+              messageId: msgId,
+              graphAttachmentId: a.graphAttachmentId,
+              filename: a.filename,
+              declaredMime: a.declaredMime ?? null,
+              sizeBytes: a.sizeBytes ?? 0,
+              sourceKind: a.sourceKind ?? null,
+              // CRITICAL (MSSQL varbinary trap): bare JS null binds as nvarchar — use typed NULL.
+              rawBytes: carried
+                ? carried
+                : sql<Buffer | null>`CAST(NULL AS varbinary(max))`,
+            }
+          }),
+        ).execute()
+      }
 
-        // parsed_record upsert on (graph_message_id, record_idx) — one per evidence record of this message
-        for (const e of entries) {
-          const recordIdx = e.recordIdx ?? 0
-          const fieldsJson = JSON.stringify(e.fields ?? {})
-          const matchKeysJson = JSON.stringify(e.matchKeys ?? {})
-          const poNoNorm = evidencePoNorm(e.poNo, e.matchKeys ?? null)
-          const existingRec = await tx.selectFrom('parsedRecord')
-            .where('graphMessageId', '=', graphMessageId).where('recordIdx', '=', recordIdx)
-            .select('id').executeTakeFirst()
-          if (existingRec) {
-            await tx.updateTable('parsedRecord').set({
-              messageId: msgId, poNo: e.poNo ?? null, poNoNorm, emailType: e.emailType ?? null,
-              senderType: e.senderType ?? null, mode: e.mode ?? null, fields: fieldsJson, matchKeys: matchKeysJson,
-              promptVersion: e.promptVersion ?? null,
-            }).where('id', '=', existingRec.id).execute()
-          } else {
-            await tx.insertInto('parsedRecord').values({
-              messageId: msgId, graphMessageId, recordIdx,
-              poNo: e.poNo ?? null, poNoNorm, emailType: e.emailType ?? null, senderType: e.senderType ?? null,
-              mode: e.mode ?? null, fields: fieldsJson, matchKeys: matchKeysJson, promptVersion: e.promptVersion ?? null,
-            }).execute()
-          }
+      // parsed_record upsert on (graph_message_id, record_idx) — one per evidence record of this message
+      for (const e of entries) {
+        const recordIdx = e.recordIdx ?? 0
+        const fieldsJson = JSON.stringify(e.fields ?? {})
+        const matchKeysJson = JSON.stringify(e.matchKeys ?? {})
+        const poNoNorm = evidencePoNorm(e.poNo, e.matchKeys ?? null)
+        const existingRec = await tx.selectFrom('parsedRecord')
+          .where('graphMessageId', '=', graphMessageId).where('recordIdx', '=', recordIdx)
+          .select('id').executeTakeFirst()
+        if (existingRec) {
+          await tx.updateTable('parsedRecord').set({
+            messageId: msgId, poNo: e.poNo ?? null, poNoNorm, emailType: e.emailType ?? null,
+            senderType: e.senderType ?? null, mode: e.mode ?? null, fields: fieldsJson, matchKeys: matchKeysJson,
+            promptVersion: e.promptVersion ?? null,
+          }).where('id', '=', existingRec.id).execute()
+        } else {
+          await tx.insertInto('parsedRecord').values({
+            messageId: msgId, graphMessageId, recordIdx,
+            poNo: e.poNo ?? null, poNoNorm, emailType: e.emailType ?? null, senderType: e.senderType ?? null,
+            mode: e.mode ?? null, fields: fieldsJson, matchKeys: matchKeysJson, promptVersion: e.promptVersion ?? null,
+          }).execute()
         }
-      })
-    }
+      }
+    })
   }
 }

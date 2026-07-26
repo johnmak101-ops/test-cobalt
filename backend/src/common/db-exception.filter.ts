@@ -53,6 +53,14 @@ export class DbExceptionFilter implements ExceptionFilter {
 
     const n = sqlErrorNumber(exception)
     if (n != null && CONSTRAINT_NUMBERS.has(n)) {
+      // The RESPONSE deliberately hides the constraint name, but swallowing it entirely makes these
+      // undiagnosable — a lost insert race under concurrent POSTs looks like an unexplained 400.
+      // Server-side only; never echoed to the client.
+      this.log.warn(
+        `SQL constraint violation ${n}: ${
+          exception instanceof Error ? exception.message : String(exception)
+        }`,
+      )
       return res.status(HttpStatus.BAD_REQUEST).json({
         statusCode: HttpStatus.BAD_REQUEST,
         message: "One of the values isn't allowed.",
