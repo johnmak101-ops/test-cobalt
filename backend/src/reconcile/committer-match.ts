@@ -40,9 +40,30 @@ export const strongKeysConflict = (a: Set<string>, b: Set<string>): boolean => {
 }
 
 /**
+ * Do the two strong-key sets agree on a BILL-OF-LADING level identifier?
+ *
+ * `hbl_awb_fcr_no` and `mbl` name one physical shipment/document. `so_no`, `booking_no` and
+ * `container_no` are weaker: they are restated, reused across consignments, and (for containers)
+ * genuinely shared by different shipments — so only the B/L pair earns the right to overrule a
+ * PO-set difference.
+ */
+const BILL_OF_LADING_KEYS = ['hbl_awb_fcr_no', 'mbl'] as const
+
+function sharesBillOfLadingKey(a: Set<string>, b: Set<string>): boolean {
+  for (const k of a) {
+    if (!b.has(k)) continue
+    const type = k.slice(0, k.indexOf(':'))
+    if ((BILL_OF_LADING_KEYS as readonly string[]).includes(type)) return true
+  }
+  return false
+}
+
+/**
  * Given candidate legs, a bookingId→[poNumber] map, and the group's keys, return the existing leg this
  * group amends — or undefined (→ new leg). A leg matches when:
- *   - it shares a STRONG key with the group AND is PO-consistent (never when their strong keys CONFLICT); OR
+ *   - it shares a STRONG key with the group AND is PO-consistent (never when their strong keys CONFLICT) —
+ *     except that a shared B/L identifier (hbl_awb_fcr_no / mbl) matches even when the PO sets differ,
+ *     since one B/L legitimately carries many POs and each email cites only the ones it is about; OR
  *   - they share a PO and at least ONE side has no strong id (a nascent PO-only leg gaining its first id).
  * A2 fallback: a zero-identity group (no strong key AND no PO) matches another zero-identity leg of the same
  * thread by the conversationId persisted in match_keys — so a re-ingest UPDATES the provisional row.
@@ -71,7 +92,14 @@ export function findExistingLeg<L extends { bookingId: string; matchKeys: unknow
     const bkPos = new Set((posByBooking.get(l.bookingId) ?? []).map((p) => normKey(p)).filter(Boolean))
     const sharePo = groupPos.size > 0 && setsOverlap(groupPos, bkPos)
     if (gk.size > 0 && keysOverlap(legStrong, gk)) {
-      if (bkPos.size && !sharePo) continue // strong match but clashing POs → not the same shipment
+      // A shared BILL-OF-LADING identifier settles it: an HBL/AWB/FCR or MBL names ONE physical
+      // shipment, and its POs are its CONTENTS — two emails about the same B/L routinely cite
+      // different subsets of them. Letting a non-overlapping PO set veto that match is what split
+      // one consignment into two legs (FCR001340862: same HBL + same SO, POs differed → leg 17) and
+      // even minted a second BOOKING for one B/L (SZXRTM26070080: same HBL + MBL + SO, POs differed).
+      // For weaker overlaps (so_no / booking_no / container_no alone) the PO clash still vetoes:
+      // those identifiers get reused and restated across shipments far more freely than a B/L number.
+      if (bkPos.size && !sharePo && !sharesBillOfLadingKey(legStrong, gk)) continue
       existing = l
       break
     }
