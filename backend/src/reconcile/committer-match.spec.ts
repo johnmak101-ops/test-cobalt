@@ -291,3 +291,32 @@ describe('findSiblingBooking (#151 — same booking value, different HBL → leg
     expect(findSiblingBooking([husk], gkOf({ booking_no: 'B1368248010', hbl_awb_fcr_no: 'HBL-UK' }))).toBeUndefined()
   })
 })
+
+describe('findExistingLeg — the AWB alias must not read as a strong-key CONFLICT', () => {
+  // This is the exact path that minted a duplicate on 2026-07-26. A decision carrying
+  // hbl=SZA26050003 met a leg committed under hbl=A26050003 (the bare-A form the forwarder writes in the
+  // email SUBJECT, "BL#A26050003 ELGC// …"). Same type, unequal value ⇒ strongKeysConflict fired at the top
+  // of the loop and `continue`d — so the MBL, which DID overlap, never got a chance to match. The committer
+  // inserted JOB-2026-0010 beside JOB-2026-0003 for one shipment.
+  const legMk = { hbl_awb_fcr_no: 'A26050003', mbl: '99992908152', booking_no: 'CA771' }
+  const groupMk = { hbl_awb_fcr_no: 'SZA26050003', mbl: '999-92908152' }
+
+  it('matches the existing leg instead of spawning a duplicate', () => {
+    const legs = [leg('L-0003', 'B-0003', legMk)]
+    const found = findExistingLeg(legs, new Map([['B-0003', ['1570988']]]), gkOf(groupMk), posSet('1570988'), null)
+    expect(found?.id).toBe('L-0003')
+  })
+
+  it('still matches when the group states ONLY the aliased HBL (no MBL to fall back on)', () => {
+    const legs = [leg('L-0003', 'B-0003', { hbl_awb_fcr_no: 'A26050003' })]
+    const found = findExistingLeg(legs, new Map(), gkOf({ hbl_awb_fcr_no: 'SZA26050003' }), new Set(), null)
+    expect(found?.id).toBe('L-0003')
+  })
+
+  it('a genuinely different HBL is still a conflict and still spawns a new leg', () => {
+    const legs = [leg('L-A', 'B-A', { hbl_awb_fcr_no: 'GZL26258522', mbl: '99992908152' })]
+    // shares the MBL, but the HBLs are different real waybills — must NOT be amended
+    const found = findExistingLeg(legs, new Map(), gkOf({ hbl_awb_fcr_no: 'GZL26261147', mbl: '999-92908152' }), new Set(), null)
+    expect(found).toBeUndefined()
+  })
+})
