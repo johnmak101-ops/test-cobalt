@@ -41,6 +41,10 @@ export const FIELD_CLASS: Record<string, FieldClass> = {
   cargo_ready_date: 'schedule', warehouse_start_date: 'schedule', warehouse_end_date: 'schedule',
   etd: 'schedule', atd: 'schedule', eta: 'schedule', ata: 'schedule', in_dc_date: 'schedule',
   qty: 'quantity',
+  // The CARTON count, kept beside qty ONLY when a table stated both cartons and pieces — `qty` then
+  // holds the pieces (#197), so this is the only place the carton count survives. Mirrors the queue's
+  // FIELD_CLASS; the cross-repo contract fixture pins the two tables equal.
+  cartons: 'quantity',
   // ports of loading / discharge — B/L-authoritative (newest-authoritative doc wins). MUST be listed or
   // mergeShipment drops them on the reconcile-from-evidence path.
   pol: 'text', pod: 'text', consignee_address: 'text',

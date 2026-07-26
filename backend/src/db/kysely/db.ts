@@ -63,6 +63,10 @@ export interface Shipments
   riskLevel: Generated<U<typeof RISK_LEVEL>>
   reviewStatus: Generated<U<typeof REVIEW_STATUS>>
   qtyUnit: U<typeof QTY_UNIT> | null
+  /** Migration 0024. Declared here rather than in db.generated.ts because codegen runs against
+   *  `cobalt_test`, which only gains the column once migrations are applied there — this keeps the
+   *  type correct without a codegen round-trip. Fold into the generated shape on the next `db:codegen`. */
+  cartons: number | null
   reviewReasons: Json<string[] | null>
   matchKeys: Json<Record<string, unknown> | null>
   criticReview: Json<CriticReview | null>
