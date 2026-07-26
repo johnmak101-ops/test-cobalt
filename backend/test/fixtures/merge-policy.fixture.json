@@ -21,6 +21,7 @@
     "ata": "schedule",
     "in_dc_date": "schedule",
     "qty": "quantity",
+    "cartons": "quantity",
     "pol": "text",
     "pod": "text",
     "consignee_address": "text",
