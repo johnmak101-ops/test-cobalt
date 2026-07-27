@@ -31,7 +31,6 @@ import {
   liveQtyFromShipment,
   poShipmentTotalFromLinked,
 } from '../../lib/qty-conflict-settle'
-import { liveValueForField, partitionAppliedConflicts } from '../../lib/conflict-applied'
 import { isNonIdentifier } from '../../lib/identifier-shape'
 import { isCriticalColumn } from '../../lib/review-critical'
 import {
@@ -343,16 +342,25 @@ export function ReviewCard({
    * quiet line, still openable, because "the email agreed with us" is worth being able to verify.
    */
   /**
-   * Already-applied is decided FIRST, before the qty-specific settle. A qty row the leg literally
-   * holds (784 stated, 784 stored) belongs in "already on the shipment" where the operator can see it;
-   * running the qty filter first would drop it silently, and the green line would undercount.
-   * filterActionableConflicts still owns its other two routes (the PO shipment total, all-candidates),
-   * which are settles for a different reason and are not claims that the value was applied.
+   * Which rows the leg already satisfies is the BACKEND's answer now (presentation/open-decisions.ts),
+   * not something re-derived here. It is the only place that holds both the advice and the leg, and
+   * the frontend had grown six separate re-derivations of the same idea — one per symptom.
+   *
+   * Absent (a queue row from before this shipped, or a leg with no critic payload) means "nothing
+   * known to be settled", which leaves every row on the desk — the safe direction.
    */
-  const { open: unapplied, applied: appliedConflicts } = useMemo(
-    () => partitionAppliedConflicts(deskConflicts, legValues),
-    [deskConflicts, legValues],
-  )
+  const openDecisions = (shipment as {
+    openDecisions?: { settledFields?: string[]; liveValues?: Record<string, string> } | null
+  }).openDecisions
+  const settledFields = useMemo(() => new Set(openDecisions?.settledFields ?? []), [openDecisions])
+  /** What the leg stores per contested field — the Current column, instead of the pre-commit snapshot. */
+  const liveValues = useMemo(() => openDecisions?.liveValues ?? {}, [openDecisions])
+  const { open: unapplied, applied: appliedConflicts } = useMemo(() => {
+    const open: CriticConflict[] = []
+    const applied: CriticConflict[] = []
+    for (const c of deskConflicts) (settledFields.has(c.field) ? applied : open).push(c)
+    return { open, applied }
+  }, [deskConflicts, settledFields])
   const conflicts = useMemo(
     () => filterActionableConflicts(unapplied, { liveQty, poShipmentTotal }),
     [unapplied, liveQty, poShipmentTotal],
@@ -394,13 +402,12 @@ export function ReviewCard({
    * and the queue's expanded panel both pass the full detail.
    */
   const partiesLinked = useMemo(() => {
-    const s = shipment as unknown as Record<string, unknown>
-    const linked = (idKey: string, value: unknown): string | null =>
-      s[idKey] ? nameOf(value) : null
-    return {
-      customer: linked('customerId', s.customer),
-      forwarder: linked('forwarderId', s.forwarder),
-    }
+    const resolved =
+      (shipment as { openDecisions?: { resolvedParties?: { slot: string; name: string }[] } })
+        .openDecisions?.resolvedParties ?? []
+    const out: Record<string, string> = {}
+    for (const p of resolved) out[p.slot] = p.name
+    return out
   }, [shipment])
 
   const needsAttentionGroups = useMemo(
@@ -1319,7 +1326,7 @@ export function ReviewCard({
                         {reviewFieldLabel(c.field, c.label)}
                       </span>
                       <span className="field-value min-w-0 font-mono text-status-success">
-                        {liveValueForField(c, legValues)}
+                        {liveValues[c.field] ?? proposedValueOf(c) ?? '—'}
                       </span>
                     </li>
                   ))}
@@ -1431,10 +1438,13 @@ export function ReviewCard({
                                  shipment had said `MARIBO MAERSK` for hours — the operator was
                                  comparing the email against a value nobody stored any more. qty keeps
                                  its own display (it also settles against the PO shipment total). */
+                              /* Current shows what the LEG says. The critic's `System` candidate is a
+                                 pre-commit snapshot — it is why a row could read MAASTRICHT MAERSK
+                                 while the shipment had said MARIBO MAERSK for hours. */
                               existingOverride={
                                 isQtyConflict(c)
                                   ? existingQtyDisplay(c, liveQty)
-                                  : liveValueForField(c, legValues)
+                                  : (liveValues[c.field] ?? null)
                               }
                               resolveSourceEmail={resolveSourceEmail}
                               onRequestEdit={() => {

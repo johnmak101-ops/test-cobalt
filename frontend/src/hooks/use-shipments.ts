@@ -50,6 +50,16 @@ export interface Shipment {
    * `created` a new one, `created_pending_dedup` (created WHILE the matcher offered alternatives),
    * `adopted_zero_id`, `sibling_leg`. Null on legs committed before 0027 — unknown, never assumed.
    */
+  /**
+   * The advice MINUS what the commit already settled, computed once by the backend
+   * (presentation/open-decisions.ts). The card reads this instead of re-deriving it per symptom.
+   */
+  openDecisions?: {
+    settledFields: string[]
+    resolvedParties: { slot: string; name: string }[]
+    /** What the leg ACTUALLY stores per contested field — the grid's Current column reads this. */
+    liveValues?: Record<string, string>
+  } | null
   committerAction?: string | null
   committerCandidatesConsidered?: number | null
   /** #151: leg ordinal under booking when legCount > 1 */

@@ -1481,23 +1481,39 @@ describe('a resolved party stops the desk asking ops to add it', () => {
     )
   }
 
-  it('linked customer → the line is gone', () => {
-    renderLeg({ customerId: 'c1', customer: { id: 'c1', name: 'WHISTLES LIMITED', code: 'WLTD' } })
+  it('the server says the customer resolved → the line is gone', () => {
+    renderLeg({
+      openDecisions: {
+        settledFields: [],
+        resolvedParties: [{ slot: 'customer', name: 'WHISTLES LIMITED' }],
+      },
+    })
     expect(screen.queryByText(/advise add in Mesh/i)).toBeNull()
     expect(screen.getByTestId('review-ready-state')).toBeInTheDocument()
   })
 
   /**
-   * The queue DTO maps `forwarder` to `forwarderName ?? forwarderRaw`, so a NAME alone proves nothing.
-   * Without the id this must behave as unlinked, or a raw echo would silence a real miss.
+   * Only a real MASTER counts as resolved, and that judgement now lives in the backend mapper (it reads
+   * the resolved master, never the raw stand-in). The card trusts that list and nothing else — a leg
+   * carrying the name as free text does not silence the miss.
    */
-  it('a name with no master id is not a link', () => {
+  it('a raw name the server did not list is not a link', () => {
     renderLeg({ customer: 'WHISTLES LIMITED' })
     expect(screen.getByText(/advise add in Mesh/i)).toBeInTheDocument()
   })
 
-  it('unlinked → the line stays', () => {
+  it('nothing resolved → the line stays', () => {
     renderLeg({})
+    expect(screen.getByText(/advise add in Mesh/i)).toBeInTheDocument()
+  })
+
+  it('a DIFFERENT company resolving does not silence this miss', () => {
+    renderLeg({
+      openDecisions: {
+        settledFields: [],
+        resolvedParties: [{ slot: 'customer', name: 'LIGENTIA ASIA LTD' }],
+      },
+    })
     expect(screen.getByText(/advise add in Mesh/i)).toBeInTheDocument()
   })
 })
@@ -1718,12 +1734,16 @@ describe('the committer decides whether identity is settled', () => {
  * the queue: 41 of 41 checkable rows were in that state.
  */
 describe('rows the leg already satisfies leave the grid', () => {
-  const realLeg = () =>
+  /** The backend now decides what is settled; the card reads its answer (openDecisions). */
+  const realLeg = (over: Record<string, unknown> = {}) =>
     baseShipment({
       reviewReasons: [],
-      consigneeAddress: 'PRIMARK LTD, 22-24, PARNELL STREET, ARTHUR RYAN HOUSE, , Dublin Ireland',
-      vesselName: 'MARIBO MAERSK',
-      voyageNumber: '631W',
+      openDecisions: {
+        settledFields: ['vessel_name', 'voyage_no'],
+        resolvedParties: [],
+        liveValues: { vessel_name: 'MARIBO MAERSK', voyage_no: '631W' },
+      },
+      ...over,
     } as never)
 
   const realConflicts: CriticConflict[] = [
@@ -1821,7 +1841,15 @@ describe('rows the leg already satisfies leave the grid', () => {
     render(
       <MemoryRouter>
         <ReviewCard
-          shipment={baseShipment({ reviewReasons: [], quantityShipped: 784, vesselName: 'MARIBO MAERSK' } as never)}
+          shipment={baseShipment({
+            reviewReasons: [],
+            quantityShipped: 784,
+            openDecisions: {
+              settledFields: ['qty', 'vessel_name'],
+              resolvedParties: [],
+              liveValues: { qty: '784', vessel_name: 'MARIBO MAERSK' },
+            },
+          } as never)}
           criticReview={baseReview({
             conflicts: [
               {
@@ -1928,7 +1956,13 @@ describe('rows the leg already satisfies leave the grid', () => {
     render(
       <MemoryRouter>
         <ReviewCard
-          shipment={realLeg()}
+          shipment={realLeg({
+            openDecisions: {
+              settledFields: ['vessel_name'],
+              resolvedParties: [],
+              liveValues: { vessel_name: 'MARIBO MAERSK', voyage_no: '631W' },
+            },
+          })}
           criticReview={baseReview({
             conflicts: [
               realConflicts[0]!,
