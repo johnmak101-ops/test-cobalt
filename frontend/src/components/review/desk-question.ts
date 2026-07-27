@@ -194,15 +194,37 @@ const EMAIL_KEY_LABEL: { key: string; label: string; strong: boolean }[] = [
 export function candidateDeskQuestion(opts: {
   emailKey?: Record<string, string> | undefined
   candidates: Record<string, unknown>[]
+  /** What the committer did (migration 0027). Changes the QUESTION, not just the wording. */
+  committerAction?: string | null
 }): { question: DeskQuestion; detail: string } | null {
-  const { emailKey, candidates } = opts
+  const { emailKey, candidates, committerAction } = opts
   if (candidates.length < 2) return null
 
-  const question: DeskQuestion = {
-    question: 'Which shipment does this email update?',
-    affirm: 'Confirm Reviewed',
-    // Rejecting is not an answer to "which one" — the leg is real, it just needs placing.
-    reject: null,
+  /**
+   * The committer CREATED this leg from the email — 179 of 181 active legs. So the email is not
+   * looking for a shipment to update; a shipment already exists for it, and the open question is
+   * whether that was a duplicate of one already on file. Different question, different answer: "pick
+   * one and link into it" versus "compare, and merge if it is the same move".
+   */
+  const created = committerAction === 'created_pending_dedup' || committerAction === 'created'
+  const question: DeskQuestion = created
+    ? {
+        question: 'Is this a duplicate of a shipment we already have?',
+        affirm: 'No — Keep as Separate',
+        reject: null,
+      }
+    : {
+        question: 'Which shipment does this email update?',
+        affirm: 'Confirm Reviewed',
+        // Rejecting is not an answer to "which one" — the leg is real, it just needs placing.
+        reject: null,
+      }
+
+  if (created) {
+    return {
+      question,
+      detail: `A new shipment was created for this email while ${candidates.length} similar ones already existed — check whether it is the same move.`,
+    }
   }
 
   const stated = EMAIL_KEY_LABEL.filter(({ key }) => String(emailKey?.[key] ?? '').trim() !== '')

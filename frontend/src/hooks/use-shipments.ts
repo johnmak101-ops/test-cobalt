@@ -45,6 +45,13 @@ export interface Shipment {
   reviewStatus?: string | null
   reviewReasons?: string[]
   dismissedAt?: string | null
+  /**
+   * What the committer DID with this email's advice (migration 0027): `matched` an existing leg,
+   * `created` a new one, `created_pending_dedup` (created WHILE the matcher offered alternatives),
+   * `adopted_zero_id`, `sibling_leg`. Null on legs committed before 0027 — unknown, never assumed.
+   */
+  committerAction?: string | null
+  committerCandidatesConsidered?: number | null
   /** #151: leg ordinal under booking when legCount > 1 */
   legNo?: number
   legCount?: number

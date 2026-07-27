@@ -689,3 +689,67 @@ describe('resolution exact-only (all-AI: fuzzy deleted, LLM owns free-text)', ()
     expect(legB.polId).not.toBeNull()
   })
 })
+
+/**
+ * 0027 — the committer records what it DID, on every path.
+ *
+ * Before this, a matched leg was stamped (`committerChosenLegId`) and a CREATED leg was recorded by
+ * the absence of that stamp. Absence-as-signal is what let a review-desk rule mistake a leg the email
+ * had just created for one the email merely named — opposite situations, identical in the data.
+ */
+describe('CommitterService — committer_action (0027)', () => {
+  const legOf = async (id: string) =>
+    db.selectFrom('shipments').where('id', '=', id).selectAll().executeTakeFirstOrThrow()
+
+  it('a fresh group records created, with no candidates to weigh it against', async () => {
+    const res = await committer.apply(group({ fields: { so_no: 'SO-C1' }, matchKeys: { so_no: 'SO-C1' } }))
+    const leg = await legOf(res.shipmentId)
+    expect(leg.committerAction).toBe('created')
+    expect(leg.committerCandidatesConsidered).toBeNull()
+  })
+
+  /** The state that did not exist before: committed, but the matcher had alternatives on the table. */
+  it('created WHILE the matcher offered candidates records created_pending_dedup + the count', async () => {
+    const res = await committer.apply(
+      group({
+        fields: { so_no: 'SO-C2' },
+        matchKeys: { so_no: 'SO-C2' },
+        criticReview: {
+          matchAmbiguity: {
+            kind: 'multi_candidate',
+            candidates: [{ shipmentId: 'x1' }, { shipmentId: 'x2' }, { shipmentId: 'x3' }],
+          },
+        },
+      } as Partial<ReconGroup>),
+    )
+    const leg = await legOf(res.shipmentId)
+    expect(leg.committerAction).toBe('created_pending_dedup')
+    expect(leg.committerCandidatesConsidered).toBe(3)
+  })
+
+  it('the same group again amends the SAME leg and records matched', async () => {
+    const first = await committer.apply(group({ fields: { so_no: 'SO-C3' }, matchKeys: { so_no: 'SO-C3' } }))
+    expect((await legOf(first.shipmentId)).committerAction).toBe('created')
+
+    const second = await committer.apply(
+      group({ fields: { so_no: 'SO-C3', vessel_name: 'EVER GIVEN' }, matchKeys: { so_no: 'SO-C3' } }),
+    )
+    expect(second.shipmentId).toBe(first.shipmentId)
+    const leg = await legOf(second.shipmentId)
+    expect(leg.committerAction).toBe('matched')
+    expect(leg.committerTargetLegId).toBe(first.shipmentId)
+  })
+
+  it('a single candidate is not a dedup question — that is just created', async () => {
+    const res = await committer.apply(
+      group({
+        fields: { so_no: 'SO-C4' },
+        matchKeys: { so_no: 'SO-C4' },
+        criticReview: { matchAmbiguity: { kind: 'multi_candidate', candidates: [{ shipmentId: 'x1' }] } },
+      } as Partial<ReconGroup>),
+    )
+    const leg = await legOf(res.shipmentId)
+    expect(leg.committerAction).toBe('created')
+    expect(leg.committerCandidatesConsidered).toBe(1)
+  })
+})
