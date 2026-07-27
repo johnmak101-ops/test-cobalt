@@ -753,3 +753,55 @@ describe('CommitterService — committer_action (0027)', () => {
     expect(leg.committerCandidatesConsidered).toBe(1)
   })
 })
+
+/**
+ * Phase 2 — the per-field outcome applyFields always computed and discarded.
+ *
+ * "The leg already held this" and "a human's value stood in the way" are very different stories, and
+ * the desk had to guess between them after the fact.
+ */
+describe('CommitterService — per-field apply outcome', () => {
+  it('separates written, already-identical and contested', async () => {
+    const first = await committer.apply(
+      group({
+        fields: { so_no: 'SO-F1', vessel_name: 'MARIBO MAERSK', voyage_no: '631W' },
+        matchKeys: { so_no: 'SO-F1' },
+      }),
+    )
+    // A create writes everything, so there is nothing to report.
+    expect(first.fieldOutcome).toBeNull()
+
+    const second = await committer.apply(
+      group({
+        fields: { so_no: 'SO-F1', vessel_name: 'MARIBO MAERSK', voyage_no: '999X' },
+        matchKeys: { so_no: 'SO-F1' },
+      }),
+    )
+    expect(second.shipmentId).toBe(first.shipmentId)
+    const out = second.fieldOutcome!
+    // vessel unchanged → alreadySame; voyage changed → applied.
+    expect(out.alreadySame).toContain('vesselName')
+    expect(out.applied).toContain('voyageNo')
+    expect(out.applied).not.toContain('vesselName')
+    expect(out.contested).toEqual([])
+  })
+
+  it('a write over a human lock is reported as contested, not merely applied', async () => {
+    const first = await committer.apply(
+      group({ fields: { so_no: 'SO-F2', vessel_name: 'MARIBO MAERSK' }, matchKeys: { so_no: 'SO-F2' } }),
+    )
+    await db
+      .insertInto('fieldLocks')
+      .values({ entityType: 'shipment', entityId: first.shipmentId, field: 'vesselName', lockedValue: 'MARIBO MAERSK' })
+      .execute()
+
+    const second = await committer.apply(
+      group({ fields: { so_no: 'SO-F2', vessel_name: 'EVER GIVEN' }, matchKeys: { so_no: 'SO-F2' } }),
+    )
+    const out = second.fieldOutcome!
+    expect(out.applied).toContain('vesselName')
+    expect(out.contested).toContain('vesselName')
+    // The existing supersede signal keeps working — this is additive.
+    expect(second.supersededLockedFields).toContain('vesselName')
+  })
+})

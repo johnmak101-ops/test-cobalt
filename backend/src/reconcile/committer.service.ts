@@ -48,6 +48,16 @@ export { findExistingLeg, findSupersededByIdentityCorrection, findSiblingBooking
  * payload. That disagreement is invisible today: 179 of 181 active legs were created, 13 of them while
  * candidates were on the table.
  */
+/** What happened to each field the merge proposed. See applyFields. */
+export type FieldApplyOutcome = {
+  /** Written to the leg. */
+  applied: string[]
+  /** Skipped — the leg already held exactly this value. Nothing for a human to look at. */
+  alreadySame: string[]
+  /** Written OVER a human-locked value (latest-email-wins, PR #232) — flagged for the operator. */
+  contested: string[]
+}
+
 function matchCandidateCount(criticReview: unknown): number | null {
   const amb = (criticReview as { matchAmbiguity?: { candidates?: unknown[] } } | null | undefined)
     ?.matchAmbiguity
@@ -117,6 +127,8 @@ export interface CommitResult {
   state: string
   conflicts: string[]
   supersededLockedFields: string[]
+  /** Per-field result of the amend (null on a create — everything was written). */
+  fieldOutcome?: FieldApplyOutcome | null
 }
 
 /**
@@ -328,6 +340,8 @@ export class CommitterService {
     let jobNo: string
     let action: CommitResult['action']
     const supersededLockedFields: string[] = []
+    /** Only the amend path applies over an existing leg; a create writes every field by definition. */
+    let fieldOutcome: FieldApplyOutcome | null = null
     /** 0027: what this commit DID, recorded on every branch — never by absence. */
     const candidatesConsidered = matchCandidateCount(g.criticReview)
 
@@ -337,7 +351,7 @@ export class CommitterService {
       action = 'amend_fields'
       const bk = await this.bookings.findById(bookingId)
       jobNo = bk?.jobNo ?? '(unknown)'
-      await this.applyFields(shipmentId, existing as Record<string, unknown>, legValues, supersededLockedFields, g, scheduleRetractionColumns(f))
+      fieldOutcome = await this.applyFields(shipmentId, existing as Record<string, unknown>, legValues, supersededLockedFields, g, scheduleRetractionColumns(f))
       if (adoptedZeroId) {
         await this.audit.write({
           entityType: 'shipment', entityId: shipmentId, field: 'match_keys',
@@ -585,7 +599,7 @@ export class CommitterService {
       evidenceIds: g.evidenceIds,
     })
     await this.milestones.sync(shipmentId, sourceEvents, g.fields, state)
-    return { action, jobNo, bookingId, shipmentId, state, conflicts: g.conflicts, supersededLockedFields }
+    return { action, jobNo, bookingId, shipmentId, state, conflicts: g.conflicts, supersededLockedFields, fieldOutcome }
   }
 
   /**
@@ -602,16 +616,30 @@ export class CommitterService {
     superseded: string[],
     g: ReconGroup,
     retractions: string[] = [],
-  ) {
+  ): Promise<FieldApplyOutcome> {
     const locks = await this.fieldLocks.forEntity(shipmentId)
     const locked = new Set(locks.filter((l) => l.entityType === 'shipment').map((l) => l.field))
     const patch: Record<string, unknown> = {}
+    /**
+     * The outcome per field. This loop always knew it — `same()` is "the leg already holds what the
+     * email proposes" and `locked` is "a human's value stood in the way" — and threw it away, so the
+     * desk had to guess later why a proposal never landed. Two very different stories: one needs no
+     * attention at all, the other is a contested human edit.
+     */
+    const outcome: FieldApplyOutcome = { applied: [], alreadySame: [], contested: [] }
     for (const [k, v] of Object.entries(next)) {
       if (v == null) continue
-      if (same(current[k], v)) continue
+      if (same(current[k], v)) {
+        outcome.alreadySame.push(k)
+        continue
+      }
       patch[k] = v
+      outcome.applied.push(k)
       await this.writeAudit('shipment', shipmentId, 'update', toStr(current[k]), toStr(v), g, k)
-      if (locked.has(k)) superseded.push(k)
+      if (locked.has(k)) {
+        superseded.push(k)
+        outcome.contested.push(k)
+      }
     }
     // Schedule retraction (the stale-ATD class): the merge asserted an EXPLICIT null for these columns
     // — a full-thread re-derivation found the stored statement contradicted/unsupported — so a stored
@@ -624,6 +652,7 @@ export class CommitterService {
       if (locked.has(col)) superseded.push(col)
     }
     if (Object.keys(patch).length) await this.shipments.updateLeg(shipmentId, patch)
+    return outcome
   }
 
   private async fillBooking(bookingId: string, shipmentId: string, vals: Record<string, unknown>, g: ReconGroup) {
