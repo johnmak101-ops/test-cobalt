@@ -108,7 +108,9 @@ describe('CandidatesService — name:tokens recall signal', () => {
   })
 
   it('city-length reverse subset still blocked for parties — SHANGHAI must not flood forwarders', async () => {
-    // SHANGHAI is 8 chars → not isShortBrandInput; reverse stays port-only for long tokens.
+    // One forwarder in the catalogue: rarity cannot mean anything at that size (1 of 1 is not rare),
+    // so the reverse path stays off and this guarantee holds exactly as before. See
+    // BRAND_RARITY_MIN_CATALOGUE; the recurring-token case is covered in the rarity describe below.
     const { svc } = forwarderRepo({
       forwarders: [{ id: 'f1', code: 'SIF001', name: 'Shanghai International Freight Forwarding Company Limited' }],
       forwarderAliases: [],
@@ -137,5 +139,73 @@ describe('CandidatesService — name:tokens recall signal', () => {
     const hit = candidates.find((c) => c.code === 'DSV001')
     expect(hit).toBeTruthy()
     expect(hit!.signals).toContain('name:code')
+  })
+})
+
+/**
+ * The brand guard used to gate on LENGTH (≤6), so two real brands written as one long word were
+ * refused for the same reason a city is: LOGIMARK and LXPANTOS are both 8 characters, exactly like
+ * SHANGHAI. Measured on the dev forwarder catalogue, they are nothing alike:
+ *
+ *   LOGIMARK 1 · LX PANTOS 2 · LIGENTIA 8 · SHANGHAI 11 · HONG KONG 87
+ *
+ * so the ceiling is now REACH, not length.
+ */
+describe('CandidatesService — brand recall by rarity, not by length', () => {
+  /** A catalogue big enough for "rare" to mean something, plus the rows under test. */
+  function bigCatalogue(extra: { id: string; code: string | null; name: string }[]) {
+    const filler = Array.from({ length: 40 }, (_, i) => ({
+      id: `pad${i}`,
+      code: `P${i}`,
+      name: `PADDING FREIGHT ${i} INTERNATIONAL LIMITED`,
+    }))
+    return forwarderRepo({ forwarders: [...filler, ...extra], forwarderAliases: [] })
+  }
+
+  it('LOGIMARK (8 chars, one master) now surfaces its master', async () => {
+    const { svc } = bigCatalogue([
+      { id: 'f1', code: '794', name: 'Logimark International Limited Guangzhou' },
+    ])
+    const { candidates } = await svc.candidates({ type: 'forwarder', name: 'LOGIMARK' })
+    expect(candidates.some((c) => c.code === '794')).toBe(true)
+  })
+
+  /**
+   * LXPANTOS is NOT a token of "LX PANTOS …" — the master splits the word — so token-subset alone
+   * could never have recovered it however the length gate was tuned. The squashed-prefix path does.
+   */
+  it('LXPantos surfaces LX PANTOS, which no token match could reach', async () => {
+    const { svc } = bigCatalogue([
+      { id: 'f1', code: '719', name: 'LX PANTOS LOGISTICS (SHENZHEN) CO. LTD' },
+    ])
+    const { candidates } = await svc.candidates({ type: 'forwarder', name: 'LXPantos' })
+    expect(candidates.some((c) => c.code === '719')).toBe(true)
+  })
+
+  it('a token that recurs across the catalogue stays out, however long', async () => {
+    const shanghais = Array.from({ length: 8 }, (_, i) => ({
+      id: `s${i}`,
+      code: `S${i}`,
+      name: `SHANGHAI ${i} FREIGHT FORWARDING COMPANY LIMITED`,
+    }))
+    const { svc } = bigCatalogue(shanghais)
+    const { candidates } = await svc.candidates({ type: 'forwarder', name: 'SHANGHAI' })
+    expect(candidates).toHaveLength(0)
+  })
+
+  /** Rarity is a claim about a corpus. In a tiny one nothing is rare, so the old behaviour stands. */
+  it('a small catalogue keeps the old refusal — 1 of 1 is not rare', async () => {
+    const { svc } = forwarderRepo({
+      forwarders: [{ id: 'f1', code: '794', name: 'Logimark International Limited Guangzhou' }],
+      forwarderAliases: [],
+    })
+    const { candidates } = await svc.candidates({ type: 'forwarder', name: 'LOGIMARK' })
+    expect(candidates).toHaveLength(0)
+  })
+
+  it('short brands are unaffected — DSV still reaches DSV001 in a big catalogue', async () => {
+    const { svc } = bigCatalogue([{ id: 'f1', code: 'DSV001', name: 'DSV AIR AND SEA CO LTD' }])
+    const { candidates } = await svc.candidates({ type: 'forwarder', name: 'DSV' })
+    expect(candidates.some((c) => c.code === 'DSV001')).toBe(true)
   })
 })
