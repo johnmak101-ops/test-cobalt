@@ -9,6 +9,7 @@ import { stateToUiStatus } from '../adapters/enums'
 import { deriveRoute, portLabel, deriveOriginCountry, poNumbersJson, isoOrNull } from '../adapters/derive'
 import { normalizeEntityName } from '../hydrate-critic-entity-labels'
 import { filterPortMissReasons } from './port-miss-reasons'
+import { openDecisions } from '../open-decisions'
 
 export interface MasterRef {
   id: string
@@ -177,6 +178,12 @@ export interface UiShipment {
    *  (and whether the matcher had offered alternatives at the time). */
   committerAction: string | null
   committerCandidatesConsidered: number | null
+  /** Advice minus what the commit settled — see presentation/open-decisions.ts. */
+  openDecisions: {
+    settledFields: string[]
+    resolvedParties: { slot: string; name: string }[]
+    liveValues: Record<string, string>
+  }
   /** #151: leg ordinal under booking; legCount > 1 → show "Booking · Leg n/N" */
   legNo: number
   legCount: number
@@ -327,6 +334,12 @@ export function toUiShipment(
     // vs the REAL master only — the raw stand-in above is built FROM the raw and can never diverge.
     customerMismatch: partyMismatch(leg.customerRaw, input.customer ?? null),
     vendorMismatch: partyMismatch(leg.vendorRaw, input.vendor ?? null),
+    /** Only a REAL master counts as resolved; the raw stand-in above is built from the raw itself. */
+    openDecisions: openDecisions(leg as unknown as Record<string, unknown>, leg.criticReview ?? null, {
+      customer: input.customer?.name ?? null,
+      vendor: input.vendor?.name ?? null,
+      forwarder: input.forwarder?.name ?? null,
+    }),
     linkedPOs: input.linkedPOs ?? [],
   }
 }

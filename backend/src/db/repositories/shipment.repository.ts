@@ -246,6 +246,18 @@ export class ShipmentRepository {
       'shipments.legStatus as legStatus', 'shipments.reviewReasons as reviewReasons', 'shipments.confidence as confidence',
       'shipments.createdAt as createdAt', 'shipments.updatedAt as updatedAt', 'shipments.dismissedAt as dismissedAt',
       'shipments.waitingAt as waitingAt', 'shipments.waitingReason as waitingReason',
+      // Columns openDecisions() compares the critic's proposals against — without them every conflict
+      // reads as unsettled on the queue list.
+      'shipments.bookingNo as legBookingNo', 'shipments.soNo as legSoNo',
+      'shipments.hblAwbFcrNo as hblAwbFcrNo', 'shipments.mbl as mbl', 'shipments.containerNo as containerNo',
+      'shipments.scacCode as scacCode', 'shipments.vesselName as vesselName', 'shipments.voyageNo as voyageNo',
+      'shipments.consigneeName as consigneeName', 'shipments.consigneeAddress as consigneeAddress',
+      'shipments.qty as qty', 'shipments.qtyUnit as qtyUnit',
+      'shipments.cargoReadyDate as cargoReadyDate', 'shipments.cfsCutoff as cfsCutoff',
+      'shipments.etd as etd', 'shipments.atd as atd', 'shipments.eta as eta', 'shipments.ata as ata',
+      'shipments.warehouseStartDate as warehouseStartDate', 'shipments.warehouseEndDate as warehouseEndDate',
+      'shipments.inDcDate as inDcDate', 'shipments.customerRaw as customerRaw',
+      'shipments.vendorRaw as vendorRaw', 'shipments.flightNo as flightNo', 'shipments.mawb as mawb',
       'shipments.committerAction as committerAction',
       'shipments.committerCandidatesConsidered as committerCandidatesConsidered',
       'shipments.criticReview as criticReview',
