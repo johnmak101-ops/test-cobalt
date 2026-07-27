@@ -113,8 +113,8 @@ describe('ShipmentReviewFocusPage', () => {
     expect(screen.getByRole('table')).toBeInTheDocument()
     expect(screen.getByText('ETA')).toBeInTheDocument()
 
-    // And the approve action is live (not read-only).
-    expect(screen.getByRole('button', { name: /approve/i })).toBeInTheDocument()
+    // And the commit action is live (not read-only) — it names the value it would write.
+    expect(screen.getByRole('button', { name: /^apply 2026-07-23$/i })).toBeInTheDocument()
     expect(screen.queryByText(/shown read-only/i)).not.toBeInTheDocument()
   })
 
@@ -147,7 +147,10 @@ describe('ShipmentReviewFocusPage', () => {
     renderPage()
 
     expect(screen.getByText(/shown read-only/i)).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /approve/i })).not.toBeInTheDocument()
+    // No verdicts at all on resolved history — commit, reject and park are all gone.
+    expect(screen.queryByRole('button', { name: /^apply/i })).not.toBeInTheDocument()
+    expect(screen.queryByTestId('review-reject')).toBeNull()
+    expect(screen.queryByTestId('review-wait')).toBeNull()
   })
 
   /**

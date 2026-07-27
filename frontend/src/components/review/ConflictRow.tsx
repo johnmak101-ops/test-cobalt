@@ -325,6 +325,8 @@ export function ConflictRow({
             value={value}
             onChange={onChange}
             editing={editing}
+            canEdit={canEdit}
+            onRequestEdit={onRequestEdit}
             proposedUnit={proposedUnit}
             changed={changed}
           />
@@ -720,9 +722,17 @@ export function StyleListEditor({
 }
 
 /**
- * Always list every non-system candidate in the AI Proposed cell so operators can see (and pick)
- * co-current values. Read-only: all options visible, current selection highlighted. Edit: radio
- * group to pick a candidate, plus free-text for a custom override.
+ * Every non-system candidate, pickable where it is shown.
+ *
+ * This used to render twice: inert `<div>`s plus the footnote "N candidates — pick one in Edit", and
+ * a radio group once the card was in edit mode. The radios and their onChange were identical in both
+ * — the mode switch was the only thing between the operator and the answer, so choosing a vendor took
+ * three steps (Edit → pick → Submit) for a decision that was already fully described on screen.
+ *
+ * Now the pick is gated on `canEdit` (may this operator resolve at all) rather than on `editing`
+ * (is the multi-field editor open). Resolved history still renders inert. Free-typing a value the
+ * agent never proposed is the one thing that still needs the editor, so that is what the in-cell
+ * link opens.
  */
 function MultiCandidateProposed({
   label,
@@ -730,6 +740,8 @@ function MultiCandidateProposed({
   value,
   onChange,
   editing,
+  canEdit,
+  onRequestEdit,
   proposedUnit,
   changed,
 }: {
@@ -738,6 +750,10 @@ function MultiCandidateProposed({
   value: string
   onChange: (v: string) => void
   editing: boolean
+  /** Operator may resolve this row at all (Active queue). False on Approved/Rejected history. */
+  canEdit: boolean
+  /** Opens the multi-field editor — the only way to type a value the agent never proposed. */
+  onRequestEdit?: () => void
   proposedUnit?: string | null
   changed: boolean
 }) {
@@ -746,7 +762,7 @@ function MultiCandidateProposed({
   return (
     <div className="space-y-1.5" data-testid="multi-candidate-proposed">
       <ul
-        role={editing ? 'radiogroup' : 'list'}
+        role={canEdit ? 'radiogroup' : 'list'}
         aria-label={`AI proposed candidates for ${label}`}
         className="space-y-1"
       >
@@ -755,7 +771,7 @@ function MultiCandidateProposed({
           const selected = candidateMatches(c, value) || (!value && i === 0)
           return (
             <li key={`${c.sourceEmailId ?? ''}\0${c.source}\0${c.value}`}>
-              {editing ? (
+              {canEdit ? (
                 <label
                   className={cn(
                     'flex cursor-pointer items-start gap-2 rounded border px-2 py-1 text-xs transition-colors',
@@ -828,10 +844,18 @@ function MultiCandidateProposed({
           </span>
         </div>
       )}
-      {!editing && (
-        <p className="text-[11px] text-text-muted">
-          {proposed.length} candidates — pick one in Edit
-        </p>
+      {/* Replaces "N candidates — pick one in Edit". The count was only ever there to explain why the
+          rows looked dead; they are live now, so all that is left to offer is the one thing they
+          cannot do. */}
+      {!editing && canEdit && onRequestEdit && (
+        <button
+          type="button"
+          onClick={onRequestEdit}
+          data-testid="candidate-type-custom"
+          className="text-[11px] font-medium text-cobalt-primary-light hover:underline"
+        >
+          Type a different value
+        </button>
       )}
     </div>
   )
