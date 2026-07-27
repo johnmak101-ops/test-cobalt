@@ -2178,7 +2178,10 @@ describe('verdicts answer the headline question', () => {
     return render(
       <MemoryRouter>
         <ReviewCard
-          shipment={baseShipment({ reviewReasons: [THIN_REASON] })}
+          /* Actually thin: no identifier, no route. A leg WITH a booking number and a route is a
+             shipment whatever the reason text says, and now takes the working shape instead — see
+             "the card takes its shape from the leg". */
+          shipment={baseShipment({ reviewReasons: [THIN_REASON], bookingNo: null, route: null })}
           criticReview={thinMail()}
           compact={null}
           defaultExpanded
@@ -2192,7 +2195,7 @@ describe('verdicts answer the headline question', () => {
 
   it('the affirmative button answers the question instead of saying "Confirm Reviewed"', () => {
     renderVerdicts()
-    expect(screen.getByRole('button', { name: /yes — track it/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /track it/i })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /keep current/i })).toBeNull()
   })
 
@@ -2335,7 +2338,13 @@ describe('POs on the decision desk — only when a PO needs a decision', () => {
     expect(screen.getByText('26-HMIGHLE-0294-2')).toBeInTheDocument()
   })
 
-  it('a PO-link question (matched on PO alone) brings the grid back', () => {
+  /**
+   * Reversed 2026-07-27. A PO-LINK question used to open the PO grid, which answered it with a table
+   * of Item/Style columns — every row `—`, and a style editor says nothing about which shipment a PO
+   * belongs on. That question is now answered above the grid by SharedPoPanel, which names the other
+   * leg and links to it, so the styles table has no reason to appear for it.
+   */
+  it('a PO-link question does NOT open the style grid — it is not what that question asks', () => {
     renderPoCard({
       riskFlags: [
         {
@@ -2345,7 +2354,9 @@ describe('POs on the decision desk — only when a PO needs a decision', () => {
         },
       ],
     })
-    expect(screen.getByTestId('review-po-styles-section')).toBeInTheDocument()
+    expect(screen.queryByTestId('review-po-styles-section')).toBeNull()
+    // and the question itself is still put to the operator
+    expect(screen.getByTestId('needs-attention')).toBeInTheDocument()
   })
 
   /**
@@ -2375,5 +2386,161 @@ describe('POs on the decision desk — only when a PO needs a decision', () => {
     await user.click(screen.getByTestId('review-note-add'))
     expect(screen.getByRole('textbox', { name: /note/i })).toBeInTheDocument()
     expect(screen.queryByTestId('review-note-add')).toBeNull()
+  })
+})
+
+/**
+ * Leg 202601AEA6: Vendor Code stored MACFUN, the email agreed, and the card still offered
+ * "Leave Blank" beside "Apply MACFUN" under a "Shipping (1 change)" heading.
+ *
+ * Cause: the Current cell printed `openDecisions.liveValues` ("(on shipment)") while every decision
+ * read the critic's `System` candidate. cobalt-queue emits a System candidate ONLY for
+ * backendMismatches, so a party row carries none — `'MACFUN' !== ''` counted as a change, and
+ * `keepMeansBlank` believed the field was empty. Both sides now read currentValueOf().
+ */
+describe('Current is one value — the cell and the buttons cannot disagree', () => {
+  const vendorNoSystemCandidate: CriticConflict = {
+    field: 'vendor_code',
+    label: 'Vendor Code',
+    candidates: [
+      {
+        value: 'MACAU FUNG TAI LIMITED',
+        source: 'Booking Request',
+        master: { code: 'MACFUN', name: 'MACAU FUNG TAI LIMITED' },
+      },
+    ],
+    rationale: 'Vendor named in the booking request.',
+  }
+
+  function renderVendorLeg(liveValues: Record<string, string>) {
+    return render(
+      <MemoryRouter>
+        <QueryClientProvider client={new QueryClient()}>
+          <ReviewCard
+            shipment={
+              {
+                ...baseShipment({ reviewReasons: [] }),
+                openDecisions: { settledFields: [], resolvedParties: [], liveValues },
+              } as unknown as ReviewShipment
+            }
+            criticReview={baseReview({ conflicts: [vendorNoSystemCandidate] })}
+            defaultExpanded
+            embedded
+            onApprove={vi.fn()}
+            onSaveAndApprove={vi.fn()}
+          />
+        </QueryClientProvider>
+      </MemoryRouter>,
+    )
+  }
+
+  it('a stored value with no System candidate is never offered as blank', () => {
+    renderVendorLeg({ vendor_code: 'MACFUN' })
+    expect(screen.queryByRole('button', { name: /leave blank/i })).toBeNull()
+  })
+
+  it('proposing the value already stored is not a change — the desk has nothing to apply', () => {
+    renderVendorLeg({ vendor_code: 'MACFUN' })
+    // No "Apply MACFUN" / "Apply 1 Change", and no "Keep Current" either: with no alternative on
+    // offer there is nothing to keep it OVER, so the card falls back to a plain confirmation.
+    expect(screen.queryByRole('button', { name: /^apply/i })).toBeNull()
+    expect(screen.getByRole('button', { name: /confirm reviewed/i })).toHaveAttribute(
+      'title',
+      expect.stringContaining('nothing to change'),
+    )
+  })
+
+  it('a genuinely different stored value still reads as a change', () => {
+    renderVendorLeg({ vendor_code: 'SOUOCE' })
+    expect(screen.getByRole('button', { name: /^apply/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /keep current/i })).toBeInTheDocument()
+  })
+
+  /**
+   * The grid's group header counted contested ROWS and called them changes, so leg 05F1BC19 announced
+   * "Shipping (1 change)" directly above a button reading "there is nothing to change". Found by
+   * walking the live queue after the accessor fix landed.
+   */
+  it('the group header counts what would be written, not how many rows are contested', () => {
+    renderVendorLeg({ vendor_code: 'MACFUN' })
+    const grid = screen.getByTestId('review-decision-grid')
+    expect(grid).toHaveTextContent(/Shipping\s*\(nothing to apply\)/i)
+    expect(grid).not.toHaveTextContent(/1 change/i)
+  })
+
+  it('and says "1 change" once a pick would actually write something', () => {
+    renderVendorLeg({ vendor_code: 'SOUOCE' })
+    expect(screen.getByTestId('review-decision-grid')).toHaveTextContent(/Shipping\s*\(1 change\)/i)
+  })
+
+  it('nothing stored anywhere still means Leave Blank', () => {
+    renderVendorLeg({})
+    expect(screen.getByRole('button', { name: /leave blank/i })).toBeInTheDocument()
+  })
+})
+
+/**
+ * Two card shapes (leg-shape.ts). A leg that plainly IS a shipment — identifier with digits, plus a
+ * route/schedule — must never be asked whether it is freight, and must carry no reject: on a filled-in
+ * card "Not a Shipment" is a destructive button answering a question nobody asked. A leg with too
+ * little to be a shipment gets the verdict shape and NO field grid, because settling a vendor on
+ * something that may not be freight is work thrown away.
+ */
+describe('the card takes its shape from the leg, not from the reason text', () => {
+  const thinReason = 'no booking/SO/HBL identity and no lifecycle email type — verify this is a real shipment'
+
+  function renderShape(over: Partial<ReviewShipment>, reasons: string[]) {
+    return render(
+      <MemoryRouter>
+        <QueryClientProvider client={new QueryClient()}>
+          <ReviewCard
+            shipment={baseShipment({ reviewReasons: reasons, ...over })}
+            criticReview={baseReview({ conflicts: [conflictEta], reasons })}
+            defaultExpanded
+            embedded
+            onApprove={vi.fn()}
+            onSaveAndApprove={vi.fn()}
+            onReject={vi.fn()}
+            onWait={vi.fn()}
+          />
+        </QueryClientProvider>
+      </MemoryRouter>,
+    )
+  }
+
+  /** baseShipment already carries bookingNo BY058417 + route CNYTN→GBFXT — a real shipment. */
+  it('a real-looking leg is never asked whether it is a shipment, even on a thin-mail reason', () => {
+    renderShape({}, [thinReason])
+    expect(screen.getByTestId('desk-question')).not.toHaveTextContent(/is this a real shipment/i)
+    expect(screen.queryByTestId('review-reject')).toBeNull()
+  })
+
+  it('a real-looking leg keeps the grid and the field actions', () => {
+    renderShape({}, [thinReason])
+    expect(screen.getByTestId('review-decision-grid')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /keep current/i })).toBeInTheDocument()
+  })
+
+  it('a header-row identifier forces the verdict shape whatever else it carries', () => {
+    renderShape({ bookingNo: 'PO # :' }, [])
+    expect(screen.getByTestId('desk-question')).toHaveTextContent(/is this a real shipment/i)
+    expect(screen.getByTestId('review-reject')).toHaveTextContent(/not a shipment/i)
+    // no grid: a leg named by a column heading cannot be filed under anything
+    expect(screen.queryByTestId('review-decision-grid')).toBeNull()
+  })
+
+  it('a thin leg gets Not a Shipment · Track it · Waiting and no grid', () => {
+    renderShape({ bookingNo: null, route: null }, [thinReason])
+    expect(screen.getByTestId('review-reject')).toHaveTextContent(/not a shipment/i)
+    expect(screen.getByRole('button', { name: /track it/i })).toBeInTheDocument()
+    expect(screen.getByTestId('review-wait')).toBeInTheDocument()
+    expect(screen.queryByTestId('review-decision-grid')).toBeNull()
+  })
+
+  /** The dangerous case: resolutions are still seeded, so a verdict click must not commit them. */
+  it('a verdict card counts no changes, so Track it cannot apply values behind the operator', () => {
+    renderShape({ bookingNo: null, route: null }, [thinReason])
+    expect(screen.queryByRole('button', { name: /^apply/i })).toBeNull()
+    expect(screen.queryByRole('button', { name: /^edit$/i })).toBeNull()
   })
 })

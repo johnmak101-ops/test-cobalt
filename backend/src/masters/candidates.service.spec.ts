@@ -57,6 +57,38 @@ describe('CandidatesService — Chinese-name retrieval (name_ch alias + 简↔�
     expect(candidates.some((c) => c.code === 'ROKNFT')).toBe(false) // unrelated Chinese name stays out
   })
 
+  it('emits name:exact so the queue can rank it above a sender-domain match (FOOWOO regression)', async () => {
+    // Live 2026-07-27: the customs mail came from account@dgivy.cn, which is FOOWOO's contact domain.
+    // The queue's hybrid resolver tested domain:exact first and auto-applied FOOWOO, discarding DGJAFA —
+    // the same company the document actually names. Retrieval was always right; only the signal that
+    // lets the resolver SEE "this is exactly the name" was missing.
+    const { svc } = vendorRepo({
+      vendors: [
+        { code: 'DGJAFA', name: 'DONGGUAN CITY JIAFA FASHION CO., LTD.', type: 'factory', location: 'China', contactEmail: null, nameCh: '東莞市嘉發服飾有限公司' },
+        { code: 'FOOWOO', name: 'FOOK TAI WOOL KNITTING LIMITED', type: 'factory', location: 'Hong Kong, SAR China', contactEmail: 'lilaixiang@dgivy.cn', nameCh: '福泰毛織有限公司' },
+      ],
+    })
+    const { candidates } = await svc.candidates({
+      type: 'vendor',
+      name: '东莞市嘉发服饰有限公司',
+      emailDomain: 'dgivy.cn',
+    })
+    expect(candidates.find((c) => c.code === 'DGJAFA')!.signals).toContain('name:exact')
+    // FOOWOO keeps its domain signal — the queue decides precedence, retrieval only reports evidence
+    const foowoo = candidates.find((c) => c.code === 'FOOWOO')
+    expect(foowoo!.signals).toContain('domain:exact')
+    expect(foowoo!.signals).not.toContain('name:exact')
+  })
+
+  it('a merely-similar name does NOT earn name:exact', async () => {
+    const { svc } = vendorRepo({
+      vendors: [{ code: 'SOUOCE', name: 'SOUTH OCEAN KNITTERS LTD', type: 'factory', location: null, contactEmail: null, nameCh: null }],
+    })
+    const { candidates } = await svc.candidates({ type: 'vendor', name: 'SOUTH OCEAN KNITTERS' })
+    expect(candidates[0]!.signals.some((s) => s.startsWith('name:'))).toBe(true)
+    expect(candidates[0]!.signals).not.toContain('name:exact')
+  })
+
   it('a vendor without name_ch serves no alias (no empty-string noise)', async () => {
     const { svc } = vendorRepo({
       vendors: [{ code: 'DSV001', name: 'DSV AIR AND SEA', type: 'agent', location: null, contactEmail: null, nameCh: null }],

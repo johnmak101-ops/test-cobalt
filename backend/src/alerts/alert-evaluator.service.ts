@@ -13,6 +13,8 @@ import { ShipmentRepository } from '../db/repositories/shipment.repository'
 import { EmailRepository } from '../db/repositories/email.repository'
 import { EvidenceRepository } from '../db/repositories/evidence.repository'
 import { legDay } from '../common/leg-day'
+import { autoClearVerdict } from '../presentation/auto-clear'
+import type { CriticReview } from '../decisions/critic-review.types'
 
 /** Past the point where a cargo-ready revision is still actionable (Final BOL cut or later). */
 const POST_DOCUMENT_STATES = new Set(['SAILED', 'RELEASED', 'DELIVERED'])
@@ -40,6 +42,29 @@ const A7_RULE = {
 
 export type EvaluateResult = { evaluated: number; fired: number; resolved: number }
 
+/**
+ * May automation act on this leg?
+ *
+ * Confirmed legs always. Provisional ones only when the review desk auto-cleared them — nothing is
+ * left for a human to decide there, and such a leg is deliberately never written to `confirmed`
+ * (auto-clear.ts recomputes on every read so a later email can bring it straight back). The cost of
+ * that choice was that `reviewStatus` stayed provisional forever and alerts skipped it: a shipment
+ * nobody had to review was also a shipment nobody would be warned about.
+ *
+ * A provisional leg genuinely awaiting a human still gets nothing — the original rule stands, and
+ * automation must not act on data no one has vouched for.
+ */
+export function legIsAlertEligible(leg: unknown): boolean {
+  const row = (leg ?? {}) as Record<string, unknown>
+  if (String(row.reviewStatus ?? '') === 'confirmed') return true
+  const reasons = Array.isArray(row.reviewReasons)
+    ? (row.reviewReasons as string[])
+    : row.reviewReasons
+      ? [String(row.reviewReasons)]
+      : []
+  return autoClearVerdict(row, row.criticReview as CriticReview | null | undefined, reasons).clear
+}
+
 /** Evaluates the A1-A6 rules against every active confirmed leg, fires new alerts, and auto-resolves
  *  ACTIVE threshold alerts that no longer match. */
 @Injectable()
@@ -57,7 +82,15 @@ export class AlertEvaluatorService {
     const allRulesById = new Map(
       (await this.alerts.allRules()).map((r) => [r.id, normalizeRule(r)] as const),
     )
-    const legs = await this.shipments.activeConfirmedLegs()
+    /**
+     * Confirmed legs, plus the provisional ones the review desk auto-cleared — those have nothing
+     * left for a human to decide, so withholding alerts from them only meant a shipment nobody had
+     * to review was also a shipment nobody would be warned about. Same verdict the queue uses, so a
+     * leg cannot be silently absent from BOTH surfaces.
+     *
+     * A provisional leg still awaiting a human stays out: automation must not act on unreviewed data.
+     */
+    const legs = (await this.shipments.activeLegsForAlerts()).filter(legIsAlertEligible)
     const milestonesByShipment = await this.shipments.milestonesForShipments(legs.map((l) => l.id))
     const factsByLeg = new Map<string, LegFacts>()
     for (const leg of legs) {

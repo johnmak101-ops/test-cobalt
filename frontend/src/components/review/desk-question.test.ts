@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { candidateDeskQuestion, conflictDeskQuestion, pickDeskQuestion } from './desk-question'
+import { candidateDeskQuestion, conflictDeskQuestion, pickDeskQuestion, type ContestedFieldSummary } from './desk-question'
 import { buildNeedsAttentionGroups, type NeedsAttentionGroup } from './needs-attention'
 
 function groups(
@@ -175,5 +175,43 @@ describe('candidateDeskQuestion', () => {
 
   it('never offers a reject — the leg is real, it just needs placing', () => {
     expect(candidateDeskQuestion({ emailKey: { so_no: 'X' }, candidates: four })?.question.reject).toBeNull()
+  })
+})
+
+/**
+ * The party-mismatch row is synthesised from MASTER DATA (presentation/party-mismatch-conflict.ts),
+ * not from an email. "The email proposes a different Vendor Code" sent the operator hunting through
+ * 17 messages for a sentence nobody wrote.
+ */
+describe('conflictDeskQuestion — a master-data row does not claim an email said it', () => {
+  const row = (over: Partial<ContestedFieldSummary> = {}): ContestedFieldSummary => ({
+    label: 'Vendor Code',
+    candidateCount: 1,
+    currentEmpty: false,
+    ...over,
+  })
+
+  it('names master data as the source', () => {
+    const out = conflictDeskQuestion([row({ fromMasterData: true })])
+    expect(out?.question.question).toBe('Which Vendor Code is correct?')
+    expect(out?.detail).toBe(
+      "This shipment is linked to a different company in master data — apply the master's Vendor Code, or keep the current value.",
+    )
+    expect(out?.detail).not.toMatch(/email/i)
+  })
+
+  it('offers "leave it blank" when the leg stores nothing', () => {
+    expect(conflictDeskQuestion([row({ fromMasterData: true, currentEmpty: true })])?.detail).toMatch(
+      /or leave it blank\.$/,
+    )
+  })
+
+  it('an email-sourced row keeps its own wording', () => {
+    expect(conflictDeskQuestion([row()])?.detail).toBe(
+      'The email proposes a different Vendor Code — apply it, or keep the current value.',
+    )
+    expect(conflictDeskQuestion([row({ candidateCount: 2 })])?.detail).toBe(
+      '2 candidates from the email — pick one below, or keep the current value.',
+    )
   })
 })

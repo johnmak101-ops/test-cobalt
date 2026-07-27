@@ -19,6 +19,7 @@ import {
 import { createPortal } from 'react-dom'
 import { indexHistoryByField, historyForField } from '../lib/history-grouping'
 import { pendingReviewAnnotations, type PendingAnnotation } from '../lib/pending-review'
+import { liveQtyFromShipment, poShipmentTotalFromLinked } from '../lib/qty-conflict-settle'
 import { AlertCard } from '../components/alerts/AlertCard'
 import { formatDate, formatDateTime, formatDateMaybeTime, formatShipmentId, cn } from '../lib/utils'
 import { parseSender } from '../lib/email-sender'
@@ -126,8 +127,19 @@ export default function ShipmentDetailPage() {
   const { data: historyData } = useShipmentHistory(id!)
   // Index once; DetailRows read their field's history from context, the History tab groups it.
   const historyIndex = useMemo(() => indexHistoryByField(historyData?.history ?? []), [historyData])
-  // Which columns get the amber "something open for review" word-highlight.
-  const pendingReview = useMemo(() => pendingReviewAnnotations(shipment), [shipment])
+  /**
+   * Which columns get the amber "something open for review" word-highlight — computed with the SAME
+   * cargo figures the review desk settles qty against, so a field the desk auto-passed cannot show a
+   * conflict here. The two surfaces must agree on what is open.
+   */
+  const pendingReview = useMemo(
+    () =>
+      pendingReviewAnnotations(shipment, {
+        liveQty: liveQtyFromShipment((shipment ?? {}) as { quantityShipped?: number | null }),
+        poShipmentTotal: poShipmentTotalFromLinked(shipment?.linkedPOs ?? []),
+      }),
+    [shipment],
+  )
   const [activeTab, setActiveTab] = useState<'details' | 'history'>('details')
   const update = useUpdateShipment(id!)
   const [editing, setEditing] = useState(false)
@@ -968,11 +980,11 @@ function DetailRow({
   const historyIndex = useContext(FieldHistoryContext)
   const entries = historyKey ? historyForField(historyKey, historyIndex) : []
   const ann = useContext(PendingReviewContext).get(historyKey ?? '')
-  // Unconfirmed-answer mask: commit-first wrote the LLM's preferred value into this column, but
-  // the operator hasn't decided — display the PRE-write value instead ("Apple" in amber), or fall
-  // through to the "(pending)" placeholder when there was none. The proposal lives in the review
-  // queue; raw dates from the critic pass through unformatted (they are already YYYY-MM-DD).
-  const shown = ann?.mask ? ann.mask.prior : value
+  // Always what the leg STORES — the same value the review card prints as "Current (on shipment)".
+  // The row used to substitute the critic's pre-write snapshot while a review was open, which made
+  // this page and the review queue disagree about one field (see pending-review.ts). The amber
+  // highlight and the warning icon carry "unresolved"; the value itself stays true.
+  const shown = value
   // Amber colour only on a REAL stored value — "(pending)" and the date formatters' 'TBD' are
   // placeholders. The warning icon beside the history clock is the primary cue (2026-07-24):
   // yellow = open review question, red = master miss; hover shows the related message(s).
@@ -1003,9 +1015,10 @@ function DetailRow({
           )
         ) : (
           <>
-            {/* Amber when a review-queue question hides an unconfirmed answer behind this
-                placeholder; muted grey for a plainly empty field. */}
-            <span className={cn('italic', ann?.mask ? 'text-status-warning' : 'text-text-muted')}>
+            {/* Genuinely empty now — the row no longer hides a stored value behind this placeholder,
+                so "(pending)" means the leg holds nothing. Amber only when a review question is open
+                against the empty field itself. */}
+            <span className={cn('italic', ann ? 'text-status-warning' : 'text-text-muted')}>
               (pending)
               {hint && (
                 <span className="ml-1.5 font-sans text-sm not-italic text-text-muted/70">· {hint}</span>

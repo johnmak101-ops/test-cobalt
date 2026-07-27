@@ -15,6 +15,7 @@ const enr = (over: Partial<PoEnrichment> = {}): PoEnrichment => ({
   broadcastSuspected: false,
   styleBroadcastSuspected: false,
   styleBroadcastPoCount: null,
+  qtyConflict: null,
   brandConflict: null,
   styleConflict: null,
   ...over,

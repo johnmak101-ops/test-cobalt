@@ -189,6 +189,13 @@ export class ReviewService {
       oldValue: leg.reviewStatus, newValue: 'confirmed', changeType: 'update',
       sourceType: 'review', actorUserId: actorId, note: note?.trim() || 'review: confirmed as-is',
     })
+    /**
+     * "Confirmed as-is" must not leave the leg naming one company while its master link names
+     * another. Keeping the raw value is a decision FOR that value, so the link follows it — and this
+     * is the only branch that can close the gap, since keeping the current value writes no field and
+     * therefore never reaches correctField's re-resolve.
+     */
+    await this.reResolveBookingParties(leg as Record<string, unknown>, actorId)
     const messageId = await this.resolveLearningMessageId(shipmentId)
     const forwarder = ((leg as Record<string, unknown>).forwarderRaw as string | null) ?? null
     await this.emitConfirms(leg as Record<string, unknown>, new Set(), messageId, forwarder)
@@ -273,6 +280,43 @@ export class ReviewService {
       })
     }
     return value
+  }
+
+  /**
+   * Point the booking's customer/vendor master at whatever the leg's raw twin now names — or unlink
+   * it when nothing matches, so display falls back to the raw rather than asserting a company the
+   * leg does not name.
+   *
+   * The same stale-FK rule correctField and the detail edit already apply; this covers the branch
+   * neither could reach — a confirmation that writes no field. Leg 20260405F1 sat with
+   * `vendor_raw = ELSMCO` under `booking.vendor_id = SOUOCE`, so Order Details printed SOUOCE while
+   * the review desk read ELSMCO, and no click available to the operator could reconcile them.
+   */
+  private async reResolveBookingParties(leg: Record<string, unknown>, actorId: string) {
+    const bookingId = leg.bookingId == null ? null : String(leg.bookingId)
+    if (!bookingId) return
+    const booking = await this.bookings.findById(bookingId)
+    if (!booking) return
+    const slots = [
+      { raw: 'vendorRaw', fk: 'vendorId', exact: (v: string) => this.masters.vendorIdExact(v) },
+      { raw: 'customerRaw', fk: 'customerId', exact: (v: string) => this.masters.customerIdExact(v) },
+    ] as const
+    const patch: Record<string, unknown> = {}
+    for (const slot of slots) {
+      const raw = String(leg[slot.raw] ?? '').trim()
+      if (raw === '') continue // no claim on this slot — leave the existing link alone
+      const linked = ((booking as Record<string, unknown>)[slot.fk] as string | null) ?? null
+      const resolved = (await slot.exact(raw)) ?? null
+      if (resolved === linked) continue
+      patch[slot.fk] = resolved
+      await this.audit.write({
+        entityType: 'shipment', entityId: String(leg.id), field: slot.fk,
+        oldValue: linked, newValue: resolved, changeType: 'update',
+        sourceType: 'review', actorUserId: actorId,
+        note: `master re-linked from ${slot.raw} "${raw}" on confirm`,
+      })
+    }
+    if (Object.keys(patch).length) await this.bookings.update(bookingId, patch)
   }
 
   /** Correct fields on a provisional shipment: edits win, lock, are audited, and confirm the leg. */

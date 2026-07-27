@@ -1,4 +1,5 @@
 import { mapCriticFieldToColumn, conflictColumns } from './review-fields'
+import { isQtySettled } from './qty-conflict-settle'
 
 /**
  * The slice of the shipment detail this derivation reads. Structural on purpose — importing
@@ -8,6 +9,17 @@ export interface PendingReviewSource {
   reviewStatus?: string | null
   reviewReasons?: string[]
   criticReview?: { conflicts?: Array<{ field: string }> } | null
+  /**
+   * The backend's answer to "what is actually still open" (presentation/open-decisions.ts). The
+   * review desk drops settled conflicts from its grid; without reading the same list this page kept
+   * marking them, so a field could carry an amber "resolve this in the review queue" while the review
+   * queue had nothing to say about it. One source, both surfaces.
+   */
+  openDecisions?: {
+    settledFields?: string[]
+    /** Party slots linked to a real master — a "not in Mesh" line naming one is stale. */
+    resolvedParties?: { slot: string; name: string }[]
+  } | null
   contestedLocks?: Array<{ field: string }> | null
   /** Raw party twin names a different company than the resolved master ("flag, don't follow"). */
   customerMismatch?: PartyMismatchLike | null
@@ -33,22 +45,49 @@ const CONFLICT_REASON_RE = /conflict|disagree|differ|already stored on|locked fi
  */
 /** Per-column marker for the Order Details rows: 'warn' = open review question (yellow icon),
  *  'miss' = master miss — party/port not in Mesh (red icon, outranks warn). Messages feed the
- *  icon's hover tooltip. `mask` = commit-first wrote an UNCONFIRMED answer to this column — the
- *  row must display `prior` (the pre-write value) instead, or the "(pending)" placeholder when
- *  prior is null. Only set while the answer is genuinely undecided (see the mask rules below). */
+ *  icon's hover tooltip. The row always shows what the leg STORES; the marker says it is unresolved.
+ *  (The `mask` that used to substitute a pre-write value is gone — see pendingReviewAnnotations.) */
 export type PendingAnnotation = {
   level: 'warn' | 'miss'
   messages: string[]
-  mask?: { prior: string | null }
+}
+
+/**
+ * A reason scoped to a PURCHASE ORDER, not to this leg's own columns.
+ *
+ * `conflictColumns()` finds columns by scanning a reason for column-shaped tokens, so
+ * `PO 1570988: qty conflict 3 pieces vs 207 cartons … across legs — order total left unset` matched
+ * the word "qty" and amber-lit the LEG's Total Quantity. That reason is about the ORDER's total
+ * across every leg it ships on — nothing about this shipment's own 3 cartons is in question, and the
+ * review desk correctly carried no item for it, so Order Details was the only surface claiming a
+ * problem. Order-level notes belong to the PO, not to the leg's cargo field.
+ */
+function isPoScopedReason(r: string): boolean {
+  return /^\s*PO\s+\S+\s*:/i.test(r)
 }
 
 const MESH_MISS_RE =
   /did not exact(?:\/curated)?-match a (?:port )?master|not found in Mesh Database|Cannot match "[^"]+" in the (?:forwarder|customer|vendor|consignee) list|not in UN\/LOCODE masters/i
 
+const LIST_COLUMN: Record<string, string> = {
+  forwarder: 'forwarderRaw',
+  vendor: 'vendorRaw',
+  customer: 'customerRaw',
+  consignee: 'consigneeName',
+}
+
 /** Field token a mesh-miss reason starts with ("forwarder_name \"LOGWIN\" did not…") → column. */
 function missColumn(reason: string): string | null {
   const token = reason.match(/^([a-z_]+)\s+"/i)?.[1]
   if (token) return mapCriticFieldToColumn(token)
+  /**
+   * The queue's own phrasing names the list it searched — `Cannot match "…" in the vendor list`.
+   * Read that BEFORE the loose keyword scan below: the scan tests /forwarder/ first, so any reason
+   * that merely mentioned a forwarder anywhere in its sentence was filed under Forwarder, which is
+   * how "SOUTH OCEAN KNITTERS LIMITED" (a vendor) ended up hanging off the Forwarder row.
+   */
+  const list = reason.match(/in the (forwarder|vendor|customer|consignee) list/i)?.[1]
+  if (list) return LIST_COLUMN[list.toLowerCase()] ?? null
   if (/forwarder/i.test(reason)) return 'forwarderRaw'
   if (/vendor|factory/i.test(reason)) return 'vendorRaw'
   if (/customer/i.test(reason)) return 'customerRaw'
@@ -56,6 +95,13 @@ function missColumn(reason: string): string | null {
   if (/\bpol\b/i.test(reason)) return 'polRaw'
   if (/\bpod\b|port/i.test(reason)) return 'podRaw'
   return null
+}
+
+/** Party slots the backend reports as linked to a real master — their "not in Mesh" is stale. */
+const SLOT_COLUMN: Record<string, string> = {
+  customer: 'customerRaw',
+  vendor: 'vendorRaw',
+  forwarder: 'forwarderRaw',
 }
 
 /** Committer prose → an operator instruction (ops 2026-07-24: tooltips must say what to DO —
@@ -114,6 +160,15 @@ export function pendingReviewAnnotations(
       })
     | null
     | undefined,
+  /**
+   * The same cargo figures the review desk settles qty against (qty-conflict-settle.ts). A qty
+   * conflict the desk drops as settled must not be marked here — "auto-passed" means there is no
+   * question, on either surface.
+   */
+  qtyCtx: { liveQty: number | null; poShipmentTotal: number | null } = {
+    liveQty: null,
+    poShipmentTotal: null,
+  },
 ): Map<string, PendingAnnotation> {
   const out = new Map<string, PendingAnnotation>()
   if (!shipment) return out
@@ -127,7 +182,40 @@ export function pendingReviewAnnotations(
     }
   }
   if (shipment.reviewStatus === 'provisional') {
+    // Settled conflicts are gone from the review desk, so they must be gone from here too — else the
+    // row says "resolve in the review queue" about something the queue has already dropped.
+    const settled = new Set(shipment.openDecisions?.settledFields ?? [])
+    /**
+     * The same list as COLUMNS, because the reason strings below name columns rather than critic
+     * fields — and they restate the very conflicts above. Leg 202601256B carried
+     * `backend conflict on qty, qty_unit` while BOTH were settled: the desk showed
+     * "2 fields … already on the shipment — nothing to apply" and Order Details amber-lit Total
+     * Quantity and UOM off the leftover prose.
+     */
+    const settledCols = new Set(
+      [...settled].map((f) => mapCriticFieldToColumn(f)).filter((c): c is string => !!c),
+    )
+    /**
+     * Party slots the backend reports as LINKED to a real master. Their "not in Mesh" is history: an
+     * earlier email spelled the company differently ("SOUTH OCEAN KNITTERS LIMITED" vs the master's
+     * "…LTD"), the matcher could not exact-match it and said so, and a later pass resolved the slot
+     * anyway. The review desk already drops these (dropResolvedPartyMiss); Order Details did not, so
+     * it told the operator to add a company that has been in Mesh all along.
+     */
+    const resolvedCols = new Set(
+      (shipment.openDecisions?.resolvedParties ?? [])
+        .map((p) => SLOT_COLUMN[String(p.slot ?? '').toLowerCase()])
+        .filter((c): c is string => !!c),
+    )
+    const addMiss = (col: string | null, msg: string) => {
+      if (col && resolvedCols.has(col)) return
+      add(col, 'miss', msg)
+    }
     for (const c of shipment.criticReview?.conflicts ?? []) {
+      if (settled.has(c.field)) continue
+      // qty settles against the leg's shipped figure / the PO shipment total, not by value equality —
+      // the desk's own rule, so both surfaces reach the same verdict.
+      if (isQtySettled(c as Parameters<typeof isQtySettled>[0], qtyCtx)) continue
       add(
         mapCriticFieldToColumn(c.field),
         'warn',
@@ -136,27 +224,26 @@ export function pendingReviewAnnotations(
           : 'Values disagree across emails — resolve in the review queue.',
       )
     }
-    // Commit-first wrote the LLM's preferred answer into these columns, but the operator has not
-    // chosen yet — the detail row must not assert it. Mask back to the pre-write (System) value,
-    // or to the "(pending)" placeholder when there was none. Never for high band (auto-confirm
-    // path stays firm) and never for human-locked fields (a manual edit IS the settled answer).
-    if (shipment.criticReview?.confidence?.band !== 'high') {
-      const locked = new Set(shipment.humanLockedFields ?? [])
-      for (const c of shipment.criticReview?.conflicts ?? []) {
-        const col = mapCriticFieldToColumn(c.field)
-        if (!col || locked.has(col)) continue
-        const cur = out.get(col)
-        if (!cur || cur.mask) continue
-        const sys = (c.candidates ?? []).find((k) => k.source.trim().toLowerCase() === 'system')
-        const sysValue = sys?.value?.trim() || null
-        // The party rows are labelled Customer/Vendor CODE — show the prior's code when known.
-        const prior =
-          (col === 'vendorRaw' || col === 'customerRaw') && sys?.master?.code
-            ? sys.master.code
-            : sysValue
-        cur.mask = { prior }
-      }
-    }
+    /**
+     * The unconfirmed-answer MASK is gone (2026-07-27).
+     *
+     * It displayed the critic's `System` candidate in place of what the leg stores, so that an
+     * unconfirmed commit-first write would not be asserted as fact. Two things were wrong with it.
+     *
+     * The `prior` it fell back to came from the same pre-commit snapshot that produced the
+     * "Leave Blank over a stored MACFUN" bug: the queue emits a System candidate only for
+     * backendMismatches, so party rows have none, `prior` was null, and the row printed "(pending)"
+     * — asserting the field is EMPTY, which is a bigger falsehood than the value it was avoiding.
+     *
+     * And it put two surfaces in disagreement about one field: leg 202601DD8E read
+     * "ROKNFT (on shipment)" in the review card and "(pending)" in Order Details at the same moment.
+     * An operator cannot reconcile that, and "which page is lying?" is not a question this app
+     * should raise.
+     *
+     * What replaces it is what was already there: the row keeps its amber `.review-pending-value`
+     * highlight and its warning icon, whose tooltip says the value is unresolved and where to settle
+     * it. The value is shown, and shown as unconfirmed — rather than hidden and mis-stated.
+     */
     for (const r of shipment.reviewReasons ?? []) {
       // Same wording as the review queue's Needs Attention line — the raw reason ("forwarder_name
       // "LOGIMARK" did not exact-match a master (LLM matcher owns fuzzy; left unlinked)") is too
@@ -167,22 +254,23 @@ export function pendingReviewAnnotations(
         // company — "advise add in Mesh" is unactionable for it, so no icon at all. Twin of
         // isNonPartyName (needs-attention.ts / backend critic-review.types.ts) — keep in step.
         if (name && !/\p{L}/u.test(name)) continue
-        add(
+        addMiss(
           missColumn(r),
-          'miss',
           name
             ? `"${name}" not found in Mesh Database — advise add in Mesh.`
             : 'Not found in Mesh Database — advise add in Mesh.',
         )
       }
-      else if (CONFLICT_REASON_RE.test(r))
-        for (const col of conflictColumns([r])) add(col, 'warn', humanizeWarnReason(r))
+      else if (CONFLICT_REASON_RE.test(r) && !isPoScopedReason(r))
+        for (const col of conflictColumns([r])) {
+          if (settledCols.has(col)) continue // the desk already dropped this one
+          add(col, 'warn', humanizeWarnReason(r))
+        }
     }
     for (const m of shipment.criticReview?.masterMisses ?? []) {
       if (!/\p{L}/u.test(m.rawName ?? '')) continue // numeric leak — see the comment above
-      add(
+      addMiss(
         mapCriticFieldToColumn(m.field) ?? missColumn(m.field + ' "x"'),
-        'miss',
         `"${m.rawName}" not found in Mesh Database — advise add in Mesh.`,
       )
     }

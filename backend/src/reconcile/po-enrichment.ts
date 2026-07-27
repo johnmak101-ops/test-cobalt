@@ -39,6 +39,13 @@ export interface PoEnrichment {
   brandConflict: string[] | null
   /** ≥2 diverging item_style_no values on this PO (newest kept); the competing values to verify */
   styleConflict: string[] | null
+  /**
+   * ≥2 diverging per-PO qty/unit statements on this PO — it ships on more than one leg (a cross-mode
+   * split: PO 1570988 = 3 pieces by air + 207 cartons by sea). No single leg's SHIPPED qty is the PO's
+   * ORDERED total, and mixed units cannot be summed, so total_quantity is left unasserted and flagged
+   * rather than resolved to whichever leg committed first. The competing "<qty> <unit>" values to verify.
+   */
+  qtyConflict: string[] | null
 }
 
 /** A parsed_record row (structurally a subset of EvidenceRepository.EvidenceRow). */
@@ -222,8 +229,10 @@ export function resolvePoEnrichment(rows: PoEvidenceInput[]): Map<string, PoEnri
     const enr: PoEnrichment = {
       brand: null, itemStyleNo: null, totalQuantity: null, quantityUnit: null,
       broadcastSuspected: false, styleBroadcastSuspected: false, styleBroadcastPoCount: null,
-      brandConflict: null, styleConflict: null,
+      brandConflict: null, styleConflict: null, qtyConflict: null,
     }
+    // every genuine (non-broadcast) per-PO qty seen on this PO, newest-first, as "<qty> <unit>"
+    const qtyStatements: string[] = []
     // newest broadcast qty, used ONLY as a fallback when no genuine per-PO qty exists for this PO —
     // de-correction (b1): keep the model's value + flag it, instead of silently dropping to null.
     let broadcastFallback: { q: number; unit: PoEnrichment['quantityUnit'] } | null = null
@@ -238,12 +247,15 @@ export function resolvePoEnrichment(rows: PoEvidenceInput[]): Map<string, PoEnri
       const sty = scrubPoShapedStyles(str(f.item_style_no))
       if (sty) styles.push(sty)
       if (enr.brand == null) enr.brand = b
-      if (enr.totalQuantity == null) {
+      {
         const q = num(f.qty)
         if (q != null) {
           if (!qtyIsBroadcast(r)) {
-            enr.totalQuantity = q
-            enr.quantityUnit = validUnit(f.qty_unit) // bound to the same record as the qty
+            qtyStatements.push(`${q}${validUnit(f.qty_unit) ? ` ${validUnit(f.qty_unit)}` : ''}`)
+            if (enr.totalQuantity == null) {
+              enr.totalQuantity = q
+              enr.quantityUnit = validUnit(f.qty_unit) // bound to the same record as the qty
+            }
           } else if (broadcastFallback == null) {
             broadcastFallback = { q, unit: validUnit(f.qty_unit) }
           }
@@ -254,9 +266,21 @@ export function resolvePoEnrichment(rows: PoEvidenceInput[]): Map<string, PoEnri
     if (styles.length) {
       enr.itemStyleNo = pickItemStyleNo(styles)
     }
+    // The PO ships on ≥2 legs with diverging qty/unit (cross-mode split). total_quantity is the ORDERED
+    // total and is compared against each leg's shipped qty downstream, so adopting one leg's figure makes
+    // the other leg look mis-shipped ("unit differs: shipped in cartons, ordered in pieces"). Unassert it
+    // and flag — mixed units cannot be summed, and only ERP knows the real order total.
+    // plain distinct-value check: qty statements are not comma-token lists, so the style-oriented
+    // subset/OCR-family collapsing in conflictingValues() must not be applied to them.
+    const distinctQty = [...new Set(qtyStatements)]
+    enr.qtyConflict = distinctQty.length >= 2 ? distinctQty : null
+    if (enr.qtyConflict) {
+      enr.totalQuantity = null
+      enr.quantityUnit = null
+    }
     // No genuine per-PO qty found, only a broadcast total: keep it (fill purchase_orders.total_quantity)
     // and flag it for review — the raw model value stays visible instead of being silently nulled.
-    if (enr.totalQuantity == null && broadcastFallback != null) {
+    if (enr.qtyConflict == null && enr.totalQuantity == null && broadcastFallback != null) {
       enr.totalQuantity = broadcastFallback.q
       enr.quantityUnit = broadcastFallback.unit
       enr.broadcastSuspected = true

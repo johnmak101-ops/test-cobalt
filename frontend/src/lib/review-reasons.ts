@@ -293,6 +293,14 @@ const TRANSLATIONS: Translation[] = [
     match: /^PO\s+(\S+):\s*brand conflict\s+(.+?)\s+\(kept\s+(.+?)\)/i,
     text: (m) => `PO ${m[1]}: brand conflict ${m[2]} (kept ${m[3]}) — verify`,
   },
+  // PO shipping on >1 leg with diverging qty/unit (cross-mode split) — order total deliberately unset
+  {
+    match: /^PO\s+(\S+):\s*qty conflict\s+(.+?)\s+across legs/i,
+    text: (m) =>
+      // No "ERP" in this system — masters mirror Cobalt Mesh, and Mesh carries no POs. The ordered
+      // total lives on the customer's own purchase order.
+      `PO ${m[1]} ships on more than one leg with different quantities (${m[2]}) — the order total is left blank on purpose; confirm the ordered quantity on the customer PO`,
+  },
   // T2 style conflict (new) + legacy item_style_no conflict dump
   {
     match: /^PO\s+(\S+):\s*item\/style\s+(.+)$/i,
@@ -467,6 +475,7 @@ const CATEGORY_RULES: Array<{ match: RegExp; category: ReasonCategory }> = [
   { match: /mode change \S+ → \S+/i, category: 'conflict' },
   { match: /transport switched between sea and air/i, category: 'conflict' },
   { match: /brand conflict/i, category: 'conflict' },
+  { match: /qty conflict .* across legs/i, category: 'conflict' },
   { match: /item(?:_style_no conflict|\/style)/i, category: 'conflict' },
   { match: /item\/style looks copied/i, category: 'extraction' },
   { match: /identity supersede/i, category: 'multi_id' },
