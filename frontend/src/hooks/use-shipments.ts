@@ -119,6 +119,38 @@ export interface FieldConflict {
   values: Array<{ value: string; docType: string | null; sourceEmailId: string | null }>
 }
 
+/** One other leg carrying the same PO (backend: presentation/po-shared-legs.ts). */
+export interface SharedPoLeg {
+  shipmentId: string
+  /** Anchor for the derived Shipment ID — the name the leg answers to on every other screen. */
+  idAnchorAt: string | null
+  bookingNo: string | null
+  soNo: string | null
+  hblAwbFcrNo: string | null
+  mode: string | null
+  etd: string | null
+  atd: string | null
+  state: string | null
+  legNo: number | null
+  /** Already rejected — explains the overlap rather than competing for the cargo. */
+  dismissed: boolean
+  /** Still awaiting review itself, so its figures are provisional too. */
+  provisional: boolean
+  legQty: number | null
+  legQtyUnit: string | null
+  /** This leg and that one record different transport modes. A fact, not a verdict. */
+  crossMode: boolean
+}
+
+export interface SharedPo {
+  poNumber: string
+  /** What THIS leg ships of it. */
+  legQty: number | null
+  legQtyUnit: string | null
+  others: SharedPoLeg[]
+  anyCrossMode: boolean
+}
+
 export interface ShipmentDetail extends Shipment {
   fieldConflicts?: FieldConflict[]
   milestones: Array<{
@@ -146,6 +178,12 @@ export interface ShipmentDetail extends Shipment {
     triggeredAt: string
   }>
   linkedPOs: LinkedPO[]
+  /**
+   * The legs that also carry one of this leg's POs — the reference behind "this PO is already on
+   * another shipment". Facts only (mode, dates, the sibling's own shipped qty); the desk states them
+   * and the operator decides whether it is a split, a mode change, or a mis-link.
+   */
+  sharedPos?: SharedPo[]
   /** Fields where a newer email overrode a human edit (the leg column now differs from the locked
    *  value). Surfaced as a prompt to keep the new value or restore the edit. */
   contestedLocks?: Array<{ field: string; yourValue: string | null; newValue: string | null }>

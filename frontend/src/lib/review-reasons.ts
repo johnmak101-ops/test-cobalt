@@ -297,7 +297,9 @@ const TRANSLATIONS: Translation[] = [
   {
     match: /^PO\s+(\S+):\s*qty conflict\s+(.+?)\s+across legs/i,
     text: (m) =>
-      `PO ${m[1]} ships on more than one leg with different quantities (${m[2]}) — the order total is left blank on purpose; confirm it from ERP`,
+      // No "ERP" in this system — masters mirror Cobalt Mesh, and Mesh carries no POs. The ordered
+      // total lives on the customer's own purchase order.
+      `PO ${m[1]} ships on more than one leg with different quantities (${m[2]}) — the order total is left blank on purpose; confirm the ordered quantity on the customer PO`,
   },
   // T2 style conflict (new) + legacy item_style_no conflict dump
   {

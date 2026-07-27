@@ -111,9 +111,30 @@ export function splitCandidates(conflict: CriticConflict) {
   return { existing, proposed }
 }
 
-/** What the system already stores for this field ('' when the field is empty/absent). */
+/** The critic's pre-commit snapshot of this field ('' when it emitted no System candidate). */
 export function existingValueOf(conflict: CriticConflict): string {
   return splitCandidates(conflict).existing?.value ?? ''
+}
+
+/**
+ * What the leg stores for this field RIGHT NOW — the value the Current column prints.
+ *
+ * `liveValue` is the leg read back after the commit (backend `openDecisions.liveValues`). The critic's
+ * `System` candidate is only a pre-commit snapshot, and the queue emits one ONLY for backendMismatches
+ * (`buildConflicts` in cobalt-queue) — a multi-id or party row carries no System candidate at all.
+ *
+ * The display already preferred the live value and labelled it "(on shipment)", but every DECISION
+ * below read `existingValueOf()`, so the card compared against a value it was not showing. On a leg
+ * storing MACFUN with no System candidate that meant `'MACFUN' !== ''` — counted as a change, which is
+ * what produced "Shipping (1 change)", "Apply MACFUN" and "Leave Blank" on a leg that already had
+ * MACFUN. Display and logic must read through this one accessor.
+ */
+export function currentValueOf(
+  conflict: CriticConflict,
+  liveValue?: string | null,
+): string {
+  const live = String(liveValue ?? '').trim()
+  return live !== '' ? live : existingValueOf(conflict)
 }
 
 /**
@@ -153,10 +174,15 @@ export function isCandidateResolution(conflict: CriticConflict, v: string): bool
   return splitCandidates(conflict).proposed.some((c) => candidateMatches(c, v))
 }
 
-/** True when committing this row would OVERWRITE a stored value — i.e. it is a real change. */
-export function changesStoredValue(conflict: CriticConflict, value: string): boolean {
+/** True when committing this row would OVERWRITE a stored value — i.e. it is a real change.
+ *  Pass `liveValue` so the comparison uses what the leg stores, not the critic snapshot. */
+export function changesStoredValue(
+  conflict: CriticConflict,
+  value: string,
+  liveValue?: string | null,
+): boolean {
   const v = value.trim()
-  return v !== '' && v !== existingValueOf(conflict)
+  return v !== '' && v !== currentValueOf(conflict, liveValue)
 }
 
 /** Item / Style No. is a multi-token list, not one free-text blob. */
@@ -188,7 +214,8 @@ export function ConflictRow({
   resolveSourceEmail,
 }: ConflictRowProps) {
   const { existing, proposed } = splitCandidates(conflict)
-  const changed = changesStoredValue(conflict, value)
+  // Compare against what the leg stores (the value this row PRINTS), not the critic snapshot.
+  const changed = changesStoredValue(conflict, value, existingOverride)
   // The candidate the controlled value currently equals — chips come from IT, never from a
   // free-typed override (a custom value has no known master).
   const activeProposed = proposed.find((p) => candidateMatches(p, value)) ?? null
@@ -210,9 +237,8 @@ export function ConflictRow({
   const canCopyAll = canEdit && parseStyleEntries(existingStyles).length > 0
   const useLiveExisting =
     existingOverride != null && existingOverride !== ''
-  const existingDisplay = useLiveExisting
-    ? existingOverride
-    : (existing?.value ?? '')
+  // Same accessor the decisions use, so the cell and the buttons can never disagree.
+  const existingDisplay = currentValueOf(conflict, existingOverride)
   const existingSourceLabel = useLiveExisting ? '(on shipment)' : '(system)'
 
   const copyAllFromExisting = () => {

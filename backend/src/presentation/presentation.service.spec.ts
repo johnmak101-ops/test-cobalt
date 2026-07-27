@@ -55,6 +55,8 @@ const build = () => {
         : [],
     // #151: per-leg empty → falls back to booking union
     linkedPosForShipment: async () => [],
+    /** No PO of this leg sits on another shipment — the desk then shows no shared-PO reference. */
+    poSiblingLegs: async () => [],
     linkedPosForShipments: async (ids: string[]) => new Map(ids.map((id) => [id, [] as never[]])),
     linkedPosForBookings: async (ids: string[]) =>
       new Map(

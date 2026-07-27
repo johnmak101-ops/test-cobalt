@@ -77,18 +77,55 @@ describe('proposedStyleForPo', () => {
       ]),
     ).toBe('NEW-STYLE')
   })
+
+  /**
+   * `(kept X)` records what the committer's reconciler ALREADY wrote (po-enrichment.ts:
+   * summarizeStyleConflict(styleConflict, enr.itemStyleNo)). When the PO carries it, offering it as
+   * an AI proposal advertised a change that writes back the value already on the row — leg
+   * 202601AEA6 read "Shipping (1 change)" with nothing to change.
+   */
+  it('does not re-propose a kept style the PO already stores', () => {
+    expect(
+      proposedStyleForPo(
+        '6495962',
+        ['PO 6495962: item/style "OLD" vs "NEW" (kept NEW-STYLE)'],
+        'NEW-STYLE',
+      ),
+    ).toBeNull()
+  })
+
+  it('does not propose a bare article code the stored style already carries', () => {
+    // C192/FERN JUMPER already IS C192 — proposing `C192` invited overwriting the fuller value.
+    expect(
+      proposedStyleForPo('28631', ['PO 28631: item/style "A" vs "B" (kept C192)'], 'C192/FERN JUMPER'),
+    ).toBeNull()
+  })
+
+  it('still proposes a kept style the PO does not carry', () => {
+    expect(
+      proposedStyleForPo('28631', ['PO 28631: item/style "A" vs "B" (kept C192)'], 'C700/OTHER'),
+    ).toBe('C192')
+    // and when the PO has no style at all
+    expect(
+      proposedStyleForPo('28631', ['PO 28631: item/style "A" vs "B" (kept C192)'], null),
+    ).toBe('C192')
+  })
 })
 
 describe('ReviewPoStylesSection — page-level Edit', () => {
+  /** View mode lists only POs the email proposes a change for (#2026-07-27) — so the fixture needs
+   *  a proposal, otherwise the row is correctly absent. Edit mode still shows every PO. */
+  const PROPOSAL = ['PO 6495962: item/style "OLD" vs "NEW" (kept 999-NEW-STYLE)']
+
   it('view: values only, no section Edit button', () => {
-    renderSection()
+    renderSection({ reviewReasons: PROPOSAL })
     expect(screen.getByText('6495962')).toBeInTheDocument()
     expect(screen.getByText('263121585')).toBeInTheDocument()
     expect(screen.queryByTestId('review-po-crud-edit')).not.toBeInTheDocument()
   })
 
   it('always names its own columns — PO / Item/Style header row (#358)', () => {
-    renderSection()
+    renderSection({ reviewReasons: PROPOSAL })
     expect(screen.getByRole('columnheader', { name: 'PO' })).toBeInTheDocument()
     expect(screen.getByRole('columnheader', { name: 'Item/Style' })).toBeInTheDocument()
     // third column tracks the card's state label; default = the shared proposed wording
@@ -97,13 +134,15 @@ describe('ReviewPoStylesSection — page-level Edit', () => {
 
   it('view: multi-style value is one line per style, not a comma blob', () => {
     renderSection({
+      reviewReasons: PROPOSAL,
       linkedPOs: [
         po({
           itemStyleNo: 'AW26-XS-L, AW26-S-XL, AW26-M-XXL',
         }),
       ],
     })
-    const list = screen.getByTestId('style-list-display')
+    // Two style lists now render — the stored one and the proposal; this asserts the stored cell.
+    const list = screen.getAllByTestId('style-list-display')[0]!
     expect(within(list).getByText('AW26-XS-L')).toBeInTheDocument()
     expect(within(list).getByText('AW26-S-XL')).toBeInTheDocument()
     expect(within(list).getByText('AW26-M-XXL')).toBeInTheDocument()
