@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 // Action-bar buttons are text-only — the only icon left in the bar is the busy spinner, which is
 // state, not decoration. ExternalLink/Mail still mark the source-email affordances.
-import { ChevronDown, ChevronRight, ExternalLink, Loader2, Mail, NotebookPen } from 'lucide-react'
+import { Check, ChevronDown, ChevronRight, ExternalLink, Loader2, Mail, NotebookPen } from 'lucide-react'
 import { Badge } from '../ui/Badge'
 import {
   ConflictRow,
@@ -31,6 +31,7 @@ import {
   liveQtyFromShipment,
   poShipmentTotalFromLinked,
 } from '../../lib/qty-conflict-settle'
+import { liveValueForField, partitionAppliedConflicts } from '../../lib/conflict-applied'
 import { isCriticalColumn } from '../../lib/review-critical'
 import {
   type CriticConflict,
@@ -290,7 +291,7 @@ export function ReviewCard({
    * hide from this conflict table. Per-PO styles live on ReviewPoStylesSection / the PO card.
    * Qty conflicts that already match the live leg (or PO shipment total) are settled and dropped.
    */
-  const conflicts = useMemo(() => {
+  const visibleConflicts = useMemo(() => {
     const base = rawConflicts.filter((c) => {
       const col = mapCriticFieldToColumn(c.field) ?? c.field
       return (
@@ -302,6 +303,27 @@ export function ReviewCard({
     })
     return filterActionableConflicts(base, { liveQty, poShipmentTotal })
   }, [rawConflicts, liveQty, poShipmentTotal])
+  /**
+   * Rows whose every offered value the leg ALREADY stores are not decisions — see conflict-applied.ts.
+   * Commit-first means the committer writes an email's values and the critic snapshot describing the
+   * "disagreement" predates that write, so the desk was asking questions it had itself already closed:
+   * 41 of 41 checkable rows on the dev queue were in that state. They move out of the grid and into one
+   * quiet line, still openable, because "the email agreed with us" is worth being able to verify.
+   */
+  /**
+   * The leg as a bag of columns. A queue-list row simply does not carry most of them, which reads as
+   * "no live value to compare against" and settles nothing — the safe direction, since the row then
+   * stays on the desk. The queue's expanded panel and the focused page both pass the full detail.
+   */
+  const legValues = useMemo(() => shipment as unknown as Record<string, unknown>, [shipment])
+  const { open: conflicts, applied: appliedConflicts } = useMemo(
+    () => partitionAppliedConflicts(visibleConflicts, legValues),
+    [visibleConflicts, legValues],
+  )
+  /** Operator asked to see the settled rows. */
+  const [appliedOpen, setAppliedOpen] = useState(false)
+  /** Threshold at which the "Also" list stops reading as a list and starts reading as a blob. */
+  const ALSO_TITLE_THRESHOLD = 3
   /** Newest first: "which statement is the latest?" is the question a reviewer actually has, and a
    *  date they must compare by hand only half-answers it. Undated mail sorts last, not first. */
   const sortedEmails = useMemo(
@@ -389,6 +411,11 @@ export function ReviewCard({
       rest: naPick.rest,
     }
   }, [contestedFields, naPick, needsAttentionGroups])
+  const restNeedsTitles = useMemo(
+    () =>
+      (deskPick?.rest.reduce((n, g) => n + g.items.length, 0) ?? 0) >= ALSO_TITLE_THRESHOLD,
+    [deskPick],
+  )
   /** Note starts collapsed; it opens itself the moment a note is actually owed (see showNoteField). */
   const [noteOpen, setNoteOpen] = useState(false)
 
@@ -883,10 +910,16 @@ export function ReviewCard({
                     <p className={`${REVIEW_FS.meta} font-semibold text-text-muted`}>Also</p>
                     <div className="space-y-1">
                       {deskPick!.rest.map((g) => (
-                        /* Grouping is kept (real, and ordered) but no longer titled — the item text
-                           already names its own subject ("Customer not in master — …"), so the title
-                           was a heading level that added nothing. Named for assistive tech. */
+                        /* Grouping is real and ordered; the TITLE is earned rather than automatic.
+                           One or two lines read fine bare — the item text names its own subject
+                           ("Customer not in master — …") and a title per bullet was pure nesting. Past
+                           three the bare list turns into a blob, so the titles come back. */
                         <div key={g.groupId} data-testid={`needs-group-${g.groupId}`} aria-label={g.title}>
+                          {restNeedsTitles && (
+                            <p className={`${REVIEW_FS.meta} font-semibold text-text-secondary`}>
+                              {g.title}
+                            </p>
+                          )}
                           <ul className={REVIEW_PANEL_LIST}>
                             {g.items.map((r) =>
                               isExpandableMiss(r) ? (
@@ -1102,6 +1135,48 @@ export function ReviewCard({
             </div>
           )}
 
+          {/* Rows the email asked for and the leg already stores. One line, not N grid rows pretending
+              to be open questions — but openable, because "the email agreed with what we have" is a
+              claim the operator should be able to check. */}
+          {appliedConflicts.length > 0 && (
+            <div className="rounded-lg border border-border" data-testid="review-applied-conflicts">
+              <button
+                type="button"
+                onClick={() => setAppliedOpen((v) => !v)}
+                aria-expanded={appliedOpen}
+                className="flex w-full min-w-0 items-center gap-2 px-3 py-2 text-left text-xs transition-colors hover:bg-surface-700/40"
+              >
+                {appliedOpen ? (
+                  <ChevronDown size={13} className="shrink-0 text-text-muted" />
+                ) : (
+                  <ChevronRight size={13} className="shrink-0 text-text-muted" />
+                )}
+                <Check size={13} className="shrink-0 text-status-success" />
+                <span className="min-w-0 text-text-secondary">
+                  <span className="font-semibold text-text-primary">
+                    {appliedConflicts.length} field{appliedConflicts.length === 1 ? '' : 's'}
+                  </span>{' '}
+                  the email proposed {appliedConflicts.length === 1 ? 'is' : 'are'} already on the
+                  shipment — nothing to apply
+                </span>
+              </button>
+              {appliedOpen && (
+                <ul className="space-y-1.5 border-t border-border px-3 py-2.5">
+                  {appliedConflicts.map((c) => (
+                    <li key={c.field} className="flex min-w-0 flex-wrap items-baseline gap-x-2 text-sm">
+                      <span className="w-40 shrink-0 font-medium text-text-secondary">
+                        {reviewFieldLabel(c.field, c.label)}
+                      </span>
+                      <span className="field-value min-w-0 font-mono text-status-success">
+                        {liveValueForField(c, legValues)}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
+
           {/* One decision grid: POs + field conflicts share colgroup, headers, and border. */}
           {(() => {
             const canEditGrid = gridEditing
@@ -1200,8 +1275,15 @@ export function ReviewCard({
                               notWritable={!writable}
                               canEdit={!readOnly && writable}
                               critical={isCriticalColumn(mapCriticFieldToColumn(c.field))}
+                              /* Current shows what the LEG says, not the critic's pre-write snapshot.
+                                 That snapshot is why a row could read `MAASTRICHT MAERSK` while the
+                                 shipment had said `MARIBO MAERSK` for hours — the operator was
+                                 comparing the email against a value nobody stored any more. qty keeps
+                                 its own display (it also settles against the PO shipment total). */
                               existingOverride={
-                                isQtyConflict(c) ? existingQtyDisplay(c, liveQty) : null
+                                isQtyConflict(c)
+                                  ? existingQtyDisplay(c, liveQty)
+                                  : liveValueForField(c, legValues)
                               }
                               resolveSourceEmail={resolveSourceEmail}
                               onRequestEdit={() => {

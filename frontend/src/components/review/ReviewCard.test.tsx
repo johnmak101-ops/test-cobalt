@@ -1463,6 +1463,181 @@ describe('decision desk — ready state (no Critical for sailing band)', () => {
 })
 
 /**
+ * The busiest card in the dev queue — leg A84B3B1A / SO S13784413, 6 conflicts, 7 risk flags, 10
+ * reasons — had ZERO real field decisions: commit-first had already written every value the email
+ * proposed, and the critic's "System" candidate was a snapshot from before that write. Measured across
+ * the queue: 41 of 41 checkable rows were in that state.
+ */
+describe('rows the leg already satisfies leave the grid', () => {
+  const realLeg = () =>
+    baseShipment({
+      reviewReasons: [],
+      consigneeAddress: 'PRIMARK LTD, 22-24, PARNELL STREET, ARTHUR RYAN HOUSE, , Dublin Ireland',
+      vesselName: 'MARIBO MAERSK',
+      voyageNumber: '631W',
+    } as never)
+
+  const realConflicts: CriticConflict[] = [
+    {
+      field: 'vessel_name',
+      label: 'Vessel',
+      candidates: [
+        { value: 'MAASTRICHT MAERSK', source: 'System' },
+        { value: 'MARIBO MAERSK', source: 'Draft B/L' },
+      ],
+      rationale: 'stale system snapshot',
+    },
+    {
+      field: 'voyage_no',
+      label: 'Voyage',
+      candidates: [
+        { value: '630W', source: 'System' },
+        { value: '631W', source: 'Draft B/L' },
+      ],
+      rationale: 'stale system snapshot',
+    },
+  ] as CriticConflict[]
+
+  it('no grid, no Apply — one line says the email got what it asked for', () => {
+    render(
+      <MemoryRouter>
+        <ReviewCard
+          shipment={realLeg()}
+          criticReview={baseReview({
+            conflicts: realConflicts,
+            reasons: [],
+            riskFlags: [{ code: 'AMBIGUOUS_MATCH', severity: 'high', message: 'matched more than one leg' }],
+          })}
+          compact={null}
+          defaultExpanded
+          onApprove={vi.fn()}
+          onSaveAndApprove={vi.fn()}
+        />
+      </MemoryRouter>,
+    )
+    expect(screen.queryByTestId('review-decision-grid')).toBeNull()
+    expect(screen.getByTestId('review-applied-conflicts')).toHaveTextContent(
+      /2 fields the email proposed are already on the shipment/i,
+    )
+    // Nothing to apply → the primary answers the question that IS open, not a phantom diff.
+    expect(screen.queryByRole('button', { name: /^apply/i })).toBeNull()
+    expect(screen.getByTestId('desk-question')).toHaveTextContent(/Is this the right shipment\?/i)
+  })
+
+  it('the settled rows open up so the operator can verify the claim', async () => {
+    const user = userEvent.setup()
+    render(
+      <MemoryRouter>
+        <ReviewCard
+          shipment={realLeg()}
+          criticReview={baseReview({ conflicts: realConflicts, reasons: [], riskFlags: [] })}
+          compact={null}
+          defaultExpanded
+          onApprove={vi.fn()}
+        />
+      </MemoryRouter>,
+    )
+    const strip = screen.getByTestId('review-applied-conflicts')
+    await user.click(within(strip).getByRole('button'))
+    expect(within(strip).getByText('MARIBO MAERSK')).toBeInTheDocument()
+    expect(within(strip).getByText('631W')).toBeInTheDocument()
+  })
+
+  /** One or two bare bullets read fine; four turn into a blob, so the group titles come back. */
+  it('the Also list earns its group titles at three lines', () => {
+    const many = () =>
+      render(
+        <MemoryRouter>
+          <ReviewCard
+            shipment={baseShipment({
+              reviewReasons: [
+                'Cannot match "A.P. Moller - Maersk" in the forwarder list. Please add it in Cobalt Fashion Data Mesh System, then rematch.',
+                'no booking/SO/HBL identity and no lifecycle email type — verify this is a real shipment',
+              ],
+            })}
+            criticReview={baseReview({
+              conflicts: [],
+              reasons: [],
+              riskFlags: [
+                { code: 'AMBIGUOUS_MATCH', severity: 'high', message: 'matched more than one leg' },
+                { code: 'MISSING_ATTACHMENT', severity: 'high', message: 'references an attachment' },
+              ],
+            })}
+            compact={null}
+            defaultExpanded
+            onApprove={vi.fn()}
+          />
+        </MemoryRouter>,
+      )
+    many()
+    const rest = screen.getByTestId('needs-attention-rest')
+    // At least one group title is printed now (the exact set depends on classification).
+    const titles = ['Which Shipment?', 'Real Shipment?', 'Master Miss', 'Incomplete Data', 'Other']
+    expect(titles.some((t) => rest.textContent?.includes(t))).toBe(true)
+  })
+
+  it('two lines stay bare — a title per bullet is pure nesting', () => {
+    render(
+      <MemoryRouter>
+        <ReviewCard
+          shipment={baseShipment({ reviewReasons: [] })}
+          criticReview={baseReview({
+            conflicts: [],
+            reasons: [],
+            riskFlags: [
+              { code: 'AMBIGUOUS_MATCH', severity: 'high', message: 'matched more than one leg' },
+              { code: 'MISSING_ATTACHMENT', severity: 'high', message: 'references an attachment' },
+            ],
+          })}
+          compact={null}
+          defaultExpanded
+          onApprove={vi.fn()}
+        />
+      </MemoryRouter>,
+    )
+    // Headline takes one, so "Also" holds exactly one — well under the threshold.
+    const rest = screen.getByTestId('needs-attention-rest')
+    expect(rest.textContent).not.toMatch(/Incomplete Data|Which Shipment\?/)
+  })
+
+  it('a row that genuinely disagrees stays in the grid, and Current shows the LIVE value', () => {
+    render(
+      <MemoryRouter>
+        <ReviewCard
+          shipment={realLeg()}
+          criticReview={baseReview({
+            conflicts: [
+              realConflicts[0]!,
+              {
+                field: 'voyage_no',
+                label: 'Voyage',
+                candidates: [
+                  { value: '630W', source: 'System' },
+                  { value: '999X', source: 'Final B/L' },
+                ],
+                rationale: 'real disagreement',
+              } as CriticConflict,
+            ],
+            reasons: [],
+            riskFlags: [],
+          })}
+          compact={null}
+          defaultExpanded
+          onSaveAndApprove={vi.fn()}
+        />
+      </MemoryRouter>,
+    )
+    const grid = screen.getByTestId('review-decision-grid')
+    expect(within(grid).getByText('Voyage')).toBeInTheDocument()
+    expect(within(grid).queryByText('Vessel')).toBeNull()
+    // Current used to print the critic's pre-write snapshot ('630W'); the leg says 631W.
+    expect(within(grid).getByText('631W')).toBeInTheDocument()
+    expect(within(grid).queryByText('630W')).toBeNull()
+    expect(screen.getByTestId('review-applied-conflicts')).toHaveTextContent(/1 field/i)
+  })
+})
+
+/**
  * A multi-candidate row is the whole decision, and it used to be inert: three dead <div>s plus
  * "3 candidates — pick one in Edit". The radios and their onChange already existed — the mode switch
  * was the only thing between the operator and an answer already fully described on screen.
