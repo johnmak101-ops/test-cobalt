@@ -100,6 +100,12 @@ export function planPoReconcile(args: {
     // review-flag (enr.broadcastSuspected still drives sharedBroadcastTotal presentation only).
     if (enr?.brandConflict)
       poFlagReasons.push(`PO ${poNo}: brand conflict ${enr.brandConflict.join(' vs ')} (kept ${enr.brand}) — verify`)
+    // Split across legs with diverging qty/unit: no single leg's shipped figure is the ORDERED total, so
+    // total_quantity was left unset rather than resolved to whichever leg committed first — ERP must fill it.
+    if (enr?.qtyConflict)
+      poFlagReasons.push(
+        `PO ${poNo}: qty conflict ${enr.qtyConflict.join(' vs ')} across legs — order total left unset, confirm from ERP`,
+      )
     // T2: symmetric-diff style conflict copy (not full multi-list dump)
     if (enr?.styleConflict)
       poFlagReasons.push(`PO ${poNo}: ${summarizeStyleConflict(enr.styleConflict, enr.itemStyleNo)}`)
