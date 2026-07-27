@@ -32,6 +32,8 @@ import {
   poShipmentTotalFromLinked,
 } from '../../lib/qty-conflict-settle'
 import { liveValueForField, partitionAppliedConflicts } from '../../lib/conflict-applied'
+import { emailKeyPinsThisLeg } from '../../lib/email-key-pin'
+import { isNonIdentifier } from '../../lib/identifier-shape'
 import { isCriticalColumn } from '../../lib/review-critical'
 import {
   type CriticConflict,
@@ -225,6 +227,13 @@ function openEmailWindow(e: ReviewEmail): void {
 
 const EMPTY_EMAILS: ReviewEmail[] = []
 
+/** Leg columns that are supposed to hold a shipment identifier — checked for header-row junk. */
+const LEG_IDENTIFIER_FIELDS = [
+  { field: 'soNumber', label: 'SO number' },
+  { field: 'bookingNo', label: 'booking number' },
+  { field: 'hblNumber', label: 'B/L number' },
+] as const
+
 export function ReviewCard({
   shipment,
   criticReview,
@@ -244,10 +253,28 @@ export function ReviewCard({
   const [note, setNote] = useState('')
   const [busy, setBusy] = useState(false)
   const isWeakIdentity = (criticReview?.riskFlags ?? []).some((f) => f.code === 'WEAK_IDENTITY')
-  const isAmbiguousMatch = (criticReview?.riskFlags ?? []).some((f) => f.code === 'AMBIGUOUS_MATCH')
   // #129: closed-set candidates from matcher (preferred over free-type Identify when present)
   const matchAmbiguity = criticReview?.matchAmbiguity
-  const hasCandidateLegs = (matchAmbiguity?.candidates?.length ?? 0) >= 2
+  /**
+   * The leg as a bag of columns. A queue-list row simply does not carry most of them, which reads as
+   * "no live value to compare against" — the safe direction everywhere it is used. The queue's expanded
+   * panel and the focused page both pass the full detail.
+   */
+  const legValues = useMemo(() => shipment as unknown as Record<string, unknown>, [shipment])
+  /**
+   * The email's own strong key already names THIS leg (see email-key-pin.ts). AMBIGUOUS_MATCH fires on
+   * `so_no`, which every leg of one order shares — 11 of them on S13784413 — so the desk asked "which
+   * shipment?" about a leg whose HBL the email had already stated exactly. The panel excludes the leg
+   * you are on, so the five it offered were all wrong, and the `suggested` one was a different HBL that
+   * merely shared a vessel and ETD.
+   */
+  const emailKeyPin = useMemo(() => emailKeyPinsThisLeg(matchAmbiguity, legValues), [matchAmbiguity, legValues])
+  /** Escape hatch: hiding a control on an inference needs a way back. */
+  const [pinOverridden, setPinOverridden] = useState(false)
+  const identityPinned = emailKeyPin != null && !pinOverridden
+  const isAmbiguousMatch =
+    !identityPinned && (criticReview?.riskFlags ?? []).some((f) => f.code === 'AMBIGUOUS_MATCH')
+  const hasCandidateLegs = !identityPinned && (matchAmbiguity?.candidates?.length ?? 0) >= 2
   // Identify/link: weak-identity fold OR ambiguous-match (which real shipment?) — #146
   // Still show Identify when ambiguous but no candidate payload (legacy legs) or as fallback under panel
   const showIdentify = !readOnly && !!onIdentify && (isWeakIdentity || isAmbiguousMatch)
@@ -291,18 +318,19 @@ export function ReviewCard({
    * hide from this conflict table. Per-PO styles live on ReviewPoStylesSection / the PO card.
    * Qty conflicts that already match the live leg (or PO shipment total) are settled and dropped.
    */
-  const visibleConflicts = useMemo(() => {
-    const base = rawConflicts.filter((c) => {
-      const col = mapCriticFieldToColumn(c.field) ?? c.field
-      return (
-        col !== 'itemStyleNo' &&
-        col !== 'grossWeight' &&
-        col !== 'measurement' &&
-        col !== 'htsCode'
-      )
-    })
-    return filterActionableConflicts(base, { liveQty, poShipmentTotal })
-  }, [rawConflicts, liveQty, poShipmentTotal])
+  const deskConflicts = useMemo(
+    () =>
+      rawConflicts.filter((c) => {
+        const col = mapCriticFieldToColumn(c.field) ?? c.field
+        return (
+          col !== 'itemStyleNo' &&
+          col !== 'grossWeight' &&
+          col !== 'measurement' &&
+          col !== 'htsCode'
+        )
+      }),
+    [rawConflicts],
+  )
   /**
    * Rows whose every offered value the leg ALREADY stores are not decisions — see conflict-applied.ts.
    * Commit-first means the committer writes an email's values and the critic snapshot describing the
@@ -311,15 +339,31 @@ export function ReviewCard({
    * quiet line, still openable, because "the email agreed with us" is worth being able to verify.
    */
   /**
-   * The leg as a bag of columns. A queue-list row simply does not carry most of them, which reads as
-   * "no live value to compare against" and settles nothing — the safe direction, since the row then
-   * stays on the desk. The queue's expanded panel and the focused page both pass the full detail.
+   * Already-applied is decided FIRST, before the qty-specific settle. A qty row the leg literally
+   * holds (784 stated, 784 stored) belongs in "already on the shipment" where the operator can see it;
+   * running the qty filter first would drop it silently, and the green line would undercount.
+   * filterActionableConflicts still owns its other two routes (the PO shipment total, all-candidates),
+   * which are settles for a different reason and are not claims that the value was applied.
    */
-  const legValues = useMemo(() => shipment as unknown as Record<string, unknown>, [shipment])
-  const { open: conflicts, applied: appliedConflicts } = useMemo(
-    () => partitionAppliedConflicts(visibleConflicts, legValues),
-    [visibleConflicts, legValues],
+  const { open: unapplied, applied: appliedConflicts } = useMemo(
+    () => partitionAppliedConflicts(deskConflicts, legValues),
+    [deskConflicts, legValues],
   )
+  const conflicts = useMemo(
+    () => filterActionableConflicts(unapplied, { liveQty, poShipmentTotal }),
+    [unapplied, liveQty, poShipmentTotal],
+  )
+  /**
+   * What the conflict TABLE speaks for: rows still open, plus the rows it resolved into the
+   * already-applied line.
+   *
+   * Needs-attention suppresses its conflict-class prose ("6 field(s) disagree — see conflict table")
+   * when the table owns the comparison. Feeding it the OPEN count regressed that the moment settling
+   * emptied the table: the count fell to 0, the prose came back, and the card pointed the operator at
+   * a table that no longer existed while a green line beside it said those fields already agreed.
+   * Resolved is not the same as never-ours.
+   */
+  const tableOwnedCount = conflicts.length + appliedConflicts.length
   /** Operator asked to see the settled rows. */
   const [appliedOpen, setAppliedOpen] = useState(false)
   /** Threshold at which the "Also" list stops reading as a list and starts reading as a blob. */
@@ -340,13 +384,14 @@ export function ReviewCard({
       buildNeedsAttentionGroups({
         riskFlags: criticReview?.riskFlags,
         reviewReasons,
-        conflictsCount: conflicts.length,
+        conflictsCount: tableOwnedCount,
+        identityPinned,
         portsLinked: portsLinkedFromRoute((shipment as { route?: string | null }).route),
         hasPo,
         // Rule A: Review desk shows decision items only; FYI stays on shipment detail.
         desk: 'decision',
       }),
-    [criticReview, reviewReasons, shipment, conflicts.length, hasPo, linkedPOs],
+    [criticReview, reviewReasons, shipment, tableOwnedCount, hasPo, linkedPOs, identityPinned],
   )
 
   /**
@@ -383,6 +428,22 @@ export function ReviewCard({
    * The needs-attention pick still supplies the reject wording, so a leg that is BOTH a field fight and
    * a "is this freight?" question keeps its Not-a-Shipment escape.
    */
+  /**
+   * THIS leg's own identifier is digit-free, i.e. parsed out of a spreadsheet header rather than off a
+   * document — legs `SO no.` and `PORT OF LOADING` exist on the dev DB, both provisional, both carrying
+   * four emails apiece. Surfaced as a question rather than auto-rejected: the de-correction principle
+   * says the desk flags what the pipeline produced and lets a human decide, and these legs hold real
+   * linked evidence, so quietly binning them would take that with it.
+   */
+  const junkIdentifier = useMemo(
+    () =>
+      LEG_IDENTIFIER_FIELDS.map(({ field, label }) => ({
+        label,
+        value: String(legValues[field] ?? '').trim(),
+      })).find((x) => x.value !== '' && isNonIdentifier(x.value)) ?? null,
+    [legValues],
+  )
+
   const naPick = useMemo(() => pickDeskQuestion(needsAttentionGroups), [needsAttentionGroups])
   const contestedFields = useMemo(
     () =>
@@ -394,6 +455,19 @@ export function ReviewCard({
     [conflicts],
   )
   const deskPick = useMemo(() => {
+    // Outranks everything: if the leg was parsed out of a header row, no field decision on it matters.
+    if (junkIdentifier) {
+      return {
+        question: {
+          question: 'Is this a real shipment?',
+          affirm: 'Yes — Track It',
+          reject: 'Not a Shipment',
+        },
+        detailText: `Its ${junkIdentifier.label} is “${junkIdentifier.value}” — a column heading, not a number. This leg was most likely parsed out of a spreadsheet's header row.`,
+        detailItem: null,
+        rest: needsAttentionGroups,
+      }
+    }
     const fromTable = conflictDeskQuestion(contestedFields)
     if (fromTable) {
       return {
@@ -410,7 +484,7 @@ export function ReviewCard({
       detailItem: naPick.primary,
       rest: naPick.rest,
     }
-  }, [contestedFields, naPick, needsAttentionGroups])
+  }, [contestedFields, naPick, needsAttentionGroups, junkIdentifier])
   const restNeedsTitles = useMemo(
     () =>
       (deskPick?.rest.reduce((n, g) => n + g.items.length, 0) ?? 0) >= ALSO_TITLE_THRESHOLD,
@@ -970,8 +1044,30 @@ export function ReviewCard({
               data-testid="review-ready-state"
               className="rounded-lg border border-status-success/25 bg-status-success/10 px-3 py-2 text-xs text-status-success"
             >
-              Ready to confirm — no open decisions
+              {/* Name what settled it. "Ready to confirm" alone left the operator wondering what
+                  happened to the five-way pick the card used to open with. */}
+              {emailKeyPin && !pinOverridden ? (
+                <>
+                  This email is on the right shipment — its {emailKeyPin.label}{' '}
+                  <span className="field-value font-mono">{emailKeyPin.value}</span> matches this
+                  shipment and none of the alternatives. Nothing to decide.
+                </>
+              ) : (
+                'Ready to confirm — no open decisions'
+              )}
             </div>
+          )}
+
+          {/* Hiding a control on an inference needs a way back. */}
+          {identityPinned && !readOnly && (matchAmbiguity?.candidates?.length ?? 0) >= 2 && (
+            <button
+              type="button"
+              onClick={() => setPinOverridden(true)}
+              data-testid="review-pin-override"
+              className="text-xs font-medium text-cobalt-primary-light hover:underline"
+            >
+              Not the right shipment? Choose another
+            </button>
           )}
 
           {criticReview == null && (

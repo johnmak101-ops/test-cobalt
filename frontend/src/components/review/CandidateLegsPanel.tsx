@@ -4,7 +4,9 @@
  * JOB# is secondary internal metadata only (virtual master — operators do not use it as identity).
  * Selection only — merge happens on the card primary action (Link & apply) after field decisions.
  */
+import { useState } from 'react'
 import type { MatchAmbiguity, MatchAmbiguityCandidate } from '../../lib/critic-review'
+import { isNonIdentifiableCandidate, nonIdentifierValues } from '../../lib/identifier-shape'
 import { cn, formatDateMaybeTime } from '../../lib/utils'
 
 export interface CandidateLegsPanelProps {
@@ -56,13 +58,26 @@ export function CandidateLegsPanel({
   selectedId,
   onSelect,
 }: CandidateLegsPanelProps) {
-  const candidates = matchAmbiguity.candidates ?? []
+  const allCandidates = matchAmbiguity.candidates ?? []
   const suggestedId =
     matchAmbiguity.suggestion && !matchAmbiguity.suggestion.cannotDecide
       ? matchAmbiguity.suggestion.shipmentId
       : null
 
-  if (candidates.length < 2) return null
+  /**
+   * A leg whose every identifier is digit-free was parsed out of a spreadsheet HEADER — `SO no.`,
+   * `PORT OF LOADING`. Merging live cargo into one is irreversible and always wrong, so it is not
+   * offered by default. Not deleted and not hidden outright: the reason is stated and one click brings
+   * it back, because the value itself is real data the operator may need to see (see identifier-shape).
+   */
+  const [showUnidentifiable, setShowUnidentifiable] = useState(false)
+  const unidentifiable = allCandidates.filter(isNonIdentifiableCandidate)
+  const candidates =
+    showUnidentifiable || unidentifiable.length === 0
+      ? allCandidates
+      : allCandidates.filter((c) => !isNonIdentifiableCandidate(c))
+
+  if (allCandidates.length < 2) return null
 
   return (
     <div
@@ -118,6 +133,28 @@ export function CandidateLegsPanel({
             ? ` — ${matchAmbiguity.suggestion.rationale}`
             : ''}
           {' · select below, resolve fields, then Link & apply'}
+        </p>
+      )}
+
+      {unidentifiable.length > 0 && !showUnidentifiable && (
+        <p className="text-[11px] text-text-muted" data-testid="candidate-unidentifiable-note">
+          {unidentifiable.length} more matched, but{' '}
+          {unidentifiable.length === 1 ? 'its identifier is' : 'their identifiers are'} not
+          identifiers —{' '}
+          <span className="font-mono text-status-critical">
+            {[...new Set(unidentifiable.flatMap(nonIdentifierValues))]
+              .slice(0, 3)
+              .map((v) => `“${v}”`)
+              .join(', ')}
+          </span>
+          . Likely parsed from a table header, so not offered.{' '}
+          <button
+            type="button"
+            onClick={() => setShowUnidentifiable(true)}
+            className="font-medium text-cobalt-primary-light hover:underline"
+          >
+            Show anyway
+          </button>
         </p>
       )}
 

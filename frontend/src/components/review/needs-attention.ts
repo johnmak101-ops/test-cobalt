@@ -1774,6 +1774,15 @@ export function buildNeedsAttention(opts: {
   portsLinked?: PortsLinked | null
   /** When true, r-no-id uses only-PO copy (card has linked PO numbers). Default false. */
   hasPo?: boolean
+  /**
+   * A strong key from the email (HBL / MBL / booking no.) already names THIS leg, so the
+   * "which shipment is this?" family has been answered and must not be asked again.
+   *
+   * AMBIGUOUS_MATCH fires on `so_no`, shared by every leg of one order — 11 on S13784413 — so it is
+   * true by construction there, and the desk kept asking about legs the email had already pinned by
+   * HBL. See lib/email-key-pin.ts.
+   */
+  identityPinned?: boolean
 }): NeedsAttentionItem[] {
   const tableOwnsConflicts = opts.conflictsCount > 0
   const ports: PortsLinked = opts.portsLinked ?? {}
@@ -1802,6 +1811,8 @@ export function buildNeedsAttention(opts: {
     const hit = lineFromFlag(f.code, f.message!)
     if (!hit) continue
     if (hit.category === 'conflict' && tableOwnsConflicts) continue
+    // A strong key settled which shipment this is — do not ask it again.
+    if (hit.category === 'multi_id' && opts.identityPinned) continue
     if (dropPortMiss(hit)) continue
     const text = hit.lineId === 'r-no-id' ? weakIdentityText(!!opts.hasPo) : hit.text
     pushUnique(byLine, {
@@ -1822,6 +1833,8 @@ export function buildNeedsAttention(opts: {
     const hit = lineFromReason(raw, text)
     if (!hit) continue
     if (hit.category === 'conflict' && tableOwnsConflicts) continue
+    // A strong key settled which shipment this is — do not ask it again.
+    if (hit.category === 'multi_id' && opts.identityPinned) continue
     if (dropPortMiss(hit)) continue
     // Drop reason if a flag already explained that category (and line not more specific)
     if (explained.has(hit.category) && !hit.lineId.startsWith('m-port:') && !hit.lineId.startsWith('m-party:')) {
@@ -1868,6 +1881,15 @@ export function buildNeedsAttentionGroups(opts: {
   portsLinked?: PortsLinked | null
   /** When true, r-no-id uses only-PO copy (card has linked PO numbers). Default false. */
   hasPo?: boolean
+  /**
+   * A strong key from the email (HBL / MBL / booking no.) already names THIS leg, so the
+   * "which shipment is this?" family has been answered and must not be asked again.
+   *
+   * AMBIGUOUS_MATCH fires on `so_no`, shared by every leg of one order — 11 on S13784413 — so it is
+   * true by construction there, and the desk kept asking about legs the email had already pinned by
+   * HBL. See lib/email-key-pin.ts.
+   */
+  identityPinned?: boolean
   /** Review queue: decision only. Detail: all. Default all. */
   desk?: 'decision' | 'all'
 }): NeedsAttentionGroup[] {
