@@ -499,9 +499,10 @@ export default function ShipmentDetailPage() {
                           <option value="">—</option>
                           {cur && !optionSet.has(cur) && (
                             <option value={cur}>
-                              {/* A value outside the offered list but inside the full enum (e.g.
-                                  agent-written SEA_LCL vs the SEA/AIR offer) is valid — only truly
-                                  unknown junk gets the suffix. */}
+                              {/* A value outside the offered list but inside the full enum is valid —
+                                  only truly unknown junk gets the suffix. (Mode no longer differs:
+                                  MODE_EDIT_OPTIONS === MODE_OPTIONS since FCL/LCL was dropped. Other
+                                  fields still rely on this narrower-offer-than-vocabulary path.) */}
                               {allValueSet.has(cur) ? cur : `${cur} (unrecognized)`}
                             </option>
                           )}

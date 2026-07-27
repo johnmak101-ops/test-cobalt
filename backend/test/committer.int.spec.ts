@@ -34,7 +34,7 @@ describe('CommitterService (integration, real SQL Server)', () => {
     expect(res.state).toBe('CONFIRMED')
     const leg = await db.selectFrom('shipments').where('id', '=', res.shipmentId).selectAll().executeTakeFirstOrThrow()
     expect(leg.soNo).toBe('SO-1')
-    expect(leg.mode).toBe('SEA_LCL')
+    expect(leg.mode).toBe('SEA') // normMode collapses every sea variant (0023)
     expect(await db.selectFrom('bookings').selectAll().execute()).toHaveLength(1)
   })
 

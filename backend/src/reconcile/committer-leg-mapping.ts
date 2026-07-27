@@ -41,6 +41,9 @@ export function mapFieldsToLegColumns(f: Record<string, unknown>): Record<string
     inDcDate: date(f.in_dc_date),
     qty: num(f.qty),
     qtyUnit: str(f.qty_unit),
+    // The carton count, present only when a table stated BOTH cartons and pieces — `qty` then holds
+    // the pieces (#197), so this is the only place the carton count survives.
+    cartons: num(f.cartons),
     grossWeight: num(f.gross_weight),
     measurement: num(f.measurement),
     htsCode: dedupeCsv(str(f.hts_code)),

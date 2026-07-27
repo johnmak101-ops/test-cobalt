@@ -1,9 +1,13 @@
 import { Inject, Injectable } from '@nestjs/common'
 import { sql, type Kysely } from 'kysely'
-import { JOB_NO_PREFIX } from '../../common/job-no'
+import { formatJobNo, JOB_NO_PREFIX } from '../../common/job-no'
+import { isUniqueViolation } from '../../common/db-errors'
 import type { DB } from '../kysely/db'
 import { KYSELY } from '../kysely.provider'
 import type { BOOKING_STATUS } from '../enums'
+
+/** Attempts allowed when minting a job_no against concurrent writers before giving up. */
+const JOB_NO_MAX_ATTEMPTS = 8
 
 /** Insert/patch shape for a booking row. `jobNo` is required on create (NOT NULL, unique). */
 export type BookingInsert = Partial<{
@@ -71,10 +75,40 @@ export class BookingRepository {
     return Number(row?.n ?? 0)
   }
 
+  /**
+   * Create a booking with a freshly minted job_no — race-safe under concurrent writers.
+   *
+   * {@link nextJobSeq} is a MAX()+1 read, so concurrent creates can compute the SAME sequence and the
+   * `uq_bookings_job_no` unique then rejects all but one (SQL 2627 → HTTP 400 at the API edge). That is
+   * exactly what happens when the agent posts a batch in parallel: every group that matches no existing
+   * leg mints a booking, so N concurrent writers produce N-1 failures.
+   *
+   * Rather than serialize booking creation with a range lock over `job_no LIKE 'JOB-2026-%'` (a scan,
+   * held across a round-trip), the loser simply retries: re-read the sequence — which now sees the
+   * winner's row — and insert again. Converges in one extra round-trip per collision.
+   *
+   * Callers pass everything except `jobNo`; the minted number is on the returned row.
+   */
+  async createWithGeneratedJobNo(values: Omit<BookingInsert, 'jobNo'>) {
+    let lastErr: unknown
+    for (let attempt = 0; attempt < JOB_NO_MAX_ATTEMPTS; attempt++) {
+      const jobNo = formatJobNo(await this.nextJobSeq())
+      try {
+        return await this.create({ ...values, jobNo })
+      } catch (e) {
+        if (!isUniqueViolation(e)) throw e
+        lastErr = e
+        // Jitter, so a wave of writers doesn't re-read and re-collide in lockstep.
+        await new Promise((r) => setTimeout(r, 10 + Math.floor(Math.random() * 40)))
+      }
+    }
+    throw lastErr
+  }
+
   /** Next job-number sequence = MAX(existing trailing number) + 1, scoped to the JOB-2026-NNNN family so a
    *  foreign-format/legacy booking can't perturb the sequence. Gap-safe, unlike count()+1 which collides the
-   *  moment a number is missing. The agent posts sequentially so a max-based seed is race-free in practice
-   *  (job_no is UNIQUE, so a concurrent double would fail-fast). */
+   *  moment a number is missing. NOT atomic on its own — concurrent callers can read the same value, so mint
+   *  job numbers via {@link createWithGeneratedJobNo}, which retries the unique violation. */
   async nextJobSeq() {
     // trailing digit run of job_no: reverse, find first non-digit, take the leading (was-trailing) digits.
     const rev = sql<string>`reverse(${sql.ref('job_no')})`

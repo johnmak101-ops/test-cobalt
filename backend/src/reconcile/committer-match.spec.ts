@@ -78,6 +78,70 @@ describe('findExistingLeg (committer leg-matching, pure + N+1-free)', () => {
     expect(r).toBeUndefined()
   })
 
+  /**
+   * A B/L identifier names ONE physical shipment and legitimately carries MANY POs — each email cites
+   * only the ones it is about. Letting a non-overlapping PO set veto that match split real consignments:
+   * both cases below are reproduced from production data (24 Jul 2026).
+   */
+  describe('a shared B/L identifier outranks a PO-set difference', () => {
+    it('same HBL + SO, different PO — one leg, not two (real: FCR001340862 spawned leg 17)', () => {
+      const legs = [leg('L1', 'B1', { hbl_awb_fcr_no: 'FCR001340862', so_no: 'S13747714', booking_no: 'SBK0003905231' })]
+      const posByBooking = new Map([['B1', ['Z13789071']]])
+      const r = findExistingLeg(
+        legs,
+        posByBooking,
+        gkOf({ hbl_awb_fcr_no: 'FCR001340862', so_no: 'S13747714' }),
+        posSet('C13769406'),
+        null,
+      )
+      expect(r?.id).toBe('L1')
+    })
+
+    it('same HBL + MBL + SO, different PO — one booking, not two (real: SZXRTM26070080)', () => {
+      const legs = [
+        leg('L1', 'B1', {
+          hbl_awb_fcr_no: 'SZXRTM26070080',
+          mbl: 'OOLU8882464820',
+          so_no: 'CCA/SZ/RTM-15449',
+          booking_no: 'B003352',
+        }),
+      ]
+      const posByBooking = new Map([['B1', ['23402']]])
+      const r = findExistingLeg(
+        legs,
+        posByBooking,
+        gkOf({ hbl_awb_fcr_no: 'SZXRTM26070080', mbl: 'OOLU8882464820', so_no: 'CCA/SZ/RTM-15449' }),
+        posSet('23817_1610-363'),
+        null,
+      )
+      expect(r?.id).toBe('L1')
+    })
+
+    it('MBL alone also outranks a PO difference', () => {
+      const legs = [leg('L1', 'B1', { mbl: 'MAEU271373171' })]
+      const posByBooking = new Map([['B1', ['PO-999']]])
+      const r = findExistingLeg(legs, posByBooking, gkOf({ mbl: 'MAEU271373171' }), posSet('PO123'), null)
+      expect(r?.id).toBe('L1')
+    })
+
+    it('but a CONFLICTING B/L still never matches — the exemption is for PO differences only', () => {
+      const legs = [leg('L1', 'B1', { hbl_awb_fcr_no: 'FCR001340862' })]
+      const posByBooking = new Map([['B1', ['PO-999']]])
+      const r = findExistingLeg(legs, posByBooking, gkOf({ hbl_awb_fcr_no: 'FCR009999999' }), posSet('PO123'), null)
+      expect(r).toBeUndefined()
+    })
+
+    it('and so_no / container_no alone do NOT earn the exemption (weaker, reused identifiers)', () => {
+      const soLegs = [leg('L1', 'B1', { so_no: 'S13747714' })]
+      const posByBooking = new Map([['B1', ['PO-999']]])
+      expect(findExistingLeg(soLegs, posByBooking, gkOf({ so_no: 'S13747714' }), posSet('PO123'), null)).toBeUndefined()
+
+      const ctrLegs = [leg('L2', 'B2', { container_no: 'MRKU1234567' })]
+      const ctrPos = new Map([['B2', ['PO-999']]])
+      expect(findExistingLeg(ctrLegs, ctrPos, gkOf({ container_no: 'MRKU1234567' }), posSet('PO123'), null)).toBeUndefined()
+    })
+  })
+
   it('A2: a zero-identity group matches a zero-identity leg of the same thread by conversationId', () => {
     const legs = [leg('L1', 'B1', { conversation_id: 'CONV-1' })]
     const r = findExistingLeg(legs, new Map(), new Set(), new Set(), 'CONV-1')

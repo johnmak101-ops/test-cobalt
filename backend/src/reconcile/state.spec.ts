@@ -130,7 +130,7 @@ describe('deriveState — 6-state staircase', () => {
   })
   it('SEA — and unknown mode, conservatively — use the 45-day allowance', () => {
     const now = new Date('2026-07-21T15:00:00Z')
-    expect(deriveState(new Set(['SO']), { mode: 'SEA_LCL', atd: '2026-06-20' }, now)).toBe('RELEASED')
+    expect(deriveState(new Set(['SO']), { mode: 'SEA', atd: '2026-06-20' }, now)).toBe('RELEASED')
     expect(deriveState(new Set(['SO']), { mode: 'Sea', atd: '2026-06-01' }, now)).toBe('DELIVERED')
     expect(deriveState(new Set(['SO']), { etd: '2026-06-20' }, now)).toBe('CONFIRMED')
     expect(deriveState(new Set(['SO']), { etd: '2026-05-01' }, now)).toBe('DELIVERED')
@@ -153,8 +153,22 @@ describe('deriveState — 6-state staircase', () => {
 describe('normMode', () => {
   it('maps known labels', () => {
     expect(normMode('Sea')).toBe('SEA')
-    expect(normMode('Sea-LCL')).toBe('SEA_LCL')
     expect(normMode('Air')).toBe('AIR')
+  })
+  // Ops track sea vs air only. Every container-loading variant must land on SEA — carrying the
+  // distinction split one shipment into two legs when the booking said `Sea` and the B/L `Sea-LCL`.
+  it('collapses every sea variant to SEA (no FCL/LCL granularity)', () => {
+    expect(normMode('Sea-LCL')).toBe('SEA')
+    expect(normMode('Sea-FCL')).toBe('SEA')
+    expect(normMode('SEA_FCL')).toBe('SEA')
+    expect(normMode('SEA_LCL')).toBe('SEA')
+    expect(normMode('LCL')).toBe('SEA')
+    expect(normMode('FCL')).toBe('SEA')
+  })
+  // AIR is tested first, mirroring the queue's modeCore, so an "air freight LCL" style label
+  // cannot be pulled to SEA by the looser sea test.
+  it('prefers AIR when a label mentions both', () => {
+    expect(normMode('Air (was LCL)')).toBe('AIR')
   })
   it('falls back by prefix, null when unknown', () => {
     expect(normMode('sea freight')).toBe('SEA')

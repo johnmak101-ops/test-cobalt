@@ -91,3 +91,8 @@ _dev.log
 /docs/diagrams/*mockup*
 /docs/diagrams/*.png
 /docs/diagrams/*.drawio*
+
+# backend dev scratch: ad-hoc probes / one-off ops scripts (clean-start.ts IS tracked —
+# cobalt-queue src/dev/clean-start.ts documents it as the paired reset)
+backend/src/dev/_*
+backend/_q*

@@ -28,7 +28,9 @@ export interface PoReconcilePlan {
 /** Other legs' PO↔HAWB claims used as defense-in-depth against cross-HAWB PO linking. */
 export type SiblingPoHbl = { po: string; hbl: string; mode?: string | null }
 
-/** SEA_FCL / SEA_LCL are one transport family; cross-family (SEA vs AIR) is a legitimate PO split. */
+/** Collapse to the transport family: only SEA vs AIR is a legitimate PO split.
+ *  `normMode` now stores nothing finer than SEA/AIR, so this is a no-op for new rows — kept as
+ *  defence-in-depth for legacy values written before migration 0023 and for callers that bypass it. */
 const modeFamily = (m: unknown): string | null => {
   const s = str(m)
   return s ? s.toUpperCase().split('_')[0]! : null

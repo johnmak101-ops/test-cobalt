@@ -27,7 +27,7 @@ describe('portLabel — AIR legs display IATA airport codes, sea legs UN/LOCODE'
 
   it('sea modes keep the UN/LOCODE even when the port has an IATA code', () => {
     expect(portLabel('SEA', 'KHPNH', 'PNH')).toBe('KHPNH')
-    expect(portLabel('SEA_LCL', 'USLAX', 'LAX')).toBe('USLAX')
+    expect(portLabel('SEA', 'USLAX', 'LAX')).toBe('USLAX')
     expect(portLabel(null, 'CNYTN', null)).toBe('CNYTN')
   })
 

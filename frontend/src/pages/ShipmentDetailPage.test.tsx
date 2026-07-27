@@ -346,7 +346,24 @@ describe('ShipmentDetailPage — read view and edit form stay in step', () => {
     expect(rowValue('Warehouse SO')).toBe('B1261611448')
   })
 
-  it('offers only SEA / AIR modes, with the current granular mode selectable and NOT "unrecognized"', async () => {
+  it('offers only SEA / AIR modes', async () => {
+    mockUseShipment.mockReturnValue({ data: fixture({ mode: 'SEA' }), isLoading: false })
+    const user = userEvent.setup()
+    renderPage()
+    await user.click(screen.getByRole('button', { name: /edit/i }))
+
+    const select = screen.getByTestId('edit-select-mode') as HTMLSelectElement
+    const labels = [...select.options].map((o) => o.textContent)
+    expect(labels).toEqual(['—', 'SEA', 'AIR'])
+  })
+
+  /**
+   * FCL/LCL was retired end-to-end (migration 0023 rewrote every row and narrowed the DB CHECK), so a
+   * granular value is no longer part of the vocabulary. If one ever reappears — a restored pre-migration
+   * backup, a hand-written API call — it must read as unrecognized rather than be quietly offered as
+   * valid, which is what would let it re-enter the data and re-split legs.
+   */
+  it('marks a resurrected granular mode as unrecognized', async () => {
     mockUseShipment.mockReturnValue({ data: fixture({ mode: 'SEA_LCL' }), isLoading: false })
     const user = userEvent.setup()
     renderPage()
@@ -354,7 +371,7 @@ describe('ShipmentDetailPage — read view and edit form stay in step', () => {
 
     const select = screen.getByTestId('edit-select-mode') as HTMLSelectElement
     const labels = [...select.options].map((o) => o.textContent)
-    expect(labels).toEqual(['—', 'SEA_LCL', 'SEA', 'AIR'])
+    expect(labels).toEqual(['—', 'SEA_LCL (unrecognized)', 'SEA', 'AIR'])
   })
 
   it('keeps the stored cut-off time when only the day is changed', async () => {

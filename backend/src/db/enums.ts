@@ -8,7 +8,11 @@
 export const SHIPMENT_STATE = ['BOOKED', 'CONFIRMED', 'AT_WAREHOUSE', 'SAILED', 'RELEASED', 'DELIVERED'] as const
 /** A leg can be superseded (e.g. sea→air re-plan) without deleting its history. */
 export const LEG_STATUS = ['ACTIVE', 'SUPERSEDED', 'CANCELLED'] as const
-export const SHIPMENT_MODE = ['SEA', 'SEA_FCL', 'SEA_LCL', 'AIR'] as const
+/** Sea vs air — nothing finer. FCL/LCL is a container-loading detail ops never filter or report on,
+ *  and because leg identity partitions on (mode, pod), carrying it split one shipment into two legs
+ *  whenever two documents stated the same move at different granularity (`Sea` vs `Sea-LCL`).
+ *  `normMode` (reconcile/state.ts) collapses every sea-like label to SEA on the way in. */
+export const SHIPMENT_MODE = ['SEA', 'AIR'] as const
 export const RISK_LEVEL = ['ON_TRACK', 'AT_RISK', 'DELAYED'] as const
 /** Per-shipment review gate. The Critic's confidence routes a decision to `provisional`
  *  (held for human review, excluded from alerts/automation) or `confirmed` (auto-applied).
