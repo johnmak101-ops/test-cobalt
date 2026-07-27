@@ -8,6 +8,7 @@ import {
   countryOnlyPortMissText,
   weakIdentityText,
   isNonPartyName,
+  isMailboxPartyName,
   portsLinkedFromRoute,
 } from './needs-attention'
 
@@ -1379,5 +1380,88 @@ describe('nameless master-miss lines are FYI, named ones stay on the desk', () =
     })
     const ids = desk.flatMap((g) => g.items.map((i) => i.lineId))
     expect(ids.some((id) => id.startsWith('m-party'))).toBe(true)
+  })
+})
+
+/**
+ * Two absurdities the desk produced on live leg A84B3B1A, both from party prose being trusted as a
+ * company name.
+ */
+describe('guard notes and mailbox "parties" are never advertised as Mesh additions', () => {
+  const OWN_IDENTITY =
+    "auto: 'Cobalt Knitwear' is Cobalt's own identity, not the vendor — dropped"
+  const MAILBOX_FORWARDER =
+    'Cannot match "Maersk Global Service Center (Chengdu) <noreply-gca@lns.maersk.com>" in the forwarder list. Please add it in Cobalt Fashion Data Mesh System, then rematch.'
+
+  it('the own-identity guard note never asks ops to add Cobalt to Cobalt\'s own masters', () => {
+    // Arrives as a riskFlag…
+    const fromFlag = buildNeedsAttention({
+      conflictsCount: 0,
+      riskFlags: [{ code: 'PARTY_OPS', severity: 'low', message: OWN_IDENTITY }],
+      reviewReasons: [],
+    })
+    // …and as a committer reviewReason. Both paths must swallow it.
+    const fromReason = buildNeedsAttention({
+      conflictsCount: 0,
+      riskFlags: [],
+      reviewReasons: [OWN_IDENTITY],
+    })
+    for (const items of [fromFlag, fromReason]) {
+      expect(items.some((i) => /advise add in Mesh/i.test(i.text))).toBe(false)
+      expect(items.some((i) => /Cobalt Knitwear/i.test(i.text))).toBe(false)
+      expect(items.some((i) => i.lineId.startsWith('m-party:'))).toBe(false)
+    }
+  })
+
+  it('a no-reply mailbox is not offered as a forwarder to create', () => {
+    const items = buildNeedsAttention({
+      conflictsCount: 0,
+      riskFlags: [],
+      reviewReasons: [MAILBOX_FORWARDER],
+    })
+    const hit = items.find((i) => /email address was stated/i.test(i.text))
+    expect(hit).toBeTruthy()
+    expect(hit!.lineId.startsWith('m-note:')).toBe(true)
+    // Not counted as an addable party, and never carries the add-in-Mesh instruction.
+    expect(items.some((i) => i.lineId.startsWith('m-party:'))).toBe(false)
+    expect(items.some((i) => /advise add in Mesh/i.test(i.text))).toBe(false)
+  })
+
+  it('mailbox misses stay off the decision desk — ops cannot fix an extraction gap in Mesh', () => {
+    const desk = buildNeedsAttentionGroups({
+      conflictsCount: 0,
+      riskFlags: [],
+      reviewReasons: [MAILBOX_FORWARDER],
+      desk: 'decision',
+    })
+    expect(desk.flatMap((g) => g.items.map((i) => i.lineId))).toHaveLength(0)
+    // Still visible where the leg's full story lives.
+    const all = buildNeedsAttentionGroups({
+      conflictsCount: 0,
+      riskFlags: [],
+      reviewReasons: [MAILBOX_FORWARDER],
+      desk: 'all',
+    })
+    expect(all.flatMap((g) => g.items.map((i) => i.lineId)).some((id) => id.startsWith('m-note:'))).toBe(true)
+  })
+
+  it('a real company name is untouched by either guard', () => {
+    const items = buildNeedsAttention({
+      conflictsCount: 0,
+      riskFlags: [],
+      reviewReasons: [
+        'Cannot match "CIL PLUS LIMITED" in the customer list. Please add it in Cobalt Fashion Data Mesh System, then rematch.',
+      ],
+    })
+    expect(items.some((i) => i.lineId.startsWith('m-party:'))).toBe(true)
+    expect(items.some((i) => /advise add in Mesh/i.test(i.text))).toBe(true)
+  })
+
+  it('isMailboxPartyName spots addresses, plain or embedded, and leaves names alone', () => {
+    expect(isMailboxPartyName('noreply-gca@lns.maersk.com')).toBe(true)
+    expect(isMailboxPartyName('Maersk GSC (Chengdu) <noreply-gca@lns.maersk.com>')).toBe(true)
+    expect(isMailboxPartyName('CIL PLUS LIMITED')).toBe(false)
+    expect(isMailboxPartyName('南海制衣')).toBe(false)
+    expect(isMailboxPartyName(null)).toBe(false)
   })
 })

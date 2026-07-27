@@ -82,7 +82,7 @@ const SYSTEM_DECISION_NOTE_TEXT: RegExp[] = [
   /supersedes \d{4}-\d{2}-\d{2}/i, // a dated value replaced by a newer one
   // The vendor/forwarder guard reporting it ALREADY swapped a factory-looking name for the
   // customer. A record of a decision taken, not a party anyone must go and add to Mesh. The same
-  // sentence also arrives as a riskFlag, where GUARD_ALREADY_ACTED_RE stops it earlier; this entry
+  // sentence also arrives as a riskFlag, where isGuardAlreadyActed stops it earlier; this entry
   // covers the reviewReasons copy, which falls through to a generic reason:* line under Other.
   /^auto: factory\/vendor-like '[^']*' replaced with customer /i,
 ]
@@ -93,15 +93,32 @@ function isSystemDecisionNote(item: Pick<NeedsAttentionItem, 'lineId' | 'text'>)
 }
 
 /**
- * The vendor/forwarder guard's "I already swapped it" note, matched on the RAW message.
+ * A guard reporting that it ALREADY dealt with a party, matched on the RAW message.
  *
- * isSystemDecisionNote runs on the FINISHED item text, which is too late for this one: the PARTY_OPS
+ * isSystemDecisionNote runs on the FINISHED item text, which is too late for these: the PARTY_OPS
  * branch would first pull `MACAU FUNG TAI LIMITED` out of the quotes and rewrite the text to
  * "MACAU FUNG TAI LIMITED — not in Mesh", at which point the suppression regex no longer matches and
  * ops are told to add a party that was deliberately replaced. Caught at the message, it never
  * becomes an item at all.
+ *
+ * The `own identity` variant was missing, and its consequence was absurd: the guard note
+ *   auto: 'Cobalt Knitwear' is Cobalt's own identity, not the vendor — dropped
+ * came out on the desk as `"Cobalt Knitwear" not found in Mesh Database — advise add in Mesh`, i.e.
+ * ops were asked to add Cobalt itself to Cobalt's own master data. Seen on live leg A84B3B1A.
+ *
+ * Kept as a LIST rather than one loose `^auto:` prefix: not every auto note is a completed action, and
+ * swallowing the whole prefix would silently hide future ones that do need a human.
  */
-const GUARD_ALREADY_ACTED_RE = /^auto: factory\/vendor-like '[^']*' replaced with customer /i
+const GUARD_ALREADY_ACTED_RES: RegExp[] = [
+  /^auto: factory\/vendor-like '[^']*' replaced with customer /i,
+  /^auto: '[^']*' is Cobalt's own identity\b/i,
+  /\bis Cobalt's own identity, not the (vendor|customer|forwarder|consignee)\b/i,
+]
+
+function isGuardAlreadyActed(message: string): boolean {
+  const s = message.trim()
+  return GUARD_ALREADY_ACTED_RES.some((re) => re.test(s))
+}
 
 export const GROUP_ORDER: NeedsAttentionGroupId[] = [
   'which_shipment',
@@ -553,6 +570,41 @@ function meshPartyMissText(name: string): string {
   return `"${name}" not found in Mesh Database — advise add in Mesh.`
 }
 
+/**
+ * A "party" that is really a mail header rather than a company:
+ *   Maersk Global Service Center (Chengdu) <noreply-gca@lns.maersk.com>
+ * or a bare address. Sibling of isNonPartyName, which catches the same class of leak in numeric form.
+ *
+ * Master miss tells ops to "add in Mesh", and creating a master named after a no-reply mailbox would
+ * pollute the very data the advice exists to fix. Seen on live leg A84B3B1A, where the desk asked ops
+ * to add a Maersk service-centre mailbox to the forwarder list.
+ */
+export function isMailboxPartyName(raw: string | null | undefined): boolean {
+  return /[^\s@]+@[^\s@]+\.[^\s@]{2,}/.test(String(raw ?? ''))
+}
+
+/**
+ * ONE place that turns a quoted party name into a master-miss line, so every branch below treats a
+ * mail header the same way.
+ *
+ * A mailbox becomes an `m-note:` — the family built for "visible under Master miss but outside the
+ * party machinery: not counted, not collapsed into the name list, and not advertised as addable". It is
+ * an extraction gap (all the email gave us was a sender), not missing master data, so nobody should be
+ * asked to create it.
+ */
+function meshPartyHit(name: string): LineHit {
+  const clean = name.trim()
+  if (isMailboxPartyName(clean)) {
+    const shown = clean.length > 60 ? `${clean.slice(0, 57)}…` : clean
+    return {
+      lineId: `m-note:${normalizeMeshPartyKey(clean).slice(0, 48)}`,
+      text: `Only an email address was stated for this party (${shown}) — no company name to match in Mesh`,
+      category: 'master_miss',
+    }
+  }
+  return { lineId: meshPartyLineId(clean), text: meshPartyMissText(clean), category: 'master_miss' }
+}
+
 function extractMeshDisplayName(item: NeedsAttentionItem): string | null {
   return item.text.match(/"([^"]+)"/)?.[1]?.trim() || null
 }
@@ -669,14 +721,14 @@ function lineFromFlag(code: string, message: string): LineHit | null {
       // Drop "raw name used / no master code" prose — Master miss already has the Cannot-match line.
       if (isRedundantRawNameMasterNote(message)) return null
       // A guard reporting it already acted is not a party anyone must add — see the constant.
-      if (GUARD_ALREADY_ACTED_RE.test(message.trim())) return null
+      if (isGuardAlreadyActed(message)) return null
       const hit = lineFromReason(message, message)
       if (hit && !hit.lineId.startsWith('reason:')) return hit
       // Fallback: still surface the raw message rather than a useless generic
       const snippet = message.trim()
       const quoted = extractQuotedParty(message)
       if (quoted) {
-        return { lineId: meshPartyLineId(quoted), text: meshPartyMissText(quoted), category: 'master_miss' }
+        return meshPartyHit(quoted)
       }
       /**
        * No party name in the message — so DO NOT invent one. This used to build an `m-party:` id
@@ -744,6 +796,12 @@ function lineFromReason(raw: string, humanized: string): LineHit | null {
   }
   // "Vendor name … raw name used" restates Master miss — never show under Other.
   if (isRedundantRawNameMasterNote(raw) || isRedundantRawNameMasterNote(humanized)) {
+    return null
+  }
+  // A guard reporting it already dealt with a party is a record of a decision, not a task. The same
+  // sentence arrives BOTH as a riskFlag (stopped in lineFromFlag) and as a reviewReason (stopped here);
+  // without this arm the reason copy fell through to `reason:*` and got quoted-party treatment.
+  if (isGuardAlreadyActed(raw) || isGuardAlreadyActed(humanized)) {
     return null
   }
   // Per-PO GW/measurement merge notes — hide from Needs attention.
@@ -933,11 +991,7 @@ function lineFromReason(raw: string, humanized: string): LineHit | null {
   {
     const party = raw.match(/^(\w+)\s+"([^"]+)"\s+did not exact-match a master/i)
     if (party) {
-      return {
-        lineId: meshPartyLineId(party[2]!),
-        text: meshPartyMissText(party[2]!),
-        category: 'master_miss',
-      }
+      return meshPartyHit(party[2]!)
     }
   }
   if (/did not exact(?:\/curated)?-match a port master/i.test(raw)) {
@@ -949,9 +1003,10 @@ function lineFromReason(raw: string, humanized: string): LineHit | null {
   }
   if (/did not exact-match a master/i.test(raw)) {
     const quoted = extractQuotedParty(raw)
+    if (quoted) return meshPartyHit(quoted)
     return {
-      lineId: quoted ? meshPartyLineId(quoted) : 'm-party',
-      text: quoted ? meshPartyMissText(quoted) : 'Party not found in Mesh Database — advise add in Mesh.',
+      lineId: 'm-party',
+      text: 'Party not found in Mesh Database — advise add in Mesh.',
       category: 'master_miss',
     }
   }
@@ -961,11 +1016,7 @@ function lineFromReason(raw: string, humanized: string): LineHit | null {
       /Cannot match "([^"]+)" in the (forwarder|customer|vendor|consignee) list/i,
     )
     if (listHit) {
-      return {
-        lineId: meshPartyLineId(listHit[1]!),
-        text: meshPartyMissText(listHit[1]!),
-        category: 'master_miss',
-      }
+      return meshPartyHit(listHit[1]!)
     }
   }
   if (
@@ -1101,11 +1152,7 @@ function lineFromReason(raw: string, humanized: string): LineHit | null {
   ) {
     const quoted = extractQuotedParty(raw)
     if (quoted) {
-      return {
-        lineId: meshPartyLineId(quoted),
-        text: meshPartyMissText(quoted),
-        category: 'master_miss',
-      }
+      return meshPartyHit(quoted)
     }
     return {
       lineId: 'm-mesh',
