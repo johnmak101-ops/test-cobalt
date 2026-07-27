@@ -230,13 +230,16 @@ describe('ReviewCard', () => {
       />,
     )
     expect(screen.getByTestId('why-review')).toBeInTheDocument()
-    // One open question → it becomes the headline and its line becomes the headline's subtext, so
-    // there is no "Also" list and no group wrapper to look in.
-    expect(screen.getByTestId('desk-question')).toHaveTextContent(/Is this the right shipment\?/i)
-    expect(screen.getByTestId('desk-question-detail')).toHaveTextContent(
-      /more than one booking\/SO\/B\/L number/,
-    )
-    expect(screen.queryByTestId('needs-attention-rest')).toBeNull()
+    // The TABLE owns the headline whenever it has rows — its conflict-class needs-attention lines are
+    // suppressed exactly then, so anything else on the leg would otherwise inherit the title.
+    expect(screen.getByTestId('desk-question')).toHaveTextContent(/Which values are correct\?/i)
+    expect(screen.getByTestId('desk-question-detail')).toHaveTextContent(/2 fields disagree/i)
+    // The which-shipment line is not lost — it follows under "Also".
+    expect(
+      within(screen.getByTestId('needs-attention-rest')).getByText(
+        /more than one booking\/SO\/B\/L number/,
+      ),
+    ).toBeInTheDocument()
     expect(screen.getByRole('table')).toBeInTheDocument()
   })
 
@@ -432,10 +435,9 @@ describe('ReviewCard', () => {
     )
     const why = screen.getByTestId('why-review')
     expect(screen.getByTestId('needs-attention')).toBeInTheDocument()
-    // PO-only + thin collapse into w-po-thin, whose question leads the card.
-    expect(screen.getByTestId('desk-question')).toHaveTextContent(
-      /Does this belong in tracking, and on this shipment\?/i,
-    )
+    // One contested row → the headline names THAT field. The PO-only/thin line moves under "Also",
+    // where it keeps the leg's Not-a-Shipment escape without titling a card about a Qty decision.
+    expect(screen.getByTestId('desk-question')).toHaveTextContent(/^Which .+ is correct\?$/i)
     // Conflict-class flags suppressed — table already shows Qty
     expect(within(why).queryByText(/Email disagrees with what is already stored/)).toBeNull()
     expect(within(why).queryByText(/3 field conflicts — values disagree/)).toBeNull()
@@ -884,7 +886,8 @@ describe('conflict table — read-only by default, Edit to change values', () =>
     // idle
     expect(screen.getByRole('button', { name: /^edit$/i })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /keep current/i })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /^approve$/i })).toBeInTheDocument()
+    // The primary now NAMES the value it writes rather than saying "Approve".
+    expect(screen.getByRole('button', { name: /^apply 2026-07-23$/i })).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: /^edit$/i }))
 
@@ -893,7 +896,7 @@ describe('conflict table — read-only by default, Edit to change values', () =>
     expect(screen.getByRole('button', { name: /^submit$/i })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /^edit$/i })).toBeNull()
     expect(screen.queryByRole('button', { name: /keep current/i })).toBeNull()
-    expect(screen.queryByRole('button', { name: /^approve$/i })).toBeNull()
+    expect(screen.queryByRole('button', { name: /^apply 2026-07-23$/i })).toBeNull()
   })
 
   it('the approve button names how many stored values it will overwrite', async () => {
@@ -911,7 +914,7 @@ describe('conflict table — read-only by default, Edit to change values', () =>
       </MemoryRouter>,
     )
     // One click, but a click that states what it accepts — not a bare "Approve".
-    const approve = screen.getByRole('button', { name: /^approve$/i })
+    const approve = screen.getByRole('button', { name: /^apply 2026-07-23$/i })
     expect(approve).not.toBeDisabled()
     await user.click(approve)
     expect(onSave.mock.calls[0][0].fields).toMatchObject({ eta: '2026-07-23' })
@@ -989,7 +992,8 @@ describe('embedded in the queue table — the row above already states identity'
     // ...but the detail the row cannot show is still here
     expect(screen.getByRole('table')).toBeInTheDocument()
     expect(screen.getByTestId('why-review')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /^approve$/i })).toBeInTheDocument()
+    // Two contested rows → no single value to name, so the count carries it.
+    expect(screen.getByRole('button', { name: /^apply 2 changes$/i })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /keep current/i })).toBeInTheDocument()
     // Not shipment is Documents-only (unlinked docs). Review queue has no dismiss path.
     expect(screen.queryByRole('button', { name: /not shipment/i })).toBeNull()
@@ -1293,7 +1297,9 @@ describe('qty live-leg settle on decision table', () => {
     expect(within(grid).getByText('Vendor Code')).toBeInTheDocument()
     // Qty settled — Approve must not double-count it as a second change. The label is now a plain
     // verb, so the count lives in the tooltip; assert there rather than losing the guard.
-    expect(screen.getByRole('button', { name: /^approve$/i })).toHaveAttribute(
+    // 'MACAU FUNG TAI LIMITED' is too long to print in a button, so the count carries it; the title
+    // still spells out what the click does.
+    expect(screen.getByRole('button', { name: /^apply 1 change$/i })).toHaveAttribute(
       'title',
       'Apply 1 change and confirm',
     )
@@ -1453,6 +1459,108 @@ describe('decision desk — ready state (no Critical for sailing band)', () => {
     expect(screen.getByTestId('review-judgment-only')).toHaveTextContent(
       /No field changes|confirm when verified/i,
     )
+  })
+})
+
+/**
+ * A multi-candidate row is the whole decision, and it used to be inert: three dead <div>s plus
+ * "3 candidates — pick one in Edit". The radios and their onChange already existed — the mode switch
+ * was the only thing between the operator and an answer already fully described on screen.
+ */
+describe('candidate picking happens where the candidates are', () => {
+  /** Vendor with three named candidates, one carrying a resolved master code. */
+  const vendorConflict: CriticConflict = {
+    field: 'vendor_code',
+    label: 'Vendor',
+    candidates: [
+      { value: '', source: 'system' },
+      { value: 'FENIX FASHION LIMITED', source: 'Draft BOL', master: { code: 'FEFALT' } },
+      { value: 'SHANGHAI JINGQINGRONG GARMENT CO LTD', source: 'SO', master: { code: 'JINGQI' } },
+      { value: 'SHANGHAI JINGRONG SCIENCE & TECHNOLOGY CO LTD', source: 'SO', master: { code: 'JINGSC' } },
+    ],
+    rationale: 'three co-current vendors in the thread',
+  } as CriticConflict
+
+  function renderVendor(over: { readOnly?: boolean } = {}) {
+    return render(
+      <MemoryRouter>
+        <ReviewCard
+          shipment={baseShipment({ reviewReasons: [] })}
+          criticReview={baseReview({ conflicts: [vendorConflict], riskFlags: [], reasons: [] })}
+          compact={null}
+          defaultExpanded
+          readOnly={over.readOnly}
+          onApprove={vi.fn().mockResolvedValue(undefined)}
+          onSaveAndApprove={vi.fn().mockResolvedValue(undefined)}
+          onWait={vi.fn()}
+        />
+      </MemoryRouter>,
+    )
+  }
+
+  it('candidates are radios without entering Edit, and the copy no longer sends you there', () => {
+    renderVendor()
+    expect(screen.getAllByRole('radio')).toHaveLength(3)
+    expect(screen.queryByText(/pick one in Edit/i)).toBeNull()
+    expect(screen.getByTestId('candidate-type-custom')).toBeInTheDocument()
+  })
+
+  it('Edit disappears — every contested row is now operable in place', () => {
+    renderVendor()
+    expect(screen.queryByRole('button', { name: /^edit$/i })).toBeNull()
+    // The one thing a cell cannot do still opens the editor.
+    expect(screen.getByTestId('candidate-type-custom')).toBeInTheDocument()
+  })
+
+  it('the headline names the contested field, not whatever else is on the leg', () => {
+    renderVendor()
+    expect(screen.getByTestId('desk-question')).toHaveTextContent(/Which Vendor Code is correct\?/i)
+    expect(screen.getByTestId('desk-question-detail')).toHaveTextContent(/3 candidates from the email/i)
+  })
+
+  it('the primary names the master code it writes, and picking another changes it', async () => {
+    const user = userEvent.setup()
+    renderVendor()
+    // Seeded with the agent's first candidate.
+    expect(screen.getByRole('button', { name: /^apply FEFALT$/i })).toBeInTheDocument()
+    await user.click(screen.getByRole('radio', { name: /JINGQINGRONG/i }))
+    expect(screen.getByRole('button', { name: /^apply JINGQI$/i })).toBeInTheDocument()
+  })
+
+  it('nothing stored → the decline button says Leave Blank, not Keep Current', () => {
+    renderVendor()
+    expect(screen.getByRole('button', { name: /^leave blank$/i })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /keep current/i })).toBeNull()
+  })
+
+  it('a pick applies without a note — choosing a candidate is not an override', async () => {
+    const user = userEvent.setup()
+    const onSave = vi.fn().mockResolvedValue(undefined)
+    render(
+      <MemoryRouter>
+        <ReviewCard
+          shipment={baseShipment({ reviewReasons: [] })}
+          criticReview={baseReview({ conflicts: [vendorConflict], riskFlags: [], reasons: [] })}
+          compact={null}
+          defaultExpanded
+          onSaveAndApprove={onSave}
+        />
+      </MemoryRouter>,
+    )
+    await user.click(screen.getByRole('radio', { name: /JINGRONG SCIENCE/i }))
+    await user.click(screen.getByRole('button', { name: /^apply JINGSC$/i }))
+    expect(onSave).toHaveBeenCalledTimes(1)
+    // vendor_code writes the editable raw twin (Mesh masters lag ~2 months); the picked master CODE is
+    // what lands there, which is also what the button named.
+    expect(onSave.mock.calls[0][0].fields).toMatchObject({ vendorRaw: 'JINGSC' })
+    expect(onSave.mock.calls[0][0].note).toBe('')
+  })
+
+  it('resolved history keeps the list inert — no radios, no custom-value link', () => {
+    renderVendor({ readOnly: true })
+    expect(screen.queryAllByRole('radio')).toHaveLength(0)
+    expect(screen.queryByTestId('candidate-type-custom')).toBeNull()
+    expect(screen.getByTestId('multi-candidate-proposed')).toBeInTheDocument()
   })
 })
 
