@@ -1674,6 +1674,57 @@ export function looksLikeIata(value: string | null | undefined): boolean {
  * slot: an unlinked slot renders its raw value, so a line quoting that raw is about
  * that slot and no other.
  */
+/**
+ * Party slots already LINKED to a Mesh master, carrying that master's name.
+ *
+ * The twin of PortsLinked, for the same failure: a miss line that outlived the resolution it describes.
+ * On leg BDB973EA the desk said `Cannot match "WHISTLES" in the customer list. Please add it in Cobalt
+ * Fashion Data Mesh System` while the leg's customer was already linked to `WLTD WHISTLES LIMITED` —
+ * the NAME did not exact-match, but the CODE resolved, and only the name half left a note behind. Ops
+ * were being told to create a master that exists and that this very shipment already points at.
+ *
+ * Only slots the DTO can prove are linked belong here; an unset slot never drops a line.
+ */
+export type PartiesLinked = {
+  customer?: string | null
+  forwarder?: string | null
+  vendor?: string | null
+  consignee?: string | null
+}
+
+export type PartySlot = keyof PartiesLinked
+
+/** Strip everything but letters and digits — "Land's End" and "LANDS END" are one company. */
+function companyKey(s: string): string {
+  return String(s ?? '').toUpperCase().replace(/[^\p{L}\p{N}]/gu, '')
+}
+
+/**
+ * The same company written shorter or longer: `WHISTLES` vs `WHISTLES LIMITED`, `Land's End` vs
+ * `LANDS END EUROPE LIMITED`. A prefix relation, floored at 4 characters so short codes cannot collide
+ * by accident.
+ *
+ * Deliberately NOT a fuzzy score. It has one job — decide whether a miss line describes the company the
+ * slot already resolved to — and it must say no for a genuinely different entity. `Ligentia China Ltd.`
+ * against a linked `LIGENTIA ASIA LTD` is not a prefix either way, so that line correctly survives.
+ */
+export function isSameCompanyName(a: string | null | undefined, b: string | null | undefined): boolean {
+  const x = companyKey(a ?? '')
+  const y = companyKey(b ?? '')
+  if (!x || !y) return false
+  if (x === y) return true
+  const [short, long] = x.length <= y.length ? [x, y] : [y, x]
+  return short.length >= 4 && long.startsWith(short)
+}
+
+/** Which party slot a miss line is about, read from the prose that produced it. */
+export function partyMissSlot(raw: string): PartySlot | null {
+  const inList = raw.match(/in the (forwarder|customer|vendor|consignee) list/i)?.[1]
+  if (inList) return inList.toLowerCase() as PartySlot
+  const field = raw.match(/\b(forwarder|customer|vendor|consignee)_(?:name|code)\b/i)?.[1]
+  return field ? (field.toLowerCase() as PartySlot) : null
+}
+
 export type PortsLinked = {
   pol?: boolean
   pod?: boolean
@@ -1775,6 +1826,11 @@ export function buildNeedsAttention(opts: {
   /** When true, r-no-id uses only-PO copy (card has linked PO numbers). Default false. */
   hasPo?: boolean
   /**
+   * Party slots already linked to a master. A miss line naming a slot that resolved — to the same
+   * company, written longer — is stale and is dropped, exactly as a port miss is. See PartiesLinked.
+   */
+  partiesLinked?: PartiesLinked | null
+  /**
    * A strong key from the email (HBL / MBL / booking no.) already names THIS leg, so the
    * "which shipment is this?" family has been answered and must not be asked again.
    *
@@ -1792,6 +1848,24 @@ export function buildNeedsAttention(opts: {
    * resolved, so a genuine POD miss survives on a leg with a good POL. A line we
    * cannot attribute to either slot keeps the older any-slot rule.
    */
+  const parties: PartiesLinked = opts.partiesLinked ?? {}
+  /**
+   * This line's slot already resolved to the very company it is complaining about. The name half of
+   * matching failed while the code half succeeded, and only the failure left a note — so the desk kept
+   * asking ops to add a master the shipment was already pointing at.
+   *
+   * Keyed on the RAW prose because that is where the slot is named ("in the customer list").
+   */
+  const dropResolvedPartyMiss = (hit: { lineId: string; text: string }, raw: string): boolean => {
+    if (!hit.lineId.startsWith('m-party:')) return false
+    const slot = partyMissSlot(raw)
+    if (!slot) return false
+    const linked = parties[slot]
+    if (!linked) return false
+    const missed = extractQuotedParty(raw) ?? hit.text.match(/"([^"]+)"/)?.[1] ?? ''
+    return isSameCompanyName(missed, linked)
+  }
+
   const dropPortMiss = (hit: { lineId: string; text: string }): boolean => {
     if (!anyPortLinked || !isPortMissLine(hit)) return false
     const field = portMissField(hit, ports)
@@ -1814,6 +1888,7 @@ export function buildNeedsAttention(opts: {
     // A strong key settled which shipment this is — do not ask it again.
     if (hit.category === 'multi_id' && opts.identityPinned) continue
     if (dropPortMiss(hit)) continue
+    if (dropResolvedPartyMiss(hit, f.message!)) continue
     const text = hit.lineId === 'r-no-id' ? weakIdentityText(!!opts.hasPo) : hit.text
     pushUnique(byLine, {
       key: `flag-${f.code}-${i}`,
@@ -1836,6 +1911,7 @@ export function buildNeedsAttention(opts: {
     // A strong key settled which shipment this is — do not ask it again.
     if (hit.category === 'multi_id' && opts.identityPinned) continue
     if (dropPortMiss(hit)) continue
+    if (dropResolvedPartyMiss(hit, raw)) continue
     // Drop reason if a flag already explained that category (and line not more specific)
     if (explained.has(hit.category) && !hit.lineId.startsWith('m-port:') && !hit.lineId.startsWith('m-party:')) {
       // Still allow master detail lines with quoted values when only generic party flag present
@@ -1881,6 +1957,11 @@ export function buildNeedsAttentionGroups(opts: {
   portsLinked?: PortsLinked | null
   /** When true, r-no-id uses only-PO copy (card has linked PO numbers). Default false. */
   hasPo?: boolean
+  /**
+   * Party slots already linked to a master. A miss line naming a slot that resolved — to the same
+   * company, written longer — is stale and is dropped, exactly as a port miss is. See PartiesLinked.
+   */
+  partiesLinked?: PartiesLinked | null
   /**
    * A strong key from the email (HBL / MBL / booking no.) already names THIS leg, so the
    * "which shipment is this?" family has been answered and must not be asked again.
