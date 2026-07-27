@@ -2,6 +2,18 @@
 
 export type Band = 'low' | 'medium' | 'high'
 
+/**
+ * `source` on a candidate the backend synthesised from MASTER DATA rather than from an email
+ * (presentation/party-mismatch-conflict.ts — the raw party twin disagreeing with its resolved
+ * master). Keep the literal in step with that module: the desk words its question differently for
+ * these, because "the email proposes…" is simply untrue of a row no email ever stated.
+ */
+export const MASTER_DATA_SOURCE = 'Master data'
+
+export function isMasterDataSource(source: string | null | undefined): boolean {
+  return String(source ?? '').trim().toLowerCase() === MASTER_DATA_SOURCE.toLowerCase()
+}
+
 export interface CriticConflict {
   field: string
   label: string

@@ -240,7 +240,7 @@ export interface UiShipment {
  * normalized exact), or for a letterless numeric leak (isNonPartyName twin — a PO number in a
  * party field is not a company statement).
  */
-function partyMismatch(
+export function partyMismatch(
   raw: string | null | undefined,
   master: MasterRef | null | undefined,
 ): PartyMismatch | null {

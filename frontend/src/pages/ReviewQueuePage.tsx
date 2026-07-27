@@ -1,5 +1,5 @@
 import { Fragment, useMemo, useReducer, useState } from 'react'
-import { useLocation, useNavigate } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { CheckCircle, Clock, Ship, Package, Loader2, RotateCcw } from 'lucide-react'
 import {
   useReviewQueue,
@@ -199,6 +199,9 @@ export default function ReviewQueuePage() {
   const [busyId, setBusyId] = useState<string | null>(null)
 
   const shipments = useMemo(() => data?.shipments ?? [], [data?.shipments])
+  /** Legs the backend kept off the desk because they had nothing left to decide (auto-clear.ts). */
+  const autoCleared = useMemo(() => data?.autoCleared ?? [], [data?.autoCleared])
+  const [autoClearedOpen, setAutoClearedOpen] = useState(false)
 
   const { totalItems, totalPages, pageSize, getPage } = usePagination(shipments, perPage)
   const pageShipments = getPage(page)
@@ -340,6 +343,50 @@ export default function ReviewQueuePage() {
           </button>
         ))}
       </div>
+
+      {/* Legs that never reached the desk because nothing was left to decide. Announced rather than
+          dropped silently — a queue that quietly shrinks is one nobody trusts. Nothing was written,
+          so any of these returns by itself the moment a new email puts a real conflict on it. */}
+      {autoCleared.length > 0 && (
+        <div
+          className="rounded-lg border border-border border-l-[3px] border-l-status-success bg-surface-800 px-3 py-2.5"
+          data-testid="auto-cleared"
+        >
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+            <span className="text-sm font-semibold text-text-primary">
+              {autoCleared.length} leg{autoCleared.length === 1 ? '' : 's'} cleared {autoCleared.length === 1 ? 'itself' : 'themselves'}
+            </span>
+            <span className="min-w-0 flex-1 text-xs text-text-secondary">
+              Nothing was left to decide — {autoCleared[0]!.why}.
+            </span>
+            <button
+              type="button"
+              onClick={() => setAutoClearedOpen((v) => !v)}
+              aria-expanded={autoClearedOpen}
+              className="rounded-lg border border-border px-2.5 py-1 text-[11px] font-medium text-text-secondary transition-colors hover:bg-surface-700 hover:text-text-primary"
+              data-testid="auto-cleared-toggle"
+            >
+              {autoClearedOpen ? 'Hide' : 'Show them'}
+            </button>
+          </div>
+          {autoClearedOpen && (
+            <ul className="mt-2 space-y-1 border-t border-border pt-2" data-testid="auto-cleared-list">
+              {autoCleared.map((c) => (
+                <li key={c.id} className="flex flex-wrap items-baseline gap-x-2 text-xs">
+                  <Link
+                    to={`/review-queue/${c.id}`}
+                    className="font-mono text-cobalt-primary-light hover:underline"
+                  >
+                    {c.bookingNo?.trim() || c.id.slice(0, 8)}
+                  </Link>
+                  {c.customer && <span className="text-text-secondary">{c.customer}</span>}
+                  <span className="text-text-muted">{c.why}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
 
       {isLoading ? (
         <div className="flex h-64 items-center justify-center">

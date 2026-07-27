@@ -161,6 +161,10 @@ describe('ShipmentReviewFocusPage', () => {
     const user = userEvent.setup()
     mockUseShipment.mockReturnValue({
       data: fixture({
+        // Genuinely thin — no identifier and no route. A leg carrying a booking number and a route
+        // is a shipment whatever the reason text says, and now takes the working shape (no reject).
+        bookingNo: null,
+        route: null,
         reviewReasons: [
           'no booking/SO/HBL identity and no lifecycle email type — verify this is a real shipment',
         ],

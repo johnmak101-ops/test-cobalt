@@ -46,8 +46,23 @@ export interface ReviewShipment {
   waitingReason?: string | null
 }
 
+/**
+ * A leg the desk did not show because nothing was left to decide — every flagged value already
+ * matches the shipment (backend: presentation/auto-clear.ts). Reported rather than dropped silently,
+ * so "why is this not in my queue?" always has an answer.
+ */
+export interface AutoClearedLeg {
+  id: string
+  bookingNo: string | null
+  customer: string | null
+  /** Plain-language grounds, e.g. "the one flagged value already matches the shipment". */
+  why: string
+}
+
 interface ReviewQueueResponse {
   shipments: ReviewShipment[]
+  /** Active view only; absent on the history tabs. */
+  autoCleared?: AutoClearedLeg[]
 }
 
 export interface ReviewCounts {
