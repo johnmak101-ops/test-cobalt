@@ -1641,6 +1641,69 @@ describe('a leg parsed out of a spreadsheet header row', () => {
 })
 
 /**
+ * Phase ①: the queue offers candidates ShipTrack's committer would refuse — a different B/L is a
+ * different shipment. 54 of 62 offered candidates were in that state, so the picker disappears on 12
+ * of 13 legs. That must not be silent.
+ */
+describe('candidates the committer would refuse are explained, not silently dropped', () => {
+  function renderRefused(refusedCandidates: unknown[], withPicker = false) {
+    return render(
+      <MemoryRouter>
+        <ReviewCard
+          shipment={baseShipment({ reviewReasons: [] })}
+          criticReview={baseReview({
+            conflicts: [],
+            reasons: [],
+            riskFlags: [],
+            refusedCandidates,
+            ...(withPicker
+              ? {
+                  matchAmbiguity: {
+                    kind: 'multi_candidate',
+                    candidates: [{ shipmentId: 'a' }, { shipmentId: 'b' }],
+                  },
+                }
+              : {}),
+          } as never)}
+          compact={null}
+          defaultExpanded
+          onApprove={vi.fn()}
+          onLink={vi.fn()}
+        />
+      </MemoryRouter>,
+    )
+  }
+
+  it('says how many were refused and on which identifier', () => {
+    renderRefused([
+      { shipmentId: 'x1', onKey: 'hbl_awb_fcr_no', emailValue: 'FCR001379073', candidateValue: 'FCR001378583' },
+      { shipmentId: 'x2', onKey: 'hbl_awb_fcr_no', emailValue: 'FCR001379073', candidateValue: 'FCR001378650' },
+    ])
+    expect(screen.getByTestId('refused-candidates')).toHaveTextContent(
+      /2 similar shipments matched, but they state a different B\/L — not offered/i,
+    )
+  })
+
+  it('uses the operator’s word for the clashing key', () => {
+    renderRefused([{ shipmentId: 'x1', onKey: 'booking_no', emailValue: 'BK-9', candidateValue: 'BK-8' }])
+    expect(screen.getByTestId('refused-candidates')).toHaveTextContent(
+      /1 similar shipment matched, but it states a different booking number/i,
+    )
+  })
+
+  /** With a picker still up the panel speaks for itself; the note would be a second voice. */
+  it('stays quiet while a picker is still shown', () => {
+    renderRefused([{ shipmentId: 'x1', onKey: 'hbl_awb_fcr_no', emailValue: 'A', candidateValue: 'B' }], true)
+    expect(screen.queryByTestId('refused-candidates')).toBeNull()
+  })
+
+  it('nothing refused → no note', () => {
+    renderRefused([])
+    expect(screen.queryByTestId('refused-candidates')).toBeNull()
+  })
+})
+
+/**
  * Identity is settled by what the COMMITTER did, never by comparing the email's key to the leg's.
  *
  * The earlier rule did exactly that and was circular: when the committer CREATES a leg from an email,

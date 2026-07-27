@@ -87,6 +87,18 @@ export interface CriticReview {
   reasons: string[]
   /** #129 closed-set candidates when email matched ≥2 legs */
   matchAmbiguity?: MatchAmbiguity
+  /**
+   * Candidates the QUEUE offered that ShipTrack's committer would refuse to amend — each states a
+   * different value for an identity type the email also states, so it is a different shipment
+   * (`strongKeysConflict`). Attached on read, never stored: it is a reconciliation between two
+   * matchers, and either side can change. See shipments/candidate-reconcile.ts.
+   */
+  refusedCandidates?: {
+    shipmentId: string
+    onKey: string
+    emailValue: string
+    candidateValue: string
+  }[]
   /** Desk membership shadow: queue would auto-commit if OPENPAVE_DESK_MEMBERSHIP=on */
   wouldBeAuto?: boolean
   /** On-mode desk flip (audit; never wire-identical to a clean gate auto) */
