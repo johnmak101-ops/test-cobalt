@@ -97,6 +97,8 @@ function isSystemSource(source: string): boolean {
  */
 export type ResolveSourceEmail = (
   sourceEmailId: string | null | undefined,
+  /** The candidate's value — the evidence panel highlights it in the email body. */
+  candidateValue?: string | null,
 ) => { open: () => void; title: string } | null
 
 // The inline SourceEmailIcon is gone — it sat after the value text where it read as punctuation.
@@ -456,7 +458,7 @@ function SourceEmailCell({
   return (
     <ul className="space-y-1" aria-label="Source email per proposed candidate">
       {candidates.map((c) => {
-        const link = resolve?.(c.sourceEmailId) ?? null
+        const link = resolve?.(c.sourceEmailId, c.value) ?? null
         return (
           <li key={`${c.sourceEmailId ?? ''}\0${c.source}\0${c.value}`}>
             {/*
