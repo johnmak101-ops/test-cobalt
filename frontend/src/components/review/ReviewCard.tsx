@@ -10,11 +10,14 @@ import {
   isCandidateResolution,
   proposedResolutionOf,
   proposedValueOf,
+  splitCandidates,
 } from './ConflictRow'
 import {
   fieldUnit,
   groupConflictFields,
+  isPortColumn,
   mapCriticFieldToColumn,
+  reviewFieldLabel,
   isNumericColumn,
   normalizeNumericInput,
   parseStyleEntries,
@@ -41,7 +44,7 @@ import type { LinkedPO, ShipmentDetail } from '../../hooks/use-shipments'
 import { cn, formatDateTime } from '../../lib/utils'
 import { parseSender } from '../../lib/email-sender'
 import { buildNeedsAttentionGroups, isExpandableMiss, portsLinkedFromRoute } from './needs-attention'
-import { pickDeskQuestion } from './desk-question'
+import { conflictDeskQuestion, pickDeskQuestion } from './desk-question'
 import { NeedsAttentionMeshMiss } from './NeedsAttentionMeshMiss'
 import {
   REVIEW_COL,
@@ -348,8 +351,44 @@ export function ReviewCard({
     [needsAttentionGroups],
   )
   const poNeedsReview = poProposalCount > 0 || poQuestionOpen
-  /** The leading open question + the words that answer it (see desk-question.ts). */
-  const deskPick = useMemo(() => pickDeskQuestion(needsAttentionGroups), [needsAttentionGroups])
+
+  /**
+   * The leading open question + the words that answer it (see desk-question.ts).
+   *
+   * The TABLE wins when it has rows. It has to: the conflict-class needs-attention lines are dropped
+   * exactly when the grid owns the comparison, so whatever else was on the leg inherited the headline —
+   * a Mesh-miss FYI ended up titling a card whose real decision was which of three vendors to write.
+   * The needs-attention pick still supplies the reject wording, so a leg that is BOTH a field fight and
+   * a "is this freight?" question keeps its Not-a-Shipment escape.
+   */
+  const naPick = useMemo(() => pickDeskQuestion(needsAttentionGroups), [needsAttentionGroups])
+  const contestedFields = useMemo(
+    () =>
+      conflicts.map((c) => ({
+        label: reviewFieldLabel(c.field, c.label),
+        candidateCount: splitCandidates(c).proposed.length,
+        currentEmpty: existingValue(c).trim() === '',
+      })),
+    [conflicts],
+  )
+  const deskPick = useMemo(() => {
+    const fromTable = conflictDeskQuestion(contestedFields)
+    if (fromTable) {
+      return {
+        question: { ...fromTable.question, reject: naPick?.question.reject ?? null },
+        detailText: fromTable.detail,
+        detailItem: null,
+        rest: needsAttentionGroups,
+      }
+    }
+    if (!naPick) return null
+    return {
+      question: naPick.question,
+      detailText: null,
+      detailItem: naPick.primary,
+      rest: naPick.rest,
+    }
+  }, [contestedFields, naPick, needsAttentionGroups])
   /** Note starts collapsed; it opens itself the moment a note is actually owed (see showNoteField). */
   const [noteOpen, setNoteOpen] = useState(false)
 
@@ -537,12 +576,52 @@ export function ReviewCard({
     [conflicts, resolutions],
   )
   /**
-   * Edit only when the desk has something editable: contested fields, or a PO the agent has a proposal
-   * for. It used to fire on `linkedPOs.length > 0`, which meant it rendered on cards whose only content
-   * was a question about whether the leg is freight at all — and its one effect there was to open PO
-   * editing. That is the shipment page's job, by the same argument that took the PO grid off this desk.
+   * What the primary button will WRITE, when that is one nameable thing. A bare "Approve" made the
+   * operator trust that the highlighted candidate was the one being taken; `Apply FEFALT` says it.
+   *
+   * The value is already the resolution value, i.e. the master CODE for a resolved party pick — which
+   * is exactly the short token worth printing (FEFALT, a date, a container number). Anything longer
+   * than that is a company name or an address, and `Apply MACAU FUNG TAI LI…` cut mid-word reads worse
+   * than the count it replaced, so those fall back to `Apply 1 Change`. The full detail is in the title.
    */
-  const showEdit = !readOnly && (conflicts.length > 0 || poNeedsReview)
+  const applyToken = useMemo(() => {
+    const values = Object.values(fieldsToApply)
+    if (values.length !== 1) return null
+    const raw = String(values[0] ?? '').trim()
+    if (!raw || raw.length > 14) return null
+    return raw
+  }, [fieldsToApply])
+  /** Nothing is stored on any contested row, so "keep what is there" means leaving it blank — say so. */
+  const keepMeansBlank = useMemo(
+    () => conflicts.length > 0 && conflicts.every((c) => existingValue(c).trim() === ''),
+    [conflicts],
+  )
+  /**
+   * A contested row already operable in place: more than one candidate, so its cell carries the radios
+   * AND its own "Type a different value" way into the editor. Ports are excluded — they render a
+   * PortPicker, which still needs edit mode.
+   */
+  const allConflictsSelfServe = useMemo(
+    () =>
+      conflicts.length > 0 &&
+      conflicts.every((c) => {
+        const col = mapCriticFieldToColumn(c.field)
+        return col != null && !isPortColumn(col) && splitCandidates(c).proposed.length > 1
+      }),
+    [conflicts],
+  )
+  /**
+   * Edit only when the desk has something editable that the cells cannot already do: contested rows
+   * that need the editor, or a PO the agent has a proposal for.
+   *
+   * It used to fire on `linkedPOs.length > 0`, so it rendered on cards whose only content was a
+   * question about whether the leg is freight at all — where its one effect was opening PO editing,
+   * which is the shipment page's job. And when every contested row is a candidate pick, Edit was
+   * merely the gate in front of an answer already on screen; the pick moved into the cell, so the
+   * button has nothing left to offer.
+   */
+  const showEdit =
+    !readOnly && ((conflicts.length > 0 && !allConflictsSelfServe) || poNeedsReview)
   /** Edit mode as the GRID sees it — read-only history never edits, whatever `editing` says. */
   const gridEditing = editing && !readOnly
   const deskEmpty = needsAttentionGroups.length === 0 && conflicts.length === 0
@@ -747,7 +826,9 @@ export function ReviewCard({
               or any non-provisional shipment) it has been answered, so it stops being shown rather
               than following the leg around as history. The reasons stay on the leg and in the
               shipment history; only the prompt goes. */}
-          {!readOnly && needsAttentionGroups.length > 0 && (
+          {/* Also renders for a conflicts-only leg now: the headline comes from the table there, and
+              without this the card would show a grid with no statement of what it is asking. */}
+          {!readOnly && deskPick != null && (
             <div
               className={cn(
                 REVIEW_PANEL,
@@ -773,20 +854,29 @@ export function ReviewCard({
                   {deskPick?.question.question ?? 'Needs Attention'}
                 </p>
 
-                {deskPick &&
-                  (isExpandableMiss(deskPick.primary) ? (
+                {deskPick?.detailItem &&
+                  (isExpandableMiss(deskPick.detailItem) ? (
                     <ul className="mt-1">
-                      <NeedsAttentionMeshMiss item={deskPick.primary} />
+                      <NeedsAttentionMeshMiss item={deskPick.detailItem} />
                     </ul>
                   ) : (
                     <p
                       className={`mt-0.5 ${REVIEW_FS.body} text-text-secondary`}
-                      title={deskPick.primary.evidence?.join(' · ') || undefined}
+                      title={deskPick.detailItem.evidence?.join(' · ') || undefined}
                       data-testid="desk-question-detail"
                     >
-                      {deskPick.primary.text}
+                      {deskPick.detailItem.text}
                     </p>
                   ))}
+
+                {deskPick?.detailText && (
+                  <p
+                    className={`mt-0.5 ${REVIEW_FS.body} text-text-secondary`}
+                    data-testid="desk-question-detail"
+                  >
+                    {deskPick.detailText}
+                  </p>
+                )}
 
                 {(deskPick?.rest.length ?? 0) > 0 && (
                   <div className="mt-2.5 border-t border-border pt-2" data-testid="needs-attention-rest">
@@ -1281,12 +1371,20 @@ export function ReviewCard({
                     title={
                       multiCandNeedsTarget
                         ? 'Link into selected shipment without applying AI field proposals'
-                        : 'Confirm shipment and keep Existing values — do not apply AI Proposed'
+                        : keepMeansBlank
+                          ? 'Confirm shipment and leave these fields empty — do not apply AI Proposed'
+                          : 'Confirm shipment and keep Existing values — do not apply AI Proposed'
                     }
                     className={cn(ACTION_BTN, ACTION_VARIANT.success)}
                   >
                     {busy && <Loader2 size={13} className="animate-spin" />}
-                    {multiCandNeedsTarget ? 'Link Without Field Changes' : 'Keep Current'}
+                    {multiCandNeedsTarget
+                      ? 'Link Without Field Changes'
+                      : /* "Keep Current" over an empty Current promises to keep something that is not
+                           there. What the click actually does is decline every candidate. */
+                        keepMeansBlank
+                        ? 'Leave Blank'
+                        : 'Keep Current'}
                   </button>
                 )}
                 {(onSaveAndApprove || onApprove || multiCandNeedsTarget) && (
@@ -1315,7 +1413,12 @@ export function ReviewCard({
                           ? `Link & Apply ${changeCount} Change${changeCount === 1 ? '' : 's'}`
                           : 'Link & Apply'
                         : changeCount > 0
-                          ? 'Approve'
+                          ? /* Name the value, not the ceremony: "Apply FEFALT" over a bare "Approve",
+                               which made the operator trust that the highlighted candidate was the one
+                               being taken. Plural falls back to the count. */
+                            applyToken
+                            ? `Apply ${applyToken}`
+                            : `Apply ${changeCount} Change${changeCount === 1 ? '' : 's'}`
                           : /* Nothing to apply, so the label answers the headline instead ("Yes — Track
                                It" under "Is this a real shipment?"). Falls back to Confirm Reviewed when
                                the leg asks nothing nameable. Never "Keep Current": nothing is being kept

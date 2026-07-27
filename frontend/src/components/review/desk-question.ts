@@ -118,6 +118,57 @@ const QUESTION_BY_GROUP: Record<NeedsAttentionGroupId, DeskQuestion> = {
   },
 }
 
+/** One contested row, reduced to what the headline needs to know about it. */
+export type ContestedFieldSummary = {
+  /** The row's display label, as the grid prints it ("Vendor Code"). */
+  label: string
+  /** Non-system candidates offered for it. >1 means the operator picks. */
+  candidateCount: number
+  /** Nothing stored yet, so "keep what is there" means leaving it blank. */
+  currentEmpty: boolean
+}
+
+/**
+ * The question the TABLE is asking.
+ *
+ * Needed because the conflict-class needs-attention lines are suppressed exactly when the grid has
+ * rows ("the table owns the comparison"). That left whatever else happened to be on the leg to supply
+ * the headline — so a card whose real decision was "which of these three vendors" was titled
+ * "Who are these parties?" after a Mesh-miss FYI, and the FYI outranked the decision.
+ *
+ * Returns null when nothing is contested, and the needs-attention question leads instead.
+ */
+export function conflictDeskQuestion(
+  fields: ContestedFieldSummary[],
+): { question: DeskQuestion; detail: string } | null {
+  if (fields.length === 0) return null
+
+  if (fields.length > 1) {
+    return {
+      question: { question: 'Which values are correct?', affirm: 'Confirm Reviewed', reject: null },
+      detail: `${fields.length} fields disagree — settle each row below.`,
+    }
+  }
+
+  const f = fields[0]!
+  const keepClause = f.currentEmpty ? 'or leave it blank' : 'or keep the current value'
+  return {
+    question: {
+      question: `Which ${f.label} is correct?`,
+      // changeCount > 0 replaces this with the value it would write ("Apply FEFALT"); this wording is
+      // only reached when the resolution matches what is already stored.
+      affirm: 'Confirm Reviewed',
+      // A field fight is not answered by throwing the leg away. If the leg ALSO carries a
+      // "is this freight?" line, the caller keeps that line's reject wording.
+      reject: null,
+    },
+    detail:
+      f.candidateCount > 1
+        ? `${f.candidateCount} candidates from the email — pick one below, ${keepClause}.`
+        : `The email proposes a different ${f.label} — apply it, ${keepClause}.`,
+  }
+}
+
 const SEVERITY_RANK: Record<string, number> = { high: 3, medium: 2, low: 1 }
 
 export type DeskQuestionPick = {

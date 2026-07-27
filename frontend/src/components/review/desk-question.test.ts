@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { pickDeskQuestion } from './desk-question'
+import { conflictDeskQuestion, pickDeskQuestion } from './desk-question'
 import { buildNeedsAttentionGroups, type NeedsAttentionGroup } from './needs-attention'
 
 function groups(
@@ -86,5 +86,45 @@ describe('pickDeskQuestion', () => {
     ])
     expect(pick?.question.question).toBe('Needs Attention')
     expect(pick?.question.reject).toBeNull()
+  })
+})
+
+/**
+ * The table's question. It has to outrank the needs-attention pick, because the conflict-class lines
+ * are suppressed exactly when the grid owns the comparison — leaving whatever else was on the leg to
+ * title a card whose real decision was in the grid.
+ */
+describe('conflictDeskQuestion', () => {
+  it('nothing contested → null, so the needs-attention question leads', () => {
+    expect(conflictDeskQuestion([])).toBeNull()
+  })
+
+  it('one contested field names THAT field and counts its candidates', () => {
+    const q = conflictDeskQuestion([
+      { label: 'Vendor Code', candidateCount: 3, currentEmpty: true },
+    ])
+    expect(q?.question.question).toBe('Which Vendor Code is correct?')
+    expect(q?.detail).toMatch(/3 candidates from the email/i)
+    // Nothing stored, so declining means leaving it empty — say that, not "keep the current value".
+    expect(q?.detail).toMatch(/leave it blank/i)
+  })
+
+  it('a stored value changes the decline wording', () => {
+    const q = conflictDeskQuestion([{ label: 'ETA', candidateCount: 1, currentEmpty: false }])
+    expect(q?.detail).toMatch(/keep the current value/i)
+    expect(q?.detail).not.toMatch(/candidates/i)
+  })
+
+  it('several contested fields fall back to the count', () => {
+    const q = conflictDeskQuestion([
+      { label: 'ETA', candidateCount: 1, currentEmpty: false },
+      { label: 'HBL', candidateCount: 2, currentEmpty: true },
+    ])
+    expect(q?.question.question).toBe('Which values are correct?')
+    expect(q?.detail).toMatch(/2 fields disagree/i)
+  })
+
+  it('never offers a reject of its own — a field fight is not answered by binning the leg', () => {
+    expect(conflictDeskQuestion([{ label: 'ETA', candidateCount: 2, currentEmpty: false }])?.question.reject).toBeNull()
   })
 })
