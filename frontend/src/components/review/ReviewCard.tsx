@@ -39,6 +39,7 @@ import {
   type CriticReviewCompact,
 } from '../../lib/critic-review'
 import { CandidateLegsPanel } from './CandidateLegsPanel'
+import { EvidencePanel } from './EvidencePanel'
 import { ReviewPoStylesSection, proposedStyleForPo } from './ReviewPoStylesSection'
 import type { ReviewShipment } from '../../hooks/use-review-queue'
 import type { LinkedPO, ShipmentDetail } from '../../hooks/use-shipments'
@@ -560,18 +561,23 @@ export function ReviewCard({
    * was wiped. `source` alone ('Final B/L') would only narrow it to a document TYPE, and a thread
    * routinely holds several of the same type, so matching on the id is what keeps this honest.
    */
+  /** Which value's provenance is open, if any. */
+  const [evidence, setEvidence] = useState<{ emailId: string; value: string } | null>(null)
   const resolveSourceEmail = useMemo(() => {
     const byGraphId = new Map<string, ReviewEmail>()
     for (const e of emails) {
       if (e.graphMessageId && e.id && !e.bodyMissing) byGraphId.set(e.graphMessageId, e)
     }
-    return (sourceEmailId: string | null | undefined) => {
+    return (sourceEmailId: string | null | undefined, candidateValue?: string | null) => {
       if (!sourceEmailId) return null
       const em = byGraphId.get(sourceEmailId)
-      if (!em) return null
+      if (!em?.id) return null
       return {
-        open: () => openEmailWindow(em),
-        title: `Open the source email — ${em.subject}`,
+        // Opens INSIDE the card. It used to launch a chrome-less pop-up, which meant leaving the card
+        // to read the mail and carrying the value back in your head — and it landed at the top of the
+        // message with no sign of which line the value came off.
+        open: () => setEvidence({ emailId: em.id!, value: String(candidateValue ?? '').trim() }),
+        title: `Show where this came from — ${em.subject}`,
       }
     }
   }, [emails])
@@ -1460,6 +1466,15 @@ export function ReviewCard({
               </div>
             )
           })()}
+
+          {/* Directly under the grid whose ✉ opened it, so the row and its evidence read together. */}
+          {evidence && (
+            <EvidencePanel
+              emailId={evidence.emailId}
+              value={evidence.value}
+              onClose={() => setEvidence(null)}
+            />
+          )}
 
           {/* Blocks Save, so it is never inside the collapsible note — a disabled primary button with
               its reason hidden behind a disclosure is a dead end. */}

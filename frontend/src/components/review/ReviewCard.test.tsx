@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest'
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ReviewCard } from './ReviewCard'
 import type { CriticConflict, CriticReview, CriticReviewCompact } from '../../lib/critic-review'
 import type { ReviewShipment } from '../../hooks/use-review-queue'
@@ -577,30 +578,32 @@ describe('ReviewCard', () => {
       rationale: 'Two emails disagree.',
     }
     render(
-      <MemoryRouter>
-        <ReviewCard
-          shipment={baseShipment()}
-          criticReview={baseReview({ conflicts: [conflict] })}
-          compact={compact}
-          defaultExpanded
-          emails={[
-            { id: 'db-uuid-1', graphMessageId: 'gmid-known', subject: 'SO for GZL', sender: null },
-          ]}
-          onSaveAndApprove={vi.fn()}
-        />
-      </MemoryRouter>,
+      /* The evidence panel fetches the body + attachments, so this render needs a query client. */
+      <QueryClientProvider client={new QueryClient()}>
+        <MemoryRouter>
+          <ReviewCard
+            shipment={baseShipment()}
+            criticReview={baseReview({ conflicts: [conflict] })}
+            compact={compact}
+            defaultExpanded
+            emails={[
+              { id: 'db-uuid-1', graphMessageId: 'gmid-known', subject: 'SO for GZL', sender: null },
+            ]}
+            onSaveAndApprove={vi.fn()}
+          />
+        </MemoryRouter>
+      </QueryClientProvider>,
     )
     // one icon: the known email. The unmatched candidate and the System side get none.
     const icons = screen.getAllByTestId('candidate-source-email')
     expect(icons).toHaveLength(1)
-    expect(icons[0]).toHaveAttribute('title', 'Open the source email — SO for GZL')
+    expect(icons[0]).toHaveAttribute('title', 'Show where this came from — SO for GZL')
 
+    // Opens INSIDE the card now. It used to launch a chrome-less pop-up, which meant leaving the card
+    // to read the mail and carrying the value back in your head.
     await user.click(icons[0]!)
-    expect(open).toHaveBeenCalledWith(
-      expect.stringContaining('/email/db-uuid-1'),
-      'email_db-uuid-1',
-      expect.stringContaining('popup'),
-    )
+    expect(screen.getByTestId('evidence-panel')).toBeInTheDocument()
+    expect(open).not.toHaveBeenCalled()
     open.mockRestore()
   })
 
