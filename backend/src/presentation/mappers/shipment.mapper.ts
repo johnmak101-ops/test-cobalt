@@ -110,6 +110,8 @@ export interface ShipmentLegRow {
   customerRaw: string | null
   vendorRaw: string | null
   grossWeight: number | null
+  netWeight?: number | null
+  cargoDescription?: string | null
   measurement: number | null
   htsCode: string | null
   cargoReadyDate: Dateish
@@ -202,6 +204,8 @@ export interface UiShipment {
   quantityShipped: number | null
   quantityUnit: string | null
   grossWeight: number | null
+  netWeight: number | null
+  cargoDescription: string | null
   measurement: number | null
   htsCode: string | null
   criticReview: CriticReview | null
@@ -301,6 +305,8 @@ export function toUiShipment(
     quantityShipped: leg.qty ?? null,
     quantityUnit: leg.qtyUnit ?? null,
     grossWeight: leg.grossWeight ?? null,
+    netWeight: leg.netWeight ?? null,
+    cargoDescription: leg.cargoDescription ?? null,
     measurement: leg.measurement ?? null,
     htsCode: leg.htsCode ?? null,
     criticReview: leg.criticReview ?? null,

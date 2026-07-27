@@ -45,6 +45,10 @@ export function mapFieldsToLegColumns(f: Record<string, unknown>): Record<string
     // the pieces (#197), so this is the only place the carton count survives.
     cartons: num(f.cartons),
     grossWeight: num(f.gross_weight),
+    // net weight is the goods WITHOUT the carton (customs reads net, freight reads gross); a booking
+    // sheet states the two in adjacent columns, so both survive rather than one overwriting the other
+    netWeight: num(f.net_weight),
+    cargoDescription: str(f.cargo_description),
     measurement: num(f.measurement),
     htsCode: dedupeCsv(str(f.hts_code)),
     itemStyleNo: dedupeCsv(str(f.item_style_no)),
