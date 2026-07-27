@@ -178,7 +178,12 @@ export class ReviewService {
    *  field regresses the score). Nothing was edited → the edited set is empty. */
   async confirm(shipmentId: string, actorId: string, note?: string, expectedUpdatedAt?: string) {
     const leg = await this.loadLegForReview(shipmentId, expectedUpdatedAt)
-    await this.shipments.updateLeg(shipmentId, { reviewStatus: 'confirmed', reviewedBy: actorId, reviewedAt: new Date() })
+    // Clear any waiting stamp: the question has now been answered, so a leftover "parked" mark would
+    // re-park the leg if it were ever restored to provisional.
+    await this.shipments.updateLeg(shipmentId, {
+      reviewStatus: 'confirmed', reviewedBy: actorId, reviewedAt: new Date(),
+      waitingAt: null, waitingReason: null,
+    })
     await this.audit.write({
       entityType: 'shipment', entityId: shipmentId, field: null,
       oldValue: leg.reviewStatus, newValue: 'confirmed', changeType: 'update',
@@ -438,7 +443,12 @@ export class ReviewService {
     for (const id of shipmentIds) {
       const leg = await this.shipments.findById(id)
       if (!leg || leg.kind !== 'SHIPMENT' || leg.reviewStatus !== 'provisional' || leg.dismissedAt != null) continue
-      await this.shipments.updateLeg(id, { dismissedAt: new Date(), reviewedBy: actorId, reviewedAt: new Date() })
+      // Clears any waiting stamp too: rejecting a parked leg is a verdict, and it must not keep
+      // counting toward Waiting (nor re-park itself if the dismiss is later restored).
+      await this.shipments.updateLeg(id, {
+        dismissedAt: new Date(), reviewedBy: actorId, reviewedAt: new Date(),
+        waitingAt: null, waitingReason: null,
+      })
       await this.audit.write({
         entityType: 'shipment', entityId: id, field: null,
         oldValue: 'provisional', newValue: 'dismissed', changeType: 'update',
@@ -454,15 +464,60 @@ export class ReviewService {
     return { dismissed }
   }
 
-  /** Undo a dismiss: the leg returns to the pending review queue. No-op when not dismissed. */
+  /**
+   * "Parked — I have to go and ask": stamp waiting_at so the leg leaves the ACTIVE desk without
+   * anyone pretending to have answered it. The third honest outcome beside confirm and dismiss —
+   * the desk previously had only "yes" and "no", so a question whose answer lived outside the system
+   * (is this thin mail real freight? who is this customer?) either rotted in Active or got dismissed
+   * as noise when it might have been real.
+   *
+   * Like dismiss: reviewStatus stays 'provisional', no confirm-sentinels reach the queue's learning
+   * feed (nobody vouched for the data), and the committer never clears the stamp — so a later email on
+   * the same leg does NOT silently un-park it. Unlike dismiss it is not a verdict, so no calibration
+   * outcome is recorded: there is nothing yet to score the agent against.
+   *
+   * Reversed by restore(), the same way a dismiss is.
+   */
+  async wait(shipmentId: string, actorId: string, reason?: string) {
+    const leg = await this.shipments.findById(shipmentId)
+    if (!leg) throw new NotFoundException(`shipment ${shipmentId} not found`)
+    if (leg.kind !== 'SHIPMENT') throw new BadRequestException('only shipment legs can be parked')
+    if (leg.reviewStatus !== 'provisional' || leg.dismissedAt != null) {
+      // Already answered (confirmed) or already off the desk (dismissed) — nothing to park.
+      return { shipmentId, waiting: false as const }
+    }
+    const trimmed = reason?.trim() || null
+    await this.shipments.updateLeg(shipmentId, {
+      waitingAt: new Date(),
+      // Re-parking replaces the reason rather than appending: the note answers "what am I waiting for
+      // NOW", and a stale first reason is worse than none. The history keeps every one via audit.
+      waitingReason: trimmed,
+    })
+    await this.audit.write({
+      entityType: 'shipment', entityId: shipmentId, field: null,
+      oldValue: 'provisional', newValue: 'waiting', changeType: 'update',
+      sourceType: 'review', actorUserId: actorId,
+      note: trimmed ? `review: parked as waiting — ${trimmed}` : 'review: parked as waiting',
+    })
+    return { shipmentId, waiting: true as const }
+  }
+
+  /** Undo a dismiss OR un-park a waiting leg: either way the leg returns to the ACTIVE review queue.
+   *  One reversal for both stamps — from the operator's side "put it back on my desk" is one idea, and
+   *  a leg that was parked and then rejected needs a single button that undoes both. */
   async restore(shipmentId: string, actorId: string) {
     const leg = await this.shipments.findById(shipmentId)
     if (!leg) throw new NotFoundException(`shipment ${shipmentId} not found`)
-    if (leg.dismissedAt == null) return { shipmentId, restored: false }
-    await this.shipments.updateLeg(shipmentId, { dismissedAt: null })
+    const wasDismissed = leg.dismissedAt != null
+    const wasWaiting = leg.waitingAt != null
+    if (!wasDismissed && !wasWaiting) return { shipmentId, restored: false }
+    await this.shipments.updateLeg(shipmentId, {
+      ...(wasDismissed ? { dismissedAt: null } : {}),
+      ...(wasWaiting ? { waitingAt: null, waitingReason: null } : {}),
+    })
     await this.audit.write({
       entityType: 'shipment', entityId: shipmentId, field: null,
-      oldValue: 'dismissed', newValue: 'provisional', changeType: 'update',
+      oldValue: wasDismissed ? 'dismissed' : 'waiting', newValue: 'provisional', changeType: 'update',
       sourceType: 'review', actorUserId: actorId, note: 'review: restored to queue',
     })
     return { shipmentId, restored: true }

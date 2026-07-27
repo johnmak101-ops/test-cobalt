@@ -41,6 +41,7 @@ import type { LinkedPO, ShipmentDetail } from '../../hooks/use-shipments'
 import { cn, formatDateTime } from '../../lib/utils'
 import { parseSender } from '../../lib/email-sender'
 import { buildNeedsAttentionGroups, isExpandableMiss, portsLinkedFromRoute } from './needs-attention'
+import { pickDeskQuestion } from './desk-question'
 import { NeedsAttentionMeshMiss } from './NeedsAttentionMeshMiss'
 import {
   REVIEW_COL,
@@ -73,6 +74,8 @@ const ACTION_VARIANT = {
   secondary: 'border-cobalt-primary/30 bg-cobalt-primary/15 text-cobalt-primary-light hover:bg-cobalt-primary/25',
   danger: 'border-status-critical/30 bg-status-critical/15 text-status-critical hover:bg-status-critical/25',
   success: 'border-status-success/30 bg-status-success/15 text-status-success hover:bg-status-success/25',
+  /** Neither a verdict nor a navigation — deferral. Lowest weight in the bar by design. */
+  quiet: 'border-border bg-transparent text-text-secondary hover:bg-surface-700 hover:text-text-primary',
 } as const
 
 /** What the operator decided about ONE contested field — the unit the learner trains on (ADR-0002). */
@@ -133,6 +136,19 @@ export interface ReviewCardProps {
   readOnly?: boolean
   onSaveAndApprove?: (payload: ReviewCardSavePayload) => Promise<void>
   onApprove?: () => Promise<void>
+  /**
+   * "No" — this leg is not a trackable shipment. The desk had no such button: the endpoint existed but
+   * only bulk-select on the queue list reached it, so a card asking "verify it belongs in tracking"
+   * could not take the answer "it doesn't". Rendered only when the leading question is one that a
+   * rejection actually answers (DeskQuestion.reject).
+   */
+  onReject?: (note?: string) => Promise<void>
+  /**
+   * "Not yet" — park the leg off the active desk pending an outside answer. The third honest outcome:
+   * without it, a leg whose answer lived in someone else's inbox either sat in Active forever or got
+   * rejected as noise.
+   */
+  onWait?: (reason?: string) => Promise<void>
   /** Zero-identity flow: type booking/SO/B/L and detect if it already exists elsewhere. */
   onIdentify?: (field: string, value: string) => Promise<IdentifyResult>
   /**
@@ -215,6 +231,8 @@ export function ReviewCard({
   readOnly = false,
   onSaveAndApprove,
   onApprove,
+  onReject,
+  onWait,
   onIdentify,
   onLink,
 }: ReviewCardProps) {
@@ -330,6 +348,8 @@ export function ReviewCard({
     [needsAttentionGroups],
   )
   const poNeedsReview = poProposalCount > 0 || poQuestionOpen
+  /** The leading open question + the words that answer it (see desk-question.ts). */
+  const deskPick = useMemo(() => pickDeskQuestion(needsAttentionGroups), [needsAttentionGroups])
   /** Note starts collapsed; it opens itself the moment a note is actually owed (see showNoteField). */
   const [noteOpen, setNoteOpen] = useState(false)
 
@@ -516,8 +536,13 @@ export function ReviewCard({
     () => conflicts.filter((c) => changesStoredValue(c, resolutions[c.field] ?? '')).length,
     [conflicts, resolutions],
   )
-  /** Edit when field fights or POs to manage (critical dates live on shipment detail / alerts). */
-  const showEdit = !readOnly && (conflicts.length > 0 || linkedPOs.length > 0)
+  /**
+   * Edit only when the desk has something editable: contested fields, or a PO the agent has a proposal
+   * for. It used to fire on `linkedPOs.length > 0`, which meant it rendered on cards whose only content
+   * was a question about whether the leg is freight at all — and its one effect there was to open PO
+   * editing. That is the shipment page's job, by the same argument that took the PO grid off this desk.
+   */
+  const showEdit = !readOnly && (conflicts.length > 0 || poNeedsReview)
   /** Edit mode as the GRID sees it — read-only history never edits, whatever `editing` says. */
   const gridEditing = editing && !readOnly
   const deskEmpty = needsAttentionGroups.length === 0 && conflicts.length === 0
@@ -733,59 +758,84 @@ export function ReviewCard({
             >
               {/* data-testid why-review kept for legacy tests — same shell as Critical band */}
               <div data-testid="why-review">
-                {/* No decisionPhrase headline here. It named ONE field to resolve ("Resolve vendor
-                    code conflict") while the groups below describe the actual open questions, and
-                    the conflict table already lists every field needing a value. The phrase still
-                    earns its place on the COLLAPSED queue row, where nothing else summarises the
-                    row. */}
-                <p className={`${REVIEW_FS.topic} font-semibold text-text-primary`}>
-                  Needs Attention
+                {/*
+                  The open QUESTION is the headline (see desk-question.ts). It replaces both the old
+                  `Needs Attention` title and the group title that used to sit above the leading line —
+                  two headings for what was often a single bullet — and the verdict buttons below are
+                  worded as its answers. The line the headline speaks for becomes its subtext; anything
+                  else the leg asks follows under "Also", flat, because a group title per bullet was
+                  the nesting that made this card hard to read.
+                */}
+                <p
+                  className={`${REVIEW_FS.topic} font-semibold text-text-primary`}
+                  data-testid="desk-question"
+                >
+                  {deskPick?.question.question ?? 'Needs Attention'}
                 </p>
-                <div className="mt-1.5 space-y-2">
-                  {needsAttentionGroups.map((g) => (
-                    <div key={g.groupId} data-testid={`needs-group-${g.groupId}`}>
-                      <p className={`${REVIEW_FS.meta} font-semibold text-text-secondary`}>
-                        {g.title}
-                      </p>
-                      <ul className={REVIEW_PANEL_LIST}>
-                        {g.items.map((r) =>
-                          isExpandableMiss(r) ? (
-                            <NeedsAttentionMeshMiss key={r.key} item={r} />
-                          ) : (
-                            <li
-                              key={r.key}
-                              className={REVIEW_PANEL_ITEM}
-                              title={r.evidence?.join(' · ') || undefined}
-                            >
-                              <span
-                                className={cn(
-                                  REVIEW_PANEL_DOT,
-                                  r.severity === 'high'
-                                    ? 'bg-status-critical'
-                                    : r.severity === 'medium'
-                                      ? 'bg-status-warning'
-                                      : 'bg-surface-600',
-                                )}
-                              />
-                              <span className="min-w-0">{r.text}</span>
-                            </li>
-                          ),
-                        )}
-                      </ul>
-                    </div>
+
+                {deskPick &&
+                  (isExpandableMiss(deskPick.primary) ? (
+                    <ul className="mt-1">
+                      <NeedsAttentionMeshMiss item={deskPick.primary} />
+                    </ul>
+                  ) : (
+                    <p
+                      className={`mt-0.5 ${REVIEW_FS.body} text-text-secondary`}
+                      title={deskPick.primary.evidence?.join(' · ') || undefined}
+                      data-testid="desk-question-detail"
+                    >
+                      {deskPick.primary.text}
+                    </p>
                   ))}
-                </div>
-                {/* The resolution instruction belongs TO the prompt, not floating under it as a
-                    detached grey sentence between panels (where it read as a caption for whatever
-                    box happened to follow). Only shown when the table has nothing to decide, so
-                    "no field changes" is the whole story. */}
+
+                {(deskPick?.rest.length ?? 0) > 0 && (
+                  <div className="mt-2.5 border-t border-border pt-2" data-testid="needs-attention-rest">
+                    <p className={`${REVIEW_FS.meta} font-semibold text-text-muted`}>Also</p>
+                    <div className="space-y-1">
+                      {deskPick!.rest.map((g) => (
+                        /* Grouping is kept (real, and ordered) but no longer titled — the item text
+                           already names its own subject ("Customer not in master — …"), so the title
+                           was a heading level that added nothing. Named for assistive tech. */
+                        <div key={g.groupId} data-testid={`needs-group-${g.groupId}`} aria-label={g.title}>
+                          <ul className={REVIEW_PANEL_LIST}>
+                            {g.items.map((r) =>
+                              isExpandableMiss(r) ? (
+                                <NeedsAttentionMeshMiss key={r.key} item={r} />
+                              ) : (
+                                <li
+                                  key={r.key}
+                                  className={REVIEW_PANEL_ITEM}
+                                  title={r.evidence?.join(' · ') || undefined}
+                                >
+                                  <span
+                                    className={cn(
+                                      REVIEW_PANEL_DOT,
+                                      r.severity === 'high'
+                                        ? 'bg-status-critical'
+                                        : r.severity === 'medium'
+                                          ? 'bg-status-warning'
+                                          : 'bg-surface-600',
+                                    )}
+                                  />
+                                  <span className="min-w-0">{r.text}</span>
+                                </li>
+                              ),
+                            )}
+                          </ul>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {/* Kept for the case the headline cannot cover: the table has nothing to apply, so the
+                    operator is being asked for a judgement, not a diff. One line, inside the prompt it
+                    belongs to — it used to float between panels captioning whichever box followed. */}
                 {judgmentOnly && (
                   <p
                     className="mt-2.5 border-t border-border pt-2 text-xs text-text-muted"
                     data-testid="review-judgment-only"
                   >
-                    No field changes to apply — verify the items above, then{' '}
-                    <span className="font-medium text-text-secondary">Confirm Reviewed</span>.
+                    No field changes to apply — answer above, or park it if you need to go and ask.
                   </p>
                 )}
               </div>
@@ -1179,6 +1229,43 @@ export function ReviewCard({
                     Edit
                   </button>
                 )}
+                {/* "Not yet" — park it. Quiet on purpose: it is the right answer often enough to need a
+                    button, and never the one to reach for first. Any note already typed rides along as
+                    the reason, so the Waiting tab says what is being waited on. */}
+                {!editing && onWait && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (busy || readOnly) return
+                      void run(() => onWait(note.trim() || undefined))
+                    }}
+                    disabled={busy}
+                    data-testid="review-wait"
+                    title="Park this leg — it leaves Active for the Waiting tab until you come back to it"
+                    className={cn(ACTION_BTN, ACTION_VARIANT.quiet)}
+                  >
+                    {busy && <Loader2 size={13} className="animate-spin" />}
+                    Waiting
+                  </button>
+                )}
+                {/* "No" — worded as the answer to the headline ("Not a Shipment" / "Portal Noise").
+                    Absent when a rejection does not answer the leading question at all. */}
+                {!editing && onReject && deskPick?.question.reject && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (busy || readOnly) return
+                      void run(() => onReject(note.trim() || undefined))
+                    }}
+                    disabled={busy}
+                    data-testid="review-reject"
+                    title="This is not a trackable shipment — it leaves the queue without confirming its data"
+                    className={cn(ACTION_BTN, ACTION_VARIANT.danger)}
+                  >
+                    {busy && <Loader2 size={13} className="animate-spin" />}
+                    {deskPick.question.reject}
+                  </button>
+                )}
                 {!editing && (onApprove || multiCandNeedsTarget) && changeCount > 0 && (
                   <button
                     type="button"
@@ -1229,9 +1316,11 @@ export function ReviewCard({
                           : 'Link & Apply'
                         : changeCount > 0
                           ? 'Approve'
-                          : /* Nothing is being "kept" over an alternative — there IS no alternative.
-                               The click means "I looked, it's right": say that. */
-                            'Confirm Reviewed'}
+                          : /* Nothing to apply, so the label answers the headline instead ("Yes — Track
+                               It" under "Is this a real shipment?"). Falls back to Confirm Reviewed when
+                               the leg asks nothing nameable. Never "Keep Current": nothing is being kept
+                               over an alternative, because there is no alternative. */
+                            (deskPick?.question.affirm ?? 'Confirm Reviewed')}
                   </button>
                 )}
                 {/* F11: multi-candidate escape hatch — genuinely new shipment (e.g. 拼櫃) without linking */}

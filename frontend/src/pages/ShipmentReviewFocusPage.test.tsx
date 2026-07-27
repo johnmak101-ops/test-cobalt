@@ -9,9 +9,11 @@ import ShipmentReviewFocusPage from './ShipmentReviewFocusPage'
 
 // Only the data + mutation seams are mocked — ReviewCard renders for real, so this exercises the
 // actual conflict table / action bar the focused page is meant to surface.
-const { mockUseShipment, mutateAsync } = vi.hoisted(() => ({
+const { mockUseShipment, mutateAsync, dismissAsync, waitAsync } = vi.hoisted(() => ({
   mockUseShipment: vi.fn(),
   mutateAsync: vi.fn().mockResolvedValue(undefined),
+  dismissAsync: vi.fn().mockResolvedValue(undefined),
+  waitAsync: vi.fn().mockResolvedValue(undefined),
 }))
 
 vi.mock('../hooks/use-shipments', () => ({ useShipment: mockUseShipment }))
@@ -20,6 +22,8 @@ vi.mock('../hooks/use-review-queue', () => ({
   useCorrectShipment: () => ({ mutateAsync }),
   useIdentifyShipment: () => ({ mutateAsync }),
   useLinkShipment: () => ({ mutateAsync }),
+  useDismissShipments: () => ({ mutateAsync: dismissAsync }),
+  useWaitShipment: () => ({ mutateAsync: waitAsync }),
   isStaleConflict: () => false,
 }))
 vi.mock('../components/ui/Toast', () => ({ toast: vi.fn() }))
@@ -83,6 +87,8 @@ describe('ShipmentReviewFocusPage', () => {
   beforeEach(() => {
     mockUseShipment.mockReset()
     mutateAsync.mockClear()
+    dismissAsync.mockClear()
+    waitAsync.mockClear()
   })
 
   it('shows a loading state while the shipment loads', () => {
@@ -142,6 +148,36 @@ describe('ShipmentReviewFocusPage', () => {
 
     expect(screen.getByText(/shown read-only/i)).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /approve/i })).not.toBeInTheDocument()
+  })
+
+  /**
+   * The two verdicts the focused page had no way to give: "not a shipment" (the endpoint existed, but
+   * only bulk-select on the queue list reached it) and "not yet" (which did not exist at all).
+   */
+  it('a thin-mail leg can be rejected from this page', async () => {
+    const user = userEvent.setup()
+    mockUseShipment.mockReturnValue({
+      data: fixture({
+        reviewReasons: [
+          'no booking/SO/HBL identity and no lifecycle email type — verify this is a real shipment',
+        ],
+        criticReview: { ...criticReview, conflicts: [], riskFlags: [] },
+      } as Partial<ShipmentDetail>),
+      isLoading: false,
+      isError: false,
+    })
+    renderPage()
+    expect(screen.getByTestId('desk-question')).toHaveTextContent(/real shipment|belong in tracking/i)
+    await user.click(screen.getByTestId('review-reject'))
+    expect(dismissAsync).toHaveBeenCalledWith({ shipmentIds: ['ship-1'], note: undefined })
+  })
+
+  it('any leg can be parked as waiting from this page', async () => {
+    const user = userEvent.setup()
+    mockUseShipment.mockReturnValue({ data: fixture(), isLoading: false, isError: false })
+    renderPage()
+    await user.click(screen.getByTestId('review-wait'))
+    expect(waitAsync).toHaveBeenCalledWith({ shipmentId: 'ship-1', reason: undefined })
   })
 
   it('shows a not-loaded message on error', () => {

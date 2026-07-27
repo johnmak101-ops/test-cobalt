@@ -27,6 +27,10 @@ export interface ReviewShipment {
   updatedAt: string
   poCount: number
   dismissedAt: string | null
+  /** Parked off the active desk pending an outside answer (migration 0025). */
+  waitingAt?: string | null
+  /** What the operator said they were waiting on — shown inline on the Waiting tab. */
+  waitingReason?: string | null
 }
 
 interface ReviewQueueResponse {
@@ -36,16 +40,18 @@ interface ReviewQueueResponse {
 export interface ReviewCounts {
   provisional: number
   dismissed: number
+  waiting: number
 }
 
 /** UI tab keys — mapped to backend `view=` query params. */
-export type ReviewQueueView = 'active' | 'rejected' | 'approved'
+export type ReviewQueueView = 'active' | 'waiting' | 'rejected' | 'approved'
 
 /** Backend GET /shipments/review-queue?view= values. */
-export type ReviewQueueApiView = 'pending' | 'dismissed' | 'approved'
+export type ReviewQueueApiView = 'pending' | 'dismissed' | 'approved' | 'waiting'
 
 const VIEW_TO_API: Record<ReviewQueueView, ReviewQueueApiView> = {
   active: 'pending',
+  waiting: 'waiting',
   rejected: 'dismissed',
   approved: 'approved',
 }
@@ -158,7 +164,21 @@ export function useDismissShipments() {
   })
 }
 
-/** Undo a dismiss — the shipment returns to the pending review queue. */
+/**
+ * Park ONE leg as waiting: it leaves the Active desk for the Waiting tab, unanswered. The desk's third
+ * outcome — before this, a question whose answer lived in someone else's inbox either sat in Active
+ * forever or got rejected as noise. Reversible via useRestoreShipment.
+ */
+export function useWaitShipment() {
+  const invalidate = useInvalidateReview()
+  return useMutation({
+    mutationFn: ({ shipmentId, reason }: { shipmentId: string; reason?: string }) =>
+      api.post(`/review/${shipmentId}/wait`, { ...(reason?.trim() ? { reason: reason.trim() } : {}) }),
+    onSuccess: invalidate,
+  })
+}
+
+/** Undo a dismiss OR un-park a waiting leg — either way the shipment returns to the Active queue. */
 export function useRestoreShipment() {
   const invalidate = useInvalidateReview()
   return useMutation({

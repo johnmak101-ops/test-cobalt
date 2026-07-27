@@ -28,15 +28,17 @@ export class ShipmentsController {
   }
 
   /**
-   * GET /api/shipments/review-queue — Active (`pending`), Rejected (`dismissed`), or Approved.
+   * GET /api/shipments/review-queue — Active (`pending`), Waiting (`waiting`), Rejected
+   * (`dismissed`), or Approved.
    * Registered before the ':id' route so 'review-queue' is never captured as a shipment id.
    */
   @Get('review-queue') reviewQueue(@Query('view') view?: string) {
-    const v = view === 'dismissed' || view === 'approved' ? view : 'pending'
+    const v =
+      view === 'dismissed' || view === 'approved' || view === 'waiting' ? view : 'pending'
     return this.ui.reviewQueue(v)
   }
 
-  /** GET /api/shipments/review-queue/counts — { provisional: N } for the nav badge. */
+  /** GET /api/shipments/review-queue/counts — { provisional, waiting, dismissed } for nav + tabs. */
   @Get('review-queue/counts') reviewQueueCounts() {
     return this.ui.reviewQueueCounts()
   }

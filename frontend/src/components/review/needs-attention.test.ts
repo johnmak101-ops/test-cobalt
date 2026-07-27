@@ -1325,3 +1325,59 @@ describe('per-email port-miss free text is stale once the slot is filled', () =>
     expect(items.some((i) => /destination port\/airport/i.test(i.text))).toBe(true)
   })
 })
+
+/**
+ * A master miss is only a DECISION when it names the thing to act on. `m-party:CIL PLUS LIMITED` tells
+ * ops which company to add in Mesh; `m-customer` ("confirm who owns this shipment") names no customer,
+ * so nobody knows what to type — it was an unanswerable prompt on the desk.
+ */
+describe('nameless master-miss lines are FYI, named ones stay on the desk', () => {
+  it('tagDesk: nameless → fyi', () => {
+    for (const lineId of ['m-customer', 'm-mesh', 'm-party', 'm-port', 'm-api', 'm-note:SOME PROSE']) {
+      expect(
+        tagDesk({ lineId, groupId: 'master_miss', text: 'x', severity: 'medium' }),
+      ).toBe('fyi')
+    }
+  })
+
+  it('tagDesk: named → decision', () => {
+    for (const lineId of ['m-party:CIL PLUS LIMITED', 'm-port:HO CHI MINH', 'm-party:collapsed', 'm-port:collapsed']) {
+      expect(
+        tagDesk({ lineId, groupId: 'master_miss', text: 'x', severity: 'medium' }),
+      ).toBe('decision')
+    }
+  })
+
+  it('the severity valve still rescues a high-severity nameless miss', () => {
+    expect(
+      tagDesk({ lineId: 'm-customer', groupId: 'master_miss', text: 'x', severity: 'high' }),
+    ).toBe('decision')
+  })
+
+  it('an unknown-customer leg no longer opens a Master Miss group on the Review desk', () => {
+    const opts = {
+      conflictsCount: 0,
+      riskFlags: [],
+      reviewReasons: ['This is a new shipment for an unknown customer'],
+    }
+    // The line is still classified and still reaches the shipment page…
+    expect(buildNeedsAttention(opts).some((i) => i.lineId === 'm-customer')).toBe(true)
+    expect(buildNeedsAttentionGroups({ ...opts, desk: 'all' }).some((g) => g.groupId === 'master_miss')).toBe(true)
+    // …but the decision desk does not ask a question the operator cannot answer there.
+    const desk = buildNeedsAttentionGroups({ ...opts, desk: 'decision' })
+    expect(desk.flatMap((g) => g.items.map((i) => i.lineId))).not.toContain('m-customer')
+  })
+
+  it('a NAMED party miss still headlines the desk (regression guard for the old rule)', () => {
+    const desk = buildNeedsAttentionGroups({
+      conflictsCount: 0,
+      riskFlags: [],
+      reviewReasons: [
+        'Cannot match "CIL PLUS LIMITED" in the customer list. Please add it in Cobalt Fashion Data Mesh System, then rematch.',
+      ],
+      desk: 'decision',
+    })
+    const ids = desk.flatMap((g) => g.items.map((i) => i.lineId))
+    expect(ids.some((id) => id.startsWith('m-party'))).toBe(true)
+  })
+})

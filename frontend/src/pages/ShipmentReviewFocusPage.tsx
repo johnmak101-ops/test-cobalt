@@ -6,8 +6,10 @@ import { useShipment } from '../hooks/use-shipments'
 import {
   useConfirmShipment,
   useCorrectShipment,
+  useDismissShipments,
   useIdentifyShipment,
   useLinkShipment,
+  useWaitShipment,
   isStaleConflict,
 } from '../hooks/use-review-queue'
 import { ReviewCard, type ReviewCardSavePayload } from '../components/review/ReviewCard'
@@ -42,6 +44,8 @@ export default function ShipmentReviewFocusPage() {
   const correctMutation = useCorrectShipment()
   const identifyMutation = useIdentifyShipment()
   const linkMutation = useLinkShipment()
+  const dismissMutation = useDismissShipments()
+  const waitMutation = useWaitShipment()
 
   const [staleBanner, setStaleBanner] = useState<string | null>(null)
 
@@ -107,6 +111,32 @@ export default function ShipmentReviewFocusPage() {
       navigate(backToShipment)
     } catch (err) {
       await handleStale(err)
+    }
+  }
+
+  /** "No" — not a trackable shipment. Same endpoint the queue's bulk select uses, for one leg. */
+  const onReject = async (note?: string) => {
+    setStaleBanner(null)
+    try {
+      await dismissMutation.mutateAsync({ shipmentIds: [shipment.id], note })
+      toast('Rejected — not a trackable shipment')
+      navigate('/review-queue')
+    } catch (err) {
+      const msg = err instanceof Error ? err.message.replace(/^API error \d+:\s*/i, '') : 'Reject failed'
+      toast(msg || 'Reject failed — try again')
+    }
+  }
+
+  /** "Not yet" — park it; the note (if any) records what is being waited on. */
+  const onWait = async (reason?: string) => {
+    setStaleBanner(null)
+    try {
+      await waitMutation.mutateAsync({ shipmentId: shipment.id, reason })
+      toast(reason ? `Parked as waiting — ${reason}` : 'Parked as waiting')
+      navigate('/review-queue')
+    } catch (err) {
+      const msg = err instanceof Error ? err.message.replace(/^API error \d+:\s*/i, '') : 'Park failed'
+      toast(msg || 'Park failed — try again')
     }
   }
 
@@ -203,6 +233,8 @@ export default function ShipmentReviewFocusPage() {
           readOnly={readOnly}
           onApprove={readOnly ? undefined : onApprove}
           onSaveAndApprove={readOnly ? undefined : onSaveAndApprove}
+          onReject={readOnly ? undefined : onReject}
+          onWait={readOnly ? undefined : onWait}
           onIdentify={
             readOnly
               ? undefined

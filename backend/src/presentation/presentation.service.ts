@@ -630,11 +630,12 @@ export class PresentationService {
   // ---- review queue (provisional shipments) ----
 
   /**
-   * The Review Queue: Active (`pending`), Rejected (`dismissed`), or Approved (`approved` confirmed
-   * with criticReview). Same customer/route resolution as the shipments() list.
+   * The Review Queue: Active (`pending`), Waiting (`waiting` — parked pending an outside answer),
+   * Rejected (`dismissed`), or Approved (`approved` confirmed with criticReview). Same customer/route
+   * resolution as the shipments() list.
    * High-band auto-eligible legs never surface (Active or Approved) — silent auto-confirm path.
    */
-  async reviewQueue(view: 'pending' | 'dismissed' | 'approved' = 'pending') {
+  async reviewQueue(view: 'pending' | 'dismissed' | 'approved' | 'waiting' = 'pending') {
     const rows = await this.shipmentRepo.reviewQueue(view)
     const visible = rows.filter(
       (r) => !isHighBandAutoEligible(r.criticReview as CriticReview | null | undefined),
@@ -665,24 +666,28 @@ export class PresentationService {
         updatedAt: isoOrNull(r.updatedAt),
         poCount: r.poCount ?? 0,
         dismissedAt: isoOrNull(r.dismissedAt),
+        // Waiting tab reads both: the stamp orders the list, the reason says who we are waiting on.
+        waitingAt: isoOrNull(r.waitingAt),
+        waitingReason: r.waitingReason ?? null,
       })),
     }
   }
 
-  /** Nav badge count of provisional shipments awaiting review (+ dismissed for the queue tab). */
+  /** Nav badge count of provisional shipments awaiting review (+ waiting/dismissed for the queue tabs). */
   async reviewQueueCounts() {
     // Exclude high-band auto-eligible from Active badge (same filter as reviewQueue pending).
-    const [pendingRows, dismissedRows] = await Promise.all([
+    const [pendingRows, dismissedRows, waitingRows] = await Promise.all([
       this.shipmentRepo.reviewQueue('pending'),
       this.shipmentRepo.reviewQueue('dismissed'),
+      this.shipmentRepo.reviewQueue('waiting'),
     ])
-    const pending = pendingRows.filter(
-      (r) => !isHighBandAutoEligible(r.criticReview as CriticReview | null | undefined),
-    ).length
-    const dismissed = dismissedRows.filter(
-      (r) => !isHighBandAutoEligible(r.criticReview as CriticReview | null | undefined),
-    ).length
-    return { provisional: pending, dismissed }
+    const visible = (rows: { criticReview?: unknown }[]) =>
+      rows.filter((r) => !isHighBandAutoEligible(r.criticReview as CriticReview | null | undefined)).length
+    return {
+      provisional: visible(pendingRows),
+      dismissed: visible(dismissedRows),
+      waiting: visible(waitingRows),
+    }
   }
 
   /** Human "approve": accept a provisional shipment as-is (review_status → confirmed). */

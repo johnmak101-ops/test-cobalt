@@ -197,8 +197,31 @@ const BRAND_FYI_NOTE =
   /^brand '[^']{1,80}' appears across \d+ distinct buyer families\s*(?:—|–|-)\s*possible house\/agent leak/i
 
 /**
+ * Master-miss lines that name NOTHING for the operator to act on.
+ *
+ * A master miss earns the decision desk only when it says WHAT to add: `m-party:CIL PLUS LIMITED`
+ * tells ops exactly which company to create in Mesh. A nameless one asks a question the desk cannot
+ * answer — `m-customer` ("Customer not in master — confirm who owns this shipment") names no customer,
+ * so there is nothing to type and nothing to add; it sat on the queue as an unanswerable prompt beside
+ * a Confirm button that did not address it. Same for the generic `m-mesh` / `m-port` fallbacks (the
+ * value-specific `m-party:*` / `m-port:*` lines are the ones that carry a name) and `m-api`, which is
+ * a system-wide sync condition rather than anything about this leg.
+ *
+ * `m-note:*` joins them: it exists precisely for a PARTY_OPS message with no quoted party, and its own
+ * contract is that it is "not advertised as addable".
+ *
+ * These FALL THROUGH tagDesk rather than returning 'fyi' outright, so the severity≥high safety valve
+ * further down can still pull a serious one back onto the desk.
+ */
+const NAMELESS_MASTER_MISS_LINE_IDS = new Set(['m-customer', 'm-mesh', 'm-party', 'm-port', 'm-api'])
+
+export function isNamelessMasterMiss(lineId: string): boolean {
+  return NAMELESS_MASTER_MISS_LINE_IDS.has(lineId) || lineId.startsWith('m-note:')
+}
+
+/**
  * Tag an item for Review vs detail (rule A). Order:
- * must-decision → must-fyi → f-* / master_miss / m-* Mesh → brand FYI →
+ * must-decision → must-fyi → f-* / NAMED master_miss / m-* Mesh → brand FYI →
  * which/real shipment → severity≥high valve → fyi.
  */
 export function tagDesk(
@@ -208,17 +231,19 @@ export function tagDesk(
   if (DESK_FYI_LINE_IDS.has(item.lineId)) return 'fyi'
   // Field-disagree residual lines (f-count, f-backend, f-lock, f-mode, …)
   if (item.lineId.startsWith('f-')) return 'decision'
-  // Mesh party/port misses — decision on Review (operator must pick raw / add master / rematch).
+  // NAMED Mesh party/port misses — decision on Review (ops can add exactly that master / rematch).
+  // Nameless ones fall through to FYI: see isNamelessMasterMiss.
   if (
-    item.groupId === 'master_miss' ||
-    item.lineId.startsWith('m-party') ||
-    item.lineId.startsWith('m-mesh') ||
-    item.lineId.startsWith('m-port') ||
-    item.lineId.startsWith('m-vendor') ||
-    item.lineId.startsWith('m-consignee') ||
-    item.lineId.startsWith('m-customer') ||
-    item.lineId === MESH_PARTY_COLLAPSED_LINE_ID ||
-    item.lineId === MESH_PORT_COLLAPSED_LINE_ID
+    (item.groupId === 'master_miss' ||
+      item.lineId.startsWith('m-party') ||
+      item.lineId.startsWith('m-mesh') ||
+      item.lineId.startsWith('m-port') ||
+      item.lineId.startsWith('m-vendor') ||
+      item.lineId.startsWith('m-consignee') ||
+      item.lineId.startsWith('m-customer') ||
+      item.lineId === MESH_PARTY_COLLAPSED_LINE_ID ||
+      item.lineId === MESH_PORT_COLLAPSED_LINE_ID) &&
+    !isNamelessMasterMiss(item.lineId)
   ) {
     return 'decision'
   }
