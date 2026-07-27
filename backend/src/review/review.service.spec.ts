@@ -460,6 +460,106 @@ describe('ReviewService — Phase 3 critic calibration capture', () => {
   })
 })
 
+/**
+ * Waiting: the desk's third outcome. Not "yes" (confirm) and not "no" (dismiss) — "I have to go and
+ * ask", so the leg leaves the ACTIVE list without anyone vouching for its data.
+ */
+describe('wait — park a leg pending an outside answer', () => {
+  it('stamps waiting_at + reason, audits, and vouches for nothing', async () => {
+    const { svc, shipments, audit, calibration, queueLearning } = makeService({
+      kind: 'SHIPMENT', reviewStatus: 'provisional', dismissedAt: null, waitingAt: null,
+    })
+    await expect(svc.wait('leg-1', 'user-1', '  asked the forwarder  ')).resolves.toEqual({
+      shipmentId: 'leg-1', waiting: true,
+    })
+    expect(shipments.updateLeg).toHaveBeenCalledWith('leg-1', expect.objectContaining({
+      waitingAt: expect.any(Date),
+      waitingReason: 'asked the forwarder',
+    }))
+    // Stays provisional — parking is not an answer, so it must not enter alerts/automation.
+    expect(shipments.updateLeg).not.toHaveBeenCalledWith('leg-1', expect.objectContaining({
+      reviewStatus: 'confirmed',
+    }))
+    expect(audit.write).toHaveBeenCalledWith(expect.objectContaining({
+      newValue: 'waiting', note: 'review: parked as waiting — asked the forwarder',
+    }))
+    // No verdict yet → nothing to score the agent against, and no confirm-sentinels.
+    expect(calibration.insert).not.toHaveBeenCalled()
+    expect(queueLearning.postCorrection).not.toHaveBeenCalled()
+  })
+
+  it('blank reason parks with no reason rather than an empty string', async () => {
+    const { svc, shipments } = makeService({ kind: 'SHIPMENT', dismissedAt: null, waitingAt: null })
+    await svc.wait('leg-1', 'user-1', '   ')
+    expect(shipments.updateLeg).toHaveBeenCalledWith('leg-1', expect.objectContaining({
+      waitingReason: null,
+    }))
+  })
+
+  it('missing leg → 404; non-shipment → 400', async () => {
+    const { svc } = makeService(null)
+    await expect(svc.wait('missing', 'user-1')).rejects.toBeInstanceOf(NotFoundException)
+    const doc = makeService({ kind: 'DOCUMENT' })
+    await expect(doc.svc.wait('leg-1', 'user-1')).rejects.toBeInstanceOf(BadRequestException)
+  })
+
+  it('already answered or already rejected → no-op, not an error', async () => {
+    const confirmed = makeService({ kind: 'SHIPMENT', reviewStatus: 'confirmed' })
+    await expect(confirmed.svc.wait('leg-1', 'user-1')).resolves.toEqual({ shipmentId: 'leg-1', waiting: false })
+    expect(confirmed.shipments.updateLeg).not.toHaveBeenCalled()
+
+    const dismissed = makeService({ kind: 'SHIPMENT', reviewStatus: 'provisional', dismissedAt: new Date() })
+    await expect(dismissed.svc.wait('leg-1', 'user-1')).resolves.toEqual({ shipmentId: 'leg-1', waiting: false })
+    expect(dismissed.shipments.updateLeg).not.toHaveBeenCalled()
+  })
+
+  it('confirm and dismiss both clear the stamp — a parked leg that gets answered is not still parked', async () => {
+    const confirmed = makeService({ reviewStatus: 'provisional', waitingAt: new Date() })
+    await confirmed.svc.confirm('leg-1', 'user-1')
+    expect(confirmed.shipments.updateLeg).toHaveBeenCalledWith('leg-1', expect.objectContaining({
+      reviewStatus: 'confirmed', waitingAt: null, waitingReason: null,
+    }))
+
+    const rejected = makeService({
+      kind: 'SHIPMENT', reviewStatus: 'provisional', dismissedAt: null, waitingAt: new Date(),
+    })
+    await rejected.svc.dismiss(['leg-1'], 'user-1')
+    expect(rejected.shipments.updateLeg).toHaveBeenCalledWith('leg-1', expect.objectContaining({
+      dismissedAt: expect.any(Date), waitingAt: null, waitingReason: null,
+    }))
+  })
+})
+
+describe('restore — one reversal for both off-desk stamps', () => {
+  it('un-parks a waiting leg', async () => {
+    const { svc, shipments, audit } = makeService({ dismissedAt: null, waitingAt: new Date() })
+    await expect(svc.restore('leg-1', 'user-1')).resolves.toEqual({ shipmentId: 'leg-1', restored: true })
+    expect(shipments.updateLeg).toHaveBeenCalledWith('leg-1', { waitingAt: null, waitingReason: null })
+    expect(audit.write).toHaveBeenCalledWith(expect.objectContaining({ oldValue: 'waiting' }))
+  })
+
+  it('un-dismisses a rejected leg', async () => {
+    const { svc, shipments, audit } = makeService({ dismissedAt: new Date(), waitingAt: null })
+    await svc.restore('leg-1', 'user-1')
+    expect(shipments.updateLeg).toHaveBeenCalledWith('leg-1', { dismissedAt: null })
+    expect(audit.write).toHaveBeenCalledWith(expect.objectContaining({ oldValue: 'dismissed' }))
+  })
+
+  it('clears BOTH when a leg was parked and then rejected', async () => {
+    const { svc, shipments } = makeService({ dismissedAt: new Date(), waitingAt: new Date() })
+    await svc.restore('leg-1', 'user-1')
+    expect(shipments.updateLeg).toHaveBeenCalledWith('leg-1', {
+      dismissedAt: null, waitingAt: null, waitingReason: null,
+    })
+  })
+
+  it('neither stamp set → no write', async () => {
+    const { svc, shipments } = makeService({ dismissedAt: null, waitingAt: null })
+    await expect(svc.restore('leg-1', 'user-1')).resolves.toEqual({ shipmentId: 'leg-1', restored: false })
+    expect(shipments.updateLeg).not.toHaveBeenCalled()
+  })
+})
+
 describe('identify — typed strong ID on a zero-identity leg', () => {
   it('key exists on exactly one other leg → returns a link candidate, writes NOTHING', async () => {
     const { svc, shipments, bookings } = makeService({ id: 'SRC', matchKeys: {} })

@@ -1,12 +1,14 @@
 import { Fragment, useMemo, useReducer, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { CheckCircle, Ship, Package, Loader2, RotateCcw } from 'lucide-react'
+import { CheckCircle, Clock, Ship, Package, Loader2, RotateCcw } from 'lucide-react'
 import {
   useReviewQueue,
   useReviewCounts,
   useConfirmShipment,
   useCorrectShipment,
   useRestoreShipment,
+  useDismissShipments,
+  useWaitShipment,
   useIdentifyShipment,
   useLinkShipment,
   isStaleConflict,
@@ -69,6 +71,7 @@ function ExpandedReviewPanel({
   readOnly,
   onApprove,
   onSaveAndApprove,
+  onDone,
 }: {
   row: ReviewShipment
   readOnly: boolean
@@ -78,10 +81,14 @@ function ExpandedReviewPanel({
     note: string
     expectedUpdatedAt?: string
   }) => Promise<void>
+  /** Collapse the row after a verdict that removes it from this view (reject / park). */
+  onDone?: () => void
 }) {
   const { data, isLoading, isError } = useShipment(row.id)
   const identifyMutation = useIdentifyShipment()
   const linkMutation = useLinkShipment()
+  const dismissMutation = useDismissShipments()
+  const waitMutation = useWaitShipment()
   const navigate = useNavigate()
 
   if (isLoading) {
@@ -112,6 +119,34 @@ function ExpandedReviewPanel({
         readOnly={readOnly}
         onApprove={onApprove}
         onSaveAndApprove={onSaveAndApprove}
+        onReject={
+          !readOnly
+            ? async (note) => {
+                try {
+                  await dismissMutation.mutateAsync({ shipmentIds: [row.id], note })
+                  toast('Rejected — not a trackable shipment')
+                  onDone?.()
+                } catch (e) {
+                  const msg = e instanceof Error ? e.message.replace(/^API error \d+:\s*/i, '') : ''
+                  toast(msg || 'Reject failed — try again')
+                }
+              }
+            : undefined
+        }
+        onWait={
+          !readOnly
+            ? async (reason) => {
+                try {
+                  await waitMutation.mutateAsync({ shipmentId: row.id, reason })
+                  toast(reason ? `Parked as waiting — ${reason}` : 'Parked as waiting')
+                  onDone?.()
+                } catch (e) {
+                  const msg = e instanceof Error ? e.message.replace(/^API error \d+:\s*/i, '') : ''
+                  toast(msg || 'Park failed — try again')
+                }
+              }
+            : undefined
+        }
         onIdentify={!readOnly ? async (field, value) => identifyMutation.mutateAsync({ shipmentId: row.id, field, value }) : undefined}
         onLink={
           !readOnly
@@ -243,12 +278,17 @@ export default function ReviewQueuePage() {
   const anyMutating = confirmMutation.isPending || correctMutation.isPending || restoreMutation.isPending
   const isActiveView = view === 'active'
   const isRejectedView = view === 'rejected'
+  const isWaitingView = view === 'waiting'
+  // Waiting rows are read-only like Rejected/Approved — a parked leg is answered by un-parking it
+  // (Restore), not by working it in place; that is what Active is for.
+  const isRestorableView = isRejectedView || isWaitingView
   // Active = shipment id + band + customer + booking + route + status (6).
-  // Rejected/Approved = same + action (Restore / Open) (7).
+  // Waiting/Rejected/Approved = same + action (Restore / Open) (7).
   const colSpan = isActiveView ? 6 : 7
 
   const emptyCopy = (): string => {
     if (isActiveView) return 'No shipments awaiting review.'
+    if (isWaitingView) return 'Nothing parked — no reviews are waiting on an outside answer.'
     if (isRejectedView) return 'No rejected items.'
     return 'No approved critic-reviewed shipments yet.'
   }
@@ -271,12 +311,15 @@ export default function ReviewQueuePage() {
         </div>
       )}
 
-      {/* View filter — Active | Rejected | Approved. These replaced the reason-category chips that
-          used to sit here; the reason breakdown is on each row's own Needs attention. */}
+      {/* View filter — Active | Waiting | Rejected | Approved. These replaced the reason-category
+          chips that used to sit here; the reason breakdown is on each row's own Needs attention.
+          Waiting sits second because it is the same pile as Active, one step deferred — legs parked
+          pending an answer from outside the system. */}
       <div className="flex flex-wrap items-center gap-1.5" data-testid="review-view-filter">
         {(
           [
             { key: 'active' as const, label: `Active${counts ? ` (${counts.provisional})` : ''}` },
+            { key: 'waiting' as const, label: `Waiting${counts ? ` (${counts.waiting})` : ''}` },
             { key: 'rejected' as const, label: `Rejected${counts ? ` (${counts.dismissed})` : ''}` },
             { key: 'approved' as const, label: 'Approved' },
           ] as const
@@ -485,6 +528,23 @@ export default function ReviewQueuePage() {
                                 {s.poCount} PO{s.poCount !== 1 ? 's' : ''}
                               </span>
                             )}
+                            {/* The whole point of the Waiting tab is "what am I waiting for, and how
+                                long has it been" — so the reason rides the row, not a click away. */}
+                            {isWaitingView && (
+                              <span
+                                className="mt-0.5 flex items-center gap-1 text-[11px] text-status-warning"
+                                title={
+                                  s.waitingReason
+                                    ? `Parked ${formatRelativeTime(s.waitingAt ?? s.updatedAt)} — ${s.waitingReason}`
+                                    : 'Parked with no reason given'
+                                }
+                              >
+                                <Clock size={10} className="shrink-0" />
+                                <span className="min-w-0 truncate">
+                                  {s.waitingReason ?? `parked ${formatRelativeTime(s.waitingAt ?? s.updatedAt)}`}
+                                </span>
+                              </span>
+                            )}
                           </td>
 
                           <td className="min-w-0 max-w-0 px-3 py-3 text-sm text-text-secondary sm:px-4">
@@ -500,7 +560,7 @@ export default function ReviewQueuePage() {
                           {!isActiveView && (
                           <td className="px-4 py-3 text-right">
                             <div className="inline-flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
-                              {isRejectedView ? (
+                              {isRestorableView ? (
                                 <button
                                   type="button"
                                   onClick={() => handleRestore(s.id)}
@@ -551,6 +611,7 @@ export default function ReviewQueuePage() {
                                     : undefined
                                 }
                                 onSaveAndApprove={isActiveView ? saveAndApproveFor(s) : undefined}
+                                onDone={() => setExpandedId(null)}
                               />
                               </div>
                             </td>

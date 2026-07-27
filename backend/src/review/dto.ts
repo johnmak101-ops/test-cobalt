@@ -28,6 +28,15 @@ export class DismissDto {
   @IsOptional() @IsString() note?: string
 }
 
+/**
+ * "Parked — I have to go and ask": moves ONE leg off the active desk without answering it.
+ * `reason` is who/what we are waiting on ("asked the forwarder", "pending Mesh add") — free text, kept
+ * short because the Waiting tab shows it inline. No due date and no assignee by design.
+ */
+export class WaitDto {
+  @IsOptional() @IsString() @Length(0, 1000) reason?: string
+}
+
 /** Zero-identity leg: operator types a strong ID; may offer a link candidate or set the field. */
 export class IdentifyDto {
   @IsIn(['booking_no', 'so_no', 'hbl_awb_fcr_no', 'mbl', 'container_no'])

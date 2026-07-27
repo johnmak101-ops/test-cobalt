@@ -67,6 +67,9 @@ export interface Shipments
    *  `cobalt_test`, which only gains the column once migrations are applied there — this keeps the
    *  type correct without a codegen round-trip. Fold into the generated shape on the next `db:codegen`. */
   cartons: number | null
+  /** Migration 0025 — review-desk "parked, going to ask" stamp. Same codegen caveat as `cartons`. */
+  waitingAt: Date | null
+  waitingReason: string | null
   reviewReasons: Json<string[] | null>
   matchKeys: Json<Record<string, unknown> | null>
   criticReview: Json<CriticReview | null>
