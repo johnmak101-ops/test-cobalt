@@ -38,6 +38,7 @@ import { ALERT_COUNTRY_CODES } from '../alerts/alert-rule-defaults'
 import { toUiHistoryEntry } from './mappers/history.mapper'
 import { deriveRoute, portLabel, poNumbersJson, isoOrNull } from './adapters/derive'
 import { computeFieldConflicts } from './field-conflicts'
+import { openDecisions } from './open-decisions'
 import { poQtyIssue, describePoQtyIssue } from '../reconcile/po-qty-consistency'
 import { stateToUiStatus } from './adapters/enums'
 import { makeTtlCache } from '../common/ttl-cache'
@@ -673,6 +674,19 @@ export class PresentationService {
         // than of one it matched into — and previously could not tell them apart.
         committerAction: r.committerAction ?? null,
         committerCandidatesConsidered: r.committerCandidatesConsidered ?? null,
+        /**
+         * The advice MINUS what the commit already settled — computed once here so the desk (and any
+         * other consumer) stops re-deriving it. `legBookingNo`/`legSoNo` are the LEG's own columns,
+         * aliased apart from the booking-level ones the row also carries.
+         */
+        openDecisions: openDecisions(
+          { ...r, bookingNo: r.legBookingNo, soNo: r.legSoNo } as Record<string, unknown>,
+          r.criticReview as CriticReview | null | undefined,
+          {
+            customer: r.customerId ? r.customerName : null,
+            forwarder: r.forwarderId ? r.forwarderName : null,
+          },
+        ),
       })),
     }
   }

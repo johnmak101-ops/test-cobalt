@@ -28,6 +28,16 @@ export interface ReviewShipment {
   poCount: number
   dismissedAt: string | null
   /** See ShipmentDetail.committerAction (migration 0027). */
+  /**
+   * The advice MINUS what the commit already settled, computed once by the backend
+   * (presentation/open-decisions.ts). The card reads this instead of re-deriving it per symptom.
+   */
+  openDecisions?: {
+    settledFields: string[]
+    resolvedParties: { slot: string; name: string }[]
+    /** What the leg ACTUALLY stores per contested field — the grid's Current column reads this. */
+    liveValues?: Record<string, string>
+  } | null
   committerAction?: string | null
   committerCandidatesConsidered?: number | null
   /** Parked off the active desk pending an outside answer (migration 0025). */
