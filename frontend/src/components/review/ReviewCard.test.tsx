@@ -1151,7 +1151,7 @@ describe('source emails — identify WHICH email, and which is newer', () => {
     expect(rows[1]!.textContent).toMatch(/ACNS/)
   })
 
-  it('shows POs & styles section from linkedPOs', () => {
+  it('keeps linked POs off the grid when the open questions are field conflicts, not POs', () => {
     render(
       <MemoryRouter>
         <ReviewCard
@@ -1165,7 +1165,9 @@ describe('source emails — identify WHICH email, and which is newer', () => {
         />
       </MemoryRouter>,
     )
-    expect(screen.getByText(/POs & styles/i)).toBeInTheDocument()
+    // The grid renders for the ETA/HBL fights; the PO block is gated separately and stays out.
+    expect(screen.getByTestId('review-decision-grid')).toBeInTheDocument()
+    expect(screen.queryByText(/POs & styles/i)).toBeNull()
   })
 
   it('hides Item/Style bag conflict when linked POs exist', () => {
@@ -1371,6 +1373,47 @@ describe('decision desk — ready state (no Critical for sailing band)', () => {
     )
   })
 
+  it('files the judgment-only line INSIDE the needs-attention panel, not loose in the card', () => {
+    render(
+      <MemoryRouter>
+        <ReviewCard
+          shipment={shipmentWithCriticals()}
+          criticReview={baseReview({
+            conflicts: [],
+            riskFlags: [{ code: 'MULTI_ID', severity: 'low', message: 'Two strong IDs in one email' }],
+            reasons: [],
+          })}
+          compact={null}
+          defaultExpanded
+          onApprove={vi.fn()}
+        />
+      </MemoryRouter>,
+    )
+    const panel = screen.getByTestId('needs-attention')
+    expect(within(panel).getByTestId('review-judgment-only')).toBeInTheDocument()
+  })
+
+  it('names the nothing-to-change confirmation for what it is', () => {
+    render(
+      <MemoryRouter>
+        <ReviewCard
+          shipment={shipmentWithCriticals()}
+          criticReview={baseReview({
+            conflicts: [],
+            riskFlags: [{ code: 'MULTI_ID', severity: 'low', message: 'Two strong IDs in one email' }],
+            reasons: [],
+          })}
+          compact={null}
+          defaultExpanded
+          onApprove={vi.fn()}
+        />
+      </MemoryRouter>,
+    )
+    // Not "Keep Current" — nothing is being kept over an alternative, there is no alternative.
+    expect(screen.getByRole('button', { name: /confirm reviewed/i })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /keep current/i })).toBeNull()
+  })
+
   it('shows judgment-only line when only needs-attention (no conflicts)', () => {
     render(
       <MemoryRouter>
@@ -1398,5 +1441,104 @@ describe('decision desk — ready state (no Critical for sailing band)', () => {
     expect(screen.getByTestId('review-judgment-only')).toHaveTextContent(
       /No field changes|confirm when verified/i,
     )
+  })
+})
+
+/**
+ * A PO only belongs on the decision desk when there is something to DECIDE about it. The grid used
+ * to render for every linked PO, so a leg queued for an unrelated reason (a Mesh party miss) still
+ * showed a four-column decision table over one PO with all three decision columns empty.
+ */
+describe('POs on the decision desk — only when a PO needs a decision', () => {
+  const linkedPO: LinkedPO = {
+    id: 'po1',
+    linkId: 'l1',
+    poNumber: '224340',
+    quantity: null,
+    totalQuantity: null,
+    quantityUnit: null,
+    itemStyleNo: '26-HMIGHLE-0294-1',
+  }
+
+  /** Party-miss leg with one PO and no field conflicts — the screenshot case. */
+  function renderPoCard(
+    over: { reviewReasons?: string[]; riskFlags?: CriticReview['riskFlags'] } = {},
+  ) {
+    return render(
+      <MemoryRouter>
+        <ReviewCard
+          shipment={
+            baseShipment({
+              linkedPOs: [linkedPO],
+              reviewReasons: over.reviewReasons ?? [],
+            } as never)
+          }
+          criticReview={baseReview({
+            conflicts: [],
+            reasons: [],
+            riskFlags: over.riskFlags ?? [
+              {
+                code: 'PARTY_OPS',
+                severity: 'medium',
+                message: 'Cannot match "CIL PLUS LIMITED" in the customer list',
+              },
+            ],
+          })}
+          compact={null}
+          defaultExpanded
+          onApprove={vi.fn()}
+          onSaveAndApprove={vi.fn()}
+        />
+      </MemoryRouter>,
+    )
+  }
+
+  it('nothing proposed for the PO → the PO leaves the desk entirely', () => {
+    renderPoCard()
+    expect(screen.queryByTestId('review-po-styles-section')).toBeNull()
+    // Not a summary line either — no heading, no PO number, no styles anywhere on the card.
+    expect(screen.queryByText(/POs & styles/i)).toBeNull()
+    expect(screen.queryByText('224340')).toBeNull()
+    expect(screen.queryByText('26-HMIGHLE-0294-1')).toBeNull()
+    // No conflicts either → the whole decision grid is gone, not just the PO block.
+    expect(screen.queryByTestId('review-decision-grid')).toBeNull()
+  })
+
+  it('a proposed item/style for the PO brings the grid back', () => {
+    renderPoCard({
+      reviewReasons: ['PO 224340: item/style "OLD" vs "NEW" (kept 26-HMIGHLE-0294-2)'],
+    })
+    expect(screen.getByTestId('review-po-styles-section')).toBeInTheDocument()
+    expect(screen.getByText('26-HMIGHLE-0294-2')).toBeInTheDocument()
+  })
+
+  it('a PO-link question (matched on PO alone) brings the grid back', () => {
+    renderPoCard({
+      riskFlags: [
+        {
+          code: 'PO_ONLY_WEAK_MATCH',
+          severity: 'medium',
+          message: 'Matched an existing shipment on PO alone',
+        },
+      ],
+    })
+    expect(screen.getByTestId('review-po-styles-section')).toBeInTheDocument()
+  })
+
+  it('Edit always gets the full grid — managing POs is what Edit is for', async () => {
+    const user = userEvent.setup()
+    renderPoCard()
+    await user.click(screen.getByRole('button', { name: /^edit$/i }))
+    expect(screen.getByTestId('review-po-styles-section')).toBeInTheDocument()
+    expect(screen.getByTestId('review-po-add')).toBeInTheDocument()
+  })
+
+  it('the note stays collapsed until it is asked for', async () => {
+    const user = userEvent.setup()
+    renderPoCard()
+    expect(screen.queryByRole('textbox', { name: /note/i })).toBeNull()
+    await user.click(screen.getByTestId('review-note-add'))
+    expect(screen.getByRole('textbox', { name: /note/i })).toBeInTheDocument()
+    expect(screen.queryByTestId('review-note-add')).toBeNull()
   })
 })
