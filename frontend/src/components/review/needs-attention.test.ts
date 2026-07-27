@@ -9,6 +9,8 @@ import {
   weakIdentityText,
   isNonPartyName,
   isMailboxPartyName,
+  isSameCompanyName,
+  partyMissSlot,
   portsLinkedFromRoute,
 } from './needs-attention'
 
@@ -1463,5 +1465,78 @@ describe('guard notes and mailbox "parties" are never advertised as Mesh additio
     expect(isMailboxPartyName('CIL PLUS LIMITED')).toBe(false)
     expect(isMailboxPartyName('南海制衣')).toBe(false)
     expect(isMailboxPartyName(null)).toBe(false)
+  })
+})
+
+/**
+ * Leg BDB973EA: the desk said `Cannot match "WHISTLES" in the customer list. Please add it in Cobalt
+ * Fashion Data Mesh System` while that leg's customer was ALREADY linked to `WLTD WHISTLES LIMITED`.
+ * The name half of matching failed, the code half succeeded, and only the failure left a note — so ops
+ * were told to create a master that exists and that this shipment already points at. 4 legs' worth.
+ */
+describe('a master-miss line dies when its slot already resolved to that company', () => {
+  const WHISTLES =
+    'Cannot match "WHISTLES" in the customer list. Please add it in Cobalt Fashion Data Mesh System, then rematch.'
+  const LIGENTIA_CHINA =
+    'Cannot match "Ligentia China Ltd." in the forwarder list. Please add it in Cobalt Fashion Data Mesh System, then rematch.'
+
+  const build = (reviewReasons: string[], partiesLinked?: Record<string, string | null>) =>
+    buildNeedsAttention({ conflictsCount: 0, riskFlags: [], reviewReasons, partiesLinked })
+
+  it('drops it: the customer is linked to WHISTLES LIMITED', () => {
+    const items = build([WHISTLES], { customer: 'WHISTLES LIMITED' })
+    expect(items.some((i) => /WHISTLES/i.test(i.text))).toBe(false)
+    expect(items.some((i) => /advise add in Mesh/i.test(i.text))).toBe(false)
+  })
+
+  it('arrives as a riskFlag too, and dies there as well', () => {
+    const items = buildNeedsAttention({
+      conflictsCount: 0,
+      reviewReasons: [],
+      riskFlags: [{ code: 'PARTY_OPS', severity: 'low', message: WHISTLES }],
+      partiesLinked: { customer: 'WHISTLES LIMITED' },
+    })
+    expect(items.some((i) => /advise add in Mesh/i.test(i.text))).toBe(false)
+  })
+
+  /** The whole reason the rule compares NAMES rather than just checking "is the slot filled". */
+  it('KEEPS it when the slot resolved to a different entity of the same group', () => {
+    const items = build([LIGENTIA_CHINA], { forwarder: 'LIGENTIA ASIA LTD' })
+    expect(items.some((i) => /Ligentia China/i.test(i.text))).toBe(true)
+  })
+
+  it('keeps it when the slot is unlinked, or when the line names no slot', () => {
+    expect(build([WHISTLES]).some((i) => /WHISTLES/i.test(i.text))).toBe(true)
+    expect(build([WHISTLES], { customer: null }).some((i) => /WHISTLES/i.test(i.text))).toBe(true)
+    // A different slot being linked must not silence this one.
+    expect(build([WHISTLES], { forwarder: 'WHISTLES LIMITED' }).some((i) => /WHISTLES/i.test(i.text))).toBe(true)
+  })
+})
+
+describe('isSameCompanyName', () => {
+  it('sees through a dropped legal suffix and punctuation', () => {
+    expect(isSameCompanyName('WHISTLES', 'WHISTLES LIMITED')).toBe(true)
+    expect(isSameCompanyName("Land's End", 'LANDS END EUROPE LIMITED')).toBe(true)
+    expect(isSameCompanyName('LXPantos', 'LX PANTOS LOGISTICS (SHENZHEN) CO. LTD')).toBe(true)
+  })
+
+  it('says no to a different entity, however similar the family', () => {
+    expect(isSameCompanyName('Ligentia China Ltd.', 'LIGENTIA ASIA LTD')).toBe(false)
+    expect(isSameCompanyName('SOUTH OCEAN (JAPAN)', 'SOUTH OCEAN (KOREA)')).toBe(false)
+  })
+
+  it('will not collide on a short stub', () => {
+    expect(isSameCompanyName('LGT', 'LIGENTIA ASIA LTD')).toBe(false)
+    expect(isSameCompanyName('', 'WHISTLES LIMITED')).toBe(false)
+  })
+})
+
+describe('partyMissSlot', () => {
+  it('reads the slot out of either phrasing', () => {
+    expect(partyMissSlot('Cannot match "X" in the customer list. Please add it')).toBe('customer')
+    expect(partyMissSlot('Cannot match "X" in the forwarder list')).toBe('forwarder')
+    expect(partyMissSlot('forwarder_name "TCI" did not exact-match a master')).toBe('forwarder')
+    expect(partyMissSlot('vendor_code "X" did not exact-match a master')).toBe('vendor')
+    expect(partyMissSlot('something with no slot in it')).toBeNull()
   })
 })

@@ -1462,6 +1462,46 @@ describe('decision desk — ready state (no Critical for sailing band)', () => {
   })
 })
 
+/** The card half of the WHISTLES fix: it only trusts a slot that carries a master ID. */
+describe('a resolved party stops the desk asking ops to add it', () => {
+  const reason =
+    'Cannot match "WHISTLES" in the customer list. Please add it in Cobalt Fashion Data Mesh System, then rematch.'
+
+  function renderLeg(over: Record<string, unknown>) {
+    return render(
+      <MemoryRouter>
+        <ReviewCard
+          shipment={baseShipment({ reviewReasons: [reason], ...over } as never)}
+          criticReview={baseReview({ conflicts: [], reasons: [], riskFlags: [] })}
+          compact={null}
+          defaultExpanded
+          onApprove={vi.fn()}
+        />
+      </MemoryRouter>,
+    )
+  }
+
+  it('linked customer → the line is gone', () => {
+    renderLeg({ customerId: 'c1', customer: { id: 'c1', name: 'WHISTLES LIMITED', code: 'WLTD' } })
+    expect(screen.queryByText(/advise add in Mesh/i)).toBeNull()
+    expect(screen.getByTestId('review-ready-state')).toBeInTheDocument()
+  })
+
+  /**
+   * The queue DTO maps `forwarder` to `forwarderName ?? forwarderRaw`, so a NAME alone proves nothing.
+   * Without the id this must behave as unlinked, or a raw echo would silence a real miss.
+   */
+  it('a name with no master id is not a link', () => {
+    renderLeg({ customer: 'WHISTLES LIMITED' })
+    expect(screen.getByText(/advise add in Mesh/i)).toBeInTheDocument()
+  })
+
+  it('unlinked → the line stays', () => {
+    renderLeg({})
+    expect(screen.getByText(/advise add in Mesh/i)).toBeInTheDocument()
+  })
+})
+
 /**
  * Leg E553C0A2 — one of the four legs D0 does not resolve, so the picker is genuinely needed. The
  * email gave only SO FENLSO003062, which matches none of the four offered; the card never said so, so
