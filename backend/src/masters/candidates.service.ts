@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common'
 import { MastersRepository } from '../db/repositories/masters.repository'
 import { trigramSimilarity, tokenMatch, tokenSubset } from './trigram'
+import { foldCjk } from './cjk-fold'
 
 /**
  * Deterministic, LLM-free candidate retrieval for the LLM Master Matcher (design 2026-07-09 §3 +
@@ -82,16 +83,64 @@ function isPartyKind(t: CandidateKind): boolean {
 }
 
 /**
- * Single brand-like token, length 2–6 (e.g. DSV, MAERSK is 6). Excludes long city names
- * (SHANGHAI = 8) so reverse token-subset does not flood party candidates.
+ * How many masters a single-token input can reach by the reverse paths. The discriminator the old
+ * length ceiling was standing in for.
+ *
+ * A brand names a handful of legal entities; a place name recurs across dozens. Measured on the dev
+ * forwarder catalogue:
+ *
+ *   LOGIMARK   1     LX PANTOS  2     LIGENTIA  8     SHANGHAI  11     HONG KONG  87
+ *
+ * so a small ceiling separates them on what they ARE rather than on how long they are — which is why
+ * LOGIMARK (8 chars, one master) and SHANGHAI (8 chars, eleven) used to share a fate.
  */
-function isShortBrandInput(input: string): boolean {
+const BRAND_MAX_REACH = 5
+
+/**
+ * Rarity is a claim about a corpus, and it means nothing in a tiny one — "1 of 1" is not rare, it is
+ * everything. Below this the old behaviour stands unchanged, which is what keeps the existing
+ * SHANGHAI-must-not-flood guarantee true for the single-row catalogue its test uses.
+ */
+const BRAND_RARITY_MIN_CATALOGUE = 20
+
+/** Squash separators: an input may concatenate what the master spaces (LXPantos / LX PANTOS). */
+const squash = (s: string): string => foldCjk(s).toUpperCase().replace(/[^A-Z0-9一-鿿]/g, '')
+
+function reachesMaster(squashedInput: string, r: MasterRow): boolean {
+  if (tokenSubset(squashedInput, r.name) || r.aliases.some((a) => tokenSubset(squashedInput, a))) return true
+  // Prefix of the squashed master name — 'LXPANTOS' against 'LXPANTOSLOGISTICSSHENZHENCOLTD'.
+  const sq = squash(r.name)
+  if (sq.startsWith(squashedInput)) return true
+  return r.aliases.some((a) => squash(a).startsWith(squashedInput))
+}
+
+/**
+ * A single brand-like token the reverse paths may use.
+ *
+ * Short tokens (≤6: DSV, MAERSK) keep qualifying unconditionally — that behaviour predates this and
+ * nothing measured argues against it. Longer ones now qualify on RARITY instead of being refused for
+ * their length, so a brand written as one word is no longer mistaken for a city.
+ *
+ * Returns the squashed form when it qualifies, so the caller does not recompute it per row.
+ */
+function brandInputOf(input: string, rows: MasterRow[]): string | null {
   const cleaned = input.toUpperCase().replace(/[^A-Z0-9一-鿿]+/g, ' ').trim()
-  if (!cleaned || /\s/.test(cleaned)) return false
+  if (!cleaned || /\s/.test(cleaned)) return null
   const alnum = cleaned.replace(/[^A-Z0-9]/g, '')
-  // CJK short brands: 2–4 chars; Latin: 2–6
-  if (/[一-鿿]/.test(cleaned)) return cleaned.length >= 2 && cleaned.length <= 4
-  return alnum.length >= 2 && alnum.length <= 6
+  // CJK short brands: 2–4 chars — untouched, no evidence to widen it.
+  if (/[一-鿿]/.test(cleaned)) return cleaned.length >= 2 && cleaned.length <= 4 ? squash(input) : null
+  if (alnum.length < 2) return null
+  const squashed = squash(input)
+  if (alnum.length <= 6) return squashed
+  if (rows.length < BRAND_RARITY_MIN_CATALOGUE) return null
+  let reach = 0
+  for (const r of rows) {
+    if (reachesMaster(squashed, r)) {
+      reach += 1
+      if (reach > BRAND_MAX_REACH) return null
+    }
+  }
+  return squashed
 }
 
 /** Master code equals short brand, or code is brand + digits (DSV / DSV001). */
@@ -129,6 +178,9 @@ export class CandidatesService {
     const inputDomain = String(req.emailDomain ?? '').trim().toLowerCase()
     const inputCountry = String(req.country ?? '').trim().toLowerCase()
 
+    /** Computed once: the reach count scans the catalogue, so it must not run per row. */
+    const brandInput = inputName ? brandInputOf(inputName, rows) : null
+
     const scored: Candidate[] = []
     for (const r of rows) {
       const signals: string[] = []
@@ -142,18 +194,17 @@ export class CandidatesService {
       if (inputName && nameScore === 0) {
         // (1) master tokens ⊆ input — rescues short masters ('DSV') against long raws.
         // (2) port: reverse subset (input ⊆ master) for bare city → airport (live-probe gap).
-        // (3) short-brand reverse for parties only: single brand-like token (2–6 chars) that is
-        //     a subset of the master ('DSV' → 'DSV AIR AND SEA…'). Cities like 'SHANGHAI' (8 chars)
-        //     and logistics generics stay out so we do not flood forwarder candidates.
+        // (3) brand reverse for parties only: a single brand-like token that is a subset of the
+        //     master ('DSV' → 'DSV AIR AND SEA…'), or a prefix of its squashed name
+        //     ('LXPANTOS' → 'LX PANTOS LOGISTICS…', which is NOT a token match because the master
+        //     splits the word). Cities stay out on reach, not on length — see brandInputOf.
         const tokenHit =
           tokenMatch(inputName, r.name) ||
           r.aliases.some((a) => tokenMatch(inputName, a)) ||
           (r.type === 'port' && (tokenSubset(inputName, r.name) || r.aliases.some((a) => tokenSubset(inputName, a)))) ||
-          (isPartyKind(r.type) &&
-            isShortBrandInput(inputName) &&
-            (tokenSubset(inputName, r.name) || r.aliases.some((a) => tokenSubset(inputName, a))))
+          (isPartyKind(r.type) && brandInput != null && reachesMaster(brandInput, r))
         // code prefix / exact: raw "DSV" must surface master code DSV001 even when name is long
-        const codeHit = r.code && isShortBrandInput(inputName) && codeMatchesShortBrand(inputName, r.code)
+        const codeHit = r.code && brandInput != null && codeMatchesShortBrand(inputName, r.code)
         if (tokenHit || codeHit) {
           nameScore = codeHit && !tokenHit ? 0.75 : 0.6
           if (tokenHit) signals.push('name:tokens')
