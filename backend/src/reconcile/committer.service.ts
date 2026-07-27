@@ -361,6 +361,9 @@ export class CommitterService {
         })
       }
       await this.fillBooking(bookingId, shipmentId, { customerId, vendorId: effVendorId, forwarderId: effForwarderId, brand: str(f.brand), crd: date(f.cargo_ready_date) }, g)
+      // AMEND path only: fillBooking above is first-writer-wins, so this is where a later email's
+      // party value would otherwise leave the original master linked and winning display.
+      await this.reResolveBookingParties(bookingId, shipmentId, g)
       // review gate + cancellation are lifecycle metadata, not lockable fields — always reflect the latest.
       // leg_status only ever moves to CANCELLED here; never resurrect a leg the reconcile path superseded.
       const metaPatch: Record<string, unknown> = {}
@@ -420,6 +423,9 @@ export class CommitterService {
           { customerId, vendorId: effVendorId, forwarderId: effForwarderId, brand: str(f.brand), crd: date(f.cargo_ready_date) },
           g,
         )
+        // A sibling leg joins a booking that ALREADY has party masters, so fillBooking fills nothing
+        // and this leg's own raw twins can name someone else from the moment it is created.
+        await this.reResolveBookingParties(bookingId, shipmentId, g)
         await this.writeAudit('shipment', shipmentId, 'create', null, state, g)
         await this.audit.write({
           entityType: 'shipment',
@@ -464,6 +470,10 @@ export class CommitterService {
         action = 'create_booking'
         await this.writeAudit('booking', bookingId, 'create', null, jobNo, g)
         await this.writeAudit('shipment', shipmentId, 'create', null, state, g)
+        // Even a brand-new booking can be born inconsistent: the FK comes from resolveAll (which may
+        // match on a fuzzier tier) while the raw twin is written straight from the parsed value, so
+        // the two can name different companies from the first commit.
+        await this.reResolveBookingParties(bookingId, shipmentId, g)
       }
     }
 
@@ -653,6 +663,68 @@ export class CommitterService {
     }
     if (Object.keys(patch).length) await this.shipments.updateLeg(shipmentId, patch)
     return outcome
+  }
+
+  /**
+   * Keep the booking's party master consistent with the raw twin the leg now names.
+   *
+   * The stale master-FK class, third path. The two human write paths (detail edit, review correct)
+   * already re-link-or-unlink the master whenever a raw party value changes; the COMMITTER never did.
+   * It writes `vendor_raw` / `customer_raw` onto the LEG, but those masters hang off the BOOKING and
+   * `fillBooking` is first-writer-wins — so once a booking had a vendor, a later email naming a
+   * different factory could never move it.
+   *
+   * Leg 20260405F1 is the result: `vendor_raw = ELSMCO` with `booking.vendor_id` still SOUOCE, so
+   * Order Details (which prefers the master) printed SOUOCE while the review desk's Current — read
+   * from the raw twin — said ELSMCO. One field, two screens, two companies, and no way to settle it.
+   *
+   * This is NOT a correction of the agent's reading: the raw value is left exactly as written, and
+   * nothing is invented. Only the link that display follows is kept honest — re-pointed to whatever
+   * the raw value exactly matches, or UNLINKED when it matches nothing, so display falls back to the
+   * raw twin rather than asserting a company the leg does not name.
+   */
+  private async reResolveBookingParties(bookingId: string, shipmentId: string, g: ReconGroup) {
+    const [leg, bk] = await Promise.all([
+      this.shipments.findById(shipmentId),
+      this.bookings.findById(bookingId),
+    ])
+    if (!leg || !bk) return
+    const slots = [
+      { raw: 'vendorRaw', fk: 'vendorId', exact: (v: string) => this.masters.vendorIdExact(v) },
+      { raw: 'customerRaw', fk: 'customerId', exact: (v: string) => this.masters.customerIdExact(v) },
+    ] as const
+    const patch: Record<string, unknown> = {}
+    for (const slot of slots) {
+      const raw = str((leg as Record<string, unknown>)[slot.raw])
+      if (raw == null) continue // absent raw asserts nothing — leave the existing link alone
+      const linkedId = (bk as Record<string, unknown>)[slot.fk] as string | null | undefined
+      const resolved = await slot.exact(raw)
+      /**
+       * Re-point only on a CONFIDENT match — never unlink, unlike the two human paths.
+       *
+       * They may unlink because a person typed the raw value and meant it. Here the resolver that set
+       * the link is strictly smarter than this check: `resolveAll` folds aliases and canonical
+       * customer facts (COLEB → COLE), which `customerIdExact` cannot see. Unlinking on "no exact
+       * match" therefore destroyed correct alias links — it broke the co-valid-parties integration
+       * test the moment it ran.
+       *
+       * Leaving a link the resolver chose is the safer failure: the raw twin still shows beside it,
+       * and the desk's party-mismatch row asks a human when the two disagree.
+       */
+      if (resolved == null) continue
+      if (resolved === (linkedId ?? null)) continue
+      patch[slot.fk] = resolved
+      await this.writeAudit(
+        'shipment',
+        shipmentId,
+        'update',
+        linkedId ?? null,
+        resolved ?? null,
+        g,
+        slot.fk,
+      )
+    }
+    if (Object.keys(patch).length) await this.bookings.update(bookingId, patch)
   }
 
   private async fillBooking(bookingId: string, shipmentId: string, vals: Record<string, unknown>, g: ReconGroup) {

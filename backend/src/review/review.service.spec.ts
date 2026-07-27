@@ -290,6 +290,47 @@ describe('ReviewService.correct — party/port corrections re-resolve the master
   })
 })
 
+/**
+ * "Confirmed as-is" is a decision FOR the raw value, so the master link must follow it. This is the
+ * only branch that can close the stale-FK gap: keeping the current value writes no field, so it
+ * never reaches correctField's re-resolve. Leg 20260405F1 sat with vendor_raw ELSMCO under
+ * booking.vendor_id SOUOCE — Order Details printed SOUOCE, the desk read ELSMCO, and no click the
+ * operator had could reconcile them.
+ */
+describe('ReviewService.confirm — re-links the party master to the raw the leg names', () => {
+  it('re-points the booking vendor FK when the raw resolves elsewhere', async () => {
+    const { svc, bookings, masters } = makeService({ bookingId: 'bk-1', vendorRaw: 'ELSMCO' })
+    bookings.findById.mockResolvedValue({ id: 'bk-1', vendorId: 'v-souoce' } as never)
+    masters.vendorIdExact.mockResolvedValueOnce('v-elsmco')
+    await svc.confirm('leg-1', 'user-1')
+    expect(bookings.update).toHaveBeenCalledWith('bk-1', { vendorId: 'v-elsmco' })
+  })
+
+  it('UNLINKS rather than leaving a master the leg does not name', async () => {
+    const { svc, bookings, masters } = makeService({ bookingId: 'bk-1', vendorRaw: 'BRAND NEW LTD' })
+    bookings.findById.mockResolvedValue({ id: 'bk-1', vendorId: 'v-souoce' } as never)
+    masters.vendorIdExact.mockResolvedValueOnce(null)
+    await svc.confirm('leg-1', 'user-1')
+    expect(bookings.update).toHaveBeenCalledWith('bk-1', { vendorId: null })
+  })
+
+  it('writes nothing when the link already agrees with the raw', async () => {
+    const { svc, bookings, masters } = makeService({ bookingId: 'bk-1', vendorRaw: 'SOUOCE' })
+    bookings.findById.mockResolvedValue({ id: 'bk-1', vendorId: 'v-souoce' } as never)
+    masters.vendorIdExact.mockResolvedValueOnce('v-souoce')
+    await svc.confirm('leg-1', 'user-1')
+    expect(bookings.update).not.toHaveBeenCalled()
+  })
+
+  it('leaves the link alone when the leg names no party at all', async () => {
+    const { svc, bookings, masters } = makeService({ bookingId: 'bk-1', vendorRaw: null })
+    bookings.findById.mockResolvedValue({ id: 'bk-1', vendorId: 'v-souoce' } as never)
+    await svc.confirm('leg-1', 'user-1')
+    expect(masters.vendorIdExact).not.toHaveBeenCalled()
+    expect(bookings.update).not.toHaveBeenCalled()
+  })
+})
+
 describe('ReviewService — skip queue learning when sourceGraphIdFor is null (#236 P2)', () => {
   it('confirm: does NOT call postCorrection (never uses shipment UUID as messageId); still confirms the leg', async () => {
     const { svc, shipments, queueLearning } = makeService({ soNo: 'COSU123', grossWeight: 5 })

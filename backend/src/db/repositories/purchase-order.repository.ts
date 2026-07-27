@@ -35,8 +35,13 @@ export class PurchaseOrderRepository {
       .execute()
 
     // aggregates: shipped qty (sum), shipment count (distinct), furthest state (MAX of the state-rank)
+    // Rejected legs are excluded everywhere a PO's links are read (2026-07-27): dismiss() only stamps
+    // dismissed_at and never unlinks, so a thrown-away leg kept counting toward the PO's shipped
+    // quantity, its shipment count and its furthest status — the header-row leg `PO # :` alone was
+    // holding 7 POs. A leg nobody accepted is not a shipment of the order.
     const agg = await this.db.selectFrom('shipmentPos')
       .innerJoin('shipments', 'shipmentPos.shipmentId', 'shipments.id')
+      .where('shipments.dismissedAt', 'is', null)
       .groupBy('shipmentPos.poId')
       .select([
         'shipmentPos.poId as poId',
@@ -94,6 +99,8 @@ export class PurchaseOrderRepository {
       .leftJoin('ports as pol', 'shipments.polId', 'pol.id')
       .leftJoin('ports as pod', 'shipments.podId', 'pod.id')
       .where('shipmentPos.poId', '=', poId)
+      // see listPos: a rejected leg is not a shipment of this order
+      .where('shipments.dismissedAt', 'is', null)
       .select([
         'shipmentPos.id as linkId', 'shipmentPos.shipmentId as shipmentId', 'shipmentPos.quantity as linkedQuantity',
         'shipments.state as status', 'shipments.legStatus as legStatus', 'shipments.reviewStatus as reviewStatus',
@@ -116,6 +123,8 @@ export class PurchaseOrderRepository {
       .innerJoin('shipments', 'shipmentPos.shipmentId', 'shipments.id')
       .leftJoin('ports as pol', 'shipments.polId', 'pol.id')
       .leftJoin('ports as pod', 'shipments.podId', 'pod.id')
+      // see listPos: a rejected leg is not a shipment of this order
+      .where('shipments.dismissedAt', 'is', null)
       .select([
         'shipmentPos.poId as poId', 'shipmentPos.shipmentId as shipmentId', 'shipmentPos.quantity as linkedQuantity',
         'shipments.bookingNo as bookingNo', 'shipments.state as status', 'shipments.legStatus as legStatus',

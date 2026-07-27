@@ -99,12 +99,66 @@ describe('AlertEvaluatorService (integration)', () => {
     expect(alerts[0].ruleId).toBe('A3')
   })
 
-  it('skips provisional (low-confidence) legs — commit-first never alerts on unreviewed data', async () => {
+  /**
+   * The rule is unchanged in substance — automation must not act on data a human still owes an answer
+   * on — but it is now anchored to the OPEN QUESTION rather than to `reviewStatus` alone.
+   *
+   * A leg the review desk auto-cleared is deliberately never written to `confirmed` (auto-clear.ts
+   * recomputes on every read so a later email can bring it back). Keying alerts off `confirmed` meant
+   * a shipment nobody had to review was also a shipment nobody would be warned about.
+   */
+  it('skips a provisional leg that still has an open question — never alerts on unreviewed data', async () => {
     await seedA3()
-    await seedLeg({ cfsCutoff: new Date('2026-02-01'), reviewStatus: 'provisional' })
+    await seedLeg({
+      cfsCutoff: new Date('2026-02-01'),
+      reviewStatus: 'provisional',
+      // a real disagreement: the leg's vessel is NOT what the critic offered, so a human still owes an answer
+      vesselName: 'SOMETHING ELSE',
+      reviewReasons: JSON.stringify(['1 field conflict(s)']),
+      criticReview: JSON.stringify({
+        conflicts: [
+          {
+            field: 'vessel_name',
+            label: 'vessel_name',
+            candidates: [
+              { value: 'MAASTRICHT MAERSK', source: 'System' },
+              { value: 'MARIBO MAERSK', source: 'Draft B/L' },
+            ],
+            rationale: 'x',
+          },
+        ],
+      }),
+    })
     const r = await evaluator.evaluate(new Date('2026-02-05'))
     expect(r.fired).toBe(0)
     expect(await db.selectFrom('alerts').selectAll().execute()).toHaveLength(0)
+  })
+
+  it('DOES alert on a provisional leg the desk auto-cleared — nothing is left to review', async () => {
+    await seedA3()
+    await seedLeg({
+      cfsCutoff: new Date('2026-02-01'),
+      reviewStatus: 'provisional',
+      // the flagged value already matches the leg → settled → the desk shows nothing
+      vesselName: 'MARIBO MAERSK',
+      reviewReasons: JSON.stringify(['1 field conflict(s)']),
+      criticReview: JSON.stringify({
+        conflicts: [
+          {
+            field: 'vessel_name',
+            label: 'vessel_name',
+            candidates: [
+              { value: 'MAASTRICHT MAERSK', source: 'System' },
+              { value: 'MARIBO MAERSK', source: 'Draft B/L' },
+            ],
+            rationale: 'x',
+          },
+        ],
+      }),
+    })
+    const r = await evaluator.evaluate(new Date('2026-02-05'))
+    expect(r.fired).toBe(1)
+    expect(await db.selectFrom('alerts').selectAll().execute()).toHaveLength(1)
   })
 
   it('does NOT fire A3 once a Final B/L milestone exists', async () => {

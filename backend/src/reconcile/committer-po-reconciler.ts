@@ -104,7 +104,10 @@ export function planPoReconcile(args: {
     // total_quantity was left unset rather than resolved to whichever leg committed first — ERP must fill it.
     if (enr?.qtyConflict)
       poFlagReasons.push(
-        `PO ${poNo}: qty conflict ${enr.qtyConflict.join(' vs ')} across legs — order total left unset, confirm from ERP`,
+        // "ERP" named a system that does not exist here: masters mirror Cobalt Mesh, and Mesh holds no
+        // POs at all (po.mapper.ts — purchase orders are app-owned). The ordered total comes off the
+        // customer's own PO, so the line asks for that instead of pointing at a system nobody has.
+        `PO ${poNo}: qty conflict ${enr.qtyConflict.join(' vs ')} across legs — order total left unset, confirm the ordered quantity on the customer PO`,
       )
     // T2: symmetric-diff style conflict copy (not full multi-list dump)
     if (enr?.styleConflict)

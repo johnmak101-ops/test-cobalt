@@ -24,6 +24,7 @@ import {
 import { emailFieldTimeline, dedupeAgainstAudit } from './adapters/email-timeline'
 import {
   compactCriticReview,
+  partyMismatch,
   toUiShipment,
   type ShipmentMapperInput,
   type ShipmentLegRow,
@@ -39,6 +40,9 @@ import { toUiHistoryEntry } from './mappers/history.mapper'
 import { deriveRoute, portLabel, poNumbersJson, isoOrNull } from './adapters/derive'
 import { computeFieldConflicts } from './field-conflicts'
 import { openDecisions } from './open-decisions'
+import { sharedPos } from './po-shared-legs'
+import { autoClearVerdict } from './auto-clear'
+import { withPartyMismatchConflicts } from './party-mismatch-conflict'
 import { withUsableCandidatesOnly } from '../shipments/candidate-reconcile'
 import { poQtyIssue, describePoQtyIssue } from '../reconcile/po-qty-consistency'
 import { stateToUiStatus } from './adapters/enums'
@@ -142,6 +146,47 @@ export function buildShipmentSummary(
 const MASTER_MAPS_TTL_MS = Number(process.env.MASTER_MAPS_TTL_MS ?? 30_000)
 
 const ALERT_COUNTRY_CODE_SET = new Set<string>(ALERT_COUNTRY_CODES)
+
+/**
+ * A queue row's critic payload as the DESK will see it — the stored review plus any party-mismatch
+ * row synthesised from the raw twin disagreeing with its resolved master.
+ *
+ * The detail endpoint adds those rows; the list read the stored review only, so the two disagreed
+ * about whether a leg had anything open. Shared by the auto-clear filter, the row's compact summary
+ * and the badge count, so all three answer the same question.
+ */
+export function queueCriticReview(row: {
+  criticReview?: unknown
+  customerRaw?: string | null
+  vendorRaw?: string | null
+  customerId?: string | null
+  customerName?: string | null
+  customerCode?: string | null
+  customerNameCh?: string | null
+  vendorId?: string | null
+  vendorName?: string | null
+  vendorCode?: string | null
+  vendorNameCh?: string | null
+}): CriticReview | null {
+  const master = (
+    id: string | null | undefined,
+    name: string | null | undefined,
+    code: string | null | undefined,
+    nameCh: string | null | undefined,
+  ) => (id ? { id, name: name ?? '', code: code ?? null, nameCh: nameCh ?? null } : null)
+  const customer = partyMismatch(
+    row.customerRaw,
+    master(row.customerId, row.customerName, row.customerCode, row.customerNameCh),
+  )
+  const vendor = partyMismatch(
+    row.vendorRaw,
+    master(row.vendorId, row.vendorName, row.vendorCode, row.vendorNameCh),
+  )
+  return withPartyMismatchConflicts(row.criticReview as CriticReview | null | undefined, [
+    customer ? { slot: 'customer' as const, ...customer } : null,
+    vendor ? { slot: 'vendor' as const, ...vendor } : null,
+  ])
+}
 
 /** UI days map -> stored hours map. Drops unknown codes and out-of-range values (1-30 days). */
 function sanitizeCountryThresholds(
@@ -418,20 +463,32 @@ export class PresentationService {
     if (!leg) throw new NotFoundException('shipment not found')
     // Detail path: scoped queries only (no full alerts table, no full ports catalogue).
     // linkedPosForShipment already carries legQty/legQtyUnit — do not re-query posFor.
-    const [booking, maps, milestones, alertRows, legLinkedPos, relatedEmails, identifiers, siblings] =
-      await Promise.all([
-        this.bookingRepo.findById(leg.bookingId),
-        this.detailMasterMaps(
-          (leg as { polId?: string | null }).polId,
-          (leg as { podId?: string | null }).podId,
-        ),
-        this.shipmentRepo.milestonesFor(id),
-        this.alertRepo.listForShipment(id),
-        this.shipmentRepo.linkedPosForShipment(id) as Promise<LinkedPoRow[]>,
-        this.emailRepo.emailsForShipment(id),
-        this.shipmentRepo.identifiersFor(id),
-        this.shipmentRepo.legsForBooking(leg.bookingId),
-      ])
+    const [
+      booking,
+      maps,
+      milestones,
+      alertRows,
+      legLinkedPos,
+      relatedEmails,
+      identifiers,
+      siblings,
+      poSiblingRows,
+    ] = await Promise.all([
+      this.bookingRepo.findById(leg.bookingId),
+      this.detailMasterMaps(
+        (leg as { polId?: string | null }).polId,
+        (leg as { podId?: string | null }).podId,
+      ),
+      this.shipmentRepo.milestonesFor(id),
+      this.alertRepo.listForShipment(id),
+      this.shipmentRepo.linkedPosForShipment(id) as Promise<LinkedPoRow[]>,
+      this.emailRepo.emailsForShipment(id),
+      this.shipmentRepo.identifiersFor(id),
+      this.shipmentRepo.legsForBooking(leg.bookingId),
+      // The reference under "this PO is already on another shipment" — joined here so the desk can
+      // show WHERE instead of asking the operator to take it on trust.
+      this.shipmentRepo.poSiblingLegs(id),
+    ])
     // #151: per-leg shipment_pos first; booking_pos only when the leg has no PO links (legacy).
     const linkedPos =
       legLinkedPos.length > 0
@@ -556,14 +613,41 @@ export class PresentationService {
      */
     criticReview = withUsableCandidatesOnly(criticReview) ?? null
 
+    /**
+     * A raw party twin that disagrees with its resolved master becomes a real desk question rather
+     * than a display-only amber that told the operator to "correct in review" where nothing was.
+     * Last, so it cannot be stripped by the candidate reconcilers above.
+     */
+    criticReview = withPartyMismatchConflicts(criticReview, [
+      base.customerMismatch ? { slot: 'customer' as const, ...base.customerMismatch } : null,
+      base.vendorMismatch ? { slot: 'vendor' as const, ...base.vendorMismatch } : null,
+    ])
+
+    /**
+     * Recomputed against the FINAL critic payload. `base.openDecisions` was derived in the mapper from
+     * the stored review, so a conflict added above (the party mismatch) had no liveValues entry — the
+     * desk rendered its Current cell empty and offered "Leave Blank" over a leg that plainly stores
+     * ELSMCO. resolvedParties is carried over: it is about master links, not about conflicts.
+     */
+    const finalOpenDecisions = {
+      ...openDecisions(leg as unknown as Record<string, unknown>, criticReview, {}),
+      resolvedParties: base.openDecisions.resolvedParties,
+    }
+
     return {
       ...base,
       criticReview,
+      openDecisions: finalOpenDecisions,
       reviewReasons,
       milestones,
       emails,
       alerts: legAlerts,
       fieldConflicts,
+      sharedPos: sharedPos(poSiblingRows, {
+        mode: leg.mode,
+        qty: (leg as { qty?: number | null }).qty,
+        qtyUnit: (leg as { qtyUnit?: string | null }).qtyUnit,
+      }),
     }
   }
 
@@ -650,10 +734,46 @@ export class PresentationService {
    */
   async reviewQueue(view: 'pending' | 'dismissed' | 'approved' | 'waiting' = 'pending') {
     const rows = await this.shipmentRepo.reviewQueue(view)
-    const visible = rows.filter(
+    const bandVisible = rows.filter(
       (r) => !isHighBandAutoEligible(r.criticReview as CriticReview | null | undefined),
     )
+    /**
+     * Legs whose only remaining control would be `Confirm Reviewed` never reach the Active desk —
+     * that click chooses nothing and verifies nothing (see auto-clear.ts). They are reported as a
+     * group instead of vanishing, and nothing is written, so a later email that puts a real conflict
+     * on one brings it straight back.
+     *
+     * Only the pending view: the Approved / Rejected / Waiting tabs are history, and history is shown
+     * as it is.
+     */
+    const cleared: { id: string; bookingNo: string | null; customer: string | null; why: string }[] = []
+    const visible =
+      view !== 'pending'
+        ? bandVisible
+        : bandVisible.filter((r) => {
+            const verdict = autoClearVerdict(
+              { ...r, bookingNo: r.legBookingNo, soNo: r.legSoNo } as Record<string, unknown>,
+              // Judged against the SAME payload the desk will render, party-mismatch rows included.
+              // Without them a leg whose only open question was a stale master link auto-cleared off
+              // the list while its detail page asked that very question — the two-surfaces bug again,
+              // this time caused by the fix for it.
+              queueCriticReview(r),
+              filterPortMissReasons(r.reviewReasons ?? [], {
+                polLinked: !!(r as { polId?: string | null }).polId || !!r.polCode,
+                podLinked: !!(r as { podId?: string | null }).podId || !!r.podCode,
+              }),
+            )
+            if (!verdict.clear) return true
+            cleared.push({
+              id: r.id,
+              bookingNo: r.legBookingNo ?? r.bookingNo ?? null,
+              customer: r.customerName ?? null,
+              why: verdict.why,
+            })
+            return false
+          })
     return {
+      autoCleared: cleared,
       shipments: visible.map((r) => ({
         id: r.id,
         bookingNo: r.bookingNo ?? null,
@@ -675,7 +795,7 @@ export class PresentationService {
         // Reconciled FIRST so the row's "Pick the right shipment (N candidates)" counts only the legs
         // the committer would actually amend — the row and the card must not disagree.
         criticReviewCompact: compactCriticReview(
-          withUsableCandidatesOnly(r.criticReview as CriticReview | null | undefined) ?? undefined,
+          withUsableCandidatesOnly(queueCriticReview(r)) ?? undefined,
         ),
         // #350: Shipment ID anchor (beginning email; UI falls back to createdAt)
         firstEmailAt: isoOrNull(r.firstEmailAt),
@@ -717,8 +837,21 @@ export class PresentationService {
     ])
     const visible = (rows: { criticReview?: unknown }[]) =>
       rows.filter((r) => !isHighBandAutoEligible(r.criticReview as CriticReview | null | undefined)).length
+    /** The Active badge must agree with the Active list — an auto-cleared leg is not work. */
+    const pendingVisible = pendingRows.filter(
+      (r) =>
+        !isHighBandAutoEligible(r.criticReview as CriticReview | null | undefined) &&
+        !autoClearVerdict(
+          { ...r, bookingNo: r.legBookingNo, soNo: r.legSoNo } as Record<string, unknown>,
+          queueCriticReview(r),
+          filterPortMissReasons(r.reviewReasons ?? [], {
+            polLinked: !!(r as { polId?: string | null }).polId || !!r.polCode,
+            podLinked: !!(r as { podId?: string | null }).podId || !!r.podCode,
+          }),
+        ).clear,
+    ).length
     return {
-      provisional: visible(pendingRows),
+      provisional: pendingVisible,
       dismissed: visible(dismissedRows),
       waiting: visible(waitingRows),
     }

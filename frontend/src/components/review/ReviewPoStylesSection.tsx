@@ -21,6 +21,7 @@ import {
   REVIEW_TD,
   REVIEW_TH,
 } from './review-table-layout'
+import { parseStyleEntries } from '../../lib/review-fields'
 import { ReviewColGroup } from './ReviewColGroup'
 import { StyleListDisplay, StyleListEditor } from './ConflictRow'
 import { cn } from '../../lib/utils'
@@ -35,9 +36,27 @@ function escapeRegExp(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
+/**
+ * The style named by a `(kept …)` audit note, when it is not already what the PO stores.
+ *
+ * `(kept X)` is NOT a proposal from the email. It is written by the committer's reconciler
+ * (`summarizeStyleConflict(enr.styleConflict, enr.itemStyleNo)` in po-enrichment.ts) to record which
+ * of several competing styles it already committed — X is the value it wrote. Rendering it in the
+ * AI Proposed column therefore advertised a change that writes back what is on the row, which is why
+ * a leg with nothing to do read as "1 change".
+ *
+ * So the note only earns a cell when the kept value is genuinely absent from the PO. Absent means
+ * absent as a TOKEN: `C192/FERN JUMPER` already carries `C192` (parseStyleEntries reads the part
+ * before the slash as the PO/article prefix), and offering the bare code there would invite the
+ * operator to overwrite the fuller value with a shorter one they already have.
+ *
+ * Nothing is suppressed by this — the note itself still reaches the desk as a review reason
+ * ("PO 28631: item/style … — verify"). Only the false APPLY goes.
+ */
 export function proposedStyleForPo(
   poNumber: string,
   reviewReasons: string[],
+  currentStyle?: string | null,
 ): string | null {
   const re = new RegExp(
     `PO\\s+${escapeRegExp(poNumber)}:.*?item\\/style[\\s\\S]*?\\(kept\\s+([^)]+)\\)`,
@@ -45,9 +64,25 @@ export function proposedStyleForPo(
   )
   for (const r of reviewReasons) {
     const m = r.match(re)
-    if (m?.[1]) return m[1].trim().replace(/^"|"$/g, '')
+    if (!m?.[1]) continue
+    const kept = m[1].trim().replace(/^"|"$/g, '')
+    return styleAlreadyPresent(kept, currentStyle) ? null : kept
   }
   return null
+}
+
+/** True when `kept` is already carried by the stored style — as the whole value, one of its list
+ *  entries, or an entry's article prefix (`C192` in `C192/FERN JUMPER`). */
+function styleAlreadyPresent(kept: string, currentStyle: string | null | undefined): boolean {
+  const norm = (s: string) => s.trim().toUpperCase()
+  const k = norm(kept)
+  if (k === '') return true
+  const current = String(currentStyle ?? '').trim()
+  if (current === '') return false
+  if (norm(current) === k) return true
+  return parseStyleEntries(current).some(
+    (e) => norm(e.style) === k || (e.po !== '' && norm(e.po) === k),
+  )
 }
 
 type Draft = { poNumber: string; itemStyleNo: string }
@@ -226,7 +261,18 @@ export function ReviewPoStylesSection({
     )
   }
 
-  const sorted = [...linkedPOs].sort((a, b) =>
+  /**
+   * The review desk lists only the POs that need an answer — the ones the email proposes a different
+   * item/style for. A leg with seven POs and one proposal used to print all seven, six of them with
+   * `—` in the AI Proposed column, which reads as "something is wrong with these POs" when nothing
+   * is. The full list is the shipment page's job, one click away on Open Shipment.
+   *
+   * Edit mode shows every PO: adding, unlinking and correcting are what Edit is for.
+   */
+  const visiblePOs = canEdit
+    ? linkedPOs
+    : linkedPOs.filter((p) => proposedStyleForPo(p.poNumber, reviewReasons, p.itemStyleNo) != null)
+  const sorted = [...visiblePOs].sort((a, b) =>
     a.poNumber.localeCompare(b.poNumber, undefined, { numeric: true }),
   )
   /** Always 4 columns — matches the field-conflict table (actions live inside the proposed cell).
@@ -284,7 +330,7 @@ export function ReviewPoStylesSection({
           <AddRow busy={busy} onCancel={() => setAdding(false)} onSave={handleAdd} />
         )}
         {sorted.map((po) => {
-          const proposed = proposedStyleForPo(po.poNumber, reviewReasons)
+          const proposed = proposedStyleForPo(po.poNumber, reviewReasons, po.itemStyleNo)
           const draft = displayDrafts[po.id] ?? {
             poNumber: po.poNumber,
             itemStyleNo: po.itemStyleNo?.trim() ?? '',

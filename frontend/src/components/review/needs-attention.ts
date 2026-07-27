@@ -621,6 +621,16 @@ function extractPortName(raw: string): string | null {
 }
 
 /** Map a risk flag to a canonical short line. */
+/**
+ * Where the operator settles a field disagreement.
+ *
+ * These lines are DROPPED when the conflict grid has rows (the table owns the comparison), so every
+ * time one of them renders there is by definition no table on the card — and "see conflict table"
+ * pointed at something that was not there. Leg 202605C7BD showed "1 field(s) disagree — see conflict
+ * table" above a card whose only table was POs & Styles.
+ */
+const DISAGREE_SUFFIX = 'open the full shipment to compare'
+
 function lineFromFlag(code: string, message: string): LineHit | null {
   if (isBroadcast(message)) return null
   // Legacy / compact codes
@@ -699,8 +709,8 @@ function lineFromFlag(code: string, message: string): LineHit | null {
       return {
         lineId: n ? `f-count:${n}` : 'f-count',
         text: n
-          ? `${n} field(s) disagree — see conflict table`
-          : 'Field values disagree — see conflict table',
+          ? `${n} field(s) disagree — ${DISAGREE_SUFFIX}`
+          : `Field values disagree — ${DISAGREE_SUFFIX}`,
         category: 'conflict',
       }
     }
@@ -927,8 +937,8 @@ function lineFromReason(raw: string, humanized: string): LineHit | null {
     return {
       lineId: n ? `f-count:${n}` : 'f-count',
       text: n
-        ? `${n} field(s) disagree — see conflict table`
-        : 'Field values disagree — see conflict table',
+        ? `${n} field(s) disagree — ${DISAGREE_SUFFIX}`
+        : `Field values disagree — ${DISAGREE_SUFFIX}`,
       category: 'conflict',
     }
   }
@@ -946,7 +956,9 @@ function lineFromReason(raw: string, humanized: string): LineHit | null {
     const n = nFromFieldConflicts(raw) || nFromFieldConflicts(humanized)
     return {
       lineId: n ? `f-count:${n}` : 'f-count',
-      text: n ? `${n} field(s) disagree — see conflict table` : 'Field values disagree — see conflict table',
+      text: n
+        ? `${n} field(s) disagree — ${DISAGREE_SUFFIX}`
+        : `Field values disagree — ${DISAGREE_SUFFIX}`,
       category: 'conflict',
     }
   }

@@ -96,7 +96,7 @@ describe('ShipmentDetailPage — pending-review word highlight', () => {
     mutateSpy.mockClear()
   })
 
-  it('masks provisional conflicted fields to the prior System value, amber-marked — and only those', () => {
+  it('shows the STORED value on a conflicted row, amber-marked — and only those rows', () => {
     mockUseShipment.mockReturnValue({
       data: fixture({
         reviewStatus: 'provisional',
@@ -106,14 +106,18 @@ describe('ShipmentDetailPage — pending-review word highlight', () => {
     })
     renderPage()
 
-    // Unconfirmed-answer mask (2026-07-24): the committed-but-undecided value must NOT display —
-    // the row shows the pre-write System candidate ('a') in amber instead.
+    /**
+     * The mask is gone (2026-07-27). It replaced the stored value with the critic's `System`
+     * candidate ('a'), which made Order Details disagree with the review card's
+     * "Current (on shipment)" for the same field. The row now prints what the leg holds; the amber
+     * mark and the warning icon are what say it is unresolved.
+     */
     const marks = pendingMarks()
     expect(marks).toHaveLength(2)
-    expect(marks.every((m) => m.textContent === 'a')).toBe(true)
-    expect(screen.queryByText('cartons')).toBeNull()
+    expect(marks.some((m) => m.textContent === 'cartons')).toBe(true)
+    expect(marks.every((m) => m.textContent === 'a')).toBe(false)
 
-    // Booking No. has no conflict — its value must stay unmarked (and unmasked).
+    // Booking No. has no conflict — its value stays unmarked.
     for (const el of screen.getAllByText('GZL26261147')) {
       expect(el.closest('mark')).toBeNull()
     }
@@ -164,11 +168,10 @@ describe('ShipmentDetailPage — pending-review word highlight', () => {
     })
     renderPage()
 
-    // Masked to the prior System candidate — the undecided master codes must not display.
+    // The party codes the leg actually holds, amber-marked — the same values the review card prints
+    // as "Current (on shipment)". Leg 202601DD8E used to read ROKNFT there and "(pending)" here.
     const texts = pendingMarks().map((m) => m.textContent ?? '')
-    expect(texts).toEqual(['a', 'a'])
-    expect(screen.queryByText('MACFUN')).toBeNull()
-    expect(screen.queryByText('WYSE')).toBeNull()
+    expect(texts).toEqual(['WYSE', 'MACFUN'])
   })
 
   it('shows no marks once the review is confirmed', () => {
@@ -198,15 +201,15 @@ describe('ShipmentDetailPage — pending-review word highlight', () => {
     expect(marks[0]!.textContent).toContain('Feb 2026')
   })
 
-  it('never marks a blank value — a conflict with no prior shows a plain "(pending)"', () => {
+  it('an empty date keeps the page-wide TBD placeholder, and the icon carries the question', () => {
     mockUseShipment.mockReturnValue({
       data: fixture({
         etd: null,
         reviewStatus: 'provisional',
         criticReview: {
           ...criticWithConflicts([]),
-          // No System candidate — the LLM proposed onto an empty field. The row must show the
-          // "(pending)" placeholder (unmarked), never the undecided proposal.
+          // No System candidate — the LLM proposed onto an empty field. The row shows the leg's own
+          // (empty) state, never the undecided proposal.
           conflicts: [
             {
               field: 'etd',
@@ -220,16 +223,17 @@ describe('ShipmentDetailPage — pending-review word highlight', () => {
       isLoading: false,
     })
     renderPage()
+    // Nothing stored → nothing to mark, and the proposal stays in the review queue.
     expect(pendingMarks()).toHaveLength(0)
     expect(screen.queryByText(/2026-02-09/)).toBeNull()
-    const pendings = screen.getAllByText(/\(pending\)/)
-    expect(pendings.length).toBeGreaterThan(0)
-    // A review-queue question sits behind THIS placeholder — it renders amber, not muted grey.
-    const masked = pendings.find((p) => p.closest('div.grid')?.textContent?.includes('ETD'))!
-    expect(masked.className).toContain('text-status-warning')
-    // An ordinary empty field (no open question) keeps the muted placeholder.
-    const plain = pendings.find((p) => p.closest('div.grid')?.textContent?.includes('Container'))!
-    expect(plain.className).toContain('text-text-muted')
+    // 'TBD' is what every other empty date row on this page shows (ATA, In DC Date) — the mask used
+    // to force this one to "(pending)" instead, which was inconsistent with its own neighbours.
+    const etdRow = [...document.querySelectorAll('div.grid')].find((d) =>
+      d.textContent?.startsWith('ETD'),
+    )
+    expect(etdRow?.textContent).toContain('TBD')
+    // The open question is still announced — by the icon, not by hiding the field.
+    expect(screen.getAllByTestId('pending-icon-warn').length).toBeGreaterThan(0)
   })
 })
 

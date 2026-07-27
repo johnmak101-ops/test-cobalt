@@ -164,6 +164,29 @@ export class ShipmentRepository {
       .selectAll()
       .execute()
   }
+
+  /**
+   * Alert candidates: confirmed legs, PLUS the provisional ones the desk auto-cleared.
+   *
+   * An auto-cleared leg is deliberately never written to `confirmed` — it is filtered from the desk
+   * and recomputed on every read, so a later email that puts a real conflict on it brings it straight
+   * back (see presentation/auto-clear.ts). The cost was that it stayed `provisional` forever and
+   * `activeConfirmedLegs` therefore hid it from alerts: a shipment nobody had to review was also a
+   * shipment nobody would be warned about.
+   *
+   * So the query widens to both states and the CALLER decides, using the same auto-clear verdict the
+   * queue uses. Provisional legs that genuinely await a human are still excluded — the reason
+   * `activeConfirmedLegs` exists is that automation must not act on unreviewed data.
+   */
+  activeLegsForAlerts() {
+    return this.db
+      .selectFrom('shipments')
+      .where('legStatus', '=', 'ACTIVE')
+      .where('reviewStatus', 'in', ['confirmed', 'provisional'])
+      .where('dismissedAt', 'is', null)
+      .selectAll()
+      .execute()
+  }
   /**
    * Candidates for the periodic state refresh: live SHIPMENT legs that are not already terminal.
    *
@@ -235,6 +258,10 @@ export class ShipmentRepository {
       .selectFrom('shipments')
       .innerJoin('bookings', 'shipments.bookingId', 'bookings.id')
       .leftJoin('customers', 'bookings.customerId', 'customers.id')
+      // The party masters the raw twins are checked against — the queue has to spot a stale link for
+      // itself, or a leg whose only open question is one would be auto-cleared off the desk while its
+      // detail page still asked it.
+      .leftJoin('vendors', 'bookings.vendorId', 'vendors.id')
       .leftJoin('forwarders', 'shipments.forwarderId', 'forwarders.id')
       .leftJoin('ports as pol', 'shipments.polId', 'pol.id')
       .leftJoin('ports as pod', 'shipments.podId', 'pod.id')
@@ -262,7 +289,11 @@ export class ShipmentRepository {
       'shipments.committerCandidatesConsidered as committerCandidatesConsidered',
       'shipments.criticReview as criticReview',
       'customers.id as customerId', 'customers.name as customerName',
-      'customers.code as customerCode', 'forwarders.id as forwarderId', 'forwarders.name as forwarderName',
+      'customers.code as customerCode', 'customers.nameCh as customerNameCh',
+      // partyMismatch compares the raw twin against code / name / nameCh before claiming a divergence.
+      'vendors.id as vendorId', 'vendors.name as vendorName',
+      'vendors.code as vendorCode', 'vendors.nameCh as vendorNameCh',
+      'forwarders.id as forwarderId', 'forwarders.name as forwarderName',
       'shipments.forwarderRaw as forwarderRaw', 'shipments.mode as mode', 'pol.unlocode as polCode', 'pod.unlocode as podCode',
       'pol.iata as polIata', 'pod.iata as podIata', 'shipments.polRaw as polRaw', 'shipments.podRaw as podRaw',
       sql<number>`(select count(*) from booking_pos bp where bp.booking_id = ${sql.ref('shipments.bookingId')})`.as('poCount'),
@@ -515,6 +546,66 @@ export class ShipmentRepository {
       else map.set(shipmentId, [rest])
     }
     return map
+  }
+
+  /**
+   * The OTHER legs that carry any of this leg's POs — the reference behind "this PO is already on
+   * another shipment".
+   *
+   * That review reason was prose with nothing under it: the desk knew a PO was shared but could not
+   * name where, so the operator had no way to tell a cross-mode split from a mis-link, and the card
+   * fell back to offering PO editing. One self-join answers it, and carries the fields the judgement
+   * actually needs — mode, ETD/ATD and the sibling's own shipped quantity.
+   *
+   * REJECTED siblings are excluded. A dismissed leg is not a competing claim on the cargo — if every
+   * other holder of a PO has been rejected then this leg IS the only shipment for it, and there is
+   * nothing to confirm. Leaving them in produced the worst version of this panel: leg 256BB7D0 raised
+   * "7 POs are also on other shipments" where all seven pointed at the SAME rejected header-row leg
+   * (`PO # :`), i.e. seven alarms about a row someone had already thrown away.
+   */
+  poSiblingLegs(shipmentId: string) {
+    return this.db
+      .selectFrom('shipmentPos as mine')
+      .innerJoin('shipmentPos as theirs', (join) =>
+        join
+          .onRef('theirs.poId', '=', 'mine.poId')
+          .on('theirs.shipmentId', '!=', shipmentId),
+      )
+      .innerJoin('purchaseOrders', 'purchaseOrders.id', 'mine.poId')
+      .innerJoin('shipments', 'shipments.id', 'theirs.shipmentId')
+      .where('mine.shipmentId', '=', shipmentId)
+      .where('shipments.kind', '=', 'SHIPMENT')
+      .where('shipments.dismissedAt', 'is', null)
+      .select([
+        'purchaseOrders.poNumber as poNumber',
+        'shipments.id as shipmentId',
+        'shipments.bookingNo as bookingNo',
+        'shipments.soNo as soNo',
+        'shipments.hblAwbFcrNo as hblAwbFcrNo',
+        'shipments.mode as mode',
+        'shipments.etd as etd',
+        'shipments.atd as atd',
+        'shipments.state as state',
+        'shipments.legNo as legNo',
+        'shipments.dismissedAt as dismissedAt',
+        'shipments.reviewStatus as reviewStatus',
+        /**
+         * The sibling's OWN cargo total — the number its detail page prints as
+         * "shipment total N <unit>". Not `theirs.quantity`: the shipment_pos link carries the PO's
+         * ordered unit, which routinely disagrees with what the leg shipped ("unit differs: shipped
+         * in cartons, ordered in pieces"), and the panel would then state a shipment's cargo in a
+         * unit no other screen uses.
+         */
+        'shipments.qty as legQty',
+        'shipments.qtyUnit as legQtyUnit',
+        // #350/#354 anchors for the derived Shipment ID — a leg is NAMED by that, not by its booking
+        // number, and the desk must not give one leg two names on two screens.
+        'shipments.createdAt as shipmentCreatedAt',
+        sql<Date | null>`(select min(se.received_at) from shipment_emails se where se.shipment_id = shipments.id)`.as(
+          'firstEmailAt',
+        ),
+      ])
+      .execute()
   }
 
   /** Bulk form of linkedPosForBooking — ONE query for booking-PO fallback on the tracker list. */

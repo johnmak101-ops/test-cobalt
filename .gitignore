@@ -96,3 +96,8 @@ _dev.log
 # cobalt-queue src/dev/clean-start.ts documents it as the paired reset)
 backend/src/dev/_*
 backend/_q*
+
+# Runtime output, not source: human multi-candidate picks appended daily by
+# review/ambiguity-pick-log.ts (AMBIGUITY_PICK_DIR, default backend/data/ambiguity).
+# Machine-local telemetry — each dev's file differs, and committing them would collide.
+backend/data/

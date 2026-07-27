@@ -49,12 +49,12 @@ const QUESTION_PRIORITY: NeedsAttentionGroupId[] = [
 const QUESTION_BY_LINE: Record<string, DeskQuestion> = {
   'r-thin': {
     question: 'Is this a real shipment?',
-    affirm: 'Yes — Track It',
+    affirm: 'Track it',
     reject: 'Not a Shipment',
   },
   'r-portal': {
     question: 'Is this real freight, or just a portal notice?',
-    affirm: 'Yes — Track It',
+    affirm: 'Track it',
     reject: 'Portal Noise — Reject',
   },
   'r-no-id': {
@@ -67,7 +67,7 @@ const QUESTION_BY_LINE: Record<string, DeskQuestion> = {
   // PO-only AND thin: two questions, and the outer one (does this belong here at all?) leads.
   'w-po-thin': {
     question: 'Does this belong in tracking, and on this shipment?',
-    affirm: 'Yes — Track It',
+    affirm: 'Track it',
     reject: 'Not a Shipment',
   },
   'i-attach': {
@@ -86,7 +86,7 @@ const QUESTION_BY_LINE: Record<string, DeskQuestion> = {
 const QUESTION_BY_GROUP: Record<NeedsAttentionGroupId, DeskQuestion> = {
   real_shipment: {
     question: 'Is this a real shipment?',
-    affirm: 'Yes — Track It',
+    affirm: 'Track it',
     reject: 'Not a Shipment',
   },
   which_shipment: {
@@ -126,6 +126,13 @@ export type ContestedFieldSummary = {
   candidateCount: number
   /** Nothing stored yet, so "keep what is there" means leaving it blank. */
   currentEmpty: boolean
+  /**
+   * Every alternative on this row came from MASTER DATA, not from an email — the synthesised
+   * party-mismatch row (the leg's raw twin disagreeing with the master it is linked to). The copy
+   * has to say so: no email proposed it, and telling the operator one did sends them looking through
+   * 17 messages for a sentence that does not exist.
+   */
+  fromMasterData?: boolean
 }
 
 /**
@@ -162,8 +169,11 @@ export function conflictDeskQuestion(
       // "is this freight?" line, the caller keeps that line's reject wording.
       reject: null,
     },
-    detail:
-      f.candidateCount > 1
+    detail: f.fromMasterData
+      ? // No email said this. Name the real source, and say what is actually at odds — the value on
+        // the leg versus the company it is linked to in master data.
+        `This shipment is linked to a different company in master data — apply the master's ${f.label}, ${keepClause}.`
+      : f.candidateCount > 1
         ? `${f.candidateCount} candidates from the email — pick one below, ${keepClause}.`
         : `The email proposes a different ${f.label} — apply it, ${keepClause}.`,
   }
@@ -258,6 +268,38 @@ export function candidateDeskQuestion(opts: {
     question,
     detail: `The email's ${gave}${alsoGave} matches none of these — pick by what else lines up, such as vessel and ETD.`,
   }
+}
+
+/**
+ * The questions that ask whether the leg is freight at all. Named as a set because a card whose leg
+ * plainly IS a shipment must not be allowed to ask any of them (see `forWorkingCard`).
+ */
+const EXISTENCE_QUESTIONS = new Set([
+  'Is this a real shipment?',
+  'Is this real freight, or just a portal notice?',
+  'Does this belong in tracking, and on this shipment?',
+  'This booking was cancelled — keep tracking it?',
+])
+
+/** Where a working card lands when the picked question turned out to be an existence question. */
+const VERIFY_QUESTION: DeskQuestion = {
+  question: 'Does the extracted data look right?',
+  affirm: 'Confirm Reviewed',
+  reject: null,
+}
+
+/**
+ * Fit a question to a card whose leg is demonstrably a shipment (leg-shape.ts).
+ *
+ * Two things change. The reject wording goes — on a leg with a booking number, a route and dates,
+ * "Not a Shipment" is a destructive button answering a question nobody asked. And an existence
+ * question is replaced outright: asking "is this a real shipment?" over a filled-in card reads as the
+ * system being unable to see what is in front of it, and it is the wrong question anyway — the open
+ * one is whether the VALUES are right.
+ */
+export function forWorkingCard(q: DeskQuestion): DeskQuestion {
+  if (EXISTENCE_QUESTIONS.has(q.question)) return VERIFY_QUESTION
+  return q.reject == null ? q : { ...q, reject: null }
 }
 
 const SEVERITY_RANK: Record<string, number> = { high: 3, medium: 2, low: 1 }

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 // Action-bar buttons are text-only — the only icon left in the bar is the busy spinner, which is
 // state, not decoration. ExternalLink/Mail still mark the source-email affordances.
 import { Check, ChevronDown, ChevronRight, ExternalLink, Loader2, Mail, NotebookPen } from 'lucide-react'
@@ -6,7 +6,7 @@ import { Badge } from '../ui/Badge'
 import {
   ConflictRow,
   changesStoredValue,
-  existingValueOf,
+  currentValueOf,
   isCandidateResolution,
   proposedResolutionOf,
   proposedValueOf,
@@ -32,13 +32,16 @@ import {
   poShipmentTotalFromLinked,
 } from '../../lib/qty-conflict-settle'
 import { isNonIdentifier } from '../../lib/identifier-shape'
+import { legLooksLikeShipment } from '../../lib/leg-shape'
 import { isCriticalColumn } from '../../lib/review-critical'
 import {
+  isMasterDataSource,
   type CriticConflict,
   type CriticReview,
   type CriticReviewCompact,
 } from '../../lib/critic-review'
 import { CandidateLegsPanel } from './CandidateLegsPanel'
+import { SharedPoPanel } from './SharedPoPanel'
 import { EvidencePanel } from './EvidencePanel'
 import { ReviewPoStylesSection, proposedStyleForPo } from './ReviewPoStylesSection'
 import type { ReviewShipment } from '../../hooks/use-review-queue'
@@ -46,7 +49,7 @@ import type { LinkedPO, ShipmentDetail } from '../../hooks/use-shipments'
 import { cn, formatDateTime } from '../../lib/utils'
 import { parseSender } from '../../lib/email-sender'
 import { buildNeedsAttentionGroups, isExpandableMiss, portsLinkedFromRoute } from './needs-attention'
-import { candidateDeskQuestion, conflictDeskQuestion, pickDeskQuestion } from './desk-question'
+import { candidateDeskQuestion, conflictDeskQuestion, forWorkingCard, pickDeskQuestion } from './desk-question'
 import { NeedsAttentionMeshMiss } from './NeedsAttentionMeshMiss'
 import {
   REVIEW_COL,
@@ -205,10 +208,6 @@ function initialResolutions(conflicts: CriticConflict[]): Record<string, string>
   return out
 }
 
-function existingValue(c: CriticConflict): string {
-  return existingValueOf(c)
-}
-
 /**
  * Collapsible critic review card — band + identity when collapsed; needs-attention +
  * conflict-only table, notes, and Save&Approve when expanded.
@@ -365,6 +364,24 @@ export function ReviewCard({
   const settledFields = useMemo(() => new Set(openDecisions?.settledFields ?? []), [openDecisions])
   /** What the leg stores per contested field — the Current column, instead of the pre-commit snapshot. */
   const liveValues = useMemo(() => openDecisions?.liveValues ?? {}, [openDecisions])
+  /**
+   * The stored value for one contested row, in the form the Current column prints it. qty settles
+   * against the leg's shipped figure rather than a keyed column, so it has its own reader.
+   */
+  const liveValueFor = useCallback(
+    (c: CriticConflict): string | null =>
+      isQtyConflict(c) ? existingQtyDisplay(c, liveQty) : (liveValues[c.field] ?? null),
+    [liveValues, liveQty],
+  )
+  /**
+   * What this leg stores for a contested field. Every decision on the card — changeCount,
+   * fieldsToApply, overrides, keepMeansBlank — must read through here, or the desk compares against
+   * a value it is not showing (see currentValueOf in ConflictRow).
+   */
+  const existingValue = useCallback(
+    (c: CriticConflict): string => currentValueOf(c, liveValueFor(c)),
+    [liveValueFor],
+  )
   const { open: unapplied, applied: appliedConflicts } = useMemo(() => {
     const open: CriticConflict[] = []
     const applied: CriticConflict[] = []
@@ -452,14 +469,35 @@ export function ReviewCard({
    * and Open Shipment is one click away for everything else.
    */
   const poProposalCount = useMemo(
-    () => linkedPOs.filter((p) => proposedStyleForPo(p.poNumber, reviewReasons) != null).length,
+    () =>
+      linkedPOs.filter(
+        (p) => proposedStyleForPo(p.poNumber, reviewReasons, p.itemStyleNo) != null,
+      ).length,
     [linkedPOs, reviewReasons],
   )
-  const poQuestionOpen = useMemo(
-    () => needsAttentionGroups.some((g) => g.items.some((i) => i.lineId.startsWith('w-po'))),
-    [needsAttentionGroups],
+  /**
+   * ONLY a proposal earns the PO grid.
+   *
+   * It used to also fire on a PO-LINK question (w-po-*: "this PO is already on another shipment"),
+   * which put a table of Item/Style columns on the card — a style editor answers nothing about which
+   * shipment a PO belongs on, and every row read `—`. That question now has its own answer above
+   * (SharedPoPanel), with the other leg named and linked, so the grid has no reason to appear for it.
+   *
+   * Edit mode still opens the full grid: managing POs is what Edit is for.
+   */
+  const poNeedsReview = poProposalCount > 0
+  /**
+   * Legs that also carry one of this leg's POs (backend `sharedPos`). Present only on the detail
+   * payload — a queue row carries none, and then the panel simply does not render, which is the same
+   * behaviour as before the reference existed.
+   */
+  const sharedPoGroups = useMemo(
+    () =>
+      ((shipment as Partial<ShipmentDetail>).sharedPos ?? []).filter(
+        (g) => g.others.length > 0,
+      ),
+    [shipment],
   )
-  const poNeedsReview = poProposalCount > 0 || poQuestionOpen
 
   /**
    * The leading open question + the words that answer it (see desk-question.ts).
@@ -486,15 +524,40 @@ export function ReviewCard({
     [legValues],
   )
 
+  /**
+   * Which of the two shapes this card takes (see leg-shape.ts).
+   *
+   *   'work'    the leg plainly IS a shipment — a usable identifier plus route/schedule/cargo. The
+   *             only open question is which values are right, so the card never asks whether it is
+   *             freight and carries no reject at all: Edit · Keep current · Apply N.
+   *   'verdict' not enough here to be a shipment, or an identifier parsed out of a spreadsheet
+   *             header. Not a Shipment · Track it · Waiting, and NO field grid — settling a value on
+   *             something that may not be freight is work that gets thrown away.
+   *
+   * A header-row identifier forces 'verdict' whatever else the leg carries: a leg named by a column
+   * heading cannot be filed under anything, so no field decision on it can be committed anywhere.
+   */
+  const cardShape: 'work' | 'verdict' = useMemo(
+    () =>
+      junkIdentifier == null && legLooksLikeShipment(shipment, linkedPOs) ? 'work' : 'verdict',
+    [junkIdentifier, shipment, linkedPOs],
+  )
+
   const naPick = useMemo(() => pickDeskQuestion(needsAttentionGroups), [needsAttentionGroups])
   const contestedFields = useMemo(
     () =>
-      conflicts.map((c) => ({
-        label: reviewFieldLabel(c.field, c.label),
-        candidateCount: splitCandidates(c).proposed.length,
-        currentEmpty: existingValue(c).trim() === '',
-      })),
-    [conflicts],
+      conflicts.map((c) => {
+        const proposed = splitCandidates(c).proposed
+        return {
+          label: reviewFieldLabel(c.field, c.label),
+          candidateCount: proposed.length,
+          currentEmpty: existingValue(c).trim() === '',
+          // Synthesised party-mismatch row: nothing here came off an email, so the copy must not
+          // claim one proposed it.
+          fromMasterData: proposed.length > 0 && proposed.every((p) => isMasterDataSource(p.source)),
+        }
+      }),
+    [conflicts, existingValue],
   )
   const deskPick = useMemo(() => {
     // Outranks everything: if the leg was parsed out of a header row, no field decision on it matters.
@@ -502,7 +565,7 @@ export function ReviewCard({
       return {
         question: {
           question: 'Is this a real shipment?',
-          affirm: 'Yes — Track It',
+          affirm: 'Track it',
           reject: 'Not a Shipment',
         },
         detailText: `Its ${junkIdentifier.label} is “${junkIdentifier.value}” — a column heading, not a number. This leg was most likely parsed out of a spreadsheet's header row.`,
@@ -530,7 +593,12 @@ export function ReviewCard({
         }
       }
     }
-    const fromTable = conflictDeskQuestion(contestedFields)
+    /**
+     * The table only owns the headline when the table is on screen. A verdict card renders no grid,
+     * so letting "Which Vendor Code is correct?" lead there would title the card with a decision the
+     * operator cannot make and bury the one they can.
+     */
+    const fromTable = cardShape === 'verdict' ? null : conflictDeskQuestion(contestedFields)
     if (fromTable) {
       return {
         question: { ...fromTable.question, reject: naPick?.question.reject ?? null },
@@ -554,11 +622,25 @@ export function ReviewCard({
     hasCandidateLegs,
     matchAmbiguity,
     committerAction,
+    cardShape,
   ])
+
+  /**
+   * A working card never asks whether the leg is freight, and never offers a reject — the leg has an
+   * identifier, a route and a schedule, so both would be answering a question nobody asked. Applied
+   * here rather than inside each branch above so no future branch can leak one back in.
+   */
+  const desk = useMemo(
+    () =>
+      deskPick == null || cardShape !== 'work'
+        ? deskPick
+        : { ...deskPick, question: forWorkingCard(deskPick.question) },
+    [deskPick, cardShape],
+  )
   const restNeedsTitles = useMemo(
     () =>
-      (deskPick?.rest.reduce((n, g) => n + g.items.length, 0) ?? 0) >= ALSO_TITLE_THRESHOLD,
-    [deskPick],
+      (desk?.rest.reduce((n, g) => n + g.items.length, 0) ?? 0) >= ALSO_TITLE_THRESHOLD,
+    [desk],
   )
   /** Note starts collapsed; it opens itself the moment a note is actually owed (see showNoteField). */
   const [noteOpen, setNoteOpen] = useState(false)
@@ -651,6 +733,12 @@ export function ReviewCard({
    */
   const fieldsToApply = useMemo(() => {
     const fields: Record<string, unknown> = {}
+    /**
+     * A verdict card shows no grid, but `resolutions` is still seeded with the agent's proposals — so
+     * without this a "Track it" click would silently commit values the operator never saw. Answering
+     * "yes, this is freight" says nothing about which vendor is right.
+     */
+    if (cardShape === 'verdict') return fields
     for (const c of conflicts) {
       const col = mapCriticFieldToColumn(c.field)
       if (!col) continue
@@ -668,7 +756,7 @@ export function ReviewCard({
       if (v !== existing) fields[col] = v
     }
     return fields
-  }, [conflicts, resolutions])
+  }, [conflicts, resolutions, existingValue])
 
   /**
    * The learning signal (ADR-0002). `aiProposed` is what the agent suggested, `humanFinal` is what
@@ -690,7 +778,7 @@ export function ReviewCard({
           }
         })
         .filter((x): x is NonNullable<typeof x> => x != null),
-    [conflicts, fieldsToApply],
+    [conflicts, fieldsToApply, existingValue],
   )
 
   // A note is mandatory when the operator OVERRIDES the agent — a value that is neither what is
@@ -704,7 +792,7 @@ export function ReviewCard({
         // #360: ANY candidate pick is not an override — only a free-typed custom value needs a note.
         return v !== '' && v !== existingValue(c) && !isCandidateResolution(c, v)
       }),
-    [conflicts, resolutions],
+    [conflicts, resolutions, existingValue],
   )
   const noteRequired = overrides.length > 0 && !note.trim()
   /**
@@ -748,8 +836,12 @@ export function ReviewCard({
    * being accepted, which is the whole reason these legs are queued.
    */
   const changeCount = useMemo(
-    () => conflicts.filter((c) => changesStoredValue(c, resolutions[c.field] ?? '')).length,
-    [conflicts, resolutions],
+    () =>
+      cardShape === 'verdict'
+        ? 0 // nothing is being applied from a verdict card, so nothing is being counted
+        : conflicts.filter((c) => changesStoredValue(c, resolutions[c.field] ?? '', liveValueFor(c)))
+            .length,
+    [conflicts, resolutions, liveValueFor, cardShape],
   )
   /**
    * What the primary button will WRITE, when that is one nameable thing. A bare "Approve" made the
@@ -767,10 +859,12 @@ export function ReviewCard({
     if (!raw || raw.length > 14) return null
     return raw
   }, [fieldsToApply])
-  /** Nothing is stored on any contested row, so "keep what is there" means leaving it blank — say so. */
+  /** Nothing is stored on any contested row, so "keep what is there" means leaving it blank — say so.
+   *  Reads the LIVE value: a leg storing MACFUN with no critic System candidate was offering to
+   *  "Leave Blank" a field that is not blank. */
   const keepMeansBlank = useMemo(
     () => conflicts.length > 0 && conflicts.every((c) => existingValue(c).trim() === ''),
-    [conflicts],
+    [conflicts, existingValue],
   )
   /**
    * A contested row already operable in place: more than one candidate, so its cell carries the radios
@@ -797,7 +891,10 @@ export function ReviewCard({
    * button has nothing left to offer.
    */
   const showEdit =
-    !readOnly && ((conflicts.length > 0 && !allConflictsSelfServe) || poNeedsReview)
+    !readOnly &&
+    // Edit opens the grid, and a verdict card has none — the button would open nothing.
+    cardShape === 'work' &&
+    ((conflicts.length > 0 && !allConflictsSelfServe) || poNeedsReview)
   /** Edit mode as the GRID sees it — read-only history never edits, whatever `editing` says. */
   const gridEditing = editing && !readOnly
   const deskEmpty = needsAttentionGroups.length === 0 && conflicts.length === 0
@@ -1004,7 +1101,7 @@ export function ReviewCard({
               shipment history; only the prompt goes. */}
           {/* Also renders for a conflicts-only leg now: the headline comes from the table there, and
               without this the card would show a grid with no statement of what it is asking. */}
-          {!readOnly && deskPick != null && (
+          {!readOnly && desk != null && (
             <div
               className={cn(
                 REVIEW_PANEL,
@@ -1027,38 +1124,38 @@ export function ReviewCard({
                   className={`${REVIEW_FS.topic} font-semibold text-text-primary`}
                   data-testid="desk-question"
                 >
-                  {deskPick?.question.question ?? 'Needs Attention'}
+                  {desk?.question.question ?? 'Needs Attention'}
                 </p>
 
-                {deskPick?.detailItem &&
-                  (isExpandableMiss(deskPick.detailItem) ? (
+                {desk?.detailItem &&
+                  (isExpandableMiss(desk.detailItem) ? (
                     <ul className="mt-1">
-                      <NeedsAttentionMeshMiss item={deskPick.detailItem} />
+                      <NeedsAttentionMeshMiss item={desk.detailItem} />
                     </ul>
                   ) : (
                     <p
                       className={`mt-0.5 ${REVIEW_FS.body} text-text-secondary`}
-                      title={deskPick.detailItem.evidence?.join(' · ') || undefined}
+                      title={desk.detailItem.evidence?.join(' · ') || undefined}
                       data-testid="desk-question-detail"
                     >
-                      {deskPick.detailItem.text}
+                      {desk.detailItem.text}
                     </p>
                   ))}
 
-                {deskPick?.detailText && (
+                {desk?.detailText && (
                   <p
                     className={`mt-0.5 ${REVIEW_FS.body} text-text-secondary`}
                     data-testid="desk-question-detail"
                   >
-                    {deskPick.detailText}
+                    {desk.detailText}
                   </p>
                 )}
 
-                {(deskPick?.rest.length ?? 0) > 0 && (
+                {(desk?.rest.length ?? 0) > 0 && (
                   <div className="mt-2.5 border-t border-border pt-2" data-testid="needs-attention-rest">
                     <p className={`${REVIEW_FS.meta} font-semibold text-text-muted`}>Also</p>
                     <div className="space-y-1">
-                      {deskPick!.rest.map((g) => (
+                      {desk!.rest.map((g) => (
                         /* Grouping is real and ordered; the TITLE is earned rather than automatic.
                            One or two lines read fine bare — the item text names its own subject
                            ("Customer not in master — …") and a title per bullet was pure nesting. Past
@@ -1167,6 +1264,16 @@ export function ReviewCard({
               readOnly={readOnly}
               selectedId={selectedTargetId}
               onSelect={setSelectedTargetId}
+            />
+          )}
+
+          {/* The reference under "this PO is already on another shipment". Directly beneath the
+              question, for the same reason the candidate picker is: the reason line named a problem
+              and the evidence for it lived nowhere, so the card fell back to offering PO editing. */}
+          {!readOnly && sharedPoGroups.length > 0 && (
+            <SharedPoPanel
+              sharedPos={sharedPoGroups}
+              mode={(shipment as Partial<ShipmentDetail>).mode ?? null}
             />
           )}
 
@@ -1365,6 +1472,13 @@ export function ReviewCard({
 
           {/* One decision grid: POs + field conflicts share colgroup, headers, and border. */}
           {(() => {
+            /**
+             * A verdict card carries no grid. Settling a vendor or an ETD on a leg that may not be
+             * freight is work thrown away the moment the answer is "not a shipment" — and putting the
+             * two questions on one card is what made the operator answer the smaller one first. The
+             * values are still readable on the shipment page; they are just not decisions here.
+             */
+            if (cardShape === 'verdict') return null
             const canEditGrid = gridEditing
             const showPos = canEditGrid || (linkedPOs.length > 0 && poNeedsReview)
             const showConflicts = conflicts.length > 0
@@ -1434,7 +1548,18 @@ export function ReviewCard({
                         </tr>
                       </thead>
                     )}
-                    {groupConflictFields(conflicts).map(({ group, conflicts: rows }) => (
+                    {groupConflictFields(conflicts).map(({ group, conflicts: rows }) => {
+                      /**
+                       * Count what would actually be WRITTEN, not how many rows are contested.
+                       * `rows.length` called every contested row a "change", so a leg whose one
+                       * candidate matched the stored value announced "Shipping (1 change)" directly
+                       * above a button reading "there is nothing to change". Recomputed from the live
+                       * resolutions, so it tracks the operator's picks.
+                       */
+                      const groupChanges = rows.filter((c) =>
+                        changesStoredValue(c, resolutions[c.field] ?? '', liveValueFor(c)),
+                      ).length
+                      return (
                       <tbody key={group}>
                         <tr className="border-b border-border">
                           {/* 4, not 3 — the Reference Email column. A short colSpan leaves the
@@ -1442,7 +1567,9 @@ export function ReviewCard({
                           <td colSpan={4} className={REVIEW_GROUP_HEADER}>
                             {group}
                             <span className="ml-2 font-normal text-text-muted">
-                              ({rows.length} {rows.length === 1 ? 'change' : 'changes'})
+                              ({groupChanges > 0
+                                ? `${groupChanges} ${groupChanges === 1 ? 'change' : 'changes'}`
+                                : 'nothing to apply'})
                             </span>
                           </td>
                         </tr>
@@ -1469,11 +1596,7 @@ export function ReviewCard({
                               /* Current shows what the LEG says. The critic's `System` candidate is a
                                  pre-commit snapshot — it is why a row could read MAASTRICHT MAERSK
                                  while the shipment had said MARIBO MAERSK for hours. */
-                              existingOverride={
-                                isQtyConflict(c)
-                                  ? existingQtyDisplay(c, liveQty)
-                                  : (liveValues[c.field] ?? null)
-                              }
+                              existingOverride={liveValueFor(c)}
                               resolveSourceEmail={resolveSourceEmail}
                               onRequestEdit={() => {
                                 if (!readOnly) startEditing()
@@ -1482,7 +1605,7 @@ export function ReviewCard({
                           )
                         })}
                       </tbody>
-                    ))}
+                    )})}
                   </table>
                 )}
               </div>
@@ -1620,7 +1743,7 @@ export function ReviewCard({
                 )}
                 {/* "No" — worded as the answer to the headline ("Not a Shipment" / "Portal Noise").
                     Absent when a rejection does not answer the leading question at all. */}
-                {!editing && onReject && deskPick?.question.reject && (
+                {!editing && onReject && desk?.question.reject && (
                   <button
                     type="button"
                     onClick={() => {
@@ -1633,7 +1756,7 @@ export function ReviewCard({
                     className={cn(ACTION_BTN, ACTION_VARIANT.danger)}
                   >
                     {busy && <Loader2 size={13} className="animate-spin" />}
-                    {deskPick.question.reject}
+                    {desk.question.reject}
                   </button>
                 )}
                 {!editing && (onApprove || multiCandNeedsTarget) && changeCount > 0 && (
@@ -1703,7 +1826,7 @@ export function ReviewCard({
                                It" under "Is this a real shipment?"). Falls back to Confirm Reviewed when
                                the leg asks nothing nameable. Never "Keep Current": nothing is being kept
                                over an alternative, because there is no alternative. */
-                            (deskPick?.question.affirm ?? 'Confirm Reviewed')}
+                            (desk?.question.affirm ?? 'Confirm Reviewed')}
                   </button>
                 )}
                 {/* F11: multi-candidate escape hatch — genuinely new shipment (e.g. 拼櫃) without linking */}
