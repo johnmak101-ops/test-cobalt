@@ -38,8 +38,13 @@ describe('CandidateLegsPanel (#129 / Hybrid-C E4)', () => {
       <CandidateLegsPanel matchAmbiguity={amb} selectedId={null} onSelect={vi.fn()} />,
     )
     expect(screen.getByTestId('candidate-legs-panel')).toBeTruthy()
-    expect(screen.getByTestId('shared-container-banner').textContent).toMatch(/拼櫃|CTR-SAME/)
-    expect(screen.getByTestId('candidate-biz-key-hint').textContent).toMatch(/JOB# is internal/)
+    // The container is the same on both, so it is hoisted into the shared line rather than repeated —
+    // and the 拼櫃 warning is now a tag on the rows that carry it, not a banner over the whole list.
+    expect(screen.getByTestId('candidate-shared-line').textContent).toMatch(/CTR-SAME/)
+    expect(screen.getAllByTestId('candidate-shared-container-tag').length).toBe(2)
+    // The panel no longer titles itself — the card headline asks the question once. (Was:
+    // candidate-biz-key-hint / "Which shipment does this email update?" repeated here.)
+    expect(screen.queryByTestId('candidate-biz-key-hint')).toBeNull()
     // Primary titles
     const titles = screen.getAllByTestId('candidate-biz-title').map((el) => el.textContent)
     expect(titles.some((t) => t?.includes('SO1') || t?.includes('BK1'))).toBe(true)

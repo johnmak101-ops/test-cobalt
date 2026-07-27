@@ -169,6 +169,75 @@ export function conflictDeskQuestion(
   }
 }
 
+/** Email-key labels, in the order an operator would try to match on them. */
+const EMAIL_KEY_LABEL: { key: string; label: string; strong: boolean }[] = [
+  { key: 'hbl_awb_fcr_no', label: 'B/L', strong: true },
+  { key: 'booking_no', label: 'booking', strong: true },
+  { key: 'mbl', label: 'MBL', strong: true },
+  { key: 'container_no', label: 'container', strong: false },
+  { key: 'so_no', label: 'SO', strong: false },
+  { key: 'customer_po', label: 'PO', strong: false },
+]
+
+/**
+ * The question the PICKER is asking, and what there is to answer it with.
+ *
+ * This absorbs the panel's own title. The card used to ask "Is this the right shipment?" at the top
+ * and the panel "Which shipment does this email update?" four blocks lower — the same question twice,
+ * with the answer nowhere near the first asking.
+ *
+ * The detail is the part that was missing entirely: WHAT the email gave, and whether any candidate
+ * carries it. On the leg that prompted this, the email's SO matched none of the five offered, and
+ * nothing on the card said so — the operator had no way to know the suggestion was a guess from vessel
+ * and ETD rather than an identity match.
+ */
+export function candidateDeskQuestion(opts: {
+  emailKey?: Record<string, string> | undefined
+  candidates: Record<string, unknown>[]
+}): { question: DeskQuestion; detail: string } | null {
+  const { emailKey, candidates } = opts
+  if (candidates.length < 2) return null
+
+  const question: DeskQuestion = {
+    question: 'Which shipment does this email update?',
+    affirm: 'Confirm Reviewed',
+    // Rejecting is not an answer to "which one" — the leg is real, it just needs placing.
+    reject: null,
+  }
+
+  const stated = EMAIL_KEY_LABEL.filter(({ key }) => String(emailKey?.[key] ?? '').trim() !== '')
+  if (stated.length === 0) {
+    return {
+      question,
+      detail: 'The email gave no B/L, booking or container to match on — pick by what the rows below have in common with it.',
+    }
+  }
+
+  const norm = (v: unknown) => String(v ?? '').trim().toUpperCase()
+  const matched = stated.filter(({ key }) =>
+    candidates.some((c) => norm(c[key]) !== '' && norm(c[key]) === norm(emailKey?.[key])),
+  )
+
+  if (matched.length > 0) {
+    const m = matched[0]!
+    return {
+      question,
+      detail: `The email's ${m.label} ${String(emailKey?.[m.key]).trim()} appears on more than one of these — confirm which.`,
+    }
+  }
+
+  // Nothing the email stated is carried by any candidate. Say so: it is the difference between a
+  // suggestion grounded in identity and one guessed from a vessel name.
+  const strongest = stated[0]!
+  const others = stated.slice(1)
+  const gave = `${strongest.label} ${String(emailKey?.[strongest.key]).trim()}`
+  const alsoGave = others.length > 0 ? ` (also ${others.map((o) => o.label).join(', ')})` : ''
+  return {
+    question,
+    detail: `The email's ${gave}${alsoGave} matches none of these — pick by what else lines up, such as vessel and ETD.`,
+  }
+}
+
 const SEVERITY_RANK: Record<string, number> = { high: 3, medium: 2, low: 1 }
 
 export type DeskQuestionPick = {

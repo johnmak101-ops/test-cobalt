@@ -7,6 +7,7 @@
 import { useState } from 'react'
 import type { MatchAmbiguity, MatchAmbiguityCandidate } from '../../lib/critic-review'
 import { isNonIdentifiableCandidate, nonIdentifierValues } from '../../lib/identifier-shape'
+import { diffCandidates, type CandidateDiff } from '../../lib/candidate-diff'
 import { cn, formatDateMaybeTime } from '../../lib/utils'
 
 export interface CandidateLegsPanelProps {
@@ -17,11 +18,6 @@ export interface CandidateLegsPanelProps {
   /** Controlled selection (parent owns Link & apply). */
   selectedId: string | null
   onSelect: (shipmentId: string | null) => void
-}
-
-function dash(v: string | null | undefined): string {
-  const s = (v ?? '').trim()
-  return s || '—'
 }
 
 /** Primary operator-facing label — business keys first, never JOB-led. */
@@ -36,19 +32,30 @@ export function candidateBizKeyTitle(c: MatchAmbiguityCandidate): string {
   return `${c.shipmentId.slice(0, 8)}…`
 }
 
-function emailKeyLine(emailKey: Record<string, string> | undefined): string {
-  if (!emailKey || !Object.keys(emailKey).length) return '—'
-  const labels: Record<string, string> = {
-    booking_no: 'Booking',
-    so_no: 'SO',
-    hbl_awb_fcr_no: 'HBL',
-    mbl: 'MBL',
-    container_no: 'Container',
-    customer_po: 'PO',
-  }
-  return Object.entries(emailKey)
-    .map(([k, v]) => `${labels[k] ?? k}=${v}`)
+/** The identifier fields that tell THIS candidate apart, in the order an operator reads them. */
+function rowIdentifiers(c: MatchAmbiguityCandidate, diff: CandidateDiff): string {
+  return diff.differing
+    .filter((f) => f.identifier)
+    .map((f) => {
+      const v = String((c as unknown as Record<string, unknown>)[f.key] ?? '').trim()
+      return v ? `${f.label} ${v}` : null
+    })
+    .filter((s): s is string => s != null)
     .join(' · ')
+}
+
+/** The non-identifier fields that differ — vessel, ETD, customer, JOB. */
+function rowContext(c: MatchAmbiguityCandidate, diff: CandidateDiff): string[] {
+  return diff.differing
+    .filter((f) => !f.identifier)
+    .map((f) => {
+      const raw = (c as unknown as Record<string, unknown>)[f.key]
+      const v = Array.isArray(raw) ? raw.join(', ') : String(raw ?? '').trim()
+      if (!v) return null
+      if (f.key === 'etd') return `ETD ${formatDateMaybeTime(v)}`
+      return f.label ? `${f.label} ${v}` : v
+    })
+    .filter((s): s is string => s != null)
 }
 
 export function CandidateLegsPanel({
@@ -77,6 +84,9 @@ export function CandidateLegsPanel({
       ? allCandidates
       : allCandidates.filter((c) => !isNonIdentifiableCandidate(c))
 
+  /** What is shared vs what tells them apart — computed over the rows actually shown. */
+  const diff = diffCandidates(candidates)
+
   if (allCandidates.length < 2) return null
 
   return (
@@ -84,57 +94,41 @@ export function CandidateLegsPanel({
       className="rounded-lg border border-border bg-surface-900 px-3 py-2 space-y-2"
       data-testid="candidate-legs-panel"
     >
-      <p className="text-[11px] font-medium text-text-muted">
-        Which shipment does this email update?
-      </p>
-      <p className="text-[11px] text-text-muted" data-testid="candidate-biz-key-hint">
-        Identify by SO / booking / HBL / container. JOB# is internal only.
-      </p>
-      <p className="text-xs text-text-secondary">
-        Email keys:{' '}
-        <span className="font-mono text-text-primary">{emailKeyLine(matchAmbiguity.emailKey)}</span>
-        {matchAmbiguity.candidateCount != null &&
-          matchAmbiguity.candidateCount > candidates.length && (
+      {/* No title here. The card's own headline asks "Which shipment does this email update?" and this
+          panel sits directly under it — printing the question twice, with the answer four blocks below
+          the first one, was what made the operator ask where to start. The email keys move into that
+          headline's subtext, where they explain what there is to match ON. */}
+
+      {/* Everything every candidate shares, said once. On the five legs of S13784413 that was SO, JOB
+          and PO identical across all of them — repeated five times, burying the HBL that differed. */}
+      {(diff.shared.length > 0 || diff.absentIdentifiers.length > 0) && (
+        <p
+          className="border-l-2 border-surface-600 pl-2 font-mono text-[11px] text-text-muted"
+          data-testid="candidate-shared-line"
+        >
+          {diff.shared.length > 0 && (
+            <>
+              All {candidates.length} ·{' '}
+              {diff.shared
+                .map((f) => (f.label ? `${f.label} ${f.value}` : f.value))
+                .join(' · ')}
+            </>
+          )}
+          {diff.absentIdentifiers.length > 0 && (
             <span className="text-text-muted">
-              {' '}
-              · showing {candidates.length} of {matchAmbiguity.candidateCount}
+              {diff.shared.length > 0 ? ' · ' : ''}
+              no {diff.absentIdentifiers.join(' / ')} on any
             </span>
           )}
-      </p>
-
-      {matchAmbiguity.sharedContainer && (
-        <p
-          className="rounded-md bg-status-warning/10 px-2 py-1.5 text-xs text-status-warning"
-          data-testid="shared-container-banner"
-        >
-          Shared container (拼櫃):{' '}
-          <span className="font-mono">{matchAmbiguity.sharedContainer}</span>
-          {' — '}
-          several bookings may share this container; pick which booking this email updates.
         </p>
       )}
 
-      {suggestedId && matchAmbiguity.suggestion && !matchAmbiguity.suggestion.cannotDecide && (
-        <p className="text-[11px] text-text-muted" data-testid="candidate-suggestion">
-          Suggested:{' '}
-          <span className="font-mono text-text-secondary">
-            {(() => {
-              const s = candidates.find((c) => c.shipmentId === suggestedId)
-              return s ? candidateBizKeyTitle(s) : `${suggestedId.slice(0, 8)}…`
-            })()}
-          </span>
-          {matchAmbiguity.suggestion.source === 'llm_rank' && (
-            <span className="text-text-muted"> (model)</span>
-          )}
-          {matchAmbiguity.suggestion.source === 'deterministic_rank' && (
-            <span className="text-text-muted"> (key overlap)</span>
-          )}
-          {matchAmbiguity.suggestion.rationale
-            ? ` — ${matchAmbiguity.suggestion.rationale}`
-            : ''}
-          {' · select below, resolve fields, then Link & apply'}
-        </p>
-      )}
+      {matchAmbiguity.candidateCount != null &&
+        matchAmbiguity.candidateCount > candidates.length && (
+          <p className="text-[11px] text-text-muted">
+            Showing {candidates.length} of {matchAmbiguity.candidateCount}
+          </p>
+        )}
 
       {unidentifiable.length > 0 && !showUnidentifiable && (
         <p className="text-[11px] text-text-muted" data-testid="candidate-unidentifiable-note">
@@ -189,8 +183,25 @@ export function CandidateLegsPanel({
                       className="font-mono font-medium text-text-primary"
                       data-testid="candidate-biz-title"
                     >
-                      {title}
+                      {/* Only the identifiers that actually tell these candidates apart. When every
+                          one is shared (hoisted above), fall back to the full key title so the row is
+                          never blank. */}
+                      {rowIdentifiers(c, diff) || title}
                     </span>
+                    {c.container_no &&
+                      matchAmbiguity.sharedContainer &&
+                      c.container_no.trim().toUpperCase() ===
+                        matchAmbiguity.sharedContainer.trim().toUpperCase() && (
+                        /* The 拼櫃 warning was a whole banner above the list saying a container is
+                           shared. It belongs on the rows that actually carry it. */
+                        <span
+                          className="rounded bg-status-warning/15 px-1 py-0.5 text-[10px] text-status-warning"
+                          title="Shared container (拼櫃) — several bookings may move in it, so the container alone cannot identify this shipment"
+                          data-testid="candidate-shared-container-tag"
+                        >
+                          拼櫃
+                        </span>
+                      )}
                     {isSuggested && (
                       <span className="rounded bg-cobalt-primary/20 px-1 py-0.5 text-[10px] text-cobalt-primary-light">
                         suggested
@@ -200,22 +211,22 @@ export function CandidateLegsPanel({
                       <span className="text-[10px] text-text-muted">(this provisional)</span>
                     )}
                   </div>
-                  <div className="field-value font-mono text-[11px] text-text-muted">
-                    JOB {dash(c.jobNo)}
-                    {c.mbl ? ` · MBL ${dash(c.mbl)}` : ''}
-                  </div>
-                  {(c.etd || c.vesselOrFlight || (c.pos && c.pos.length > 0)) && (
-                    <div className="field-value text-[11px] text-text-muted">
-                      {c.vesselOrFlight && <span>{c.vesselOrFlight} · </span>}
-                      {c.etd && <span>ETD {formatDateMaybeTime(c.etd)}</span>}
-                      {c.pos && c.pos.length > 0 && (
-                        <span>
-                          {c.etd ? ' · ' : ''}
-                          PO {c.pos.slice(0, 4).join(', ')}
-                          {c.pos.length > 4 ? '…' : ''}
-                        </span>
-                      )}
+                  {rowContext(c, diff).length > 0 && (
+                    <div className="field-value font-mono text-[11px] text-text-muted">
+                      {rowContext(c, diff).join(' · ')}
                     </div>
+                  )}
+                  {/* Why THIS one is suggested, on the row it is about. It used to sit in a grey
+                      sentence above the list, far from the option it described. */}
+                  {isSuggested && matchAmbiguity.suggestion?.rationale && (
+                    <p
+                      className="text-[10.5px] text-cobalt-primary-light"
+                      data-testid="candidate-suggestion-reason"
+                    >
+                      ↳ {matchAmbiguity.suggestion.rationale}
+                      {matchAmbiguity.suggestion.source === 'llm_rank' && ' (model)'}
+                      {matchAmbiguity.suggestion.source === 'deterministic_rank' && ' (key overlap)'}
+                    </p>
                   )}
                 </div>
               </label>

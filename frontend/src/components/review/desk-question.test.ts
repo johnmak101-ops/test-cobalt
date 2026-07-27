@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { conflictDeskQuestion, pickDeskQuestion } from './desk-question'
+import { candidateDeskQuestion, conflictDeskQuestion, pickDeskQuestion } from './desk-question'
 import { buildNeedsAttentionGroups, type NeedsAttentionGroup } from './needs-attention'
 
 function groups(
@@ -126,5 +126,54 @@ describe('conflictDeskQuestion', () => {
 
   it('never offers a reject of its own — a field fight is not answered by binning the leg', () => {
     expect(conflictDeskQuestion([{ label: 'ETA', candidateCount: 2, currentEmpty: false }])?.question.reject).toBeNull()
+  })
+})
+
+/**
+ * The picker's question, absorbed from the panel's own title. The detail is the part that never
+ * existed: what the email gave, and whether any candidate carries it. On leg E553C0A2 the email's SO
+ * matched none of the four offered, and nothing on the card said so — so the `suggested` row looked
+ * like an identity match when it was a guess from vessel and ETD.
+ */
+describe('candidateDeskQuestion', () => {
+  const four = [
+    { shipmentId: '1', so_no: 'FENLSO003044' },
+    { shipmentId: '2', so_no: 'FENLSO003045' },
+  ]
+
+  it('fewer than two candidates is not a choice', () => {
+    expect(candidateDeskQuestion({ candidates: [] })).toBeNull()
+    expect(candidateDeskQuestion({ candidates: [four[0]!] })).toBeNull()
+  })
+
+  it('says so when nothing the email stated appears on any candidate', () => {
+    const q = candidateDeskQuestion({
+      emailKey: { so_no: 'FENLSO003062', customer_po: 'FENLSO003062' },
+      candidates: four,
+    })
+    expect(q?.question.question).toBe('Which shipment does this email update?')
+    expect(q?.detail).toMatch(/matches none of these/i)
+    expect(q?.detail).toMatch(/FENLSO003062/)
+    expect(q?.detail).toMatch(/vessel and ETD/i)
+  })
+
+  it('says so when the email key is shared by several — that is a real choice', () => {
+    const q = candidateDeskQuestion({
+      emailKey: { hbl_awb_fcr_no: 'H1' },
+      candidates: [
+        { shipmentId: '1', hbl_awb_fcr_no: 'H1' },
+        { shipmentId: '2', hbl_awb_fcr_no: 'H1' },
+      ],
+    })
+    expect(q?.detail).toMatch(/appears on more than one/i)
+  })
+
+  it('says so when the email gave no key at all', () => {
+    const q = candidateDeskQuestion({ candidates: four })
+    expect(q?.detail).toMatch(/no B\/L, booking or container to match on/i)
+  })
+
+  it('never offers a reject — the leg is real, it just needs placing', () => {
+    expect(candidateDeskQuestion({ emailKey: { so_no: 'X' }, candidates: four })?.question.reject).toBeNull()
   })
 })
