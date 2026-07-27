@@ -1,6 +1,6 @@
 import { Body, Controller, Get, Param, Post } from '@nestjs/common'
 import { ReviewService } from './review.service'
-import { ConfirmDto, CorrectDto, DismissDto, IdentifyDto, LinkDto } from './dto'
+import { ConfirmDto, CorrectDto, DismissDto, IdentifyDto, LinkDto, WaitDto } from './dto'
 import { Roles, CurrentUser } from '../auth/decorators'
 import type { AuthUser } from '../auth/auth.service'
 
@@ -19,7 +19,12 @@ export class ReviewController {
     return this.review.dismiss(dto.shipmentIds, actor.id, dto.note)
   }
 
-  /** POST /api/review/:id/restore — undo a dismiss; the leg returns to the pending queue. */
+  /** POST /api/review/:id/wait — park one leg: it leaves Active for the Waiting tab, unanswered. */
+  @Post(':id/wait') wait(@Param('id') id: string, @Body() dto: WaitDto, @CurrentUser() actor: AuthUser) {
+    return this.review.wait(id, actor.id, dto?.reason)
+  }
+
+  /** POST /api/review/:id/restore — undo a dismiss OR un-park a waiting leg; back to the active queue. */
   @Post(':id/restore') restore(@Param('id') id: string, @CurrentUser() actor: AuthUser) {
     return this.review.restore(id, actor.id)
   }

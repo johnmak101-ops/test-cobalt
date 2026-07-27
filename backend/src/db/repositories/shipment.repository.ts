@@ -225,7 +225,7 @@ export class ShipmentRepository {
    * - `dismissed`: provisional, dismissed only
    * - `approved`: confirmed legs that still carry criticReview (history); reviewedAt desc, then confidence asc
    */
-  reviewQueue(view: 'pending' | 'dismissed' | 'approved' = 'pending') {
+  reviewQueue(view: 'pending' | 'dismissed' | 'approved' | 'waiting' = 'pending') {
     const base = this.db
       .selectFrom('shipments')
       .innerJoin('bookings', 'shipments.bookingId', 'bookings.id')
@@ -240,6 +240,7 @@ export class ShipmentRepository {
       'shipments.id as id', 'shipments.bookingNo as bookingNo', 'shipments.soNo as soNo', 'shipments.state as state',
       'shipments.legStatus as legStatus', 'shipments.reviewReasons as reviewReasons', 'shipments.confidence as confidence',
       'shipments.createdAt as createdAt', 'shipments.updatedAt as updatedAt', 'shipments.dismissedAt as dismissedAt',
+      'shipments.waitingAt as waitingAt', 'shipments.waitingReason as waitingReason',
       'shipments.criticReview as criticReview',
       'customers.id as customerId', 'customers.name as customerName',
       'customers.code as customerCode', 'forwarders.id as forwarderId', 'forwarders.name as forwarderName',
@@ -261,28 +262,48 @@ export class ShipmentRepository {
         .execute()
     }
 
+    if (view === 'waiting') {
+      // Parked legs, oldest park first: the one waiting longest is the one whose answer is overdue.
+      return base
+        .where('shipments.reviewStatus', '=', 'provisional')
+        .where('shipments.dismissedAt', 'is', null)
+        .where('shipments.waitingAt', 'is not', null)
+        .orderBy('shipments.waitingAt', 'asc')
+        .select(selectCols)
+        .execute()
+    }
+
     return base
       .where('shipments.reviewStatus', '=', 'provisional')
       .where('shipments.dismissedAt', view === 'dismissed' ? 'is not' : 'is', null)
+      // Waiting legs are parked OFF the active desk — the whole point of parking them. Dismissed keeps
+      // showing them: a leg can be parked and then rejected, and the Rejected tab must not lose it.
+      .$if(view === 'pending', (qb) => qb.where('shipments.waitingAt', 'is', null))
       .orderBy('shipments.confidence', 'asc')
       .orderBy('shipments.createdAt', 'desc')
       .select(selectCols)
       .execute()
   }
 
-  /** Pending vs dismissed provisional counts — nav badge reads pending; the queue's Dismissed tab reads both. */
-  async reviewQueueCounts(): Promise<{ pending: number; dismissed: number }> {
+  /** Pending / waiting / dismissed provisional counts — nav badge reads pending; the queue tabs read all three.
+   *  `pending` excludes parked legs so the badge matches what the Active tab actually lists. */
+  async reviewQueueCounts(): Promise<{ pending: number; dismissed: number; waiting: number }> {
     const row = await this.db
       .selectFrom('shipments')
       .where('kind', '=', 'SHIPMENT')
       .where('reviewStatus', '=', 'provisional')
       .where('legStatus', '<>', 'SUPERSEDED')
       .select([
-        sql<number>`sum(case when dismissed_at is null then 1 else 0 end)`.as('pending'),
+        sql<number>`sum(case when dismissed_at is null and waiting_at is null then 1 else 0 end)`.as('pending'),
         sql<number>`sum(case when dismissed_at is not null then 1 else 0 end)`.as('dismissed'),
+        sql<number>`sum(case when dismissed_at is null and waiting_at is not null then 1 else 0 end)`.as('waiting'),
       ])
       .executeTakeFirst()
-    return { pending: Number(row?.pending ?? 0), dismissed: Number(row?.dismissed ?? 0) }
+    return {
+      pending: Number(row?.pending ?? 0),
+      dismissed: Number(row?.dismissed ?? 0),
+      waiting: Number(row?.waiting ?? 0),
+    }
   }
 
   legsForBooking(bookingId: string) {

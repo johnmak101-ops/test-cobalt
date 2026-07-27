@@ -173,7 +173,10 @@ describe('ReviewCard', () => {
 
     const why = screen.getByTestId('why-review')
     expect(within(why).getByText(/No booking, SO, B\/L, or PO — cannot place this email/)).toBeInTheDocument()
-    expect(within(why).getByText(/Real Shipment\?/)).toBeInTheDocument()
+    // The group title ("Real Shipment?") is now the HEADLINE, phrased as the question being asked.
+    expect(screen.getByTestId('desk-question')).toHaveTextContent(
+      /Which shipment does this email belong to\?/i,
+    )
     expect(screen.queryByText(/No field conflicts/i)).toBeNull()
     expect(screen.queryByRole('table')).toBeNull()
     expect(screen.queryByText('2026-08-01')).toBeNull()
@@ -227,12 +230,13 @@ describe('ReviewCard', () => {
       />,
     )
     expect(screen.getByTestId('why-review')).toBeInTheDocument()
-    expect(screen.getByTestId('needs-group-which_shipment')).toBeInTheDocument()
-    expect(
-      within(screen.getByTestId('needs-group-which_shipment')).getByText(
-        /more than one booking\/SO\/B\/L number/,
-      ),
-    ).toBeInTheDocument()
+    // One open question → it becomes the headline and its line becomes the headline's subtext, so
+    // there is no "Also" list and no group wrapper to look in.
+    expect(screen.getByTestId('desk-question')).toHaveTextContent(/Is this the right shipment\?/i)
+    expect(screen.getByTestId('desk-question-detail')).toHaveTextContent(
+      /more than one booking\/SO\/B\/L number/,
+    )
+    expect(screen.queryByTestId('needs-attention-rest')).toBeNull()
     expect(screen.getByRole('table')).toBeInTheDocument()
   })
 
@@ -308,7 +312,8 @@ describe('ReviewCard', () => {
     expect(why.textContent).toMatch(/Email and system differ on Qty — choose which values to keep/)
     expect(why.textContent).not.toMatch(/gross_weight|Gross Weight|HTS/i)
     expect(why.textContent).not.toMatch(/below|highlighted fields/)
-    expect(why.textContent).toMatch(/Fields Disagree/)
+    // Was the "Fields Disagree" group title; the same idea is now the headline, as a question.
+    expect(screen.getByTestId('desk-question')).toHaveTextContent(/Which values are correct\?/i)
   })
 
   // The queue's riskFlags and ShipTrack's committer reviewReasons are two DIFFERENT sources, not a
@@ -339,9 +344,11 @@ describe('ReviewCard', () => {
     )
     const why = screen.getByTestId('why-review')
     expect(within(why).getByText(/Field values disagree|field\(s\) disagree/i)).toBeInTheDocument()
-    // Master miss is decision on Review (tagDesk → operator resolves Mesh party/port)
-    expect(within(why).getByText(/Master Miss/)).toBeInTheDocument()
-    expect(within(why).getByText(/A\.P\. Moller - Maersk|Mesh Database/i)).toBeInTheDocument()
+    // The field fight leads (it is the sharper question); the NAMED master miss follows under "Also"
+    // — still on the Review desk, because ops can add exactly that company in Mesh.
+    expect(screen.getByTestId('desk-question')).toHaveTextContent(/Which values are correct\?/i)
+    const rest = screen.getByTestId('needs-attention-rest')
+    expect(within(rest).getByText(/A\.P\. Moller - Maersk|Mesh Database/i)).toBeInTheDocument()
   })
 
   it('why-review does not repeat a reason a risk flag already explains', () => {
@@ -366,11 +373,14 @@ describe('ReviewCard', () => {
         defaultExpanded={true}
       />,
     )
-    const items = within(screen.getByTestId('why-review')).getAllByRole('listitem')
-    expect(items).toHaveLength(1)
-    expect(items[0]!.textContent).toMatch(
+    // One line survives the dedup, so it is the headline's subtext — and there is no "Also" list,
+    // which is what "does not repeat" means now that a single line no longer renders as a bullet.
+    expect(screen.getByTestId('desk-question')).toHaveTextContent(/Is the cargo complete\?/i)
+    expect(screen.getByTestId('desk-question-detail')).toHaveTextContent(
       /Email says there is an attachment, but none was received — cargo may be incomplete/,
     )
+    expect(screen.queryByTestId('needs-attention-rest')).toBeNull()
+    expect(within(screen.getByTestId('why-review')).queryAllByRole('listitem')).toHaveLength(0)
   })
 
   // Needs attention (2026-07-17): conflict table owns field diffs — hide conflict-class flags/reasons.
@@ -422,7 +432,10 @@ describe('ReviewCard', () => {
     )
     const why = screen.getByTestId('why-review')
     expect(screen.getByTestId('needs-attention')).toBeInTheDocument()
-    expect(within(why).getByText(/Needs attention/i)).toBeInTheDocument()
+    // PO-only + thin collapse into w-po-thin, whose question leads the card.
+    expect(screen.getByTestId('desk-question')).toHaveTextContent(
+      /Does this belong in tracking, and on this shipment\?/i,
+    )
     // Conflict-class flags suppressed — table already shows Qty
     expect(within(why).queryByText(/Email disagrees with what is already stored/)).toBeNull()
     expect(within(why).queryByText(/3 field conflicts — values disagree/)).toBeNull()
@@ -434,7 +447,6 @@ describe('ReviewCard', () => {
         /Thin mail linked by PO only — confirm it belongs in tracking and on this shipment|Linked by PO only/,
       ),
     ).toBeInTheDocument()
-    expect(screen.getByTestId('needs-group-which_shipment')).toBeInTheDocument()
     // Table still owns the field comparison
     expect(screen.getByRole('table')).toBeInTheDocument()
   })
@@ -630,13 +642,13 @@ describe('ReviewCard', () => {
       defaultExpanded: true,
     }
     const { rerender } = render(<ReviewCard {...props} />)
-    // unresolved → the prompt is there
+    // unresolved → the prompt is there, headlined by the question it asks
     expect(screen.getByTestId('needs-attention')).toBeInTheDocument()
-    expect(screen.getByText('Needs Attention')).toBeInTheDocument()
+    expect(screen.getByTestId('desk-question')).toHaveTextContent(/Is this the right shipment\?/i)
 
     rerender(<ReviewCard {...props} readOnly />)
     expect(screen.queryByTestId('needs-attention')).toBeNull()
-    expect(screen.queryByText('Needs Attention')).toBeNull()
+    expect(screen.queryByTestId('desk-question')).toBeNull()
     expect(screen.queryByTestId('needs-group-which_shipment')).toBeNull()
   })
 })
@@ -1445,6 +1457,110 @@ describe('decision desk — ready state (no Critical for sailing band)', () => {
 })
 
 /**
+ * The verdict buttons are worded as answers to the headline. Before this, a card asking "verify it
+ * belongs in tracking" offered only `Edit` / `Confirm Reviewed` — the answer "it doesn't belong" had
+ * no button anywhere on the screen, and no button named the question it settled.
+ */
+describe('verdicts answer the headline question', () => {
+  /** Thin mail arrives as a committer reviewReason (r-thin), not as a queue risk flag. */
+  const THIN_REASON =
+    'no booking/SO/HBL identity and no lifecycle email type — verify this is a real shipment'
+  const thinMail = () => baseReview({ conflicts: [], reasons: [], riskFlags: [] })
+
+  function renderVerdicts(over: { onReject?: () => Promise<void>; onWait?: () => Promise<void> } = {}) {
+    return render(
+      <MemoryRouter>
+        <ReviewCard
+          shipment={baseShipment({ reviewReasons: [THIN_REASON] })}
+          criticReview={thinMail()}
+          compact={null}
+          defaultExpanded
+          onApprove={vi.fn().mockResolvedValue(undefined)}
+          onReject={over.onReject}
+          onWait={over.onWait}
+        />
+      </MemoryRouter>,
+    )
+  }
+
+  it('the affirmative button answers the question instead of saying "Confirm Reviewed"', () => {
+    renderVerdicts()
+    expect(screen.getByRole('button', { name: /yes — track it/i })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /keep current/i })).toBeNull()
+  })
+
+  it('Reject is worded by the question and passes the note as the reason', async () => {
+    const user = userEvent.setup()
+    const onReject = vi.fn().mockResolvedValue(undefined)
+    renderVerdicts({ onReject })
+    await user.click(screen.getByTestId('review-note-add'))
+    await user.type(screen.getByRole('textbox', { name: /note/i }), 'portal echo, no cargo')
+    const btn = screen.getByTestId('review-reject')
+    expect(btn).toHaveTextContent(/Not a Shipment/i)
+    await user.click(btn)
+    expect(onReject).toHaveBeenCalledWith('portal echo, no cargo')
+  })
+
+  it('Waiting parks it and carries the note as what is being waited on', async () => {
+    const user = userEvent.setup()
+    const onWait = vi.fn().mockResolvedValue(undefined)
+    renderVerdicts({ onWait })
+    await user.click(screen.getByTestId('review-note-add'))
+    await user.type(screen.getByRole('textbox', { name: /note/i }), 'asked QueenWong')
+    await user.click(screen.getByTestId('review-wait'))
+    expect(onWait).toHaveBeenCalledWith('asked QueenWong')
+  })
+
+  it('no note typed → the reason is omitted, not sent as an empty string', async () => {
+    const user = userEvent.setup()
+    const onWait = vi.fn().mockResolvedValue(undefined)
+    renderVerdicts({ onWait })
+    await user.click(screen.getByTestId('review-wait'))
+    expect(onWait).toHaveBeenCalledWith(undefined)
+  })
+
+  it('no Reject button when rejecting does not answer the question', () => {
+    render(
+      <MemoryRouter>
+        <ReviewCard
+          shipment={baseShipment({ reviewReasons: [] })}
+          criticReview={baseReview({
+            conflicts: [],
+            reasons: [],
+            riskFlags: [{ code: 'AMBIGUOUS_MATCH', severity: 'medium', message: 'two legs match' }],
+          })}
+          compact={null}
+          defaultExpanded
+          onApprove={vi.fn()}
+          onReject={vi.fn()}
+          onWait={vi.fn()}
+        />
+      </MemoryRouter>,
+    )
+    // "Is this the right shipment?" is answered by linking it, not by binning it.
+    expect(screen.queryByTestId('review-reject')).toBeNull()
+    // Parking is always available — you can always need to go and ask.
+    expect(screen.getByTestId('review-wait')).toBeInTheDocument()
+  })
+
+  it('read-only history offers no verdicts at all', () => {
+    render(
+      <MemoryRouter>
+        <ReviewCard
+          shipment={baseShipment({ reviewReasons: [THIN_REASON] })}
+          criticReview={thinMail()}
+          compact={null}
+          defaultExpanded
+          readOnly
+        />
+      </MemoryRouter>,
+    )
+    expect(screen.queryByTestId('review-reject')).toBeNull()
+    expect(screen.queryByTestId('review-wait')).toBeNull()
+  })
+})
+
+/**
  * A PO only belongs on the decision desk when there is something to DECIDE about it. The grid used
  * to render for every linked PO, so a leg queued for an unrelated reason (a Mesh party miss) still
  * showed a four-column decision table over one PO with all three decision columns empty.
@@ -1525,9 +1641,21 @@ describe('POs on the decision desk — only when a PO needs a decision', () => {
     expect(screen.getByTestId('review-po-styles-section')).toBeInTheDocument()
   })
 
-  it('Edit always gets the full grid — managing POs is what Edit is for', async () => {
-    const user = userEvent.setup()
+  /**
+   * Edit follows the same rule as the grid it opens: it is for legs with something editable. A leg
+   * whose only open question is "is this freight at all?" has nothing to edit here — its POs are the
+   * shipment page's business, reachable via Open Shipment.
+   */
+  it('no Edit button when there is nothing editable on the desk', () => {
     renderPoCard()
+    expect(screen.queryByRole('button', { name: /^edit$/i })).toBeNull()
+  })
+
+  it('Edit returns — and opens the full grid — once a PO has a proposal to settle', async () => {
+    const user = userEvent.setup()
+    renderPoCard({
+      reviewReasons: ['PO 224340: item/style "OLD" vs "NEW" (kept 26-HMIGHLE-0294-2)'],
+    })
     await user.click(screen.getByRole('button', { name: /^edit$/i }))
     expect(screen.getByTestId('review-po-styles-section')).toBeInTheDocument()
     expect(screen.getByTestId('review-po-add')).toBeInTheDocument()
