@@ -3,8 +3,10 @@ import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
 import { X, PlusCircle, Loader2 } from 'lucide-react'
 import { useCreateShipment, type CreateShipmentInput } from '../../hooks/use-shipments'
-import { fieldLabel, numericFieldWarn } from '../../lib/review-fields'
+import { fieldLabel, fieldUnit, numericFieldWarn, isNumericColumn, isDateColumn, dateColumnHasTime } from '../../lib/review-fields'
 import { MODE_EDIT_OPTIONS, UOM_OPTIONS } from '../../lib/enums'
+import { DateTimeField } from './DateTimeField'
+import { NumberField } from './NumberField'
 
 /**
  * Manually create a shipment the pipeline never saw (e.g. the original booking email / attachment was
@@ -51,8 +53,15 @@ const DATES: Field[] = [
 ]
 
 const STRONG: (keyof CreateShipmentInput)[] = ['bookingNo', 'soNo', 'hblAwbFcrNo', 'mbl', 'containerNo']
-/** Rendered as number inputs with min=0 (the backend rejects negatives / bad counts regardless). */
-const NUMERIC: (keyof CreateShipmentInput)[] = ['qty', 'grossWeight']
+/**
+ * Rendered as number inputs with min=0 (the backend rejects negatives / bad counts regardless).
+ * Derived from isNumericColumn rather than hand-listed: a hand-list silently misses a field the
+ * moment one is added above, and a numeric field that falls through to free text reaches
+ * coerceLegField, which turns anything Number() cannot read into NULL.
+ */
+const NUMERIC: (keyof CreateShipmentInput)[] = [...IDENTITY, ...ROUTE, ...CARGO, ...DATES]
+  .map((f) => f.key)
+  .filter((k) => isNumericColumn(String(k)))
 
 const controlClass =
   'h-9 rounded-lg border border-border bg-surface-900 px-3 text-sm text-text-primary placeholder:text-text-muted focus:border-cobalt-primary focus:outline-none'
@@ -104,19 +113,31 @@ export function NewShipmentModal({ onClose }: { onClose: () => void }) {
               <option key={opt} value={opt}>{opt}</option>
             ))}
           </select>
+        ) : isDateColumn(String(fld.key)) ? (
+          <DateTimeField
+            value={cur}
+            onChange={(v) => set(fld.key, v)}
+            showTime={dateColumnHasTime(String(fld.key))}
+            label={fld.label ?? fieldLabel(fld.key)}
+            className={controlClass}
+          />
+        ) : NUMERIC.includes(fld.key) ? (
+          <NumberField
+            ariaLabel={fld.label ?? fieldLabel(fld.key)}
+            value={cur}
+            onChange={(v) => set(fld.key, v)}
+            decimals={fld.key !== 'qty'}
+            unit={fld.key === 'qty' ? form.qtyUnit || null : fieldUnit(String(fld.key))}
+            error={numErr}
+            className={controlClass}
+          />
         ) : (
           <input
             value={cur}
             onChange={(e) => set(fld.key, e.target.value)}
             placeholder={fld.placeholder}
-            type={NUMERIC.includes(fld.key) ? 'number' : undefined}
-            min={NUMERIC.includes(fld.key) ? 0 : undefined}
-            step={fld.key === 'qty' ? 1 : NUMERIC.includes(fld.key) ? 'any' : undefined}
             className={controlClass}
           />
-        )}
-        {numErr && (
-          <p className="text-xs text-status-critical" data-testid={`create-err-${fld.key}`}>{numErr}</p>
         )}
       </label>
     )

@@ -57,6 +57,8 @@ function fixture(over: Partial<ShipmentDetail> = {}): ShipmentDetail {
     status: 'BOOKED',
     reviewStatus: 'provisional',
     updatedAt: '2026-07-10T12:00:00.000Z',
+    firstEmailAt: '2026-01-16T03:00:00.000Z',
+    createdAt: '2026-07-10T12:00:00.000Z',
     criticReview,
     emails: [],
     ...over,
@@ -93,8 +95,11 @@ describe('ShipmentReviewFocusPage', () => {
     mockUseShipment.mockReturnValue({ data: fixture(), isLoading: false, isError: false })
     renderPage()
 
-    // Header names the shipment and offers a way back — the whole point of the focused view.
-    expect(screen.getByText('BY058417')).toBeInTheDocument()
+    // Title leads with the derived Shipment ID, same identity the detail page shows (#350/#355) —
+    // anchored to the beginning email (2026-01), not to createdAt (2026-07).
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Review 202601SHIP')
+    // The booking is not lost, it moves to the subtitle.
+    expect(screen.getByText(/BY058417/)).toBeInTheDocument()
     // Opened directly (single history entry) → falls back to the queue.
     expect(screen.getByRole('button', { name: /back to review queue/i })).toBeInTheDocument()
 

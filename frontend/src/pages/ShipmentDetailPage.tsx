@@ -9,6 +9,7 @@ import { CategorizedShipmentHistory } from '../components/shipments/CategorizedS
 import { ContestedLockCard } from '../components/shipments/ContestedLockCard'
 import { PurchaseOrdersCard } from '../components/shipments/PurchaseOrdersCard'
 import { PortPicker } from '../components/shipments/PortPicker'
+import { PartyPicker } from '../components/shipments/PartyPicker'
 import {
   FieldHistoryContext,
   FieldHistoryPopover,
@@ -21,11 +22,13 @@ import { pendingReviewAnnotations, type PendingAnnotation } from '../lib/pending
 import { AlertCard } from '../components/alerts/AlertCard'
 import { formatDate, formatDateTime, formatDateMaybeTime, formatShipmentId, cn } from '../lib/utils'
 import { parseSender } from '../lib/email-sender'
-import { EDITABLE_FIELDS, fieldLabel, numericFieldWarn, dateOrderWarn, toInputValue, type EditableField } from '../lib/review-fields'
+import { EDITABLE_FIELDS, fieldLabel, fieldUnit, numericFieldWarn, dateOrderWarn, toInputValue, type EditableField, formatNumericDisplay, dateColumnHasTime } from '../lib/review-fields'
 import { toast } from '../components/ui/Toast'
 import { interactiveProps } from '../lib/interactive'
 import { Pagination, usePagination, PageSizeSelect } from '../components/ui/Pagination'
 import { ArrowLeft, Mail, Clock, ClipboardList, Package, Ship, Calendar, AlertTriangle, AlertCircle, Info, Pencil, Check, X, NotebookPen } from 'lucide-react'
+import { DateTimeField } from '../components/shipments/DateTimeField'
+import { NumberField } from '../components/shipments/NumberField'
 
 // The human-editable leg fields, grouped like the read-only card. `db` = the backend column the PATCH writes
 // (+ locks + audits); `get` reads the current value off the loaded shipment (whose UI names differ from db).
@@ -41,7 +44,7 @@ interface EditField {
   options?: readonly string[]
   /** Full legal enum when options is a shorter offer list (Mode) — see EditableField.allValues. */
   allValues?: readonly string[]
-  picker?: 'port'
+  picker?: EditableField['picker']
   get: (s: ShipmentDetail) => unknown
 }
 /**
@@ -470,7 +473,22 @@ export default function ShipmentDetailPage() {
                           placeholder="Search ports — UN/LOCODE or name"
                           className={controlClass}
                         />
+                      ) : f.picker === 'customer' || f.picker === 'vendor' || f.picker === 'forwarder' ? (
+                        <PartyPicker
+                          kind={f.picker}
+                          id={`${fieldId}-${f.db}`}
+                          value={cur}
+                          onChange={(v) => setDraft((d) => ({ ...d, [f.db]: v }))}
+                          placeholder={`Search ${f.picker}s — code or name`}
+                          className={controlClass}
+                        />
                       ) : f.options ? (
+                        (() => {
+                          const optionSet = new Set(f.options as readonly string[])
+                          const allValueSet = new Set(
+                            (f.allValues ?? f.options ?? []) as readonly string[],
+                          )
+                          return (
                         <select
                           id={`${fieldId}-${f.db}`}
                           data-testid={`edit-select-${f.db}`}
@@ -479,60 +497,48 @@ export default function ShipmentDetailPage() {
                           className={controlClass}
                         >
                           <option value="">—</option>
-                          {cur && !(f.options as readonly string[]).includes(cur) && (
+                          {cur && !optionSet.has(cur) && (
                             <option value={cur}>
                               {/* A value outside the offered list but inside the full enum (e.g.
                                   agent-written SEA_LCL vs the SEA/AIR offer) is valid — only truly
                                   unknown junk gets the suffix. */}
-                              {(f.allValues ?? f.options ?? []).includes(cur) ? cur : `${cur} (unrecognized)`}
+                              {allValueSet.has(cur) ? cur : `${cur} (unrecognized)`}
                             </option>
                           )}
                           {f.options.map((opt) => (
                             <option key={opt} value={opt}>{opt}</option>
                           ))}
                         </select>
-                      ) : f.type === 'date' ? (
-                        /* Date + optional time over ONE draft string ("YYYY-MM-DDTHH:mm"). NOT a
-                           datetime-local input: that control reports "" until BOTH parts are typed,
-                           so picking a day into an empty field never reached the draft and the edit
-                           silently vanished on Save. A bare day defaults to 00:00 (reads back as
-                           date-only); a stored cut-off time sits in the time box and survives
-                           day-only edits. Clearing the day clears the whole value. */
-                        (() => {
-                          const dateVal = cur.slice(0, 10)
-                          const timeVal = cur.slice(11, 16)
-                          const put = (d: string, t: string) =>
-                            setDraft((prev) => ({ ...prev, [f.db]: d ? `${d}T${t || '00:00'}` : '' }))
-                          return (
-                            <div className="flex gap-2">
-                              <div className="min-w-0 flex-1">
-                                <input
-                                  id={`${fieldId}-${f.db}`}
-                                  type="date"
-                                  value={dateVal}
-                                  onChange={(e) => put(e.target.value, timeVal)}
-                                  className={controlClass}
-                                />
-                              </div>
-                              <div className="w-24 flex-none">
-                                <input
-                                  type="time"
-                                  aria-label={`${f.label} time`}
-                                  value={timeVal}
-                                  disabled={!dateVal}
-                                  onChange={(e) => put(dateVal, e.target.value)}
-                                  className={cn(controlClass, 'disabled:opacity-40')}
-                                />
-                              </div>
-                            </div>
                           )
                         })()
+                      ) : f.type === 'date' ? (
+                        /* Shared with the review conflict row + New Shipment modal — see DateTimeField
+                           for why this is a date+time PAIR and not a datetime-local input. */
+                        <DateTimeField
+                          id={`${fieldId}-${f.db}`}
+                          showTime={dateColumnHasTime(f.db)}
+                          label={f.label}
+                          value={cur}
+                          onChange={(v) => setDraft((prev) => ({ ...prev, [f.db]: v }))}
+                          className={controlClass}
+                        />
+                      ) : f.type === 'number' ? (
+                        <NumberField
+                          id={`${fieldId}-${f.db}`}
+                          ariaLabel={f.label}
+                          value={cur}
+                          onChange={(v) => setDraft((d) => ({ ...d, [f.db]: v }))}
+                          decimals={f.db !== 'qty'}
+                          /* qty's unit is the leg's own UOM (an editable field beside it); weight
+                             and measurement carry a fixed one from EDITABLE_FIELDS. */
+                          unit={f.db === 'qty' ? draft.qtyUnit || null : fieldUnit(f.db)}
+                          error={numErr}
+                          className={controlClass}
+                        />
                       ) : (
                         <input
                           id={`${fieldId}-${f.db}`}
                           type={f.type}
-                          min={f.type === 'number' ? 0 : undefined}
-                          step={f.db === 'qty' ? 1 : f.type === 'number' ? 'any' : undefined}
                           value={cur}
                           onChange={(e) => setDraft((d) => ({ ...d, [f.db]: e.target.value }))}
                           placeholder={
@@ -545,11 +551,7 @@ export default function ShipmentDetailPage() {
                           className={controlClass}
                         />
                       )}
-                      {numErr && (
-                        <p className="col-start-2 mt-1 text-xs text-status-critical" data-testid={`edit-err-${f.db}`}>
-                          {numErr}
-                        </p>
-                      )}
+                      {/* numeric errors render inside NumberField (after blur) — see its docstring */}
                     </div>
                       )]
                   })}
@@ -631,7 +633,17 @@ export default function ShipmentDetailPage() {
 
           {/* Section 2: Cargo & Logistics */}
           <DetailSection title="Cargo & Logistics" icon={<Package size={14} className="text-text-muted" />}>
-            <DetailRow historyKey="qty" label={fieldLabel('qty')} value={shipment.quantityShipped != null ? String(shipment.quantityShipped) : null} />
+            {/* Grouped for reading, same as the review conflict row. Display only — the edit form
+                below seeds from the raw number, and search/CSV keep the ungrouped digits. */}
+            <DetailRow
+              historyKey="qty"
+              label={fieldLabel('qty')}
+              value={
+                shipment.quantityShipped != null
+                  ? formatNumericDisplay(String(shipment.quantityShipped))
+                  : null
+              }
+            />
             <DetailRow historyKey="qtyUnit" label={fieldLabel('qtyUnit')} value={shipment.quantityUnit ?? null} />
             <DetailRow
               historyKey="containerNo"

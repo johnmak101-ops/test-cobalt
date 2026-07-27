@@ -1474,6 +1474,9 @@ function collapsePoOnlyAndThin(byLine: Map<string, NeedsAttentionItem>): void {
 /** UN/LOCODE (5-char) — used to detect that a port slot already auto-matched. */
 const LOCODE_RE = /^[A-Z]{2}[A-Z0-9]{3}$/i
 
+/** IATA airport code (3-letter) — air legs render these instead of a UN/LOCODE. */
+const IATA_RE = /^[A-Z]{3}$/i
+
 /** ISO-3166 alpha-2 codes commonly seen as pol/pod blobs (not exhaustive of world). */
 const ISO2_COUNTRY = new Set(
   [
@@ -1587,17 +1590,78 @@ export function looksLikeLocode(value: string | null | undefined): boolean {
   return !!value && LOCODE_RE.test(String(value).trim())
 }
 
+/** True when a free-text looks like an IATA airport code (e.g. LHR, SZX). Shape only — see
+ *  {@link portsLinkedFromRoute} for the country-collision rule that decides if it counts. */
+export function looksLikeIata(value: string | null | undefined): boolean {
+  return !!value && IATA_RE.test(String(value).trim())
+}
+
 /**
- * Infer linked ports from a UI route string like "CNYTN→VNSGN" or "CNYTN -> VNSGN".
- * Review-queue rows only carry `route`, not polId/podId.
+ * Which port slots already resolved, plus the token the route rendered for each.
+ * The tokens are what lets {@link portMissField} attribute an unlabelled line to a
+ * slot: an unlinked slot renders its raw value, so a line quoting that raw is about
+ * that slot and no other.
  */
-export function portsLinkedFromRoute(route: string | null | undefined): { pol: boolean; pod: boolean } {
-  if (!route?.trim()) return { pol: false, pod: false }
+export type PortsLinked = {
+  pol?: boolean
+  pod?: boolean
+  polToken?: string | null
+  podToken?: string | null
+}
+
+/**
+ * Infer linked ports from a UI route string like "CNYTN→VNSGN" or "CAN→LHR".
+ * Review-queue rows only carry `route`, not polId/podId. Air legs render IATA, not
+ * UN/LOCODE (portLabel prefers `iata` when mode === 'AIR'), so a LOCODE-only test
+ * reported every air leg unlinked and the port-miss suppression never fired on air.
+ */
+export function portsLinkedFromRoute(route: string | null | undefined): Required<PortsLinked> {
+  if (!route?.trim()) return { pol: false, pod: false, polToken: null, podToken: null }
   const parts = route.split(/\s*(?:→|->|—|–)\s*/).map((s) => s.trim()).filter(Boolean)
-  return {
-    pol: looksLikeLocode(parts[0]),
-    pod: looksLikeLocode(parts[1]),
+  const [pol, pod] = parts
+  /**
+   * Some IATA codes collide with ISO-3 country tokens (CAN = Guangzhou *and* Canada; HKG, USA).
+   * A lone "CHN" next to a LOCODE or a country name reads as the country and stays unlinked —
+   * that is what countryOnlyPortMissText exists for. But a route of two 3-letter codes is an air
+   * pair: the raw fallback spells countries out ("VIETNAM"), never as "XXX→YYY".
+   */
+  const airPair = looksLikeIata(pol) && looksLikeIata(pod)
+  const linked = (v: string | undefined): boolean => {
+    if (looksLikeLocode(v)) return true
+    if (!looksLikeIata(v)) return false
+    return airPair || !ISO3_COUNTRY.has(String(v).trim().toUpperCase())
   }
+  return { pol: linked(pol), pod: linked(pod), polToken: pol ?? null, podToken: pod ?? null }
+}
+
+/**
+ * Which port slot a port-miss line is about, or null when the line does not say.
+ * Two signals, strongest first:
+ *  1. the slot the copy names — "for POD", "Port of Loading", or the
+ *     origin/destination wording the queue uses in its own free text;
+ *  2. the value carried in an `m-port:<value>` lineId matching the token the route
+ *     rendered for a slot. An unlinked slot renders its raw, so `m-port:VIETNAM` on
+ *     route "CNYTN→VIETNAM" is unambiguously the POD. The lineId holds the value
+ *     verbatim, which is why this reads it instead of re-parsing the prose (the copy
+ *     drops the quotes for country tokens: "Email only named VIETNAM — ...").
+ * A line naming both slots, or neither, is unattributable and returns null.
+ */
+function portMissField(
+  hit: { lineId: string; text: string },
+  ports: PortsLinked,
+): 'pol' | 'pod' | null {
+  const saysPol = /\bPOL\b|\bport of loading\b|\bloading port\b|\borigin (?:port|airport)\b/i.test(hit.text)
+  const saysPod =
+    /\bPOD\b|\bport of discharge\b|\bdischarge port\b|\bdestination (?:port|airport)\b/i.test(hit.text)
+  if (saysPol !== saysPod) return saysPol ? 'pol' : 'pod'
+  const value = hit.lineId.startsWith('m-port:')
+    ? hit.lineId.slice('m-port:'.length).trim().toUpperCase()
+    : ''
+  if (!value) return null
+  const hitsPol = ports.polToken?.trim().toUpperCase() === value
+  const hitsPod = ports.podToken?.trim().toUpperCase() === value
+  if (hitsPol !== hitsPod) return hitsPol ? 'pol' : 'pod'
+  return null
 }
 
 /** Port-miss Needs-attention lines (country/city synonyms after LOCODE auto-match). */
@@ -1608,6 +1672,9 @@ function isPortMissLine(hit: { lineId: string; text: string }): boolean {
     /UN\/LOCODE/i.test(hit.text) ||
     /not in UN\/LOCODE/i.test(hit.text) ||
     /did not match a known port/i.test(hit.text) ||
+    // Queue free text, judged per-email: "No destination port/airport stated in this email".
+    // The card aggregates a whole thread, so it is stale once the slot is filled.
+    /\bno\s+(?:(?:origin|destination|loading|discharge)\s+)?(?:port|airport)\b/i.test(hit.text) ||
     (/not in master data/i.test(hit.text) && /raw value kept|raw kept/i.test(hit.text))
   )
 }
@@ -1628,15 +1695,27 @@ export function buildNeedsAttention(opts: {
   conflictsCount: number
   max?: number
   /**
-   * When either pol or pod is already LOCODE-linked, drop port-miss flags/reasons
-   * (e.g. "Port VIETNAM" / "Ho Chi Minh City" after pod=VNSGN).
+   * Which port slots already resolved. A port-miss flag/reason is dropped when the
+   * slot it names is linked (e.g. "Port VIETNAM" / "Ho Chi Minh City" after pod=VNSGN);
+   * pass the route tokens too so unlabelled lines can be attributed to a slot.
    */
-  portsLinked?: { pol?: boolean; pod?: boolean } | null
+  portsLinked?: PortsLinked | null
   /** When true, r-no-id uses only-PO copy (card has linked PO numbers). Default false. */
   hasPo?: boolean
 }): NeedsAttentionItem[] {
   const tableOwnsConflicts = opts.conflictsCount > 0
-  const dropPortMiss = !!(opts.portsLinked?.pol || opts.portsLinked?.pod)
+  const ports: PortsLinked = opts.portsLinked ?? {}
+  const anyPortLinked = !!(ports.pol || ports.pod)
+  /**
+   * Per-field: a port-miss line dies only when the slot IT is about is the slot that
+   * resolved, so a genuine POD miss survives on a leg with a good POL. A line we
+   * cannot attribute to either slot keeps the older any-slot rule.
+   */
+  const dropPortMiss = (hit: { lineId: string; text: string }): boolean => {
+    if (!anyPortLinked || !isPortMissLine(hit)) return false
+    const field = portMissField(hit, ports)
+    return field ? !!ports[field] : true
+  }
   const flags = (opts.riskFlags ?? []).filter((f) => f?.message)
   const byLine = new Map<string, NeedsAttentionItem>()
   const explained = new Set<ReasonCategory>()
@@ -1651,7 +1730,7 @@ export function buildNeedsAttention(opts: {
     const hit = lineFromFlag(f.code, f.message!)
     if (!hit) continue
     if (hit.category === 'conflict' && tableOwnsConflicts) continue
-    if (dropPortMiss && isPortMissLine(hit)) continue
+    if (dropPortMiss(hit)) continue
     const text = hit.lineId === 'r-no-id' ? weakIdentityText(!!opts.hasPo) : hit.text
     pushUnique(byLine, {
       key: `flag-${f.code}-${i}`,
@@ -1671,7 +1750,7 @@ export function buildNeedsAttention(opts: {
     const hit = lineFromReason(raw, text)
     if (!hit) continue
     if (hit.category === 'conflict' && tableOwnsConflicts) continue
-    if (dropPortMiss && isPortMissLine(hit)) continue
+    if (dropPortMiss(hit)) continue
     // Drop reason if a flag already explained that category (and line not more specific)
     if (explained.has(hit.category) && !hit.lineId.startsWith('m-port:') && !hit.lineId.startsWith('m-party:')) {
       // Still allow master detail lines with quoted values when only generic party flag present
@@ -1714,7 +1793,7 @@ export function buildNeedsAttentionGroups(opts: {
   riskFlags?: Array<{ code: string; severity?: string; message?: string }> | null
   reviewReasons?: string[] | null
   conflictsCount: number
-  portsLinked?: { pol?: boolean; pod?: boolean } | null
+  portsLinked?: PortsLinked | null
   /** When true, r-no-id uses only-PO copy (card has linked PO numbers). Default false. */
   hasPo?: boolean
   /** Review queue: decision only. Detail: all. Default all. */

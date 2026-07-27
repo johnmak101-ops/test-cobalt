@@ -1,5 +1,57 @@
 import { describe, it, expect } from 'vitest'
-import { normKey, strongKeys, keysOverlap, mergeKeys, str, num, date } from './match-keys'
+import { normAwbKey, normKey, strongKeys, keysOverlap, mergeKeys, str, num, date } from './match-keys'
+
+/**
+ * The bare-`A` AWB alias. One forwarder writes `BL#A26050003` in the email subject while the B/L attachment
+ * says `SZA26050003`; they are the same air waybill. Before this collapsed, a decision carrying the long form
+ * could not find a leg committed under the short one, and the committer minted a duplicate shipment
+ * (JOB-2026-0010 beside JOB-2026-0003, live on 2026-07-26).
+ */
+describe('normAwbKey — AWB alias collapse (must mirror cobalt-queue normalizeAwbToken)', () => {
+  it('folds the bare-A subject form onto the SZA form', () => {
+    expect(normAwbKey('A26050003')).toBe('SZA26050003')
+    expect(normAwbKey('SZA26050003')).toBe('SZA26050003')
+    expect(normAwbKey('BL#A26050003')).toBe('SZA26050003')
+    expect(normAwbKey('bl# sza-26050003')).toBe('SZA26050003')
+  })
+
+  it('leaves other carrier prefixes alone', () => {
+    expect(normAwbKey('GZL26258522')).toBe('GZL26258522')
+    expect(normAwbKey('SNZ260004243')).toBe('SNZ260004243')
+    expect(normAwbKey('GZOSA2600021')).toBe('GZOSA2600021')
+  })
+
+  it('requires at least 6 digits, so a short A-token is not silently re-prefixed', () => {
+    expect(normAwbKey('A12345')).toBe('A12345')
+    expect(normAwbKey('A123456')).toBe('SZA123456')
+  })
+
+  it('returns null for empty or too-short input, so callers can fall back to normKey', () => {
+    expect(normAwbKey(null)).toBeNull()
+    expect(normAwbKey('')).toBeNull()
+    expect(normAwbKey('---')).toBeNull()
+    expect(normAwbKey('AB1')).toBeNull()
+  })
+})
+
+describe('strongKeys — the HBL alias must reach the key set (and thus shipment_match_keys)', () => {
+  it('yields ONE key for both spellings, so short-form and long-form legs overlap', () => {
+    const short = strongKeys({ hbl_awb_fcr_no: 'A26050003' })
+    const long = strongKeys({ hbl_awb_fcr_no: 'SZA26050003' })
+    expect([...short]).toEqual(['hbl_awb_fcr_no:SZA26050003'])
+    expect(keysOverlap(short, long)).toBe(true)
+  })
+
+  it('does NOT make unrelated HBLs overlap', () => {
+    expect(keysOverlap(strongKeys({ hbl_awb_fcr_no: 'GZL26258522' }), strongKeys({ hbl_awb_fcr_no: 'GZL26261147' }))).toBe(
+      false,
+    )
+  })
+
+  it('falls back to normKey rather than dropping an unjudgeable token', () => {
+    expect([...strongKeys({ hbl_awb_fcr_no: 'X-1' })]).toEqual(['hbl_awb_fcr_no:X1'])
+  })
+})
 
 describe('normKey', () => {
   it('uppercases and strips non-alphanumerics', () => {

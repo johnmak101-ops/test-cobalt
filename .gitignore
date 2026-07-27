@@ -56,10 +56,12 @@ frontend/_vite.*.log
 # local git worktrees used for branch isolation
 .worktrees/
 
-# Local doctor / process tooling
-**/doctor.config.json
-**/nestjs-doctor.config.json
-**/nestjs-doctor.config.README.md
+# Doctor health configs ARE product (gate scores ≥90). Do not gitignore them —
+# they encode intentional rule ignores (global APP_GUARD, module boundaries, etc.).
+# JSON doctor dumps stay local:
+_be-doctor*.json
+_fe-doctor*.json
+_fe-verbose.txt
 
 # Agent / loop scratch — never commit (local only)
 .pr-body*.md
@@ -77,9 +79,6 @@ backend/_boot*.log
 backend/_q*.js
 backend/_dismiss*.js
 backend/_patch*.js
-_be-doctor*.json
-_fe-doctor*.json
-_fe-verbose.txt
 _dev.log
 
 # Client bulk / confidential (not product docs)

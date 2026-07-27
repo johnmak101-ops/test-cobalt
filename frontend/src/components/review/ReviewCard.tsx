@@ -7,14 +7,19 @@ import {
   ConflictRow,
   changesStoredValue,
   existingValueOf,
+  isCandidateResolution,
+  proposedResolutionOf,
   proposedValueOf,
 } from './ConflictRow'
 import {
   fieldUnit,
   groupConflictFields,
   mapCriticFieldToColumn,
+  isNumericColumn,
+  normalizeNumericInput,
   parseStyleEntries,
   serializeStyleEntries,
+  dateOrderWarn,
 } from '../../lib/review-fields'
 import {
   existingQtyDisplay,
@@ -167,7 +172,15 @@ function initialResolutions(conflicts: CriticConflict[]): Record<string, string>
   // Seeded with the agent's proposal: the table reads as a diff, and approving accepts it. A queued
   // conflict still has no safe AUTO-pick, so the primary button NAMES the number of stored values it
   // would overwrite ("Approve 3 changes") — pre-filled must not read as pre-approved.
-  for (const c of conflicts) out[c.field] = proposedValueOf(c)
+  // #360: the seed is the RESOLUTION value — the master CODE for resolved party candidates.
+  // Numeric columns are normalised first: an agent value off a packing list arrives grouped
+  // ("1,240"), and a number <input> renders a grouped string as BLANK — which would look like the
+  // agent proposed nothing. Strip the separators so the seed survives; display re-groups it.
+  for (const c of conflicts) {
+    const raw = proposedResolutionOf(c)
+    const column = mapCriticFieldToColumn(c.field)
+    out[c.field] = isNumericColumn(column) ? normalizeNumericInput(raw) : raw
+  }
   return out
 }
 
@@ -423,15 +436,36 @@ export function ReviewCard({
     () =>
       conflicts.filter((c) => {
         const v = (resolutions[c.field] ?? '').trim()
-        return v !== '' && v !== existingValue(c) && v !== proposedValueOf(c)
+        // #360: ANY candidate pick is not an override — only a free-typed custom value needs a note.
+        return v !== '' && v !== existingValue(c) && !isCandidateResolution(c, v)
       }),
     [conflicts, resolutions],
   )
   const noteRequired = overrides.length > 0 && !note.trim()
+  /**
+   * Cross-field date sanity — the same check the Order Details form runs, which this table never had.
+   * A contested date reads from the live resolution; one that is NOT contested falls back to what the
+   * shipment already stores, so "ETA moved before the stored ETD" is caught. Queue rows carry no
+   * dates, so there it only fires when both sides of a comparison are contested.
+   */
+  const dateError = useMemo(() => {
+    const stored = shipment as Partial<ShipmentDetail>
+    const fallback: Record<string, string | null | undefined> = {
+      etd: stored.etd,
+      atd: stored.actualDeparture,
+      eta: stored.eta,
+      ata: stored.actualArrival,
+    }
+    const pick = (col: 'etd' | 'atd' | 'eta' | 'ata') => {
+      const c = conflicts.find((x) => mapCriticFieldToColumn(x.field) === col)
+      return (c ? resolutions[c.field] : fallback[col]) ?? undefined
+    }
+    return dateOrderWarn({ etd: pick('etd'), atd: pick('atd'), eta: pick('eta'), ata: pick('ata') })
+  }, [conflicts, resolutions, shipment])
   /** Any cell diverged from the agent's proposal (operator applied a different value). */
   const hasHumanEdits = useMemo(
     () =>
-      conflicts.some((c) => (resolutions[c.field] ?? '').trim() !== proposedValueOf(c).trim()),
+      conflicts.some((c) => (resolutions[c.field] ?? '').trim() !== proposedResolutionOf(c).trim()),
     [conflicts, resolutions],
   )
   // Column 3 label tracks state: agent default → edit mode → human-applied values.
@@ -454,6 +488,8 @@ export function ReviewCard({
   const canSave =
     !readOnly &&
     !noteRequired &&
+    // An arrival before its departure is impossible — same block the Order Details Save applies.
+    dateError == null &&
     !busy &&
     (multiCandNeedsTarget
       ? linkTargetReady
@@ -926,7 +962,6 @@ export function ReviewCard({
                     readOnly={readOnly}
                     editing={canEditGrid}
                     embedded
-                    showColumnHeader={!sharedThead}
                     proposedColumnLabel={proposedColumnLabel}
                   />
                 )}
@@ -1008,6 +1043,15 @@ export function ReviewCard({
                   </span>
                 )}
               </label>
+              {dateError && (
+                <p
+                  className="mb-1.5 text-xs text-status-critical"
+                  data-testid="review-date-error"
+                  role="alert"
+                >
+                  {dateError}
+                </p>
+              )}
               <textarea
                 id={`review-note-${shipment.id}`}
                 aria-label="Note"

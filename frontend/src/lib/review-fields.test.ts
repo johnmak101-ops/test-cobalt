@@ -11,6 +11,12 @@ import {
   mapCriticFieldToColumn,
   mapCriticFieldsToColumns,
   isPortColumn,
+  partyPickerKind,
+  isNumericColumn,
+  isDateColumn,
+  dateColumnHasTime,
+  normalizeNumericInput,
+  formatNumericDisplay,
   isWritableLegColumn,
   reviewGroupOf,
   toInputValue,
@@ -67,16 +73,16 @@ describe('EDITABLE_FIELDS', () => {
     ).toEqual(['bookingNo', 'soNo', 'warehouseSo'])
   })
 
-  it('makes Customer / Vendor editable free-text (Mesh-lag stand-in) under Shipping', () => {
+  it('makes Customer / Vendor editable (Mesh-lag stand-in) under Shipping, labelled as codes', () => {
     expect(EDITABLE_FIELDS.find((f) => f.column === 'customerRaw')).toMatchObject({
       section: 'Shipping',
-      label: 'Customer',
+      label: 'Customer Code',
       uiKey: 'customerRaw',
       type: 'text',
     })
     expect(EDITABLE_FIELDS.find((f) => f.column === 'vendorRaw')).toMatchObject({
       section: 'Shipping',
-      label: 'Vendor',
+      label: 'Vendor Code',
       uiKey: 'vendorRaw',
     })
     // parties route to Shipping via the column mapping (no dedicated regex that would swallow customer_po)
@@ -92,9 +98,25 @@ describe('EDITABLE_FIELDS', () => {
     expect(isPortColumn('forwarderRaw')).toBe(false)
     expect(isPortColumn('customerRaw')).toBe(false)
     expect(isPortColumn(null)).toBe(false)
-    // free-text parties keep NO picker — their masters are Mesh-lagged, so there is no list to pick from
-    expect(EDITABLE_FIELDS.find((f) => f.column === 'customerRaw')?.picker).toBeUndefined()
-    expect(EDITABLE_FIELDS.find((f) => f.column === 'forwarderRaw')?.picker).toBeUndefined()
+    // Customer/Vendor DO pick from the Mesh mirror (reversing the earlier "no list to pick from"
+    // rule): the mirror holds ~850 customers / ~1.5k vendors, so the lag makes it INCOMPLETE, not
+    // absent — and PartyPicker keeps the same free-text fallback PortPicker has, so a party the
+    // mirror has not caught up with is still enterable. A pick stores the master CODE, the tier
+    // exactPartyId resolves first and the value the read view shows as "Customer Code".
+    expect(EDITABLE_FIELDS.find((f) => f.column === 'customerRaw')?.picker).toBe('customer')
+    expect(EDITABLE_FIELDS.find((f) => f.column === 'vendorRaw')?.picker).toBe('vendor')
+    expect(EDITABLE_FIELDS.find((f) => f.column === 'forwarderRaw')?.picker).toBe('forwarder')
+  })
+
+  it('partyPickerKind drives both the edit form and the review conflict row from one list', () => {
+    expect(partyPickerKind('customerRaw')).toBe('customer')
+    expect(partyPickerKind('vendorRaw')).toBe('vendor')
+    expect(partyPickerKind('forwarderRaw')).toBe('forwarder')
+    // Ports have their own picker; everything else is plain free text.
+    expect(partyPickerKind('polRaw')).toBeNull()
+    expect(partyPickerKind('vesselName')).toBeNull()
+    expect(partyPickerKind(null)).toBeNull()
+    expect(partyPickerKind(undefined)).toBeNull()
   })
 })
 
@@ -491,5 +513,89 @@ describe('fieldUnit — the Order Details convention: unit lives in the VALUE', 
     expect(fieldUnit('qty')).toBeNull()
     expect(fieldUnit('bookingNo')).toBeNull()
     expect(fieldUnit('notAColumn')).toBeNull()
+  })
+})
+
+describe('numeric columns — restrict on entry, group on display', () => {
+  it('knows which leg columns are numeric, including ones the form omits', () => {
+    expect(isNumericColumn('qty')).toBe(true)
+    // Not on the Order Details form, but a critic conflict can still carry them.
+    expect(isNumericColumn('grossWeight')).toBe(true)
+    expect(isNumericColumn('measurement')).toBe(true)
+    expect(isNumericColumn('bookingNo')).toBe(false)
+    expect(isNumericColumn('etd')).toBe(false)
+    expect(isNumericColumn(null)).toBe(false)
+  })
+
+  it('strips thousands separators so a grouped agent value can seed a number input', () => {
+    // A packing list writes 1,240 — a number <input> renders that as BLANK, losing the proposal.
+    expect(normalizeNumericInput('1,240')).toBe('1240')
+    expect(normalizeNumericInput('13,516')).toBe('13516')
+    expect(normalizeNumericInput('1240')).toBe('1240')
+    expect(normalizeNumericInput('12.5')).toBe('12.5')
+    expect(normalizeNumericInput('')).toBe('')
+    expect(normalizeNumericInput(null)).toBe('')
+    // Junk is left visible rather than silently mangled into something plausible.
+    expect(normalizeNumericInput('abc')).toBe('abc')
+    expect(normalizeNumericInput('1,2a4')).toBe('1,2a4')
+  })
+
+  it('groups for display and round-trips with normalize', () => {
+    expect(formatNumericDisplay('13516')).toBe('13,516')
+    expect(formatNumericDisplay('1240')).toBe('1,240')
+    expect(formatNumericDisplay('999')).toBe('999')
+    expect(formatNumericDisplay('')).toBe('')
+    // Already grouped input is not double-grouped.
+    expect(formatNumericDisplay('1,240')).toBe('1,240')
+    // Non-numeric passes through untouched — a bad value must stay visible, not become "NaN".
+    expect(formatNumericDisplay('abc')).toBe('abc')
+    expect(normalizeNumericInput(formatNumericDisplay('13516'))).toBe('13516')
+  })
+})
+
+describe('isDateColumn — dates get the shared calendar control', () => {
+  it('covers every Key Dates column', () => {
+    for (const c of ['cargoReadyDate', 'warehouseStartDate', 'warehouseEndDate', 'cfsCutoff',
+                     'etd', 'atd', 'eta', 'ata', 'inDcDate']) {
+      expect(isDateColumn(c)).toBe(true)
+    }
+  })
+
+  it('excludes non-dates', () => {
+    expect(isDateColumn('qty')).toBe(false)
+    expect(isDateColumn('bookingNo')).toBe(false)
+    expect(isDateColumn('polRaw')).toBe(false)
+    expect(isDateColumn(null)).toBe(false)
+    expect(isDateColumn(undefined)).toBe(false)
+  })
+
+  it('is disjoint from the numeric and party sets — one control per column', () => {
+    const dates = ['etd', 'eta', 'atd', 'ata', 'cargoReadyDate', 'cfsCutoff']
+    for (const c of dates) {
+      expect(isNumericColumn(c)).toBe(false)
+      expect(partyPickerKind(c)).toBeNull()
+      expect(isPortColumn(c)).toBe(false)
+    }
+  })
+})
+
+describe('dateColumnHasTime — only the cut-off family states a clock time', () => {
+  it('flags the warehouse window and CFS cut-off', () => {
+    expect(dateColumnHasTime('warehouseStartDate')).toBe(true)
+    expect(dateColumnHasTime('warehouseEndDate')).toBe(true)
+    expect(dateColumnHasTime('cfsCutoff')).toBe(true)
+  })
+
+  it('leaves the day-level dates alone', () => {
+    // Zero stored rows carry a time on any of these; a time box would be noise.
+    for (const c of ['etd', 'atd', 'eta', 'ata', 'cargoReadyDate', 'inDcDate']) {
+      expect(isDateColumn(c)).toBe(true)
+      expect(dateColumnHasTime(c)).toBe(false)
+    }
+  })
+
+  it('is false for non-dates', () => {
+    expect(dateColumnHasTime('qty')).toBe(false)
+    expect(dateColumnHasTime(null)).toBe(false)
   })
 })

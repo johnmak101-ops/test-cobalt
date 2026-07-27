@@ -29,6 +29,21 @@ function shipmentTooltip(ids: string[]): string {
   return `${ids.slice(0, 10).join(', ')} +${ids.length - 10} more`
 }
 
+function statusClass(s: Row['status']): string {
+  if (s === 'recurred')
+    return 'rounded-full border border-status-warning/40 bg-status-warning/15 px-2 py-0.5 text-[11px] font-semibold text-status-warning'
+  if (s === 'acked')
+    return 'rounded-full border border-border bg-surface-800 px-2 py-0.5 text-[11px] text-text-muted'
+  return 'rounded-full border border-border bg-surface-800 px-2 py-0.5 text-[11px] text-text-secondary'
+}
+
+const TYPE_TABS = [
+  { id: 'all' as const, label: 'All types' },
+  { id: 'vendor' as const, label: 'Vendors' },
+  { id: 'forwarder' as const, label: 'Forwarders' },
+  { id: 'customer' as const, label: 'Customers' },
+]
+
 export default function AdminMeshMissesPage() {
   const [rows, setRows] = useState<Row[]>([])
   const [includeAcked, setIncludeAcked] = useState(false)
@@ -93,19 +108,6 @@ export default function AdminMeshMissesPage() {
     URL.revokeObjectURL(url)
   }
 
-  const statusClass = (s: Row['status']) => {
-    if (s === 'recurred') return 'rounded-full border border-status-warning/40 bg-status-warning/15 px-2 py-0.5 text-[11px] font-semibold text-status-warning'
-    if (s === 'acked') return 'rounded-full border border-border bg-surface-800 px-2 py-0.5 text-[11px] text-text-muted'
-    return 'rounded-full border border-border bg-surface-800 px-2 py-0.5 text-[11px] text-text-secondary'
-  }
-
-  const typeTabs = [
-    { id: 'all' as const, label: 'All types' },
-    { id: 'vendor' as const, label: 'Vendors' },
-    { id: 'forwarder' as const, label: 'Forwarders' },
-    { id: 'customer' as const, label: 'Customers' },
-  ]
-
   return (
     <div className="space-y-4 p-1">
       <div className="flex flex-wrap items-center gap-3">
@@ -116,7 +118,7 @@ export default function AdminMeshMissesPage() {
           aria-label="Mesh miss type"
           className="inline-flex flex-wrap overflow-hidden rounded-lg border border-border"
         >
-          {typeTabs.map((t) => (
+          {TYPE_TABS.map((t) => (
             <button
               key={t.id}
               type="button"

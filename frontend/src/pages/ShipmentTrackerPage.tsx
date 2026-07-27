@@ -15,11 +15,9 @@ export default function ShipmentTrackerPage() {
   const [showNew, setShowNew] = useState(false)
   const { data, isLoading } = useShipments({ status: statusFilter })
 
-  const allShipments = data?.shipments ?? []
-
   // Multi-term search: space- or comma-separated, any term matches (OR)
   const filtered = useMemo(() => {
-    const list = allShipments
+    const list = data?.shipments ?? []
     if (!search) return list
     const terms = search.toLowerCase().trim().split(/[\s,]+/).filter(Boolean)
     if (terms.length === 0) return list
@@ -45,7 +43,7 @@ export default function ShipmentTrackerPage() {
       ]
       return terms.some((q) => fields.some((f) => f?.toLowerCase().includes(q)))
     })
-  }, [allShipments, search])
+  }, [data?.shipments, search])
 
   const { totalItems, totalPages, pageSize, getPage } = usePagination(filtered, perPage)
   const pageShipments = getPage(page)

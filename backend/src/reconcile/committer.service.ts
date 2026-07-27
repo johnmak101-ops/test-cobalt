@@ -1,5 +1,4 @@
 import { Injectable } from '@nestjs/common'
-import { formatJobNo } from '../common/job-no'
 import type { Insertable } from 'kysely'
 import type { DB } from '../db/kysely/db'
 import { strongKeys, keysOverlap, normKey, str, date } from './match-keys'
@@ -11,7 +10,7 @@ import {
 } from './vendor-forwarder-guard'
 import { deriveState, classifyKindDetail, normMode } from './state'
 import { currentIdentifierValues, deriveIdentifierRows } from './identifier-rows'
-import { matchKeyIndexRows } from './match-key-index'
+import { matchKeyIndexRows, mergeIdentityKeys } from './match-key-index'
 import { MastersRepository } from '../db/repositories/masters.repository'
 import { BookingRepository } from '../db/repositories/booking.repository'
 import { PurchaseOrderRepository } from '../db/repositories/purchase-order.repository'
@@ -396,15 +395,16 @@ export class CommitterService {
           note: `sibling leg ${legNo} under existing booking ${jobNo} (#151)`,
         })
       } else {
-        jobNo = await this.nextJobNo()
-        const booking = await this.bookings.create({
-          jobNo,
+        // Mints job_no with a unique-violation retry — concurrent posts otherwise collide on
+        // uq_bookings_job_no (MAX()+1 read) and all but one fail with 400.
+        const booking = await this.bookings.createWithGeneratedJobNo({
           customerId,
           vendorId: effVendorId,
           forwarderId: effForwarderId,
           brand: str(f.brand),
           crd: date(f.cargo_ready_date),
         })
+        jobNo = booking.jobNo
         bookingId = booking.id
         const leg = await this.shipments.insertLeg({
           bookingId,
@@ -631,9 +631,26 @@ export class CommitterService {
    * matcher reads — so it stays provably consistent on EVERY path (agent / rebuild / manual, create + amend).
    * Idempotent (delete+insert per shipment). Read by `candidateLegs` (committer.apply INCREMENT 2 +
    * lookupByMatchKey INCREMENT 3).
+   *
+   * 🔴 Derives from the leg's STORED bag folded with this decision's — never from `g.matchKeys` alone. The
+   * amend path does not rewrite `match_keys`, so building the index from the incoming keys DELETED every key
+   * type this decision happened to omit while `findExistingLeg` went on matching the stored bag. Measured
+   * live: a leg stored `{booking_no: CA771, hbl_awb_fcr_no: A26050003, …}` while its index held
+   * `hbl_awb_fcr_no=SZA26050003, mbl=…` and no `CA771` — so a later decision keyed on CA771 could not
+   * retrieve it and would have minted a duplicate. The merged bag is written BACK to the leg, so the
+   * index and the thing `findExistingLeg` reads are the same object rather than two drifting copies.
+   * See `mergeIdentityKeys` for why this is a per-type overwrite and not a union.
    */
   private async writeMatchKeyIndex(shipmentId: string, g: ReconGroup) {
-    await this.shipments.replaceMatchKeys(shipmentId, matchKeyIndexRows(shipmentId, g.matchKeys))
+    const leg = await this.shipments.findById(shipmentId)
+    const stored = (leg?.matchKeys ?? {}) as Record<string, unknown>
+    const merged = mergeIdentityKeys(stored, g.matchKeys)
+    // Only touch the column when the fold actually added or changed something — an unchanged amend must not
+    // bump the row (and `updateLeg` is where field locks / audit hang off).
+    if (JSON.stringify(merged) !== JSON.stringify(stored)) {
+      await this.shipments.updateLeg(shipmentId, { matchKeys: merged })
+    }
+    await this.shipments.replaceMatchKeys(shipmentId, matchKeyIndexRows(shipmentId, merged))
   }
 
   /**
@@ -700,10 +717,6 @@ export class CommitterService {
       sourceType: 'agent',
       sourceId: g.evidenceIds[0] ?? null,
     })
-  }
-
-  private async nextJobNo(): Promise<string> {
-    return formatJobNo(await this.bookings.nextJobSeq())
   }
 
   /** Agent-path resolution of ReconGroup.fromPlatform: true only when EVERY source email of the leg resolves

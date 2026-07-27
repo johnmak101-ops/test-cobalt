@@ -1,5 +1,5 @@
 import { Minus, Plus } from 'lucide-react'
-import { useCallback, useEffect, useId, useRef, useState } from 'react'
+import { useCallback, useId, useRef, useState } from 'react'
 import { cn } from '../../lib/utils'
 
 type DaysStepperProps = {
@@ -39,12 +39,10 @@ export function DaysStepper({
   const inputRef = useRef<HTMLInputElement>(null)
   const hasValue = value != null && Number.isFinite(value)
   const n = hasValue ? Math.round(value!) : null
-  const [draft, setDraft] = useState<string>(n != null ? String(n) : '')
+  // Draft is only meaningful while the input is focused; when not editing the display
+  // derives from `n` so we never need an effect to mirror the prop into state.
+  const [draft, setDraft] = useState<string>('')
   const [editing, setEditing] = useState(false)
-
-  useEffect(() => {
-    if (!editing) setDraft(n != null ? String(n) : '')
-  }, [n, editing])
 
   const isLg = size === 'md'
   // Identical outer size always (Default vs 1 day vs 12 days)
@@ -178,7 +176,7 @@ export function DaysStepper({
               pattern="[0-9]*"
               disabled={disabled}
               aria-label={`${ariaLabel} value`}
-              value={editing ? draft : n != null ? String(n) : draft}
+              value={editing ? draft : n != null ? String(n) : ''}
               onFocus={() => {
                 setEditing(true)
                 setDraft(n != null ? String(n) : '')

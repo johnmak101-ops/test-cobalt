@@ -48,8 +48,20 @@ export interface EditableField {
    * When set, the edit form and the review conflict row render a master picker instead of free text.
    * 'port' → a searchable UN/LOCODE dropdown (ports are a seeded, complete master), with a free-text
    * fallback for a port not yet in the catalog. The chosen value is written to the raw column.
+   * 'customer' | 'vendor' | 'forwarder' → the Mesh party mirror, same free-text fallback (the mirror
+   * lags the ERP by ~2 months). Customer/Vendor picks write the master CODE — the tier exactPartyId
+   * resolves first, and what the read view shows as "Customer Code" / "Vendor Code". Forwarder picks
+   * write the NAME instead: its read row renders the master name and its codes are numeric ERP ids.
    */
-  picker?: 'port'
+  picker?: 'port' | 'customer' | 'vendor' | 'forwarder'
+  /**
+   * A date column that genuinely carries a clock time, so its editor shows a time box beside the
+   * calendar. Only the warehouse/CFS cut-off family does: 截仓/入仓 windows are stated to the hour
+   * (4 of 5 stored warehouse_end_date values carry one), while ETD/ATD/ETA/ATA/CRD/In-DC are
+   * day-level and had zero. A time box on a day-level field is noise, and it invites a spurious
+   * 08:00 to be read as meaningful.
+   */
+  withTime?: true
 }
 
 export const EDITABLE_FIELDS: EditableField[] = [
@@ -79,9 +91,12 @@ export const EDITABLE_FIELDS: EditableField[] = [
   // prevent. Customer/Vendor have no raw row on the read view (codes live under Order Info); they sit
   // with the other parties, between Mode and Forwarder.
   { section: 'Shipping', label: 'Mode', uiKey: 'mode', column: 'mode', type: 'text', options: MODE_EDIT_OPTIONS, allValues: MODE_OPTIONS },
-  { section: 'Shipping', label: 'Customer', uiKey: 'customerRaw', column: 'customerRaw', type: 'text' },
-  { section: 'Shipping', label: 'Vendor', uiKey: 'vendorRaw', column: 'vendorRaw', type: 'text' },
-  { section: 'Shipping', label: 'Forwarder', uiKey: 'forwarderRaw', column: 'forwarderRaw', type: 'text' },
+  // "…Code", not bare "Customer"/"Vendor": a pick now stores the master CODE, and the read view rows
+  // are already labelled this way, so all three surfaces (read, edit, review conflict row) agree on
+  // both the name and the thing named. Forwarder keeps the bare label — it stores a NAME.
+  { section: 'Shipping', label: 'Customer Code', uiKey: 'customerRaw', column: 'customerRaw', type: 'text', picker: 'customer' },
+  { section: 'Shipping', label: 'Vendor Code', uiKey: 'vendorRaw', column: 'vendorRaw', type: 'text', picker: 'vendor' },
+  { section: 'Shipping', label: 'Forwarder', uiKey: 'forwarderRaw', column: 'forwarderRaw', type: 'text', picker: 'forwarder' },
   { section: 'Shipping', label: 'Consignee Name', uiKey: 'consigneeName', column: 'consigneeName', type: 'text' },
   { section: 'Shipping', label: 'Consignee Address', uiKey: 'consigneeAddress', column: 'consigneeAddress', type: 'text' },
   { section: 'Shipping', label: 'Vessel', uiKey: 'vesselName', column: 'vesselName', type: 'text' },
@@ -90,9 +105,9 @@ export const EDITABLE_FIELDS: EditableField[] = [
   { section: 'Shipping', label: 'POL', uiKey: 'polRaw', column: 'polRaw', type: 'text', picker: 'port' },
   { section: 'Shipping', label: 'POD', uiKey: 'podRaw', column: 'podRaw', type: 'text', picker: 'port' },
   { section: 'Key Dates', label: 'Cargo Ready Date', uiKey: 'crd', column: 'cargoReadyDate', type: 'date' },
-  { section: 'Key Dates', label: 'WH Start Date', uiKey: 'warehouseStartDate', column: 'warehouseStartDate', type: 'date' },
-  { section: 'Key Dates', label: 'WH End Date', uiKey: 'warehouseEndDate', column: 'warehouseEndDate', type: 'date' },
-  { section: 'Key Dates', label: 'CFS Cut-off', uiKey: 'cfsCutoff', column: 'cfsCutoff', type: 'date' },
+  { section: 'Key Dates', label: 'WH Start Date', uiKey: 'warehouseStartDate', column: 'warehouseStartDate', type: 'date', withTime: true },
+  { section: 'Key Dates', label: 'WH End Date', uiKey: 'warehouseEndDate', column: 'warehouseEndDate', type: 'date', withTime: true },
+  { section: 'Key Dates', label: 'CFS Cut-off', uiKey: 'cfsCutoff', column: 'cfsCutoff', type: 'date', withTime: true },
   { section: 'Key Dates', label: 'ETD', uiKey: 'etd', column: 'etd', type: 'date' },
   { section: 'Key Dates', label: 'ATD', uiKey: 'actualDeparture', column: 'atd', type: 'date' },
   { section: 'Key Dates', label: 'ETA', uiKey: 'eta', column: 'eta', type: 'date' },
@@ -242,7 +257,12 @@ export function parseStyleTokens(value: string | null | undefined): string[] {
 
 /** Inverse of parseStyleTokens — blank tokens dropped, comma-joined. */
 export function serializeStyleTokens(tokens: string[]): string {
-  return tokens.map((t) => t.trim()).filter(Boolean).join(', ')
+  return tokens
+    .flatMap((t) => {
+      const s = t.trim()
+      return s ? [s] : []
+    })
+    .join(', ')
 }
 
 /** Inverse of parseStyleEntries — empty rows dropped, 'po/style' or bare style, comma-joined. */
@@ -321,11 +341,91 @@ export function isWritableLegColumn(column: string): boolean {
   return WRITABLE_COLUMN_SET.has(column)
 }
 
-const PORT_PICKER_COLUMNS = new Set(EDITABLE_FIELDS.filter((f) => f.picker === 'port').map((f) => f.column))
+const PORT_PICKER_COLUMNS = new Set<string>()
+for (const f of EDITABLE_FIELDS) {
+  if (f.picker === 'port') PORT_PICKER_COLUMNS.add(f.column)
+}
 
 /** True when this leg column (POL/POD) should be edited via the seeded ports-master picker, not free text. */
 export function isPortColumn(column: string | null | undefined): boolean {
   return !!column && PORT_PICKER_COLUMNS.has(column)
+}
+
+const NUMERIC_COLUMNS = new Set<string>()
+for (const f of EDITABLE_FIELDS) {
+  if (f.type === 'number') NUMERIC_COLUMNS.add(f.column)
+}
+// grossWeight / measurement are numeric leg columns that EDITABLE_FIELDS deliberately omits from the
+// Order Details form, but a critic conflict can still carry them — they must not fall through to a
+// free-text input, so the numeric set covers them too (mirrors backend NUMERIC_FIELDS).
+for (const c of ['grossWeight', 'measurement']) NUMERIC_COLUMNS.add(c)
+
+/** True when this leg column holds a number — the input must restrict, and the display may group. */
+export function isNumericColumn(column: string | null | undefined): boolean {
+  return !!column && NUMERIC_COLUMNS.has(column)
+}
+
+/**
+ * Strip thousands separators so an agent value like "1,240" (a packing list writes them) seeds a
+ * number input instead of rendering blank. Anything that is not a clean number after stripping is
+ * returned untouched, so junk stays visible for the operator to see rather than silently vanishing.
+ */
+export function normalizeNumericInput(value: string | null | undefined): string {
+  const raw = (value ?? '').trim()
+  if (!raw) return ''
+  const stripped = raw.replace(/,/g, '')
+  return /^-?\d*\.?\d+$/.test(stripped) ? stripped : raw
+}
+
+/**
+ * Group a numeric value for READ display ("1180" → "1,180"). Display only — never fed back into an
+ * input, because the grouped form is exactly what Number() chokes on. Non-numeric input is passed
+ * through unchanged so a bad value is shown as-is rather than mangled.
+ */
+export function formatNumericDisplay(value: string | null | undefined): string {
+  const raw = (value ?? '').trim()
+  if (!raw) return ''
+  const n = Number(raw.replace(/,/g, ''))
+  if (!Number.isFinite(n)) return raw
+  return n.toLocaleString('en-US', { maximumFractionDigits: 3 })
+}
+
+const DATE_COLUMNS = new Set<string>()
+for (const f of EDITABLE_FIELDS) {
+  if (f.type === 'date') DATE_COLUMNS.add(f.column)
+}
+
+const DATE_TIME_COLUMNS = new Set<string>()
+for (const f of EDITABLE_FIELDS) {
+  if (f.type === 'date' && f.withTime) DATE_TIME_COLUMNS.add(f.column)
+}
+
+/** True when a date column also carries a clock time (the cut-off family) — show the time box. */
+export function dateColumnHasTime(column: string | null | undefined): boolean {
+  return !!column && DATE_TIME_COLUMNS.has(column)
+}
+
+/** True when this leg column holds a date — edit it with DateTimeField, never a bare text box. */
+export function isDateColumn(column: string | null | undefined): boolean {
+  return !!column && DATE_COLUMNS.has(column)
+}
+
+const PARTY_PICKER_COLUMNS = new Map<string, 'customer' | 'vendor' | 'forwarder'>()
+for (const f of EDITABLE_FIELDS) {
+  if (f.picker === 'customer' || f.picker === 'vendor' || f.picker === 'forwarder') {
+    PARTY_PICKER_COLUMNS.set(f.column, f.picker)
+  }
+}
+
+/**
+ * Which party master backs this leg column, or null when it is plain free text. Derived from
+ * EDITABLE_FIELDS so the shipment edit form and the review conflict row cannot drift — the two
+ * surfaces disagreeing about how a field is edited is exactly the bug this centralises away.
+ */
+export function partyPickerKind(
+  column: string | null | undefined,
+): 'customer' | 'vendor' | 'forwarder' | null {
+  return (column && PARTY_PICKER_COLUMNS.get(column)) || null
 }
 
 /**

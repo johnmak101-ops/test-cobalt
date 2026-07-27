@@ -87,6 +87,14 @@ describe('ReviewPoStylesSection — page-level Edit', () => {
     expect(screen.queryByTestId('review-po-crud-edit')).not.toBeInTheDocument()
   })
 
+  it('always names its own columns — PO / Item/Style header row (#358)', () => {
+    renderSection()
+    expect(screen.getByRole('columnheader', { name: 'PO' })).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: 'Item/Style' })).toBeInTheDocument()
+    // third column tracks the card's state label; default = the shared proposed wording
+    expect(screen.getByTestId('po-proposed-column-header')).toHaveTextContent('From email / AI')
+  })
+
   it('view: multi-style value is one line per style, not a comma blob', () => {
     renderSection({
       linkedPOs: [

@@ -5,16 +5,25 @@ import {
   reviewFieldLabel,
   mapCriticFieldToColumn,
   isPortColumn,
+  partyPickerKind,
+  isNumericColumn,
+  numericFieldWarn,
+  formatNumericDisplay,
   parseStyleEntries,
   serializeStyleEntries,
   parseStyleTokens,
   serializeStyleTokens,
   isMultiStylePaste,
   type StyleEntry,
+  isDateColumn,
+  dateColumnHasTime,
 } from '../../lib/review-fields'
 import { PortPicker } from '../shipments/PortPicker'
+import { NumberField } from '../shipments/NumberField'
+import { PartyPicker } from '../shipments/PartyPicker'
 import { cn } from '../../lib/utils'
 import { REVIEW_COL, REVIEW_TD } from './review-table-layout'
+import { DateTimeField } from '../shipments/DateTimeField'
 
 export interface ConflictRowProps {
   conflict: CriticConflict
@@ -113,6 +122,35 @@ export function proposedValueOf(conflict: CriticConflict): string {
   return splitCandidates(conflict).proposed[0]?.value ?? ''
 }
 
+/** The value a pick POSTS (#360): the resolved master's CODE when the candidate carries one —
+ *  the party re-resolver (exactPartyId) matches code-exact FIRST, so codes re-link the booking
+ *  FK deterministically where full names depend on a unique normalized-name hit. Candidates
+ *  without a master (mesh miss / non-party fields) keep their raw value. */
+export function resolutionValueOf(candidate: { value: string; master?: { code: string } | null }): string {
+  return candidate.master?.code?.trim() || candidate.value
+}
+
+/** `v` identifies this candidate — as its resolution value (code) or its raw value. Tolerant on
+ *  purpose: reads accept either convention, writes always post resolutionValueOf (#360). */
+function candidateMatches(
+  candidate: { value: string; master?: { code: string } | null },
+  v: string,
+): boolean {
+  return resolutionValueOf(candidate) === v || candidate.value === v
+}
+
+/** What approving as-is posts — the first proposed candidate's resolution value (#360). */
+export function proposedResolutionOf(conflict: CriticConflict): string {
+  const first = splitCandidates(conflict).proposed[0]
+  return first ? resolutionValueOf(first) : ''
+}
+
+/** True when `v` IS one of the proposed candidates — a pick, not a custom override (picks never
+ *  require an override note). */
+export function isCandidateResolution(conflict: CriticConflict, v: string): boolean {
+  return splitCandidates(conflict).proposed.some((c) => candidateMatches(c, v))
+}
+
 /** True when committing this row would OVERWRITE a stored value — i.e. it is a real change. */
 export function changesStoredValue(conflict: CriticConflict, value: string): boolean {
   const v = value.trim()
@@ -151,11 +189,19 @@ export function ConflictRow({
   const changed = changesStoredValue(conflict, value)
   // The candidate the controlled value currently equals — chips come from IT, never from a
   // free-typed override (a custom value has no known master).
-  const activeProposed = proposed.find((p) => p.value === value) ?? null
+  const activeProposed = proposed.find((p) => candidateMatches(p, value)) ?? null
   const label = reviewFieldLabel(conflict.field, conflict.label)
   const column = mapCriticFieldToColumn(conflict.field)
   // POL/POD edit from the seeded ports master (searchable, free-text fallback) instead of a bare input.
   const isPort = isPortColumn(column)
+  // Customer/Vendor/Forwarder do the same over the Mesh party mirror — derived from EDITABLE_FIELDS
+  // so this row and the shipment edit form cannot disagree about how a field is edited.
+  const partyKind = partyPickerKind(column)
+  // Numeric columns restrict on entry and group on display — same rules the edit form applies.
+  const isNumeric = isNumericColumn(column)
+  const numErr = isNumeric && column ? numericFieldWarn(column, value) : null
+  // Dates get the shared calendar+clock control; they used to fall through to a bare text box.
+  const isDate = isDateColumn(column)
   const isStyles = isItemStyleField(conflict.field)
   const multi = proposed.length > 1
   const existingStyles = existing?.value ?? ''
@@ -218,7 +264,7 @@ export function ConflictRow({
                 {!useLiveExisting && existing?.master ? (
                   <MasterCodeChip code={existing.master.code} />
                 ) : null}
-                {existingDisplay}
+                {isNumeric ? formatNumericDisplay(existingDisplay) : existingDisplay}
                 <Unit unit={existingUnit} />
                 {!useLiveExisting && existing?.master === null ? <MeshMissTag /> : null}
               </span>
@@ -291,10 +337,46 @@ export function ConflictRow({
               placeholder="—"
               className="h-8 w-full rounded-lg border border-border bg-surface-900 px-2.5 font-mono text-sm text-text-primary placeholder:text-text-muted focus:border-cobalt-primary focus:outline-none"
             />
+          ) : partyKind ? (
+            <PartyPicker
+              kind={partyKind}
+              value={value}
+              onChange={onChange}
+              ariaLabel={`Proposed value for ${label}`}
+              placeholder="—"
+              className="h-8 w-full rounded-lg border border-border bg-surface-900 px-2.5 font-mono text-sm text-text-primary placeholder:text-text-muted focus:border-cobalt-primary focus:outline-none"
+            />
+          ) : isDate ? (
+            <DateTimeField
+              value={value}
+              onChange={onChange}
+              showTime={dateColumnHasTime(column)}
+              label={`Proposed value for ${label}`}
+              className="h-8 w-full rounded-lg border border-border bg-surface-900 px-2.5 font-mono text-sm text-text-primary placeholder:text-text-muted focus:border-cobalt-primary focus:outline-none"
+            />
           ) : (
-            <span className="inline-flex w-full items-center">
+            isNumeric ? (
+              <NumberField
+                ariaLabel={`Proposed value for ${label}`}
+                value={value}
+                onChange={onChange}
+                decimals={column !== 'qty'}
+                unit={proposedUnit}
+                error={numErr}
+                placeholder="—"
+                className="h-8 w-full rounded-lg border border-border bg-surface-900 px-2.5 font-mono text-sm text-text-primary placeholder:text-text-muted focus:border-cobalt-primary focus:outline-none"
+              />
+            ) : (
+            <span className="inline-flex w-full flex-wrap items-center">
               <input
                 aria-label={`Proposed value for ${label}`}
+                /**
+                 * Numeric columns restrict at entry, matching the Order Details edit form. Without
+                 * this the row was plain text, and coerceLegField turns anything Number() cannot
+                 * read into NULL — so an operator typing "1,240" (or pasting it off a packing list)
+                 * silently WIPED the quantity. That function's docstring justifies the null with
+                 * "the number <input> already blocks that at entry"; this is the input it meant.
+                 */
                 value={value}
                 onChange={(e) => onChange(e.target.value)}
                 placeholder="—"
@@ -303,6 +385,7 @@ export function ConflictRow({
               {/* The unit is NOT part of the editable text — the operator types a number, not '87 KGS'. */}
               <Unit unit={proposedUnit} />
             </span>
+            )
           )
         ) : value ? (
           <span className="inline-flex max-w-full flex-wrap items-center gap-x-1.5">
@@ -314,7 +397,16 @@ export function ConflictRow({
               )}
             >
               {activeProposed?.master ? <MasterCodeChip code={activeProposed.master.code} /> : null}
-              {value}
+              {/* #360: a pick's stored value is the CODE (already on the chip) — show the company name.
+                  Numbers group for reading ("1180" → "1,180"); the grouped form is display-only and
+                  never seeds the input, since Number() cannot read it back. */}
+              {activeProposed
+                ? isNumeric
+                  ? formatNumericDisplay(activeProposed.value)
+                  : activeProposed.value
+                : isNumeric
+                  ? formatNumericDisplay(value)
+                  : value}
               <Unit unit={proposedUnit} />
               {activeProposed?.master === null ? <MeshMissTag /> : null}
             </span>
@@ -361,10 +453,10 @@ function SourceEmailCell({
   }
   return (
     <ul className="space-y-1" aria-label="Source email per proposed candidate">
-      {candidates.map((c, i) => {
+      {candidates.map((c) => {
         const link = resolve?.(c.sourceEmailId) ?? null
         return (
-          <li key={`${c.source}-${c.value}-${i}`}>
+          <li key={`${c.sourceEmailId ?? ''}\0${c.source}\0${c.value}`}>
             {/*
               Matches MultiCandidateProposed's box metrics (border + px-2, py-1 editing / py-0.5
               read) so each icon sits on its value's line rather than drifting up the stack.
@@ -440,9 +532,9 @@ export function StyleListDisplay({
     <div className="min-w-0 max-w-full" data-testid="style-list-display">
       <div className="max-h-40 overflow-y-auto overscroll-contain pr-1">
         <ul className="space-y-0.5">
-          {rows.map((r, i) => (
+          {rows.map((r) => (
             <li
-              key={`${r.po}-${r.style}-${i}`}
+              key={`${r.po}\0${r.style}`}
               className={cn(
                 'field-value font-mono text-sm leading-snug',
                 className ?? 'text-text-primary',
@@ -474,6 +566,23 @@ export function StyleListDisplay({
  * Bulk UX: **Copy all** fills from Existing; paste a comma list or Excel column/row into any field
  * and the whole list is parsed (tabs + newlines count as separators).
  */
+/** Stable row id for the style editor — content keys remount inputs while typing. */
+let styleEditorRowSeq = 0
+function nextStyleEditorRowId(): string {
+  styleEditorRowSeq += 1
+  return `style-row-${styleEditorRowSeq}`
+}
+
+type EditorStyleRow = StyleEntry & { rowId: string }
+
+function toEditorRows(entries: StyleEntry[]): EditorStyleRow[] {
+  return entries.map((r) => ({ ...r, rowId: nextStyleEditorRowId() }))
+}
+
+function emptyEditorRow(): EditorStyleRow {
+  return { po: '', style: '', rowId: nextStyleEditorRowId() }
+}
+
 export function StyleListEditor({
   label,
   value,
@@ -493,19 +602,19 @@ export function StyleListEditor({
     pairs ? parseStyleEntries(v) : parseStyleTokens(v).map((style) => ({ po: '', style }))
   const serialize = (list: StyleEntry[]): string =>
     pairs ? serializeStyleEntries(list) : serializeStyleTokens(list.map((r) => r.style))
-  const [rows, setRows] = useState<StyleEntry[]>(() => {
+  const [rows, setRows] = useState<EditorStyleRow[]>(() => {
     const parsed = parse(value)
-    return parsed.length > 0 ? parsed : [{ po: '', style: '' }]
+    return parsed.length > 0 ? toEditorRows(parsed) : [emptyEditorRow()]
   })
   // Re-seed when the parent value is replaced from outside (e.g. conflict reseed, multi-candidate pick).
   const [seed, setSeed] = useState(value)
   if (seed !== value && serialize(rows) !== value) {
     setSeed(value)
     const parsed = parse(value)
-    setRows(parsed.length > 0 ? parsed : [{ po: '', style: '' }])
+    setRows(parsed.length > 0 ? toEditorRows(parsed) : [emptyEditorRow()])
   }
 
-  const commit = (next: StyleEntry[]) => {
+  const commit = (next: EditorStyleRow[]) => {
     setRows(next)
     onChange(serialize(next))
   }
@@ -516,15 +625,15 @@ export function StyleListEditor({
 
   const remove = (i: number) => {
     const next = rows.filter((_, j) => j !== i)
-    commit(next.length > 0 ? next : [{ po: '', style: '' }])
+    commit(next.length > 0 ? next : [emptyEditorRow()])
   }
 
-  const add = () => commit([...rows, { po: '', style: '' }])
+  const add = () => commit([...rows, emptyEditorRow()])
 
   const copyAllFromExisting = () => {
     const parsed = parse(existingValue)
     if (parsed.length === 0) return
-    commit(parsed)
+    commit(toEditorRows(parsed))
   }
 
   /** Bulk paste from Excel / comma list replaces the whole Resolution list. */
@@ -534,7 +643,7 @@ export function StyleListEditor({
     const parsed = parse(text)
     if (parsed.length === 0) return
     e.preventDefault()
-    commit(parsed)
+    commit(toEditorRows(parsed))
   }
 
   const showPo = pairs && rows.some((r) => r.po.trim())
@@ -548,7 +657,7 @@ export function StyleListEditor({
     >
       <div className="max-h-48 space-y-1.5 overflow-y-auto overscroll-contain pr-1">
         {rows.map((r, i) => (
-          <div key={i} className="flex min-w-0 items-center gap-1.5">
+          <div key={r.rowId} className="flex min-w-0 items-center gap-1.5">
             {showPo && (
               <input
                 aria-label={`${label} PO ${i + 1}`}
@@ -642,9 +751,10 @@ function MultiCandidateProposed({
         className="space-y-1"
       >
         {proposed.map((c, i) => {
-          const selected = value === c.value || (!value && i === 0)
+          // #360: a pick is stored as the candidate's resolution value (master CODE when resolved)
+          const selected = candidateMatches(c, value) || (!value && i === 0)
           return (
-            <li key={`${c.source}-${c.value}-${i}`}>
+            <li key={`${c.sourceEmailId ?? ''}\0${c.source}\0${c.value}`}>
               {editing ? (
                 <label
                   className={cn(
@@ -658,8 +768,8 @@ function MultiCandidateProposed({
                     type="radio"
                     name={groupName}
                     className="mt-0.5 shrink-0"
-                    checked={value === c.value}
-                    onChange={() => onChange(c.value)}
+                    checked={candidateMatches(c, value)}
+                    onChange={() => onChange(resolutionValueOf(c))}
                     aria-label={`Select proposed candidate: ${c.value}`}
                   />
                   <span className="field-value font-mono text-sm leading-snug text-text-primary">
@@ -707,7 +817,9 @@ function MultiCandidateProposed({
           <span className="inline-flex w-full items-center">
             <input
               aria-label={`Proposed value for ${label}`}
-              value={value}
+              /* #360: blank while a candidate pick is active — pre-filling the company full name
+                 here read as "this is what will be written". Typing switches to a custom value. */
+              value={proposed.some((c) => candidateMatches(c, value)) ? '' : value}
               onChange={(e) => onChange(e.target.value)}
               placeholder="—"
               className="h-8 w-full rounded-lg border border-border bg-surface-900 px-2.5 font-mono text-sm text-text-primary placeholder:text-text-muted focus:border-cobalt-primary focus:outline-none"
