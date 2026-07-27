@@ -39,6 +39,7 @@ import { toUiHistoryEntry } from './mappers/history.mapper'
 import { deriveRoute, portLabel, poNumbersJson, isoOrNull } from './adapters/derive'
 import { computeFieldConflicts } from './field-conflicts'
 import { openDecisions } from './open-decisions'
+import { withUsableCandidatesOnly } from '../shipments/candidate-reconcile'
 import { poQtyIssue, describePoQtyIssue } from '../reconcile/po-qty-consistency'
 import { stateToUiStatus } from './adapters/enums'
 import { makeTtlCache } from '../common/ttl-cache'
@@ -544,6 +545,17 @@ export class PresentationService {
       }
     }
 
+    /**
+     * Phase ①: hold the queue's candidate list to the committer's own refusal rule before the desk
+     * offers it. A candidate stating a DIFFERENT B/L or booking than the email is a different shipment
+     * — `findExistingLeg` already refuses to amend it — so offering it invites writing one shipment's
+     * data onto another. Measured: 45 of 62 offered candidates were in exactly that state.
+     *
+     * Removes only the impossible; it never nominates a winner, so it cannot repeat the circular
+     * identity test that #378 got wrong.
+     */
+    criticReview = withUsableCandidatesOnly(criticReview) ?? null
+
     return {
       ...base,
       criticReview,
@@ -660,7 +672,11 @@ export class PresentationService {
           podLinked: !!(r as { podId?: string | null }).podId || !!r.podCode,
         }),
         // compact only — never project raw confidence score (sort stays server-side on confidence ASC)
-        criticReviewCompact: compactCriticReview(r.criticReview as CriticReview | null | undefined),
+        // Reconciled FIRST so the row's "Pick the right shipment (N candidates)" counts only the legs
+        // the committer would actually amend — the row and the card must not disagree.
+        criticReviewCompact: compactCriticReview(
+          withUsableCandidatesOnly(r.criticReview as CriticReview | null | undefined) ?? undefined,
+        ),
         // #350: Shipment ID anchor (beginning email; UI falls back to createdAt)
         firstEmailAt: isoOrNull(r.firstEmailAt),
         createdAt: isoOrNull(r.createdAt),
