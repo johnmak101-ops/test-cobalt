@@ -57,6 +57,8 @@ export type ShipmentInsert = Partial<{
   qty: number | null
   qtyUnit: string | null
   grossWeight: number | null
+  netWeight: number | null
+  cargoDescription: string | null
   measurement: number | null
   htsCode: string | null
   itemStyleNo: string | null

@@ -40,6 +40,7 @@ import * as m0022_master_name_ch from './kysely-migrations/0022_master_name_ch'
 import * as m0023_mode_sea_air_only from './kysely-migrations/0023_mode_sea_air_only'
 import * as m0024_shipment_cartons from './kysely-migrations/0024_shipment_cartons'
 import * as m0025_shipment_waiting from './kysely-migrations/0025_shipment_waiting'
+import * as m0026_shipment_net_weight_cargo_description from './kysely-migrations/0026_shipment_net_weight_cargo_description'
 
 const MIGRATIONS = {
   '0000_init': m0000_init,
@@ -68,6 +69,7 @@ const MIGRATIONS = {
   '0023_mode_sea_air_only': m0023_mode_sea_air_only,
   '0024_shipment_cartons': m0024_shipment_cartons,
   '0025_shipment_waiting': m0025_shipment_waiting,
+  '0026_shipment_net_weight_cargo_description': m0026_shipment_net_weight_cargo_description,
 }
 
 /** Exported for the registry drift-guard spec — a migration file that is never registered here is

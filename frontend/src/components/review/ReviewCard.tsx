@@ -379,6 +379,26 @@ export function ReviewCard({
   )
   // Needs attention — layman groups (design 2026-07-17). Field diffs live in the table when present.
   const hasPo = linkedPOs.some((p) => String(p.poNumber ?? '').trim().length > 0)
+  /**
+   * Party slots this leg has actually LINKED to a master — used to drop miss lines that outlived the
+   * resolution they describe (see PartiesLinked).
+   *
+   * The master ID is required, not just a name. The queue DTO maps `forwarder` to
+   * `forwarderName ?? forwarderRaw`, so a name alone proves nothing: an unresolved forwarder still
+   * yields a string, and trusting it would suppress a real miss. No id → treated as unlinked, which is
+   * the safe direction. Queue-list rows carry no ids at all, so nothing drops there; the focused page
+   * and the queue's expanded panel both pass the full detail.
+   */
+  const partiesLinked = useMemo(() => {
+    const s = shipment as unknown as Record<string, unknown>
+    const linked = (idKey: string, value: unknown): string | null =>
+      s[idKey] ? nameOf(value) : null
+    return {
+      customer: linked('customerId', s.customer),
+      forwarder: linked('forwarderId', s.forwarder),
+    }
+  }, [shipment])
+
   const needsAttentionGroups = useMemo(
     () =>
       buildNeedsAttentionGroups({
@@ -386,12 +406,13 @@ export function ReviewCard({
         reviewReasons,
         conflictsCount: tableOwnedCount,
         identityPinned,
+        partiesLinked,
         portsLinked: portsLinkedFromRoute((shipment as { route?: string | null }).route),
         hasPo,
         // Rule A: Review desk shows decision items only; FYI stays on shipment detail.
         desk: 'decision',
       }),
-    [criticReview, reviewReasons, shipment, tableOwnedCount, hasPo, linkedPOs, identityPinned],
+    [criticReview, reviewReasons, shipment, tableOwnedCount, hasPo, linkedPOs, identityPinned, partiesLinked],
   )
 
   /**

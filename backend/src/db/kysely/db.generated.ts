@@ -403,6 +403,8 @@ export interface Shipments {
   forwarderId: string | null;
   forwarderRaw: string | null;
   grossWeight: number | null;
+  netWeight: number | null;
+  cargoDescription: string | null;
   hblAwbFcrNo: string | null;
   htsCode: string | null;
   id: Generated<string>;

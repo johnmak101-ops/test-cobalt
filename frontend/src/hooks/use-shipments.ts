@@ -78,6 +78,9 @@ export interface Shipment {
   quantityShipped: number | null
   quantityUnit: string | null
   grossWeight: number | null
+  // optional like the other late-added leg columns: fixtures and older payloads predate them
+  netWeight?: number | null
+  cargoDescription?: string | null
   measurement: number | null
   htsCode: string | null
   /** Full agent critic payload on detail (queue uses criticReviewCompact only). */
