@@ -47,7 +47,7 @@ import type { LinkedPO, ShipmentDetail } from '../../hooks/use-shipments'
 import { cn, formatDateTime } from '../../lib/utils'
 import { parseSender } from '../../lib/email-sender'
 import { buildNeedsAttentionGroups, isExpandableMiss, portsLinkedFromRoute } from './needs-attention'
-import { conflictDeskQuestion, pickDeskQuestion } from './desk-question'
+import { candidateDeskQuestion, conflictDeskQuestion, pickDeskQuestion } from './desk-question'
 import { NeedsAttentionMeshMiss } from './NeedsAttentionMeshMiss'
 import {
   REVIEW_COL,
@@ -468,6 +468,25 @@ export function ReviewCard({
         rest: needsAttentionGroups,
       }
     }
+    /**
+     * Identity outranks the field table. Applying values to the WRONG leg is worse than leaving them
+     * unapplied, and Link & Apply already refuses to commit until a target is chosen — so the headline
+     * should name the thing actually blocking, not the diff sitting behind it.
+     */
+    if (hasCandidateLegs && matchAmbiguity) {
+      const fromCandidates = candidateDeskQuestion({
+        emailKey: matchAmbiguity.emailKey,
+        candidates: (matchAmbiguity.candidates ?? []) as unknown as Record<string, unknown>[],
+      })
+      if (fromCandidates) {
+        return {
+          question: fromCandidates.question,
+          detailText: fromCandidates.detail,
+          detailItem: null,
+          rest: needsAttentionGroups,
+        }
+      }
+    }
     const fromTable = conflictDeskQuestion(contestedFields)
     if (fromTable) {
       return {
@@ -484,7 +503,14 @@ export function ReviewCard({
       detailItem: naPick.primary,
       rest: naPick.rest,
     }
-  }, [contestedFields, naPick, needsAttentionGroups, junkIdentifier])
+  }, [
+    contestedFields,
+    naPick,
+    needsAttentionGroups,
+    junkIdentifier,
+    hasCandidateLegs,
+    matchAmbiguity,
+  ])
   const restNeedsTitles = useMemo(
     () =>
       (deskPick?.rest.reduce((n, g) => n + g.items.length, 0) ?? 0) >= ALSO_TITLE_THRESHOLD,
@@ -1070,6 +1096,19 @@ export function ReviewCard({
             </button>
           )}
 
+          {/* Directly under the question it answers. This used to sit below the source emails and a
+              "no field changes" line, so the card asked "which shipment?" at the top and put the five
+              options four blocks lower. */}
+          {hasCandidateLegs && matchAmbiguity && (
+            <CandidateLegsPanel
+              matchAmbiguity={matchAmbiguity}
+              currentShipmentId={shipmentId}
+              readOnly={readOnly}
+              selectedId={selectedTargetId}
+              onSelect={setSelectedTargetId}
+            />
+          )}
+
           {criticReview == null && (
             <p className="text-[11px] text-text-muted" data-testid="no-critic-note">
               No agent analysis on this leg (committed before the critic payload, or created manually) — open the full shipment to compare values.
@@ -1145,16 +1184,6 @@ export function ReviewCard({
                 </div>
               )}
             </div>
-          )}
-
-          {hasCandidateLegs && matchAmbiguity && (
-            <CandidateLegsPanel
-              matchAmbiguity={matchAmbiguity}
-              currentShipmentId={shipmentId}
-              readOnly={readOnly}
-              selectedId={selectedTargetId}
-              onSelect={setSelectedTargetId}
-            />
           )}
 
           {showIdentify && (

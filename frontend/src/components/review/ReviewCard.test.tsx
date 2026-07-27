@@ -1463,6 +1463,84 @@ describe('decision desk — ready state (no Critical for sailing band)', () => {
 })
 
 /**
+ * Leg E553C0A2 — one of the four legs D0 does not resolve, so the picker is genuinely needed. The
+ * email gave only SO FENLSO003062, which matches none of the four offered; the card never said so, so
+ * the `suggested` row read like an identity match when it was a guess from vessel and ETD.
+ */
+describe('when a pick IS needed, the question and the answer are adjacent', () => {
+  const matchAmbiguity = {
+    kind: 'multi_candidate' as const,
+    emailKey: { so_no: 'FENLSO003062', customer_po: 'FENLSO003062' },
+    suggestion: {
+      shipmentId: 'c1',
+      rationale: 'Matches PO in pos list and SO-like id FENLSO003044 relates; ETD close to email date',
+      source: 'llm_rank' as const,
+    },
+    candidates: [
+      { shipmentId: 'c1', jobNo: 'JOB-2026-0008', so_no: 'FENLSO003044', etd: '2026-08-04', matchedBy: 'po' as const },
+      { shipmentId: 'c4', jobNo: 'JOB-2026-0011', so_no: 'FENLSO003045', etd: '2026-08-04', matchedBy: 'po' as const },
+    ],
+  }
+
+  function renderPicker() {
+    return render(
+      <MemoryRouter>
+        <ReviewCard
+          shipment={baseShipment({ reviewReasons: [], soNumber: 'FENLSO003062' } as never)}
+          criticReview={baseReview({
+            conflicts: [],
+            reasons: [],
+            riskFlags: [{ code: 'AMBIGUOUS_MATCH', severity: 'high', message: 'matched more than one leg' }],
+            matchAmbiguity,
+          } as never)}
+          compact={null}
+          defaultExpanded
+          onApprove={vi.fn()}
+          onLink={vi.fn()}
+          onSaveAndApprove={vi.fn()}
+        />
+      </MemoryRouter>,
+    )
+  }
+
+  it('the question is asked once — the panel no longer repeats it', () => {
+    renderPicker()
+    expect(screen.getByTestId('desk-question')).toHaveTextContent(
+      /Which shipment does this email update\?/i,
+    )
+    expect(screen.getAllByText(/Which shipment does this email update\?/i)).toHaveLength(1)
+  })
+
+  it('the headline admits the email matches none of them', () => {
+    renderPicker()
+    expect(screen.getByTestId('desk-question-detail')).toHaveTextContent(/matches none of these/i)
+    expect(screen.getByTestId('desk-question-detail')).toHaveTextContent(/FENLSO003062/)
+  })
+
+  it('what they share is said once; each row carries only what differs', () => {
+    renderPicker()
+    const shared = screen.getByTestId('candidate-shared-line')
+    expect(shared).toHaveTextContent(/ETD/)
+    // No B/L, booking, MBL or container on any — that is why the pick cannot be made on identity.
+    expect(shared).toHaveTextContent(/no HBL \/ BK \/ MBL \/ CTR on any/i)
+    const titles = screen.getAllByTestId('candidate-biz-title').map((el) => el.textContent)
+    expect(titles).toEqual(['SO FENLSO003044', 'SO FENLSO003045'])
+  })
+
+  it('the reason for the suggestion sits on the row it describes', () => {
+    renderPicker()
+    expect(screen.getByTestId('candidate-suggestion-reason')).toHaveTextContent(
+      /ETD close to email date/i,
+    )
+  })
+
+  it('the primary will not commit until a target is picked', () => {
+    renderPicker()
+    expect(screen.getByRole('button', { name: /link & apply/i })).toBeDisabled()
+  })
+})
+
+/**
  * Legs DEEC1FC0 (`SO no.`) and 01B94D12 (`PORT OF LOADING`): a spreadsheet parsed with its header row
  * treated as data. Both provisional, both carrying four emails — so they are flagged for a human, not
  * auto-rejected. Quietly binning them would take the linked evidence with them.
