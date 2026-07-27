@@ -70,6 +70,12 @@ export interface CriticReview {
   reasons: string[]
   /** #129: email matched ≥2 existing legs — pick among known IDs */
   matchAmbiguity?: MatchAmbiguity
+  /**
+   * Candidates the queue offered that ShipTrack's committer would refuse to amend — each states a
+   * different value for an identity type the email also states, so it is a different shipment.
+   * Attached on read by the backend (shipments/candidate-reconcile.ts).
+   */
+  refusedCandidates?: { shipmentId: string; onKey: string; emailValue: string; candidateValue: string }[]
   /** Desk membership shadow marker from queue */
   wouldBeAuto?: boolean
   deskAuto?: boolean

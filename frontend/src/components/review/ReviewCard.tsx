@@ -226,6 +226,15 @@ function openEmailWindow(e: ReviewEmail): void {
 
 const EMPTY_EMAILS: ReviewEmail[] = []
 
+/** Identity types in the words an operator uses for them. */
+const FIELD_WORD: Record<string, string> = {
+  hbl_awb_fcr_no: 'B/L',
+  booking_no: 'booking number',
+  mbl: 'MBL',
+  container_no: 'container',
+  so_no: 'SO',
+}
+
 /** Leg columns that are supposed to hold a shipment identifier — checked for header-row junk. */
 const LEG_IDENTIFIER_FIELDS = [
   { field: 'soNumber', label: 'SO number' },
@@ -1133,6 +1142,19 @@ export function ReviewCard({
             >
               Not the right shipment? Choose another
             </button>
+          )}
+
+          {/* The picker vanishing must not be silent. These are legs the queue proposed and the
+              committer's own rule refuses — a different B/L is a different shipment — so offering them
+              would invite writing one shipment's data onto another. 54 of 62 offered candidates were in
+              that state. */}
+          {!readOnly && !hasCandidateLegs && (criticReview?.refusedCandidates?.length ?? 0) > 0 && (
+            <p className="text-[11px] text-text-muted" data-testid="refused-candidates">
+              {criticReview!.refusedCandidates!.length} similar shipment
+              {criticReview!.refusedCandidates!.length === 1 ? '' : 's'} matched, but{' '}
+              {criticReview!.refusedCandidates!.length === 1 ? 'it states' : 'they state'} a different{' '}
+              {FIELD_WORD[criticReview!.refusedCandidates![0]!.onKey] ?? 'identifier'} — not offered.
+            </p>
           )}
 
           {/* Directly under the question it answers. This used to sit below the source emails and a
