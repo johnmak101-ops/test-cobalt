@@ -35,7 +35,7 @@ import {
   type CriticReviewCompact,
 } from '../../lib/critic-review'
 import { CandidateLegsPanel } from './CandidateLegsPanel'
-import { ReviewPoStylesSection } from './ReviewPoStylesSection'
+import { ReviewPoStylesSection, proposedStyleForPo } from './ReviewPoStylesSection'
 import type { ReviewShipment } from '../../hooks/use-review-queue'
 import type { LinkedPO, ShipmentDetail } from '../../hooks/use-shipments'
 import { cn, formatDateTime } from '../../lib/utils'
@@ -246,8 +246,11 @@ export function ReviewCard({
     }
     return []
   }, [shipment])
-  const reviewReasons =
-    (shipment as { reviewReasons?: string[] | null }).reviewReasons ?? []
+  /** Memoized: the `?? []` mints a fresh array every render, re-running every memo keyed on it. */
+  const reviewReasons = useMemo(
+    () => (shipment as { reviewReasons?: string[] | null }).reviewReasons ?? [],
+    [shipment],
+  )
 
   const rawConflicts = useMemo(
     () => criticReview?.conflicts ?? [],
@@ -302,6 +305,33 @@ export function ReviewCard({
       }),
     [criticReview, reviewReasons, shipment, conflicts.length, hasPo, linkedPOs],
   )
+
+  /**
+   * Does any PO on this leg actually need a DECISION?
+   *
+   * The decision grid used to render for EVERY linked PO, so a leg whose only open question was
+   * elsewhere (a Mesh party miss, say) still showed a four-column decision table with one PO row and
+   * three empty decision cells — restating the shipment's own PO card and reading as "something is
+   * wrong with this PO" when nothing was.
+   *
+   * A PO earns the grid when the agent proposed a different item/style for it, or when a
+   * needs-attention line is about the PO LINK itself (w-po-*: matched by PO alone, PO already on
+   * another shipment, thin mail matched by PO). Otherwise the POs leave the review desk entirely —
+   * not collapsed, not summarised: the leg's POs are the shipment page's job, and this desk shows
+   * only what needs an answer. Edit mode still gets the full grid: managing POs is what Edit is for,
+   * and Open Shipment is one click away for everything else.
+   */
+  const poProposalCount = useMemo(
+    () => linkedPOs.filter((p) => proposedStyleForPo(p.poNumber, reviewReasons) != null).length,
+    [linkedPOs, reviewReasons],
+  )
+  const poQuestionOpen = useMemo(
+    () => needsAttentionGroups.some((g) => g.items.some((i) => i.lineId.startsWith('w-po'))),
+    [needsAttentionGroups],
+  )
+  const poNeedsReview = poProposalCount > 0 || poQuestionOpen
+  /** Note starts collapsed; it opens itself the moment a note is actually owed (see showNoteField). */
+  const [noteOpen, setNoteOpen] = useState(false)
 
   /**
    * A conflict candidate is attributed by the queue with a graphMessageId; our related emails carry
@@ -443,6 +473,13 @@ export function ReviewCard({
   )
   const noteRequired = overrides.length > 0 && !note.trim()
   /**
+   * The note is OPTIONAL on a plain confirmation, so it no longer sits open as a two-row box asking
+   * the operator to "explain why you chose a different value" when they have chosen nothing — on a
+   * judgment-only card that empty field was the largest thing on screen. It opens on demand, and
+   * opens ITSELF whenever a note is owed (an override), while editing, or once anything is typed.
+   */
+  const showNoteField = editing || overrides.length > 0 || noteOpen || note.trim().length > 0
+  /**
    * Cross-field date sanity — the same check the Order Details form runs, which this table never had.
    * A contested date reads from the live resolution; one that is NOT contested falls back to what the
    * shipment already stores, so "ETA moved before the stored ETD" is caught. Queue rows carry no
@@ -481,6 +518,8 @@ export function ReviewCard({
   )
   /** Edit when field fights or POs to manage (critical dates live on shipment detail / alerts). */
   const showEdit = !readOnly && (conflicts.length > 0 || linkedPOs.length > 0)
+  /** Edit mode as the GRID sees it — read-only history never edits, whatever `editing` says. */
+  const gridEditing = editing && !readOnly
   const deskEmpty = needsAttentionGroups.length === 0 && conflicts.length === 0
   const judgmentOnly = needsAttentionGroups.length > 0 && conflicts.length === 0
   // Multi-candidate: require a real target before primary CTAs; use onLink path.
@@ -639,6 +678,46 @@ export function ReviewCard({
           no Action column — Approved/Rejected still keep row-level Open). */}
       {(expanded || embedded) && (
         <div className={cn('space-y-3 px-3 pb-3 pt-3', !embedded && 'border-t border-border')}>
+          {/* Hybrid-C E2: residual / multi-booking trust strip.
+              First, not buried mid-card: this states WHAT the operator is looking at ("row 5 of 5 of
+              a multi-booking email"), which frames every panel below it. It used to sit between the
+              source emails and the decision grid, where it read as a footnote to the emails. */}
+          {(hasCandidateLegs ||
+            criticReview?.multiBookingOrigin ||
+            criticReview?.splitAudit) && (
+            <div
+              className="rounded-md border border-border/80 bg-surface-800/80 px-2.5 py-1.5 text-[11px] text-text-secondary"
+              data-testid="multi-leg-trust-strip"
+            >
+              {criticReview?.splitAudit ? (
+                <span className="text-status-warning">
+                  Incomplete multi-booking split — expected {criticReview.splitAudit.expected}{' '}
+                  bookings, system produced {criticReview.splitAudit.actual}. Review carefully.
+                </span>
+              ) : criticReview?.multiBookingOrigin ? (
+                <span>
+                  From multi-booking email: row{' '}
+                  <span className="font-mono text-text-primary">
+                    {criticReview.multiBookingOrigin.index}
+                  </span>{' '}
+                  of{' '}
+                  <span className="font-mono text-text-primary">
+                    {criticReview.multiBookingOrigin.total}
+                  </span>
+                  {criticReview.multiBookingOrigin.bookingNo
+                    ? ` · BK ${criticReview.multiBookingOrigin.bookingNo}`
+                    : ''}
+                  {hasCandidateLegs ? ' · pick which existing shipment to update' : ''}
+                </span>
+              ) : (
+                <span>
+                  Multiple matching shipments — pick by SO / booking / HBL / container (JOB is
+                  internal only).
+                </span>
+              )}
+            </div>
+          )}
+
           {/* Needs attention is a triage PROMPT — once the item is resolved (Approved/Rejected views,
               or any non-provisional shipment) it has been answered, so it stops being shown rather
               than following the leg around as history. The reasons stay on the leg and in the
@@ -696,6 +775,19 @@ export function ReviewCard({
                     </div>
                   ))}
                 </div>
+                {/* The resolution instruction belongs TO the prompt, not floating under it as a
+                    detached grey sentence between panels (where it read as a caption for whatever
+                    box happened to follow). Only shown when the table has nothing to decide, so
+                    "no field changes" is the whole story. */}
+                {judgmentOnly && (
+                  <p
+                    className="mt-2.5 border-t border-border pt-2 text-xs text-text-muted"
+                    data-testid="review-judgment-only"
+                  >
+                    No field changes to apply — verify the items above, then{' '}
+                    <span className="font-medium text-text-secondary">Confirm Reviewed</span>.
+                  </p>
+                )}
               </div>
             </div>
           )}
@@ -703,16 +795,10 @@ export function ReviewCard({
           {deskEmpty && !readOnly && (
             <div
               data-testid="review-ready-state"
-              className="rounded-lg bg-surface-900/50 px-3 py-2 text-xs text-text-muted"
+              className="rounded-lg border border-status-success/25 bg-status-success/10 px-3 py-2 text-xs text-status-success"
             >
               Ready to confirm — no open decisions
             </div>
-          )}
-
-          {judgmentOnly && !readOnly && (
-            <p className="text-xs text-text-muted" data-testid="review-judgment-only">
-              No field changes · confirm when verified
-            </p>
           )}
 
           {criticReview == null && (
@@ -788,43 +874,6 @@ export function ReviewCard({
                     )
                   })}
                 </div>
-              )}
-            </div>
-          )}
-
-          {/* Hybrid-C E2: residual / multi-booking trust strip */}
-          {(hasCandidateLegs ||
-            criticReview?.multiBookingOrigin ||
-            criticReview?.splitAudit) && (
-            <div
-              className="rounded-md border border-border/80 bg-surface-800/80 px-2.5 py-1.5 text-[11px] text-text-secondary"
-              data-testid="multi-leg-trust-strip"
-            >
-              {criticReview?.splitAudit ? (
-                <span className="text-status-warning">
-                  Incomplete multi-booking split — expected {criticReview.splitAudit.expected}{' '}
-                  bookings, system produced {criticReview.splitAudit.actual}. Review carefully.
-                </span>
-              ) : criticReview?.multiBookingOrigin ? (
-                <span>
-                  From multi-booking email: row{' '}
-                  <span className="font-mono text-text-primary">
-                    {criticReview.multiBookingOrigin.index}
-                  </span>{' '}
-                  of{' '}
-                  <span className="font-mono text-text-primary">
-                    {criticReview.multiBookingOrigin.total}
-                  </span>
-                  {criticReview.multiBookingOrigin.bookingNo
-                    ? ` · BK ${criticReview.multiBookingOrigin.bookingNo}`
-                    : ''}
-                  {hasCandidateLegs ? ' · pick which existing shipment to update' : ''}
-                </span>
-              ) : (
-                <span>
-                  Multiple matching shipments — pick by SO / booking / HBL / container (JOB is
-                  internal only).
-                </span>
               )}
             </div>
           )}
@@ -915,10 +964,10 @@ export function ReviewCard({
 
           {/* One decision grid: POs + field conflicts share colgroup, headers, and border. */}
           {(() => {
-            const showPos = linkedPOs.length > 0 || (editing && !readOnly)
+            const canEditGrid = gridEditing
+            const showPos = canEditGrid || (linkedPOs.length > 0 && poNeedsReview)
             const showConflicts = conflicts.length > 0
             if (!showPos && !showConflicts) return null
-            const canEditGrid = editing && !readOnly
             // Shared thead only when both blocks show (one header, two section groups).
             // Solo PO / solo conflict each render their own thead via child defaults.
             const sharedThead = showPos && showConflicts
@@ -1029,7 +1078,32 @@ export function ReviewCard({
             )
           })()}
 
-          {!readOnly && (
+          {/* Blocks Save, so it is never inside the collapsible note — a disabled primary button with
+              its reason hidden behind a disclosure is a dead end. */}
+          {dateError && (
+            <p
+              className="text-xs text-status-critical"
+              data-testid="review-date-error"
+              role="alert"
+            >
+              {dateError}
+            </p>
+          )}
+
+          {!readOnly && !showNoteField && (
+            <button
+              type="button"
+              onClick={() => setNoteOpen(true)}
+              data-testid="review-note-add"
+              className="inline-flex items-center gap-1.5 text-xs font-medium text-text-muted transition-colors hover:text-text-primary"
+            >
+              <NotebookPen size={13} />
+              Add a note
+              <span className="font-normal text-text-muted/70">· optional</span>
+            </button>
+          )}
+
+          {!readOnly && showNoteField && (
             <div>
               <label
                 htmlFor={`review-note-${shipment.id}`}
@@ -1043,15 +1117,6 @@ export function ReviewCard({
                   </span>
                 )}
               </label>
-              {dateError && (
-                <p
-                  className="mb-1.5 text-xs text-status-critical"
-                  data-testid="review-date-error"
-                  role="alert"
-                >
-                  {dateError}
-                </p>
-              )}
               <textarea
                 id={`review-note-${shipment.id}`}
                 aria-label="Note"
@@ -1151,7 +1216,7 @@ export function ReviewCard({
                           : 'Select a shipment above first'
                         : changeCount > 0
                           ? `Apply ${changeCount} change${changeCount === 1 ? '' : 's'} and confirm`
-                          : 'Confirm shipment'
+                          : 'Confirm this shipment — there is nothing to change'
                     }
                     className={cn(ACTION_BTN, ACTION_VARIANT.primary)}
                   >
@@ -1164,9 +1229,9 @@ export function ReviewCard({
                           : 'Link & Apply'
                         : changeCount > 0
                           ? 'Approve'
-                          : onApprove
-                            ? 'Keep Current'
-                            : 'Approve'}
+                          : /* Nothing is being "kept" over an alternative — there IS no alternative.
+                               The click means "I looked, it's right": say that. */
+                            'Confirm Reviewed'}
                   </button>
                 )}
                 {/* F11: multi-candidate escape hatch — genuinely new shipment (e.g. 拼櫃) without linking */}
