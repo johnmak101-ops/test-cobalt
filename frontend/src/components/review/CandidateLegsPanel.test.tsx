@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { CandidateLegsPanel, candidateBizKeyTitle } from './CandidateLegsPanel'
 import type { MatchAmbiguity } from '../../lib/critic-review'
 
@@ -79,5 +80,65 @@ describe('CandidateLegsPanel (#129 / Hybrid-C E4)', () => {
     )
     fireEvent.click(screen.getByLabelText(/Select SO SO2/i))
     expect(onSelect).toHaveBeenCalledWith('id-b')
+  })
+})
+
+/**
+ * Real case, leg E553C0A2: four candidates, two of which had a spreadsheet HEADER as their only
+ * identifier ("SO no.", "PORT OF LOADING"). Merging live cargo into one is irreversible and always
+ * wrong, so they are not offered — but the reason is stated and one click brings them back.
+ */
+describe('candidates parsed out of a header row are not offered as merge targets', () => {
+  const amb = {
+    kind: 'multi_candidate' as const,
+    emailKey: { so_no: 'FENLSO003062' },
+    candidates: [
+      { shipmentId: 'c1', jobNo: 'JOB-2026-0008', so_no: 'FENLSO003044' },
+      { shipmentId: 'c2', jobNo: 'JOB-2026-0009', so_no: 'PORT OF LOADING' },
+      { shipmentId: 'c3', jobNo: 'JOB-2026-0010', so_no: 'SO no.' },
+      { shipmentId: 'c4', jobNo: 'JOB-2026-0011', so_no: 'FENLSO003045' },
+    ],
+  }
+
+  function renderPanel() {
+    return render(
+      <CandidateLegsPanel
+        matchAmbiguity={amb}
+        currentShipmentId="self"
+        selectedId={null}
+        onSelect={vi.fn()}
+      />,
+    )
+  }
+
+  it('offers only the two real ones, and says why the others are missing', () => {
+    renderPanel()
+    expect(screen.getAllByRole('radio')).toHaveLength(2)
+    const note = screen.getByTestId('candidate-unidentifiable-note')
+    expect(note).toHaveTextContent(/2 more matched/i)
+    expect(note).toHaveTextContent(/PORT OF LOADING/)
+    expect(note).toHaveTextContent(/SO no\./)
+    expect(note).toHaveTextContent(/table header/i)
+  })
+
+  it('Show anyway brings them back — nothing is hidden outright', async () => {
+    const user = userEvent.setup()
+    renderPanel()
+    await user.click(screen.getByRole('button', { name: /show anyway/i }))
+    expect(screen.getAllByRole('radio')).toHaveLength(4)
+    expect(screen.queryByTestId('candidate-unidentifiable-note')).toBeNull()
+  })
+
+  it('an all-real candidate set is untouched', () => {
+    render(
+      <CandidateLegsPanel
+        matchAmbiguity={{ ...amb, candidates: [amb.candidates[0]!, amb.candidates[3]!] }}
+        currentShipmentId="self"
+        selectedId={null}
+        onSelect={vi.fn()}
+      />,
+    )
+    expect(screen.getAllByRole('radio')).toHaveLength(2)
+    expect(screen.queryByTestId('candidate-unidentifiable-note')).toBeNull()
   })
 })

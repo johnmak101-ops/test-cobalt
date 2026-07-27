@@ -1463,6 +1463,126 @@ describe('decision desk — ready state (no Critical for sailing band)', () => {
 })
 
 /**
+ * Legs DEEC1FC0 (`SO no.`) and 01B94D12 (`PORT OF LOADING`): a spreadsheet parsed with its header row
+ * treated as data. Both provisional, both carrying four emails — so they are flagged for a human, not
+ * auto-rejected. Quietly binning them would take the linked evidence with them.
+ */
+describe('a leg parsed out of a spreadsheet header row', () => {
+  function renderHeaderLeg(so: string) {
+    return render(
+      <MemoryRouter>
+        <ReviewCard
+          shipment={baseShipment({ reviewReasons: [], soNumber: so, bookingNo: null } as never)}
+          criticReview={baseReview({ conflicts: [], reasons: [], riskFlags: [] })}
+          compact={null}
+          defaultExpanded
+          onApprove={vi.fn()}
+          onReject={vi.fn()}
+        />
+      </MemoryRouter>,
+    )
+  }
+
+  it('asks whether it is a shipment at all, and names the giveaway', () => {
+    renderHeaderLeg('SO no.')
+    expect(screen.getByTestId('desk-question')).toHaveTextContent(/Is this a real shipment\?/i)
+    expect(screen.getByTestId('desk-question-detail')).toHaveTextContent(/SO no\./)
+    expect(screen.getByTestId('desk-question-detail')).toHaveTextContent(/column heading|header row/i)
+  })
+
+  it('offers the verdict that answers it', () => {
+    renderHeaderLeg('PORT OF LOADING')
+    expect(screen.getByTestId('review-reject')).toHaveTextContent(/not a shipment/i)
+  })
+
+  it('a real SO number raises nothing — the card is simply ready to confirm', () => {
+    renderHeaderLeg('FENLSO003044')
+    expect(screen.queryByTestId('desk-question')).toBeNull()
+    expect(screen.queryByTestId('review-reject')).toBeNull()
+    expect(screen.getByTestId('review-ready-state')).toBeInTheDocument()
+  })
+})
+
+/**
+ * Leg A84B3B1A again. AMBIGUOUS_MATCH fires on `so_no`, shared by all 11 legs of S13784413, so the
+ * desk asked "which shipment?" about a leg whose HBL the email had already stated exactly. The panel
+ * excludes the leg you are on, so all five offered were wrong — and the one marked `suggested` was a
+ * different HBL that merely shared a vessel and ETD. Taking it would have merged into the wrong leg.
+ */
+describe('a strong key that names this leg ends the which-shipment question', () => {
+  const matchAmbiguity = {
+    kind: 'multi_candidate' as const,
+    emailKey: { so_no: 'S13784413', hbl_awb_fcr_no: 'FCR001379073' },
+    candidates: [
+      { shipmentId: '1A6B6478', jobNo: 'JOB-2026-0005', so_no: 'S13784413', hbl_awb_fcr_no: 'FCR001378583' },
+      { shipmentId: 'B1F99BCB', jobNo: 'JOB-2026-0005', so_no: 'S13784413', hbl_awb_fcr_no: 'FCR001379050' },
+    ],
+  }
+
+  function renderPinned(over: { legHbl?: string } = {}) {
+    return render(
+      <MemoryRouter>
+        <ReviewCard
+          shipment={
+            baseShipment({
+              reviewReasons: [],
+              hblNumber: over.legHbl ?? 'FCR001379073',
+              soNumber: 'S13784413',
+            } as never)
+          }
+          criticReview={baseReview({
+            conflicts: [],
+            reasons: [],
+            riskFlags: [
+              {
+                code: 'AMBIGUOUS_MATCH',
+                severity: 'high',
+                message: 'This email matched more than one existing leg — pick which shipment it updates',
+              },
+            ],
+            matchAmbiguity,
+          } as never)}
+          compact={null}
+          defaultExpanded
+          onApprove={vi.fn()}
+          onLink={vi.fn()}
+          onIdentify={vi.fn()}
+        />
+      </MemoryRouter>,
+    )
+  }
+
+  it('no picker, no ambiguity prompt — and it names what settled it', () => {
+    renderPinned()
+    expect(screen.queryByTestId('candidate-legs-panel')).toBeNull()
+    expect(screen.queryByTestId('identify-shipment')).toBeNull()
+    expect(screen.queryByText(/matches more than one existing shipment/i)).toBeNull()
+    expect(screen.getByTestId('review-ready-state')).toHaveTextContent(
+      /on the right shipment.*HBL.*FCR001379073/i,
+    )
+  })
+
+  it('the primary is a plain confirm, not a link-into-another-shipment', () => {
+    renderPinned()
+    expect(screen.queryByRole('button', { name: /link/i })).toBeNull()
+    expect(screen.getByRole('button', { name: /confirm reviewed/i })).toBeInTheDocument()
+  })
+
+  it('an escape hatch brings the picker back — the pin is an inference, not a fact', async () => {
+    const user = userEvent.setup()
+    renderPinned()
+    await user.click(screen.getByTestId('review-pin-override'))
+    expect(screen.getByTestId('candidate-legs-panel')).toBeInTheDocument()
+  })
+
+  it('a leg the email does NOT name keeps the picker — that is the real ambiguity', () => {
+    renderPinned({ legHbl: 'FCR001378583' })
+    expect(screen.getByTestId('candidate-legs-panel')).toBeInTheDocument()
+    expect(screen.queryByTestId('review-pin-override')).toBeNull()
+  })
+})
+
+/**
  * The busiest card in the dev queue — leg A84B3B1A / SO S13784413, 6 conflicts, 7 risk flags, 10
  * reasons — had ZERO real field decisions: commit-first had already written every value the email
  * proposed, and the critic's "System" candidate was a snapshot from before that write. Measured across
@@ -1522,6 +1642,81 @@ describe('rows the leg already satisfies leave the grid', () => {
     // Nothing to apply → the primary answers the question that IS open, not a phantom diff.
     expect(screen.queryByRole('button', { name: /^apply/i })).toBeNull()
     expect(screen.getByTestId('desk-question')).toHaveTextContent(/Is this the right shipment\?/i)
+  })
+
+  /**
+   * Regression, leg A84B3B1A: settling emptied the table, the "table owns the comparison" count fell
+   * to 0, and the suppressed conflict prose came back — so the card said "6 field(s) disagree — see
+   * conflict table" and "Email and system differ on Qty, Consignee Address, vessel, voyage" while a
+   * green line beside it said those fields already agreed, and no table existed to look at.
+   */
+  it('never points at a conflict table that settling removed', () => {
+    render(
+      <MemoryRouter>
+        <ReviewCard
+          shipment={realLeg()}
+          criticReview={baseReview({
+            conflicts: realConflicts,
+            reasons: [],
+            riskFlags: [
+              { code: 'AMBIGUOUS_MATCH', severity: 'high', message: 'matched more than one leg' },
+              {
+                code: 'INTRA_EMAIL_FIELD_CONFLICT',
+                severity: 'high',
+                message: '6 field conflicts — values disagree (see conflict table).',
+              },
+              {
+                code: 'BACKEND_CONFLICT',
+                severity: 'high',
+                message:
+                  'Email disagrees with what is already stored on Qty, Consignee Address, vessel, voyage — needs a human call.',
+              },
+            ],
+          })}
+          compact={null}
+          defaultExpanded
+          onApprove={vi.fn()}
+        />
+      </MemoryRouter>,
+    )
+    expect(screen.queryByTestId('review-decision-grid')).toBeNull()
+    const why = screen.getByTestId('why-review')
+    expect(why.textContent).not.toMatch(/see conflict table/i)
+    expect(why.textContent).not.toMatch(/field\(s\) disagree/i)
+    expect(why.textContent).not.toMatch(/Email and system differ/i)
+    // The accurate statement is the only one left standing.
+    expect(screen.getByTestId('review-applied-conflicts')).toHaveTextContent(/already on the shipment/i)
+  })
+
+  it('counts a qty row the leg literally holds as applied, not as silently dropped', () => {
+    render(
+      <MemoryRouter>
+        <ReviewCard
+          shipment={baseShipment({ reviewReasons: [], quantityShipped: 784, vesselName: 'MARIBO MAERSK' } as never)}
+          criticReview={baseReview({
+            conflicts: [
+              {
+                field: 'qty',
+                label: 'Total Quantity',
+                candidates: [
+                  { value: '369', source: 'System' },
+                  { value: '784', source: 'Draft B/L' },
+                ],
+                rationale: 'stale system snapshot',
+              } as CriticConflict,
+              realConflicts[0]!,
+            ],
+            reasons: [],
+            riskFlags: [],
+          })}
+          compact={null}
+          defaultExpanded
+          onApprove={vi.fn()}
+        />
+      </MemoryRouter>,
+    )
+    // Both are already stored — the qty settle used to swallow its row before it could be reported.
+    expect(screen.getByTestId('review-applied-conflicts')).toHaveTextContent(/2 fields/i)
   })
 
   it('the settled rows open up so the operator can verify the claim', async () => {
