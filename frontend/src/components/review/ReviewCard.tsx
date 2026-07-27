@@ -32,7 +32,6 @@ import {
   poShipmentTotalFromLinked,
 } from '../../lib/qty-conflict-settle'
 import { liveValueForField, partitionAppliedConflicts } from '../../lib/conflict-applied'
-import { emailKeyPinsThisLeg } from '../../lib/email-key-pin'
 import { isNonIdentifier } from '../../lib/identifier-shape'
 import { isCriticalColumn } from '../../lib/review-critical'
 import {
@@ -262,16 +261,21 @@ export function ReviewCard({
    */
   const legValues = useMemo(() => shipment as unknown as Record<string, unknown>, [shipment])
   /**
-   * The email's own strong key already names THIS leg (see email-key-pin.ts). AMBIGUOUS_MATCH fires on
-   * `so_no`, which every leg of one order shares — 11 of them on S13784413 — so the desk asked "which
-   * shipment?" about a leg whose HBL the email had already stated exactly. The panel excludes the leg
-   * you are on, so the five it offered were all wrong, and the `suggested` one was a different HBL that
-   * merely shared a vessel and ETD.
+   * What the COMMITTER did (migration 0027) — the only sound answer to "is identity settled?".
+   *
+   * This replaces an inference that was circular: it compared the email's HBL against the leg's HBL,
+   * but when the committer CREATES a leg from an email the leg carries that HBL *because this email
+   * wrote it*. The test was guaranteed true for every created leg and proved nothing — and it fired on
+   * exactly those, hiding the picker where the question was real. 179 of 181 active legs are created.
+   *
+   * `matched` / `adopted_zero_id` mean an existing leg absorbed the fields, so the queue's candidate
+   * list is moot. Anything else — including a NULL on legs committed before 0027 — leaves the picker up.
    */
-  const emailKeyPin = useMemo(() => emailKeyPinsThisLeg(matchAmbiguity, legValues), [matchAmbiguity, legValues])
-  /** Escape hatch: hiding a control on an inference needs a way back. */
+  const committerAction = (shipment as { committerAction?: string | null }).committerAction ?? null
+  /** Escape hatch: suppressing a control on the committer's word still needs a way back. */
   const [pinOverridden, setPinOverridden] = useState(false)
-  const identityPinned = emailKeyPin != null && !pinOverridden
+  const identityPinned =
+    !pinOverridden && (committerAction === 'matched' || committerAction === 'adopted_zero_id')
   const isAmbiguousMatch =
     !identityPinned && (criticReview?.riskFlags ?? []).some((f) => f.code === 'AMBIGUOUS_MATCH')
   const hasCandidateLegs = !identityPinned && (matchAmbiguity?.candidates?.length ?? 0) >= 2
@@ -498,6 +502,7 @@ export function ReviewCard({
       const fromCandidates = candidateDeskQuestion({
         emailKey: matchAmbiguity.emailKey,
         candidates: (matchAmbiguity.candidates ?? []) as unknown as Record<string, unknown>[],
+        committerAction,
       })
       if (fromCandidates) {
         return {
@@ -531,6 +536,7 @@ export function ReviewCard({
     junkIdentifier,
     hasCandidateLegs,
     matchAmbiguity,
+    committerAction,
   ])
   const restNeedsTitles = useMemo(
     () =>
@@ -1093,11 +1099,10 @@ export function ReviewCard({
             >
               {/* Name what settled it. "Ready to confirm" alone left the operator wondering what
                   happened to the five-way pick the card used to open with. */}
-              {emailKeyPin && !pinOverridden ? (
+              {identityPinned ? (
                 <>
-                  This email is on the right shipment — its {emailKeyPin.label}{' '}
-                  <span className="field-value font-mono">{emailKeyPin.value}</span> matches this
-                  shipment and none of the alternatives. Nothing to decide.
+                  This email updated an existing shipment — the committer matched it, so there is no
+                  shipment to pick. Nothing to decide.
                 </>
               ) : (
                 'Ready to confirm — no open decisions'

@@ -669,6 +669,10 @@ export class PresentationService {
         // Waiting tab reads both: the stamp orders the list, the reason says who we are waiting on.
         waitingAt: isoOrNull(r.waitingAt),
         waitingReason: r.waitingReason ?? null,
+        // 0027: what the committer DID. The desk asks a different question of a leg this email created
+        // than of one it matched into — and previously could not tell them apart.
+        committerAction: r.committerAction ?? null,
+        committerCandidatesConsidered: r.committerCandidatesConsidered ?? null,
       })),
     }
   }

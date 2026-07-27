@@ -65,6 +65,9 @@ export type ShipmentInsert = Partial<{
   consigneeName: string | null
   consigneeAddress: string | null
   matchKeys: Record<string, unknown> | null
+  committerAction: string | null
+  committerTargetLegId: string | null
+  committerCandidatesConsidered: number | null
 }>
 
 /** Kysely/SQL Server port of ShipmentRepository. The Shipment aggregate: shipments, shipment_pos,
@@ -243,6 +246,8 @@ export class ShipmentRepository {
       'shipments.legStatus as legStatus', 'shipments.reviewReasons as reviewReasons', 'shipments.confidence as confidence',
       'shipments.createdAt as createdAt', 'shipments.updatedAt as updatedAt', 'shipments.dismissedAt as dismissedAt',
       'shipments.waitingAt as waitingAt', 'shipments.waitingReason as waitingReason',
+      'shipments.committerAction as committerAction',
+      'shipments.committerCandidatesConsidered as committerCandidatesConsidered',
       'shipments.criticReview as criticReview',
       'customers.id as customerId', 'customers.name as customerName',
       'customers.code as customerCode', 'forwarders.id as forwarderId', 'forwarders.name as forwarderName',
