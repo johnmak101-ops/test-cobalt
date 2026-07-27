@@ -4,7 +4,7 @@ import type { DB } from '../kysely/db'
 import { KYSELY } from '../kysely.provider'
 import { isStyleTokenSuperset, isEntirelyPoShapedStyle } from '../../lib/style-tokens'
 
-export type PoEnrichInput = Partial<{ brand: string | null; itemStyleNo: string | null; totalQuantity: number | null; quantityUnit: string | null }>
+export type PoEnrichInput = Partial<{ brand: string | null; itemStyleNo: string | null; totalQuantity: number | null; quantityUnit: string | null; qtyConflict: string[] | null }>
 
 /** Normalized PO key for the queryable `po_number_norm` index (0004). A FROZEN parity copy of match-keys.ts
  *  `normKey` (strip non-alphanumerics + upper-case) — kept LOCAL to avoid a db→reconcile layer import. The
@@ -189,8 +189,17 @@ export class PurchaseOrderRepository {
         // Clear garbage even when rematch has nothing better (null)
         patch.itemStyleNo = null
       }
-      if (existing.totalQuantity == null && enrich.totalQuantity != null) patch.totalQuantity = enrich.totalQuantity
-      if (existing.quantityUnit == null && enrich.quantityUnit != null) patch.quantityUnit = enrich.quantityUnit
+      if (enrich.qtyConflict) {
+        // The PO ships on >1 leg with diverging qty/unit. Whatever total is already stored was adopted
+        // from whichever leg committed FIRST (first-writer-wins below) and is a per-leg SHIPPED figure,
+        // not the ordered total — clear it so the other leg stops reading as mis-shipped. Ops refills
+        // from ERP; the committer raises a "qty conflict … across legs" review reason.
+        if (existing.totalQuantity != null) patch.totalQuantity = null
+        if (existing.quantityUnit != null) patch.quantityUnit = null
+      } else {
+        if (existing.totalQuantity == null && enrich.totalQuantity != null) patch.totalQuantity = enrich.totalQuantity
+        if (existing.quantityUnit == null && enrich.quantityUnit != null) patch.quantityUnit = enrich.quantityUnit
+      }
       if (Object.keys(patch).length) {
         await this.db.updateTable('purchaseOrders').set({ ...patch, updatedAt: new Date() }).where('id', '=', existing.id).execute()
       }

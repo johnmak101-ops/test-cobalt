@@ -59,6 +59,14 @@ interface MasterRow {
 }
 
 const NAME_THRESHOLD = 0.3
+
+/**
+ * A name score at/above this IS the same name — trigramSimilarity returns exactly 1 for equal
+ * normalized strings (the 简↔繁 fold runs inside it), so this only tolerates float noise. Emitted as the
+ * `name:exact` signal, which the queue's hybrid resolver ranks ABOVE sender-domain: a domain says who
+ * transmitted the mail, an exact legal name says who the document identifies.
+ */
+const NAME_EXACT_MIN = 0.99
 const DEFAULT_LIMIT = 12
 const CACHE_TTL_MS = 60_000
 
@@ -188,8 +196,10 @@ export class CandidatesService {
       if (inputName) {
         nameScore = trigramSimilarity(inputName, r.name)
         for (const a of r.aliases) nameScore = Math.max(nameScore, trigramSimilarity(inputName, a))
-        if (nameScore >= NAME_THRESHOLD) signals.push(`name:${nameScore.toFixed(2)}`)
-        else nameScore = 0
+        if (nameScore >= NAME_THRESHOLD) {
+          signals.push(`name:${nameScore.toFixed(2)}`)
+          if (nameScore >= NAME_EXACT_MIN) signals.push('name:exact')
+        } else nameScore = 0
       }
       if (inputName && nameScore === 0) {
         // (1) master tokens ⊆ input — rescues short masters ('DSV') against long raws.

@@ -41,7 +41,34 @@ describe('resolvePoEnrichment', () => {
       styleBroadcastPoCount: null,
       brandConflict: null,
       styleConflict: null,
+      qtyConflict: null, // single leg states one qty — nothing to reconcile
     })
+  })
+
+  it('a PO split across two legs does NOT adopt one leg qty as the order total (PO 1570988)', () => {
+    // Live 2026-07-27: PO 1570988 shipped 3 pieces by air (SZA26050003) and 207 cartons by sea
+    // (SNZ260004243). The air leg committed 3s earlier, so first-writer-wins pinned the PO master to
+    // "3 pieces" and the sea leg then read as mis-shipped. Neither figure is the ORDERED total and the
+    // units cannot be summed — leave it unset and flag both statements.
+    const map = resolvePoEnrichment([
+      row({ id: 'air', poNo: '1570988', receivedAt: at('2026-05-11T02:00:00Z'), fields: { qty: '3', qty_unit: 'pieces' } }),
+      row({ id: 'sea', poNo: '1570988', receivedAt: at('2026-05-08T02:00:00Z'), fields: { qty: '207', qty_unit: 'cartons' } }),
+    ])
+    const enr = map.get(normKey('1570988'))!
+    expect(enr.totalQuantity).toBeNull()
+    expect(enr.quantityUnit).toBeNull()
+    expect(enr.qtyConflict).toEqual(['3 pieces', '207 cartons'])
+  })
+
+  it('the same qty restated on several emails of ONE leg is not a conflict', () => {
+    const map = resolvePoEnrichment([
+      row({ id: 'a', poNo: '28642', receivedAt: at('2026-02-03T02:00:00Z'), fields: { qty: '29', qty_unit: 'cartons' } }),
+      row({ id: 'b', poNo: '28642', receivedAt: at('2026-02-01T02:00:00Z'), fields: { qty: '29', qty_unit: 'cartons' } }),
+    ])
+    const enr = map.get(normKey('28642'))!
+    expect(enr.qtyConflict).toBeNull()
+    expect(enr.totalQuantity).toBe(29)
+    expect(enr.quantityUnit).toBe('cartons')
   })
 
   it('latest-received email wins when the SAME PO carries two brand labels (parser brand-leak)', () => {
