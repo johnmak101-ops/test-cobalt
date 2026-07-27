@@ -70,6 +70,11 @@ export interface Shipments
   /** Migration 0025 — review-desk "parked, going to ask" stamp. Same codegen caveat as `cartons`. */
   waitingAt: Date | null
   waitingReason: string | null
+  /** Migration 0027 — what the committer DID with the agent's advice. Same codegen caveat as `cartons`.
+   *  Never inferred from absence: every outcome has a name (see the migration). */
+  committerAction: 'matched' | 'created' | 'created_pending_dedup' | 'adopted_zero_id' | 'sibling_leg' | null
+  committerTargetLegId: string | null
+  committerCandidatesConsidered: number | null
   reviewReasons: Json<string[] | null>
   matchKeys: Json<Record<string, unknown> | null>
   criticReview: Json<CriticReview | null>

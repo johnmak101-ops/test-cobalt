@@ -128,6 +128,8 @@ export interface ShipmentLegRow {
   reviewStatus?: string | null
   reviewReasons?: string[] | null
   dismissedAt?: Dateish
+  committerAction?: string | null
+  committerCandidatesConsidered?: number | null
   criticReview?: CriticReview | null
   /** min(shipment_emails.received_at) — the beginning email; null/absent when no dated source emails. */
   firstEmailAt?: Dateish
@@ -171,6 +173,10 @@ export interface UiShipment {
   reviewStatus: string | null
   reviewReasons: string[]
   dismissedAt: string | null
+  /** 0027 — what the committer did with this email's advice: matched an existing leg, or created one
+   *  (and whether the matcher had offered alternatives at the time). */
+  committerAction: string | null
+  committerCandidatesConsidered: number | null
   /** #151: leg ordinal under booking; legCount > 1 → show "Booking · Leg n/N" */
   legNo: number
   legCount: number
@@ -273,6 +279,8 @@ export function toUiShipment(
       podLinked: !!(leg as { podId?: string | null }).podId || !!input.podPort?.unlocode,
     }),
     dismissedAt: isoOrNull(leg.dismissedAt ?? null),
+    committerAction: leg.committerAction ?? null,
+    committerCandidatesConsidered: leg.committerCandidatesConsidered ?? null,
     legNo: legMeta.legNo ?? 1,
     legCount: legMeta.legCount ?? 1,
     bookingNo: leg.bookingNo ?? null,

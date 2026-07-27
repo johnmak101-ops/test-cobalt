@@ -40,6 +40,21 @@ import { collectSourceEvents } from './source-events'
 // Re-export for any external import sites that still pull findExistingLeg from the service module.
 export { findExistingLeg, findSupersededByIdentityCorrection, findSiblingBooking } from './committer-match'
 
+/**
+ * How many legs the QUEUE's matcher put forward for this group.
+ *
+ * Recorded beside the committer's own decision so a later reader can see the two disagreeing — the
+ * matcher proposing N while the committer created a leg anyway — without re-deriving it from the
+ * payload. That disagreement is invisible today: 179 of 181 active legs were created, 13 of them while
+ * candidates were on the table.
+ */
+function matchCandidateCount(criticReview: unknown): number | null {
+  const amb = (criticReview as { matchAmbiguity?: { candidates?: unknown[] } } | null | undefined)
+    ?.matchAmbiguity
+  return Array.isArray(amb?.candidates) ? amb.candidates.length : null
+}
+
+
 /** One reconciled shipment picture, ready to commit. */
 export interface ReconGroup {
   fields: Record<string, unknown>
@@ -313,6 +328,8 @@ export class CommitterService {
     let jobNo: string
     let action: CommitResult['action']
     const supersededLockedFields: string[] = []
+    /** 0027: what this commit DID, recorded on every branch — never by absence. */
+    const candidatesConsidered = matchCandidateCount(g.criticReview)
 
     if (existing) {
       bookingId = existing.bookingId
@@ -353,6 +370,11 @@ export class CommitterService {
         }
       }
       if (g.cancelled) metaPatch.legStatus = 'CANCELLED'
+      // An existing leg absorbed the fields. `adopted_zero_id` is kept distinct because the leg had no
+      // identity of its own until this email gave it one — a different provenance from a key match.
+      metaPatch.committerAction = adoptedZeroId ? 'adopted_zero_id' : 'matched'
+      metaPatch.committerTargetLegId = shipmentId
+      metaPatch.committerCandidatesConsidered = candidatesConsidered
       if (Object.keys(metaPatch).length) await this.shipments.updateLeg(shipmentId, metaPatch)
     } else {
       // #151 Phase 2: same booking-layer value + own HBL → sibling ship of an EXISTING booking.
@@ -373,6 +395,8 @@ export class CommitterService {
           confidence: g.confidence ?? null,
           reviewReasons: effReviewStatus !== undefined ? effReasons : null,
           criticReview: g.criticReview ?? null,
+          committerAction: 'sibling_leg',
+          committerCandidatesConsidered: candidatesConsidered,
         })
         shipmentId = leg.id
         action = 'create_booking'
@@ -415,6 +439,12 @@ export class CommitterService {
           confidence: g.confidence ?? null,
           reviewReasons: effReviewStatus !== undefined ? effReasons : null,
           criticReview: g.criticReview ?? null,
+          // Created WHILE the matcher offered alternatives is its own state: committed, but possibly a
+          // duplicate. Previously indistinguishable from a settled match, which is what let the desk ask
+          // "which shipment does this email update?" about a leg this email had just minted.
+          committerAction:
+            candidatesConsidered != null && candidatesConsidered >= 2 ? 'created_pending_dedup' : 'created',
+          committerCandidatesConsidered: candidatesConsidered,
         })
         shipmentId = leg.id
         action = 'create_booking'

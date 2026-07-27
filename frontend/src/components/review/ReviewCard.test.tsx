@@ -1622,12 +1622,13 @@ describe('a leg parsed out of a spreadsheet header row', () => {
 })
 
 /**
- * Leg A84B3B1A again. AMBIGUOUS_MATCH fires on `so_no`, shared by all 11 legs of S13784413, so the
- * desk asked "which shipment?" about a leg whose HBL the email had already stated exactly. The panel
- * excludes the leg you are on, so all five offered were wrong — and the one marked `suggested` was a
- * different HBL that merely shared a vessel and ETD. Taking it would have merged into the wrong leg.
+ * Identity is settled by what the COMMITTER did, never by comparing the email's key to the leg's.
+ *
+ * The earlier rule did exactly that and was circular: when the committer CREATES a leg from an email,
+ * the leg carries that email's HBL *because this email wrote it*. It was true for every created leg,
+ * proved nothing, and hid the picker on the 179-of-181 population where the question is real.
  */
-describe('a strong key that names this leg ends the which-shipment question', () => {
+describe('the committer decides whether identity is settled', () => {
   const matchAmbiguity = {
     kind: 'multi_candidate' as const,
     emailKey: { so_no: 'S13784413', hbl_awb_fcr_no: 'FCR001379073' },
@@ -1637,26 +1638,23 @@ describe('a strong key that names this leg ends the which-shipment question', ()
     ],
   }
 
-  function renderPinned(over: { legHbl?: string } = {}) {
+  function renderWithAction(committerAction: string | null) {
     return render(
       <MemoryRouter>
         <ReviewCard
           shipment={
             baseShipment({
               reviewReasons: [],
-              hblNumber: over.legHbl ?? 'FCR001379073',
+              hblNumber: 'FCR001379073',
               soNumber: 'S13784413',
+              committerAction,
             } as never)
           }
           criticReview={baseReview({
             conflicts: [],
             reasons: [],
             riskFlags: [
-              {
-                code: 'AMBIGUOUS_MATCH',
-                severity: 'high',
-                message: 'This email matched more than one existing leg — pick which shipment it updates',
-              },
+              { code: 'AMBIGUOUS_MATCH', severity: 'high', message: 'matched more than one existing leg' },
             ],
             matchAmbiguity,
           } as never)}
@@ -1670,33 +1668,46 @@ describe('a strong key that names this leg ends the which-shipment question', ()
     )
   }
 
-  it('no picker, no ambiguity prompt — and it names what settled it', () => {
-    renderPinned()
+  it('matched → no picker, and the ready line says the committer settled it', () => {
+    renderWithAction('matched')
     expect(screen.queryByTestId('candidate-legs-panel')).toBeNull()
     expect(screen.queryByTestId('identify-shipment')).toBeNull()
-    expect(screen.queryByText(/matches more than one existing shipment/i)).toBeNull()
-    expect(screen.getByTestId('review-ready-state')).toHaveTextContent(
-      /on the right shipment.*HBL.*FCR001379073/i,
+    expect(screen.getByTestId('review-ready-state')).toHaveTextContent(/committer matched it/i)
+  })
+
+  /**
+   * The regression this whole change exists for. Same leg, same matching HBL — but the committer
+   * CREATED it, so the HBL proves nothing and the picker must stay.
+   */
+  it('created_pending_dedup → the picker STAYS, even though the HBLs match', () => {
+    renderWithAction('created_pending_dedup')
+    expect(screen.getByTestId('candidate-legs-panel')).toBeInTheDocument()
+  })
+
+  it('…and it asks whether we duplicated, not which shipment to update', () => {
+    renderWithAction('created_pending_dedup')
+    expect(screen.getByTestId('desk-question')).toHaveTextContent(/Is this a duplicate/i)
+    expect(screen.getByTestId('desk-question-detail')).toHaveTextContent(
+      /A new shipment was created for this email while 2 similar ones already existed/i,
     )
   })
 
-  it('the primary is a plain confirm, not a link-into-another-shipment', () => {
-    renderPinned()
-    expect(screen.queryByRole('button', { name: /link/i })).toBeNull()
-    expect(screen.getByRole('button', { name: /confirm reviewed/i })).toBeInTheDocument()
+  /** Legs committed before 0027 have no record. Unknown is not "settled" — the picker stays. */
+  it('a null action (pre-0027 leg) keeps the picker', () => {
+    renderWithAction(null)
+    expect(screen.getByTestId('candidate-legs-panel')).toBeInTheDocument()
   })
 
-  it('an escape hatch brings the picker back — the pin is an inference, not a fact', async () => {
+  it('adopted_zero_id also counts as settled — an existing leg absorbed the fields', () => {
+    renderWithAction('adopted_zero_id')
+    expect(screen.queryByTestId('candidate-legs-panel')).toBeNull()
+  })
+
+  it('an escape hatch brings the picker back', async () => {
     const user = userEvent.setup()
-    renderPinned()
+    renderWithAction('matched')
     await user.click(screen.getByTestId('review-pin-override'))
     expect(screen.getByTestId('candidate-legs-panel')).toBeInTheDocument()
-  })
-
-  it('a leg the email does NOT name keeps the picker — that is the real ambiguity', () => {
-    renderPinned({ legHbl: 'FCR001378583' })
-    expect(screen.getByTestId('candidate-legs-panel')).toBeInTheDocument()
-    expect(screen.queryByTestId('review-pin-override')).toBeNull()
   })
 })
 

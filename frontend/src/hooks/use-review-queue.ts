@@ -27,6 +27,9 @@ export interface ReviewShipment {
   updatedAt: string
   poCount: number
   dismissedAt: string | null
+  /** See ShipmentDetail.committerAction (migration 0027). */
+  committerAction?: string | null
+  committerCandidatesConsidered?: number | null
   /** Parked off the active desk pending an outside answer (migration 0025). */
   waitingAt?: string | null
   /** What the operator said they were waiting on — shown inline on the Waiting tab. */
