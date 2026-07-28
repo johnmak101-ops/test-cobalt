@@ -12,13 +12,24 @@
  *     is a plain text search. No character offsets, no parser changes.
  *
  * The other 33% came off an attachment, and for those the honest answer is a named list rather than a
- * highlight: ShipTrack stores attachment metadata but not the bytes (186 attachments, 0 with
- * raw_bytes), and nothing records WHICH file a value was read from. Saying so is better than
- * silently showing a body with no match in it.
+ * highlight: nothing records WHICH file a value was read from, so saying "one of these" is better
+ * than silently showing a body with no match in it.
+ *
+ * The list is now OPENABLE. It was inert text on the original reasoning that ShipTrack stored
+ * attachment metadata but never the bytes — which has since stopped being true. Re-measured on the
+ * dev DB: 611 attachments, 96 carrying raw_bytes. So naming the proof and refusing to show it was
+ * denying the operator a file the system was holding all along.
+ *
+ * It is a partial fix and the UI says so per row rather than in aggregate: the remaining 515 have no
+ * local copy, and with 0 rows carrying a graph_attachment_id the Graph re-fetch cannot even be
+ * attempted for them. Those rows fail with the backend's ATTACHMENT_UNAVAILABLE reason shown inline
+ * — an operator who knows the bytes were never captured can go to the mailbox; one staring at inert
+ * text cannot tell that from a UI that simply forgot to be clickable.
  */
 import { useMemo, useState } from 'react'
-import { FileText, Loader2, Mail, X } from 'lucide-react'
+import { Download, FileText, Loader2, Mail, X } from 'lucide-react'
 import { useEmailAttachments, useEmailBody } from '../../hooks/use-emails'
+import { useAttachmentDownload } from '../../hooks/use-attachment-download'
 import { parseSender } from '../../lib/email-sender'
 import { cn, formatDateTime } from '../../lib/utils'
 
@@ -190,27 +201,74 @@ export function EvidencePanel({ emailId, value, onClose }: EvidencePanelProps) {
               <Loader2 size={12} className="animate-spin" /> Loading attachments…
             </li>
           )}
-          {attachments.map((a) => {
-            const kind = fileKind(a.filename, a.mimeType)
-            return (
-              <li
-                key={a.id}
-                className="flex items-center gap-2.5 rounded-lg border border-border px-2.5 py-2"
-              >
-                <span className={cn('shrink-0 rounded border px-1.5 py-0.5 font-mono text-[10px] font-semibold', kind.cls)}>
-                  {kind.label}
-                </span>
-                <span className="min-w-0 flex-1 truncate text-[12.5px] text-text-primary" title={a.filename}>
-                  {a.filename}
-                </span>
-                <span className="shrink-0 font-mono text-[11px] text-text-muted">
-                  {fileSize(a.sizeBytes)}
-                </span>
-              </li>
-            )
-          })}
+          {attachments.map((a) => (
+            <EvidenceFileRow key={a.id} attachment={a} />
+          ))}
         </ul>
       )}
     </div>
+  )
+}
+
+/**
+ * One attachment on the review desk — openable.
+ *
+ * This list used to render the filename as inert text. On a leg where 33% of the extracted values
+ * came off an attachment, that named the proof and then refused to show it: the operator could see
+ * `packing-list.xlsx` was the source and had no way to check what it said. The download route and
+ * `downloadAttachment` both already existed; only the affordance was missing.
+ *
+ * Failure is surfaced, not swallowed — bytes may never have been stored locally and the Graph
+ * re-fetch can fail, so the row goes red and keeps the reason. Clicking again retries.
+ */
+function EvidenceFileRow({
+  attachment,
+}: {
+  attachment: { id: string; filename: string; mimeType: string; sizeBytes: number }
+}) {
+  const { status, error, download } = useAttachmentDownload()
+  const kind = fileKind(attachment.filename, attachment.mimeType)
+  return (
+    <li>
+      <button
+        type="button"
+        onClick={() => void download(attachment.id, attachment.filename)}
+        disabled={status === 'loading'}
+        aria-busy={status === 'loading'}
+        title={
+          status === 'loading'
+            ? `Opening ${attachment.filename}…`
+            : status === 'error'
+              ? (error ?? 'Download failed — click to retry')
+              : `Open ${attachment.filename}`
+        }
+        className={cn(
+          'flex w-full items-center gap-2.5 rounded-lg border px-2.5 py-2 text-left transition-colors disabled:cursor-wait',
+          status === 'error'
+            ? 'border-status-critical/50 hover:border-status-critical'
+            : 'border-border hover:border-cobalt-primary hover:bg-surface-700',
+        )}
+      >
+        <span className={cn('shrink-0 rounded border px-1.5 py-0.5 font-mono text-[10px] font-semibold', kind.cls)}>
+          {kind.label}
+        </span>
+        <span className="min-w-0 flex-1 truncate text-[12.5px] text-text-primary" title={attachment.filename}>
+          {attachment.filename}
+        </span>
+        {status === 'loading' ? (
+          <Loader2 size={12} className="shrink-0 animate-spin text-text-muted" />
+        ) : (
+          <Download size={12} className="shrink-0 text-text-muted" />
+        )}
+        <span className="shrink-0 font-mono text-[11px] text-text-muted">
+          {fileSize(attachment.sizeBytes)}
+        </span>
+      </button>
+      {/* The reason, not just a red edge: "no local copy and Graph re-fetch failed" is actionable;
+          a silent failure sends the operator hunting through the mailbox by hand. */}
+      {status === 'error' && error && (
+        <p className="mt-1 px-2.5 text-[11px] text-status-critical">{error}</p>
+      )}
+    </li>
   )
 }
