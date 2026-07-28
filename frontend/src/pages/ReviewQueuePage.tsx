@@ -1,7 +1,6 @@
-import { Fragment, useCallback, useMemo, useReducer, useState } from 'react'
+import { Fragment, useMemo, useReducer, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useParties } from '../hooks/use-parties'
-import { useUpdateShipment } from '../hooks/use-shipments'
 import { CheckCircle, Clock, Ship, Package, Loader2, RotateCcw } from 'lucide-react'
 import {
   useReviewQueue,
@@ -93,10 +92,9 @@ function ExpandedReviewPanel({
   const waitMutation = useWaitShipment()
   const navigate = useNavigate()
 
-  const updateForPick = useUpdateShipment(data?.id ?? '')
   /**
-   * The Mesh mirror + the write path for "link this party to that master". The card resolves which
-   * column and what to store; the page owns the data layer — ReviewCard must stay renderable
+   * The Mesh mirror. The card turns an unlinked party into a conflict-table row and offers these as
+   * its candidates; it must not fetch them itself — ReviewCard must stay renderable
    * without a QueryClient, as 134 of its tests do.
    *
    * Above the loading/error early returns: hooks cannot sit behind a conditional.
@@ -107,12 +105,6 @@ function ExpandedReviewPanel({
   const partyMasters = useMemo(
     () => [...(customerMasters ?? []), ...(vendorMasters ?? []), ...(forwarderMasters ?? [])],
     [customerMasters, vendorMasters, forwarderMasters],
-  )
-  const pickMaster = useCallback(
-    async (column: string, value: string, note: string) => {
-      await updateForPick.mutateAsync({ fields: { [column]: value }, note })
-    },
-    [updateForPick],
   )
 
   if (isLoading) {
@@ -137,7 +129,6 @@ function ExpandedReviewPanel({
       <ReviewCard
         shipment={data}
         partyMasters={partyMasters}
-        onPickMaster={pickMaster}
         criticReview={data.criticReview ?? null}
         compact={row.criticReviewCompact}
         emails={data.emails ?? []}

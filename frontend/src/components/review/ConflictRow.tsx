@@ -601,7 +601,11 @@ export function ConflictRow({
                           ? `Keep the current ${label} instead of ${emailCandidate!.value}`
                           : `Apply ${emailCandidate!.value} to ${label}`
                       }
-                      className="mt-[3px] h-3.5 w-3.5 shrink-0 cursor-pointer rounded border-border accent-status-success"
+                      /* Blue, like every other "the operator chose this" control in these tables: the radio
+                         rows below (border-cobalt-primary) and the PO checkboxes. Green here meant
+                         nothing — the add/remove tones in ReviewPoStylesSection are semantic, this is
+                         the same plain act of taking a value, so it read as a third kind of choice. */
+                      className="mt-[3px] h-3.5 w-3.5 shrink-0 cursor-pointer rounded border-border accent-cobalt-primary-light"
                     />
                     {valueText}
                   </label>

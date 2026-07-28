@@ -57,7 +57,8 @@ import {
   pickDeskQuestion,
 } from './desk-question'
 import { NeedsAttentionMeshMiss } from './NeedsAttentionMeshMiss'
-import type { PartyMaster, PartyKind } from '../../hooks/use-parties'
+import type { PartyMaster } from '../../hooks/use-parties'
+import { mastersNaming } from '../../lib/party-names'
 import {
   REVIEW_COL,
   REVIEW_FS,
@@ -188,11 +189,6 @@ export interface ReviewCardProps {
    * situations whose correct operator actions are opposites. Omitted keeps the old copy.
    */
   partyMasters?: PartyMaster[]
-  /**
-   * Link a raw party to the master the operator picked. The card resolves WHICH column and what to
-   * store; the page owns the write, so this component stays free of the data layer.
-   */
-  onPickMaster?: (column: string, value: string, note: string) => Promise<void> | void
 }
 
 function nameOf(value: unknown): string | null {
@@ -290,7 +286,6 @@ export function ReviewCard({
   onIdentify,
   onLink,
   partyMasters,
-  onPickMaster,
 }: ReviewCardProps) {
   const [expanded, setExpanded] = useState(defaultExpanded)
   const [note, setNote] = useState('')
@@ -341,7 +336,6 @@ export function ReviewCard({
    */
   const allMasters = useMemo(() => partyMasters ?? [], [partyMasters])
   const masterNames = useMemo(() => allMasters.map((p) => p.name).filter(Boolean), [allMasters])
-  const [pickingParty, setPickingParty] = useState<string | null>(null)
   /**
    * Link a raw party name to the Mesh master the operator chose.
    *
@@ -355,64 +349,6 @@ export function ReviewCard({
    * The write goes through the ordinary human-edit PATCH, so it resolves the FK, locks the field and
    * lands in Change History exactly as typing it would.
    */
-  const pickMasterValue = useCallback(
-    (partyName: string, storedValue: string) => {
-      if (!shipmentId || !onPickMaster) return
-      const leg = shipment as unknown as Record<string, unknown>
-      const column = (['forwarderRaw', 'customerRaw', 'vendorRaw'] as const).find(
-        (c) => String(leg[c] ?? '').trim() === partyName.trim(),
-      )
-      if (!column) return
-      // `storedValue` is already in the form the column wants — PartyPicker applied the code/name
-      // split on the way out. The master NAME is looked up only to write a readable audit note.
-      const master = allMasters.find(
-        (m) =>
-          m.name.trim() === storedValue.trim() ||
-          (m.code ?? '').trim().toUpperCase() === storedValue.trim().toUpperCase(),
-      )
-      setPickingParty(partyName)
-      void Promise.resolve(
-        onPickMaster(
-          column,
-          storedValue,
-          `linked to Mesh master ${master?.name ?? storedValue} (email said "${partyName}")`,
-        ),
-      ).finally(() => setPickingParty(null))
-    },
-    [shipmentId, shipment, allMasters, onPickMaster],
-  )
-  /**
-   * The pick context for the master-miss rows: which party KIND each raw name belongs to (found by
-   * matching the leg's own raw twins — never parsed out of the miss text, which the queue files
-   * against the wrong slot often enough to matter), and what counts as a real master identifier.
-   */
-  const meshPick = useMemo(() => {
-    if (!shipmentId || !onPickMaster) return undefined
-    const leg = shipment as unknown as Record<string, unknown>
-    const COLUMN_KIND = {
-      forwarderRaw: 'forwarder',
-      customerRaw: 'customer',
-      vendorRaw: 'vendor',
-    } as const
-    return {
-      kindFor: (partyName: string): PartyKind | null => {
-        const col = (Object.keys(COLUMN_KIND) as (keyof typeof COLUMN_KIND)[]).find(
-          (c) => String(leg[c] ?? '').trim() === partyName.trim(),
-        )
-        return col ? COLUMN_KIND[col] : null
-      },
-      // Forwarder stores the NAME, Customer/Vendor the CODE — the split PartyPicker itself makes,
-      // so whatever it hands back on a pick is exactly what is checked here.
-      isMasterValue: (kind: PartyKind, value: string): boolean => {
-        const v = value.trim()
-        if (!v) return false
-        return kind === 'forwarder'
-          ? allMasters.some((m) => m.name.trim() === v)
-          : allMasters.some((m) => (m.code ?? '').trim().toUpperCase() === v.toUpperCase())
-      },
-      onPick: (partyName: string, storedValue: string) => pickMasterValue(partyName, storedValue),
-    }
-  }, [shipmentId, onPickMaster, shipment, allMasters, pickMasterValue])
   const linkTargetReady =
     !!selectedTargetId && selectedTargetId !== shipmentId
 
@@ -429,9 +365,69 @@ export function ReviewCard({
     [shipment],
   )
 
+  /**
+   * Unlinked parties that name masters Mesh ALREADY HOLDS, as conflict rows.
+   *
+   * `forwarder_name "LOGWIN" did not exact-match a master` is a true statement about the lookup and
+   * a false one about Mesh, which has five LOGWIN companies. The icon was right — the FK is null and
+   * WHICH branch shipped this is a real question — but a review reason is prose, not a decision, so
+   * there was nowhere to answer it. It briefly lived as a bespoke picker in Needs attention; a row
+   * here instead gives it the machinery every other field decision already has: the master picker,
+   * Current seeded from the leg, the note requirement, and staging into Save & Approve rather than a
+   * widget that wrote on click. Same reason the party-MISMATCH rows are synthesised server-side
+   * (backend party-mismatch-conflict.ts).
+   *
+   * Client-side because the matching lives here: `mastersNaming` and the company-name predicate it
+   * uses are frontend modules, and porting them across the package boundary would put a second copy
+   * of "are these two names one company?" in the tree — the drift class the format-gate contract test
+   * exists to police. The mirror is already loaded for the pickers.
+   *
+   * Nothing is resolved: the LLM matcher still owns fuzzy, the FK stays unlinked until a human picks,
+   * and a party with no candidates yields no row and keeps its (correct) "add in Mesh" advice.
+   */
+  const unlinkedPartyConflicts = useMemo(() => {
+    const masters = partyMasters ?? []
+    if (!masters.length) return []
+    const leg = shipment as unknown as Record<string, unknown>
+    const SLOTS = [
+      { column: 'forwarderRaw', linked: 'forwarderId', field: 'forwarder_name', label: 'Forwarder' },
+      { column: 'customerRaw', linked: 'customerId', field: 'customer_code', label: 'Customer Code' },
+      { column: 'vendorRaw', linked: 'vendorId', field: 'vendor_code', label: 'Vendor Code' },
+    ] as const
+    const rows: CriticConflict[] = []
+    for (const slot of SLOTS) {
+      const raw = String(leg[slot.column] ?? '').trim()
+      if (!raw) continue
+      // A slot the critic already contests carries the email's own candidates — a second row would
+      // ask one question twice with different options.
+      if ((criticReview?.conflicts ?? []).some((c) => c.field === slot.field)) continue
+      const hits = mastersNaming(raw, masters.map((m) => m.name))
+      // An EXACT master name is already linked (or will be) — nothing to choose between.
+      if (!hits.length || hits.some((h) => h.trim().toUpperCase() === raw.toUpperCase())) continue
+      const picks = hits
+        .map((name) => masters.find((m) => m.name === name))
+        .filter((m): m is PartyMaster => !!m)
+      rows.push({
+        field: slot.field,
+        label: slot.label,
+        candidates: picks.map((m) => ({
+          // The NAME prints in the cell; the code rides in `master` as the chip and is what a pick
+          // posts for customer/vendor. Code in both is what once made a cell read "SOUOCESOUOCE".
+          value: m.name,
+          source: 'Master data',
+          master: { code: m.code ?? '', name: m.name },
+        })),
+        rationale:
+          picks.length === 1
+            ? `The emails say "${raw}", which is ${picks[0]!.name} in Mesh — not linked yet. Confirm it.`
+            : `The emails say "${raw}". Mesh has ${picks.length} companies of that name and none is written exactly that way — pick the right one.`,
+      } as CriticConflict)
+    }
+    return rows
+  }, [partyMasters, shipment, criticReview])
   const rawConflicts = useMemo(
-    () => criticReview?.conflicts ?? [],
-    [criticReview],
+    () => [...(criticReview?.conflicts ?? []), ...unlinkedPartyConflicts],
+    [criticReview, unlinkedPartyConflicts],
   )
   const liveQty = useMemo(
     () => liveQtyFromShipment(shipment as { quantityShipped?: number | null }),
@@ -479,7 +475,28 @@ export function ReviewCard({
   }).openDecisions
   const settledFields = useMemo(() => new Set(openDecisions?.settledFields ?? []), [openDecisions])
   /** What the leg stores per contested field — the Current column, instead of the pre-commit snapshot. */
-  const liveValues = useMemo(() => openDecisions?.liveValues ?? {}, [openDecisions])
+  /**
+   * `openDecisions.liveValues` is computed server-side, so it has no entry for a row synthesised
+   * here — and a missing entry renders Current EMPTY and offers "Leave Blank" over a leg that
+   * plainly stores LOGWIN. presentation.service hit the identical trap when it added the party
+   * mismatch row late. Seed the raw twin for each synthetic field.
+   */
+  const liveValues = useMemo(() => {
+    const base = openDecisions?.liveValues ?? {}
+    if (!unlinkedPartyConflicts.length) return base
+    const leg = shipment as unknown as Record<string, unknown>
+    const COLUMN_BY_FIELD: Record<string, string> = {
+      forwarder_name: 'forwarderRaw',
+      customer_code: 'customerRaw',
+      vendor_code: 'vendorRaw',
+    }
+    const seeded: Record<string, string | null> = { ...base }
+    for (const c of unlinkedPartyConflicts) {
+      const col = COLUMN_BY_FIELD[c.field]
+      if (col && seeded[c.field] == null) seeded[c.field] = String(leg[col] ?? '') || null
+    }
+    return seeded
+  }, [openDecisions, unlinkedPartyConflicts, shipment])
   /**
    * The stored value for one contested row, in the form the Current column prints it. qty settles
    * against the leg's shipped figure rather than a keyed column, so it has its own reader.
@@ -1385,7 +1402,7 @@ export function ReviewCard({
                 {desk?.detailItem &&
                   (isExpandableMiss(desk.detailItem) ? (
                     <ul className="mt-1">
-                      <NeedsAttentionMeshMiss item={desk.detailItem} pick={meshPick} picking={pickingParty} />
+                      <NeedsAttentionMeshMiss item={desk.detailItem} />
                     </ul>
                   ) : (
                     <p
@@ -1424,7 +1441,7 @@ export function ReviewCard({
                           <ul className={REVIEW_PANEL_LIST}>
                             {g.items.map((r) =>
                               isExpandableMiss(r) ? (
-                                <NeedsAttentionMeshMiss key={r.key} item={r} pick={meshPick} picking={pickingParty} />
+                                <NeedsAttentionMeshMiss key={r.key} item={r} />
                               ) : (
                                 <li
                                   key={r.key}
