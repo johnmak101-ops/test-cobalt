@@ -104,14 +104,36 @@ export function useReviewCounts() {
   })
 }
 
+/**
+ * Every cache a review decision invalidates — ONE list, so a verdict and a link cannot refresh
+ * different halves of the screen.
+ *
+ * `shipment-history` earns its place because a verdict WRITES leg fields, and the backend records
+ * each one as a `review` row (sourceType 'review', rendered as "Review queue"). It was missing, so
+ * the leg refetched with the new value while its history stayed on the pre-decision copy: on leg
+ * 2026016716 Consignee Name read JI'AN HONGWEI KNITTING GARMENT CO., LTD. while the Change History
+ * popover's newest entry was still an Email extraction setting WYSE LONDON — the field and its own
+ * audit trail disagreeing on the same screen, until a hard reload. The row was there the whole time;
+ * only this list never asked for it.
+ *
+ * Keys are unscoped on purpose. A link touches two legs (source and target) and react-query matches
+ * by prefix, so `['shipment']` covers both without either id being threaded through.
+ */
+export const REVIEW_INVALIDATED_KEYS: readonly (readonly string[])[] = [
+  ['review-queue'],
+  ['review-counts'],
+  ['shipments'],
+  ['shipment'],
+  ['shipment-history'],
+  ['dashboard'],
+]
+
 function useInvalidateReview() {
   const queryClient = useQueryClient()
   return () => {
-    queryClient.invalidateQueries({ queryKey: ['review-queue'] })
-    queryClient.invalidateQueries({ queryKey: ['review-counts'] })
-    queryClient.invalidateQueries({ queryKey: ['shipments'] })
-    queryClient.invalidateQueries({ queryKey: ['shipment'] })
-    queryClient.invalidateQueries({ queryKey: ['dashboard'] })
+    for (const queryKey of REVIEW_INVALIDATED_KEYS) {
+      queryClient.invalidateQueries({ queryKey: [...queryKey] })
+    }
   }
 }
 
@@ -241,7 +263,7 @@ export function useIdentifyShipment() {
  * Does NOT create an "Approved" row — the source is dismissed/linked; open the target shipment to see data.
  */
 export function useLinkShipment() {
-  const queryClient = useQueryClient()
+  const invalidate = useInvalidateReview()
 
   return useMutation({
     mutationFn: ({
@@ -261,13 +283,9 @@ export function useLinkShipment() {
         ...(fields && Object.keys(fields).length > 0 ? { fields } : {}),
         ...(reason?.trim() ? { reason: reason.trim() } : {}),
       }),
-    onSuccess: (_data, vars) => {
-      queryClient.invalidateQueries({ queryKey: ['review-queue'] })
-      queryClient.invalidateQueries({ queryKey: ['review-counts'] })
-      queryClient.invalidateQueries({ queryKey: ['shipments'] })
-      queryClient.invalidateQueries({ queryKey: ['shipment', vars.shipmentId] })
-      queryClient.invalidateQueries({ queryKey: ['shipment', vars.targetShipmentId] })
-      queryClient.invalidateQueries({ queryKey: ['dashboard'] })
-    },
+    // Same list as every other verdict. It used to hand-roll its own, id-scoped to the two legs and
+    // missing shipment-history — the unscoped keys cover both legs by prefix and keep the two paths
+    // from drifting apart again.
+    onSuccess: invalidate,
   })
 }
