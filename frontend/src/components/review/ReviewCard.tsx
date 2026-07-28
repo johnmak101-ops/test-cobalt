@@ -29,6 +29,7 @@ import {
   poShipmentTotalFromLinked,
 } from '../../lib/qty-conflict-settle'
 import { isNonIdentifier } from '../../lib/identifier-shape'
+import { offModeFieldsOn, type ModeFieldLeg } from '../../lib/mode-fields'
 import { legLooksLikeShipment } from '../../lib/leg-shape'
 import { isCriticalColumn } from '../../lib/review-critical'
 import {
@@ -458,6 +459,16 @@ export function ReviewCard({
     return out
   }, [shipment])
 
+  /**
+   * Fields the leg holds that contradict its own mode. Read off the LEG, not off the email — a queue
+   * row carries mode/vessel/flight, so this works on both the list and the focused page. Nothing here
+   * writes: the desk states the contradiction and Open Shipment resolves it.
+   */
+  const offModeFields = useMemo(
+    () => offModeFieldsOn(shipment as ModeFieldLeg),
+    [shipment],
+  )
+
   const needsAttentionGroups = useMemo(
     () =>
       buildNeedsAttentionGroups({
@@ -468,10 +479,11 @@ export function ReviewCard({
         partiesLinked,
         portsLinked: portsLinkedFromRoute((shipment as { route?: string | null }).route),
         hasPo,
+        offModeFields,
         // Rule A: Review desk shows decision items only; FYI stays on shipment detail.
         desk: 'decision',
       }),
-    [criticReview, reviewReasons, shipment, tableOwnedCount, hasPo, linkedPOs, identityPinned, partiesLinked],
+    [criticReview, reviewReasons, shipment, tableOwnedCount, hasPo, linkedPOs, identityPinned, partiesLinked, offModeFields],
   )
 
   /**

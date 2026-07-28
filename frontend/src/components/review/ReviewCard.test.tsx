@@ -959,6 +959,98 @@ describe('conflict table — read-only by default, Edit to change values', () =>
     })
   })
 
+  /**
+   * Piece 3b of the mode-change design. The leg disagreeing with ITSELF — no email raised it, so it
+   * arrives on no risk flag and no review reason. Stated, never acted on.
+   */
+  describe('a leg that carries the other mode’s fields says so', () => {
+    const seaLegWithFlight = () =>
+      baseShipment({
+        mode: 'SEA',
+        vesselName: 'EVER GLORY',
+        flightNo: 'CX252',
+        mawb: '160-88112233',
+        reviewReasons: [],
+      } as never)
+
+    it('names the offending fields and both explanations', () => {
+      render(
+        <MemoryRouter>
+          <ReviewCard
+            shipment={seaLegWithFlight()}
+            criticReview={baseReview({ conflicts: [conflictEta], riskFlags: [], reasons: [] })}
+            compact={null}
+            defaultExpanded
+            onSaveAndApprove={vi.fn()}
+          />
+        </MemoryRouter>,
+      )
+      const panel = screen.getByTestId('needs-attention')
+      expect(panel).toHaveTextContent(/other transport mode/i)
+      expect(panel).toHaveTextContent('Flight No. CX252')
+      expect(panel).toHaveTextContent('MAWB 160-88112233')
+      expect(panel).toHaveTextContent(/mode is wrong, or they were read off the wrong document/i)
+    })
+
+    /**
+     * The line must survive the conflict table having rows. The table owns FIELD comparisons; this
+     * says the leg is internally impossible, which no row in that table states. It is also a
+     * `decision` line by enumeration — an unmapped lineId defaults to `fyi`, which the review desk
+     * filters out entirely (the tagDesk hiding class).
+     */
+    it('survives alongside a populated conflict table', () => {
+      render(
+        <MemoryRouter>
+          <ReviewCard
+            shipment={seaLegWithFlight()}
+            criticReview={baseReview({ conflicts: [conflictEta, conflictHbl], riskFlags: [], reasons: [] })}
+            compact={null}
+            defaultExpanded
+            onSaveAndApprove={vi.fn()}
+          />
+        </MemoryRouter>,
+      )
+      expect(screen.getByTestId('review-decision-grid')).toBeInTheDocument()
+      expect(screen.getByTestId('needs-attention')).toHaveTextContent(/other transport mode/i)
+    })
+
+    it('says nothing when the leg agrees with its own mode', () => {
+      render(
+        <MemoryRouter>
+          <ReviewCard
+            shipment={
+              baseShipment({ mode: 'SEA', vesselName: 'EVER GLORY', voyageNumber: '2418W', reviewReasons: [] } as never)
+            }
+            criticReview={baseReview({ conflicts: [conflictEta], riskFlags: [], reasons: [] })}
+            compact={null}
+            defaultExpanded
+            onSaveAndApprove={vi.fn()}
+          />
+        </MemoryRouter>,
+      )
+      expect(screen.queryByText(/other transport mode/i)).toBeNull()
+    })
+
+    it('never offers to fix it — the desk states the contradiction and nothing else', () => {
+      render(
+        <MemoryRouter>
+          <ReviewCard
+            shipment={seaLegWithFlight()}
+            criticReview={baseReview({ conflicts: [], riskFlags: [], reasons: [] })}
+            compact={null}
+            defaultExpanded
+            onApprove={vi.fn()}
+            onSaveAndApprove={vi.fn()}
+          />
+        </MemoryRouter>,
+      )
+      // No apply, no clear — resolving it is Open Shipment's job (de-correction).
+      expect(screen.queryByRole('button', { name: /^apply/i })).toBeNull()
+      expect(screen.queryByRole('button', { name: /clear/i })).toBeNull()
+      expect(screen.getByTestId('open-shipment')).toBeInTheDocument()
+    })
+  })
+
   it('hides bag-level Item / Style No. conflict (styles are per-PO, not Order Details)', () => {
     const conflictStyles: CriticConflict = {
       field: 'item_style_no',

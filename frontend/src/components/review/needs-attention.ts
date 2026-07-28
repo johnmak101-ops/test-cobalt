@@ -194,6 +194,7 @@ const DESK_DECISION_LINE_IDS = new Set([
   'i-parse',
   'i-ai-low',
   'i-cargo',
+  'i-mode-mismatch',
   'g-checksum',
   'g-total',
   'g-pages',
@@ -1828,6 +1829,12 @@ export function buildNeedsAttention(opts: {
    * true by construction there, and the desk kept asking about legs the email had already pinned by
    * HBL. See lib/email-key-pin.ts.
    */
+  /**
+   * Fields this leg stores that contradict its own mode — a SEA leg holding a flight number
+   * (lib/mode-fields.ts). Not something an email raised: it is the leg disagreeing with itself,
+   * so it is reported and never acted on. Empty/omitted means nothing to say.
+   */
+  offModeFields?: { label: string; value: string }[] | null
   identityPinned?: boolean
 }): NeedsAttentionItem[] {
   const tableOwnsConflicts = opts.conflictsCount > 0
@@ -1929,6 +1936,35 @@ export function buildNeedsAttention(opts: {
     })
   }
 
+  /**
+   * The leg disagreeing with ITSELF — a SEA leg carrying a flight number.
+   *
+   * Not something an email raised, so it has no risk flag and no review reason to arrive on: it is
+   * read straight off the leg's own columns. It is stated and never acted on. A sea leg holding a
+   * flight number means either the mode was read wrong or the number came off the wrong document,
+   * and both are a human's call — clearing it here would be the desk correcting the pipeline, which
+   * is the one thing it must not do.
+   *
+   * Deliberately NOT suppressed when the conflict table has rows. The table owns FIELD comparisons
+   * (this email says X, we hold Y); this line is about the leg being internally impossible, which no
+   * row in that table states.
+   */
+  const offMode = opts.offModeFields ?? []
+  if (offMode.length > 0) {
+    const named = offMode.map((f) => `${f.label} ${f.value}`).join(' · ')
+    pushUnique(byLine, {
+      key: 'mode-mismatch',
+      lineId: 'i-mode-mismatch',
+      severity: 'medium',
+      text: `This leg carries ${offMode.length === 1 ? 'a field' : 'fields'} from the other transport mode — ${named}. Either the mode is wrong, or ${offMode.length === 1 ? 'it was' : 'they were'} read off the wrong document.`,
+      // `extraction`, not `conflict`: nothing here disagrees with an email. Either the mode or the
+      // value was pulled off the wrong thing upstream. It maps to the incomplete_data group.
+      category: 'extraction',
+      groupId: 'incomplete_data',
+      evidence: offMode.map((f) => `${f.label}: ${f.value}`),
+    })
+  }
+
   collapseGenericPort(byLine)
   dropNumericMeshParties(byLine)
   collapseMeshParties(byLine)
@@ -1967,6 +2003,12 @@ export function buildNeedsAttentionGroups(opts: {
    * HBL. See lib/email-key-pin.ts.
    */
   identityPinned?: boolean
+  /**
+   * Fields this leg stores that contradict its own mode — a SEA leg holding a flight number
+   * (lib/mode-fields.ts). Not something an email raised: it is the leg disagreeing with itself,
+   * so it is reported and never acted on. Empty/omitted means nothing to say.
+   */
+  offModeFields?: { label: string; value: string }[] | null
   /** Review queue: decision only. Detail: all. Default all. */
   desk?: 'decision' | 'all'
 }): NeedsAttentionGroup[] {
