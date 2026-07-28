@@ -1034,15 +1034,6 @@ function DetailRow({
     <div className="grid grid-cols-[8rem_1fr] items-baseline gap-x-3 sm:grid-cols-[10rem_1fr]">
       <span className="truncate text-sm text-text-muted">{label}</span>
       <span className="field-value font-mono text-base leading-snug text-text-primary">
-        {offMode && shown != null && (
-          <span
-            data-testid="off-mode-marker"
-            title={offMode}
-            className="mr-2 whitespace-nowrap rounded bg-status-warning/15 px-1.5 align-[2px] font-sans text-[11px] font-medium leading-4 text-status-warning"
-          >
-            {offMode}
-          </span>
-        )}
         {shown != null ? (
           entries.length > 0 ? (
             <>
@@ -1070,6 +1061,22 @@ function DetailRow({
             </span>
             {annIcon}
           </>
+        )}
+        {/*
+          AFTER the value, never before it.
+          Leading with the tag pushed the value out of the column every other row lines up on, so
+          Vessel and Voyage sat indented against Forwarder and Flight No. directly above and below
+          them. It also read backwards: the value is the row's subject and the tag annotates it,
+          which is the order MeshMissTag already uses in ConflictRow.
+        */}
+        {offMode && shown != null && (
+          <span
+            data-testid="off-mode-marker"
+            title={offMode}
+            className="ml-2 whitespace-nowrap rounded bg-status-warning/15 px-1.5 align-[2px] font-sans text-[11px] font-medium leading-4 text-status-warning"
+          >
+            {offMode}
+          </span>
         )}
       </span>
     </div>
