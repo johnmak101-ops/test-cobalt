@@ -1569,3 +1569,49 @@ describe('partyMissSlot', () => {
     expect(partyMissSlot('something with no slot in it')).toBeNull()
   })
 })
+
+/**
+ * "did not exact-match a master" is true about the LOOKUP and false about Mesh. Leg S2600144827
+ * carries `forwarder_name "LOGWIN"`; Mesh holds five LOGWIN companies, none named just "LOGWIN".
+ * The desk said "not found in Mesh Database — advise add in Mesh"; following that makes a sixth.
+ */
+describe('needs attention — a company Mesh holds five of is not a company Mesh is missing', () => {
+  const LOGWIN = [
+    'LOGWIN AIR & OCEAN CHINA LTD.SHENZHEN BRANCH',
+    'LOGWIN AIR & OCEAN CHINA  LTD GUANGZHOU BRANCH',
+    'LOGWIN AIR + OCEAN CHINA LTD   SHENZHEN BRANCH',
+    'LOGWIN AIR & OCEAN HONG KONG LTD',
+    'LOGWIN AIR+OCEAN',
+  ]
+  const reasons = ['forwarder_name "LOGWIN" did not exact-match a master (LLM matcher owns fuzzy; left unlinked)']
+  const build = (masterNames?: string[]) =>
+    buildNeedsAttention({ reviewReasons: reasons, conflictsCount: 0, masterNames })
+  const partyItem = (items: ReturnType<typeof build>) =>
+    items.find((i) => i.lineId.startsWith('m-party:'))!
+
+  it('stops advertising a company already in Mesh as addable', () => {
+    expect(partyItem(build(LOGWIN)).text).not.toMatch(/advise add in Mesh/i)
+  })
+
+  it('carries the candidate masters so the desk can offer them', () => {
+    const cands = partyItem(build(LOGWIN)).meshCandidates?.['LOGWIN']
+    expect(cands).toHaveLength(5)
+    expect(cands).toContain('LOGWIN AIR & OCEAN HONG KONG LTD')
+  })
+
+  it('a genuinely absent company keeps the add-it advice and gets no candidates', () => {
+    const items = buildNeedsAttention({
+      reviewReasons: ['forwarder_name "KUEHNE NAGEL" did not exact-match a master (LLM matcher owns fuzzy; left unlinked)'],
+      conflictsCount: 0,
+      masterNames: LOGWIN,
+    })
+    const it0 = partyItem(items)
+    expect(it0.text).toMatch(/advise add in Mesh/i)
+    expect(it0.meshCandidates).toBeUndefined()
+  })
+
+  it('without a master list, behaviour is exactly what it was', () => {
+    expect(partyItem(build()).text).toMatch(/advise add in Mesh/i)
+    expect(partyItem(build()).meshCandidates).toBeUndefined()
+  })
+})

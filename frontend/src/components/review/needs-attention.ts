@@ -9,7 +9,7 @@ import {
   type ReasonCategory,
 } from '../../lib/review-reasons'
 import { AI_CONFIDENCE_LOW_REASON } from '../../lib/decision-phrase'
-import { isMailboxPartyName, isSameCompanyName } from '../../lib/party-names'
+import { isMailboxPartyName, isSameCompanyName, mastersNaming } from '../../lib/party-names'
 
 /** Queue risk flags → ReasonCategory (also used for category suppress). */
 export const RISK_CODE_CATEGORY: Record<string, ReasonCategory> = {
@@ -168,6 +168,19 @@ export type NeedsAttentionItem = {
    * (e.g. Mesh party misses collapsed for cleaner Needs attention).
    */
   details?: string[]
+  /**
+   * Per party NAME in `details` (or the single name in `text`), the Mesh masters that name appears
+   * to BE — see lib/party-names mastersNaming.
+   *
+   * Non-empty flips the line's meaning and the operator's action. "LOGWIN" is not missing from Mesh;
+   * Mesh holds five LOGWIN companies and the leg is linked to none of them. "Add it" would create a
+   * sixth. The question is WHICH, so the UI offers them.
+   *
+   * The COLUMN to write is deliberately not here: this module never sees the leg, and the queue
+   * mis-files misses against the wrong slot often enough that guessing from the reason text is how
+   * a vendor ended up under Forwarder. The card matches the name against the leg's own raw twins.
+   */
+  meshCandidates?: Record<string, string[]>
 }
 
 /** Collapsed multi-party Mesh miss — expand in UI to list each name. */
@@ -283,6 +296,10 @@ export function isMeshPortCollapsed(item: NeedsAttentionItem): boolean {
 
 /** Expandable master-miss summary (parties or ports). */
 export function isExpandableMiss(item: NeedsAttentionItem): boolean {
+  // A SINGLE party miss that names masters is expandable too — the expansion is where the picks
+  // live, and one unlinked forwarder with five candidates is the common case, not the collapsed
+  // multi-party one. Without this the rewritten line said "pick the right one" and offered nothing.
+  if (Object.keys(item.meshCandidates ?? {}).length > 0) return true
   return isMeshPartyCollapsed(item) || isMeshPortCollapsed(item)
 }
 
@@ -1803,6 +1820,44 @@ export function weakIdentityText(hasPo: boolean): string {
 /**
  * Flat list of unique short lines (no cap). Prefer {@link buildNeedsAttentionGroups} for UI.
  */
+/**
+ * Rewrite every mesh-party line that names a company Mesh ALREADY HOLDS.
+ *
+ * One pass at the end rather than at each of the eight sites that mint these lines: they converge
+ * here (collapsed or single), the master list is a build-time input rather than something the
+ * reason parsers should know about, and one place cannot drift from another.
+ *
+ * Says nothing when no master list was supplied — callers without the mirror keep the old copy
+ * rather than losing the line.
+ */
+function annotateMeshCandidates(byLine: Map<string, NeedsAttentionItem>, masterNames: string[]): void {
+  if (!masterNames.length) return
+  for (const [k, item] of byLine) {
+    const names = isMeshPartyCollapsed(item)
+      ? (item.details ?? [])
+      : k.startsWith('m-party:')
+        ? [extractMeshDisplayName(item)].filter((n): n is string => !!n)
+        : []
+    if (!names.length) continue
+    const found: Record<string, string[]> = {}
+    for (const n of names) {
+      const hits = mastersNaming(n, masterNames)
+      if (hits.length) found[n] = hits
+    }
+    if (!Object.keys(found).length) continue
+    const known = Object.keys(found).length
+    byLine.set(k, {
+      ...item,
+      meshCandidates: found,
+      text: isMeshPartyCollapsed(item)
+        ? known === names.length
+          ? `${names.length} ${names.length === 1 ? 'party is' : 'parties are'} not linked to Mesh — each already exists there. Expand to pick.`
+          : `${names.length} parties not linked to Mesh — ${known} already exist there. Expand to pick or add.`
+        : `"${names[0]}" ${found[names[0]!]!.length === 1 ? 'is in Mesh but not linked' : `matches ${found[names[0]!]!.length} companies in Mesh`} — pick the right one.`,
+    })
+  }
+}
+
 export function buildNeedsAttention(opts: {
   riskFlags?: Array<{ code: string; severity?: string; message?: string }> | null
   reviewReasons?: string[] | null
@@ -1836,6 +1891,8 @@ export function buildNeedsAttention(opts: {
    */
   offModeFields?: { label: string; value: string }[] | null
   identityPinned?: boolean
+  /** Every Mesh party master NAME — lets a miss line tell "absent" from "there five times". */
+  masterNames?: string[]
 }): NeedsAttentionItem[] {
   const tableOwnsConflicts = opts.conflictsCount > 0
   const ports: PortsLinked = opts.portsLinked ?? {}
@@ -1968,6 +2025,7 @@ export function buildNeedsAttention(opts: {
   collapseGenericPort(byLine)
   dropNumericMeshParties(byLine)
   collapseMeshParties(byLine)
+  annotateMeshCandidates(byLine, opts.masterNames ?? [])
   collapseMeshPorts(byLine)
   collapsePoOnlyAndReassign(byLine)
   collapsePoOnlyAndThin(byLine)
@@ -1986,6 +2044,8 @@ export function buildNeedsAttentionGroups(opts: {
   riskFlags?: Array<{ code: string; severity?: string; message?: string }> | null
   reviewReasons?: string[] | null
   conflictsCount: number
+  /** Every Mesh party master NAME — see buildNeedsAttention. */
+  masterNames?: string[]
   portsLinked?: PortsLinked | null
   /** When true, r-no-id uses only-PO copy (card has linked PO numbers). Default false. */
   hasPo?: boolean

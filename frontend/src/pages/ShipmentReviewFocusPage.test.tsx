@@ -16,7 +16,14 @@ const { mockUseShipment, mutateAsync, dismissAsync, waitAsync } = vi.hoisted(() 
   waitAsync: vi.fn().mockResolvedValue(undefined),
 }))
 
-vi.mock('../hooks/use-shipments', () => ({ useShipment: mockUseShipment }))
+vi.mock('../hooks/use-shipments', () => ({
+  useShipment: mockUseShipment,
+  // The page owns the write path for "link this party to that Mesh master" and hands it to
+  // ReviewCard as a prop — the card itself stays free of the data layer.
+  useUpdateShipment: () => ({ mutateAsync: vi.fn(), isPending: false }),
+}))
+// The Mesh mirror behind the master-miss pick list; unmocked it would query from jsdom.
+vi.mock('../hooks/use-parties', () => ({ useParties: () => ({ data: [] }) }))
 vi.mock('../hooks/use-review-queue', () => ({
   useConfirmShipment: () => ({ mutateAsync }),
   useCorrectShipment: () => ({ mutateAsync }),

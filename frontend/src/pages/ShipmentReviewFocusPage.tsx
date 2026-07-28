@@ -1,8 +1,9 @@
-import { useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import { ArrowLeft, AlertTriangle } from 'lucide-react'
-import { useShipment } from '../hooks/use-shipments'
+import { useShipment, useUpdateShipment } from '../hooks/use-shipments'
+import { useParties } from '../hooks/use-parties'
 import {
   useConfirmShipment,
   useCorrectShipment,
@@ -60,8 +61,30 @@ export default function ShipmentReviewFocusPage() {
     </button>
   )
 
+  const updateForPick = useUpdateShipment(id ?? '')
+  /**
+   * The Mesh mirror + the write path for "link this party to that master". The card resolves which
+   * column and what to store; the page owns the data layer — ReviewCard must stay renderable
+   * without a QueryClient, as 134 of its tests do.
+   *
+   * Declared BEFORE the loading/error early returns: hooks cannot sit behind a conditional.
+   */
+  const { data: customerMasters } = useParties('customer')
+  const { data: vendorMasters } = useParties('vendor')
+  const { data: forwarderMasters } = useParties('forwarder')
+  const partyMasters = useMemo(
+    () => [...(customerMasters ?? []), ...(vendorMasters ?? []), ...(forwarderMasters ?? [])],
+    [customerMasters, vendorMasters, forwarderMasters],
+  )
+  const pickMaster = useCallback(
+    async (column: string, value: string, note: string) => {
+      await updateForPick.mutateAsync({ fields: { [column]: value }, note })
+    },
+    [updateForPick],
+  )
+
   if (isLoading) {
-    return (
+  return (
       <div className="flex h-64 items-center justify-center">
         <span className="text-sm text-text-muted">Loading review…</span>
       </div>
@@ -226,6 +249,8 @@ export default function ShipmentReviewFocusPage() {
       <Card>
         <ReviewCard
           shipment={shipment}
+          partyMasters={partyMasters}
+          onPickMaster={pickMaster}
           criticReview={shipment.criticReview ?? null}
           emails={shipment.emails ?? []}
           defaultExpanded
