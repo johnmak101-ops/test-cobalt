@@ -123,7 +123,7 @@ export default function ShipmentReviewFocusPage() {
       navigate('/review-queue')
     } catch (err) {
       const msg = err instanceof Error ? err.message.replace(/^API error \d+:\s*/i, '') : 'Reject failed'
-      toast(msg || 'Reject failed — try again')
+      toast.error(msg || 'Reject failed — try again')
     }
   }
 
@@ -136,7 +136,7 @@ export default function ShipmentReviewFocusPage() {
       navigate('/review-queue')
     } catch (err) {
       const msg = err instanceof Error ? err.message.replace(/^API error \d+:\s*/i, '') : 'Park failed'
-      toast(msg || 'Park failed — try again')
+      toast.error(msg || 'Park failed — try again')
     }
   }
 
@@ -149,7 +149,7 @@ export default function ShipmentReviewFocusPage() {
       const hasMappable = Object.keys(mapped).length > 0
       if (hasFields && !hasMappable) {
         // Contested keys that do not map to leg columns — saving here would silently drop them.
-        toast('Those conflict fields cannot be saved here — open the full shipment to edit.')
+        toast.error('Those conflict fields cannot be saved here — open the full shipment to edit.')
         return
       }
       if (hasMappable) {
@@ -162,7 +162,7 @@ export default function ShipmentReviewFocusPage() {
         const corrected = (res as { corrected?: string[] } | undefined)?.corrected
         const n = Array.isArray(corrected) ? corrected.length : Object.keys(mapped).length
         if (n === 0) {
-          toast('Approved, but no fields were written — reload and try Approve again')
+          toast.error('Approved, but no fields were written — reload and try Approve again')
         } else {
           toast(`Saved ${n} field${n === 1 ? '' : 's'} and approved`)
         }
@@ -180,7 +180,7 @@ export default function ShipmentReviewFocusPage() {
         await handleStale(err)
       } catch (e) {
         const msg = e instanceof Error ? e.message : 'Save failed'
-        toast(msg.replace(/^API error \d+:\s*/i, '') || 'Save failed — try again')
+        toast.error(msg.replace(/^API error \d+:\s*/i, '') || 'Save failed — try again')
       }
     }
   }

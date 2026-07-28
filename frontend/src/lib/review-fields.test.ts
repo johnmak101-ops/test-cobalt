@@ -599,3 +599,41 @@ describe('dateColumnHasTime — only the cut-off family states a clock time', ()
     expect(dateColumnHasTime(null)).toBe(false)
   })
 })
+
+/**
+ * Tripwire for a cross-package invariant: every column this form renders an input for must also be in
+ * the backend's CORRECTABLE_COLUMNS (backend/src/review/review.service.ts), or the operator types into
+ * a box whose save 400s with "field not correctable: <col>".
+ *
+ * That is not hypothetical. `warehouseSo` was split into its own row here (2026-07-24) without the
+ * allowlist being widened, and the failure was invisible for months because the queue page reported
+ * the 400 through the success toast — a green tick over a save that never landed.
+ *
+ * Nothing can import across packages, so this pins the set from THIS side and review.service.spec.ts
+ * pins it from the other. Adding a field fails here; removing one from the allowlist fails there.
+ * When this fails because you added a field: add the same column to CORRECTABLE_COLUMNS, then update
+ * both lists.
+ */
+describe('EDITABLE_FIELDS columns are mirrored in the backend allowlist', () => {
+  const BACKEND_CORRECTABLE = [
+    'bookingNo', 'soNo', 'warehouseSo',
+    'qty', 'qtyUnit', 'containerNo', 'hblAwbFcrNo', 'mbl', 'mawb', 'scacCode',
+    'mode', 'customerRaw', 'vendorRaw', 'forwarderRaw', 'consigneeName', 'consigneeAddress',
+    'vesselName', 'voyageNo', 'flightNo', 'polRaw', 'podRaw',
+    'cargoReadyDate', 'warehouseStartDate', 'warehouseEndDate', 'cfsCutoff',
+    'etd', 'atd', 'eta', 'ata', 'inDcDate',
+  ]
+
+  it('renders no input the API would reject', () => {
+    const unsavable = EDITABLE_FIELDS.map((f) => f.column).filter(
+      (c) => !BACKEND_CORRECTABLE.includes(c),
+    )
+    expect(unsavable).toEqual([])
+  })
+
+  it('the warehouse SO keeps its own editable row (it used to share the SO# row)', () => {
+    const wh = EDITABLE_FIELDS.find((f) => f.column === 'warehouseSo')
+    expect(wh).toBeDefined()
+    expect(wh?.label).toBe('Warehouse SO')
+  })
+})
