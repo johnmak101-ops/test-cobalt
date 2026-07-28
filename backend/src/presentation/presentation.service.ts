@@ -733,47 +733,43 @@ export class PresentationService {
    * High-band auto-eligible legs never surface (Active or Approved) — silent auto-confirm path.
    */
   async reviewQueue(view: 'pending' | 'dismissed' | 'approved' | 'waiting' = 'pending') {
+    /**
+     * A leg with nothing left to decide belongs in APPROVED, not on the Active desk and not in a
+     * banner above it.
+     *
+     * It first left Active as a "N legs cleared themselves" strip, which was still a thing to read on
+     * the one screen meant to hold only work. Approved is where a settled leg already lives, so that
+     * is where these go — the operator sees it in the same place, in the same shape, as everything
+     * else that needed no decision from them.
+     *
+     * Still nothing is WRITTEN: `review_status` stays provisional and the verdict is recomputed on
+     * every read, so a later email that puts a real conflict on one of these returns it to Active by
+     * itself, and no `approved` calibration outcome is recorded for a human who never looked.
+     */
+    const autoClears = (r: Awaited<ReturnType<ShipmentRepository['reviewQueue']>>[number]) =>
+      autoClearVerdict(
+        { ...r, bookingNo: r.legBookingNo, soNo: r.legSoNo } as Record<string, unknown>,
+        // Judged against the SAME payload the desk will render, party-mismatch rows included.
+        // Without them a leg whose only open question was a stale master link auto-cleared off the
+        // list while its detail page asked that very question — the two-surfaces bug again, this
+        // time caused by the fix for it.
+        queueCriticReview(r),
+        filterPortMissReasons(r.reviewReasons ?? [], {
+          polLinked: !!(r as { polId?: string | null }).polId || !!r.polCode,
+          podLinked: !!(r as { podId?: string | null }).podId || !!r.podCode,
+        }),
+      )
+
     const rows = await this.shipmentRepo.reviewQueue(view)
-    const bandVisible = rows.filter(
+    // Approved also shows the auto-cleared, which live in `pending` until something re-opens them.
+    const extra =
+      view === 'approved' ? (await this.shipmentRepo.reviewQueue('pending')).filter((r) => autoClears(r).clear) : []
+    const bandVisible = [...rows, ...extra].filter(
       (r) => !isHighBandAutoEligible(r.criticReview as CriticReview | null | undefined),
     )
-    /**
-     * Legs whose only remaining control would be `Confirm Reviewed` never reach the Active desk —
-     * that click chooses nothing and verifies nothing (see auto-clear.ts). They are reported as a
-     * group instead of vanishing, and nothing is written, so a later email that puts a real conflict
-     * on one brings it straight back.
-     *
-     * Only the pending view: the Approved / Rejected / Waiting tabs are history, and history is shown
-     * as it is.
-     */
-    const cleared: { id: string; bookingNo: string | null; customer: string | null; why: string }[] = []
-    const visible =
-      view !== 'pending'
-        ? bandVisible
-        : bandVisible.filter((r) => {
-            const verdict = autoClearVerdict(
-              { ...r, bookingNo: r.legBookingNo, soNo: r.legSoNo } as Record<string, unknown>,
-              // Judged against the SAME payload the desk will render, party-mismatch rows included.
-              // Without them a leg whose only open question was a stale master link auto-cleared off
-              // the list while its detail page asked that very question — the two-surfaces bug again,
-              // this time caused by the fix for it.
-              queueCriticReview(r),
-              filterPortMissReasons(r.reviewReasons ?? [], {
-                polLinked: !!(r as { polId?: string | null }).polId || !!r.polCode,
-                podLinked: !!(r as { podId?: string | null }).podId || !!r.podCode,
-              }),
-            )
-            if (!verdict.clear) return true
-            cleared.push({
-              id: r.id,
-              bookingNo: r.legBookingNo ?? r.bookingNo ?? null,
-              customer: r.customerName ?? null,
-              why: verdict.why,
-            })
-            return false
-          })
+    const visible = view !== 'pending' ? bandVisible : bandVisible.filter((r) => !autoClears(r).clear)
+    const clearedIds = new Set(extra.map((r) => r.id))
     return {
-      autoCleared: cleared,
       shipments: visible.map((r) => ({
         id: r.id,
         bookingNo: r.bookingNo ?? null,
@@ -797,6 +793,12 @@ export class PresentationService {
         criticReviewCompact: compactCriticReview(
           withUsableCandidatesOnly(queueCriticReview(r)) ?? undefined,
         ),
+        /**
+         * On the Approved tab: this leg is here because nothing was left to decide, not because a
+         * human approved it. Says so on the row — an operator must never read an auto-clear as
+         * someone's sign-off.
+         */
+        autoCleared: clearedIds.has(r.id) || undefined,
         // #350: Shipment ID anchor (beginning email; UI falls back to createdAt)
         firstEmailAt: isoOrNull(r.firstEmailAt),
         createdAt: isoOrNull(r.createdAt),

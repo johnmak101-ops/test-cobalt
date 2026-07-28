@@ -44,25 +44,16 @@ export interface ReviewShipment {
   waitingAt?: string | null
   /** What the operator said they were waiting on — shown inline on the Waiting tab. */
   waitingReason?: string | null
-}
-
-/**
- * A leg the desk did not show because nothing was left to decide — every flagged value already
- * matches the shipment (backend: presentation/auto-clear.ts). Reported rather than dropped silently,
- * so "why is this not in my queue?" always has an answer.
- */
-export interface AutoClearedLeg {
-  id: string
-  bookingNo: string | null
-  customer: string | null
-  /** Plain-language grounds, e.g. "the one flagged value already matches the shipment". */
-  why: string
+  /**
+   * Approved tab only: this leg is listed because nothing was left to decide, NOT because a human
+   * approved it (backend: presentation/auto-clear.ts). Nothing was written — a later email that puts
+   * a real conflict on it returns it to Active by itself.
+   */
+  autoCleared?: boolean
 }
 
 interface ReviewQueueResponse {
   shipments: ReviewShipment[]
-  /** Active view only; absent on the history tabs. */
-  autoCleared?: AutoClearedLeg[]
 }
 
 export interface ReviewCounts {
