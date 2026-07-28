@@ -409,6 +409,18 @@ export function ReviewCard({
       if (leg[slot.linked] != null) continue
       const hits = mastersNaming(raw, masters.map((m) => m.name))
       if (!hits.length) continue
+      /**
+       * A row has to present a CHOICE. One candidate spelled exactly like the stored value is not
+       * one: leg 202607B738 rendered "MACAU FUNG TAI LIMITED" against "MACAU FUNG TAI LIMITED" under
+       * "Which Vendor Code is correct?", and the only thing that actually differed — a null FK — is
+       * invisible in a comparison of two strings. The operator is asked to weigh identical text.
+       *
+       * That is a lookup that half-ran, not a decision, and it keeps its Needs attention line ("in
+       * Mesh, not linked") until it gets an affordance built for it. A single candidate that READS
+       * differently (raw "WYSE" vs master "WYSE LONDON LIMITED") is still a real choice and still
+       * gets a row.
+       */
+      if (hits.length === 1 && hits[0]!.trim().toUpperCase() === raw.toUpperCase()) continue
       const picks = hits
         .map((name) => masters.find((m) => m.name === name))
         .filter((m): m is PartyMaster => !!m)
@@ -731,9 +743,28 @@ export function ReviewCard({
     return needsAttentionGroups
       .map((g) => ({
         ...g,
-        items: g.items.filter((it) => {
-          const named = Object.keys(it.meshCandidates ?? {})
-          return !named.length || !named.every((n) => rowedPartyNames.has(n))
+        items: g.items.flatMap((it) => {
+          const named = it.details ?? Object.keys(it.meshCandidates ?? {})
+          if (!named.length) return [it]
+          // Drop the rowed NAMES, not the whole line. Keying on meshCandidates alone lost leg
+          // 202607B738's LEADWAY EXPRESS — genuinely absent from Mesh, and the only place saying so —
+          // because the line ALSO named MACAU FUNG TAI, which had just become a table row.
+          const left = named.filter((n) => !rowedPartyNames.has(n))
+          if (!left.length) return []
+          if (left.length === named.length) return [it]
+          const candidates = Object.fromEntries(
+            Object.entries(it.meshCandidates ?? {}).filter(([n]) => left.includes(n)),
+          )
+          return [{
+            ...it,
+            details: left,
+            meshCandidates: Object.keys(candidates).length ? candidates : undefined,
+            // The summary counted the parties that have since moved to the table, so it is restated
+            // for the ones that remain rather than left overstating what is still open here.
+            text: left.length === 1 && !Object.keys(candidates).length
+              ? `"${left[0]}" not found in Mesh Database — advise add in Mesh.`
+              : `${left.length} ${left.length === 1 ? 'party' : 'parties'} not linked to Mesh.`,
+          }]
         }),
       }))
       .filter((g) => g.items.length > 0)
