@@ -159,6 +159,58 @@ describe('pendingReviewAnnotations — numeric "parties" never become Mesh-miss 
   })
 })
 
+/**
+ * Leg 2026058AA7: the Forwarder popover listed THREE names under Master Miss while the review desk
+ * counted two, and the extra one was `DGIVY (account@dgivy.cn)` — a sender address, not a company.
+ *
+ * The desk had rejected mailboxes since isMailboxPartyName landed; this path only ever screened the
+ * NUMERIC leak, and a mailbox has letters, so it sailed through and was advertised as addable in
+ * Mesh. Both surfaces now call the same shared guard (lib/party-names), so the names and the count
+ * agree. Nobody is asked to create a master named after a no-reply inbox.
+ */
+describe('pendingReviewAnnotations — a mailbox is not a party either', () => {
+  /** Verbatim from leg 8AA7CC10 (2026058AA7) — the mailbox arrives on BOTH paths, so both filter. */
+  it('drops the mailbox from the reason path, keeping the real companies', () => {
+    const ann = pendingReviewAnnotations({
+      reviewStatus: 'provisional',
+      reviewReasons: [
+        'Cannot match "鼎赋供应链管理（东莞）有限公司" in the forwarder list. Please add it in Cobalt Fashion Data Mesh System, then rematch.',
+        'Cannot match "DGIVY (account@dgivy.cn)" in the forwarder list. Please add it in Cobalt Fashion Data Mesh System, then rematch.',
+        'forwarder_name "TCI" did not exact-match a master (LLM matcher owns fuzzy; left unlinked)',
+      ],
+    })
+    expect(ann.get('forwarderRaw')?.messages).toEqual([
+      '"鼎赋供应链管理（东莞）有限公司" not found in Mesh Database — advise add in Mesh.',
+      '"TCI" not found in Mesh Database — advise add in Mesh.',
+    ])
+  })
+
+  it('drops it from the structured masterMisses path too', () => {
+    const ann = pendingReviewAnnotations({
+      reviewStatus: 'provisional',
+      criticReview: {
+        masterMisses: [
+          { type: 'forwarder', rawName: 'DGIVY (account@dgivy.cn)', field: 'forwarder_name' },
+          { type: 'forwarder', rawName: 'Maersk GSC <noreply-gca@lns.maersk.com>', field: 'forwarder_name' },
+        ],
+      },
+    })
+    expect(ann.get('forwarderRaw')).toBeUndefined()
+  })
+
+  it('leaves a plain company name alone', () => {
+    const ann = pendingReviewAnnotations({
+      reviewStatus: 'provisional',
+      criticReview: {
+        masterMisses: [
+          { type: 'forwarder', rawName: '鼎赋供应链管理（东莞）有限公司', field: 'forwarder_name' },
+        ],
+      },
+    })
+    expect(ann.get('forwarderRaw')?.level).toBe('miss')
+  })
+})
+
 describe("pendingReviewAnnotations — party mismatch (flag, don't follow)", () => {
   it('ambers vendorRaw with the kept-master message', () => {
     const ann = pendingReviewAnnotations({
