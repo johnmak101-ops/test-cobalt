@@ -120,3 +120,88 @@ unclassified leg is never called contradictory.
 - Postgres / Drizzle as primary store
 - Static gold as production learning fuel (queue ADR-0002; lab gold optional on queue only)
 - Treating pure 9+ digit packing tokens (`31900…`) as customer POs
+
+## Review desk — picked up 2026-07-29 (after PRs #407–#412)
+
+All six merged to `main` (`d50a1cc`). frontend 1064 · backend 1312 · typecheck clean.
+CI has been blocked on GitHub billing all along — everything below rests on local
+verification plus browser walkthroughs.
+
+### 1. Lost writes — UNRESOLVED, do this first
+
+Reported: "update of review queue fields and keep current, all not linked to backend."
+Not reproduced, and not disproved either.
+
+Found no evidence: the one write driven end to end landed correctly —
+`forwarder_raw` = LOGWIN AIR & OCEAN HONG KONG LTD, `forwarder_id` = 367,
+`change_log` row with `source_type='review'`.
+
+Two innocent explanations that fit the symptom, both correct behaviour:
+- an APPROVED leg renders read-only — controls and buttons vanish, so clicking
+  saves nothing because there is nothing to save with
+- verdict-shape cards stage no field changes by design, yet still show fields
+
+What was never done: drive a leg whose button actually reads `Apply N Change(s)`.
+That is the only state where a write is even attempted. Of 10 provisional legs,
+7 are in the queue; JOB-2026-0006 deep-links to the list instead of a card, and
+UXDEMO-02 has no candidate checkboxes at all — no ordinary field candidate was
+ever in front of me.
+
+    -- after ticking an ordinary candidate (a vessel or a date, NOT a party) and applying:
+    SELECT vessel_name, eta, review_status FROM shipments WHERE id = '<leg>';
+    SELECT TOP 5 field, old_value, new_value, source_type
+      FROM change_log WHERE entity_id = '<leg>' ORDER BY seq DESC;
+
+Column moved + a `source_type='review'` row ⇒ writes are fine, and the real defect
+is that a read-only card does not say so loudly enough. Neither ⇒ genuine lost
+write, and item 2 waits.
+
+If there is a specific leg where this was seen, that beats hunting for one.
+
+### 2. "Keep current" should lock the field — designed, NOT built
+
+Today it is a no-op: `fieldsToApply` only includes a field when `changesStoredValue`
+is true, so keeping the stored value contributes nothing and the approve posts an
+empty field set. Meanwhile the DETAIL page locks every field a human edits
+(`editFields`). Same person, same judgement, two outcomes.
+
+Lock the per-row pick, never the bulk button. Selecting "Keep current — LOGWIN"
+with five alternatives underneath is the same work as typing a value. "Keep All
+Current" is frequently "not now", not a per-field ruling.
+
+- `ReviewCard` gains `keptFields: Set<string>`; the per-row radio adds, any other
+  option removes, and **`Keep All Current` CLEARS it** — that line is the whole
+  point and the one most likely to be written backwards
+- approve payload carries them apart from `fields`: `{ fields, keep: [...], note }`
+  — `fields` means "write this", these mean "do not write, but record that I ruled"
+- backend approve locks each at its stored value via the same `fieldLocks.lock(...)`
+  `editFields` uses; no value write, an audit of a DECISION
+- write the NEGATIVE test first: `Keep All Current` on a 3-row card ⇒ `keep: []`
+
+Decide before coding: per PR #232 a lock no longer blocks a later email — it wins
+and flags CONTESTED. So the entire observable effect is that the next disagreement
+surfaces as contested instead of passing silently. That is probably right, but it
+will generate more contested flags and nobody has measured how many.
+
+### 3. Prod migration 0028 — local only
+
+`shipments.created_manually` is applied to local `cobalt` + `cobalt_test` only.
+Fabric `ShipTrackDB` needs it, and per the earlier note was still missing 0021 and
+0022 — so a run there applies 0021→0028 at once, with the SOUOCE fact INSERT
+hanging off 0022. No Fabric connection string exists on the dev box. Until it runs,
+`createManual` fails on the unknown column. Start with a read-only ledger query.
+
+### 4. The suite does not reach this surface
+
+Nine defects shipped into PR #412's branch and every one was caught by a human
+looking at the screen; 1064 tests stayed green through all of them. Two were
+introduced while fixing the previous one. Worth a deliberate pass: the conflict
+row's rendering (miss tags, chips, option colours, which control appears) is
+almost entirely unasserted, and the deskGroups filter is inline in `ReviewCard`
+where no unit test can reach it — extract it to a pure function.
+
+### 5. Agent churn on `consigneeAddress`
+
+`change_log` shows the agent rewriting `\n` → space and back on the WYSE legs
+across separate commits. A cobalt-queue extraction question, not track-system's to
+normalise (de-correction), but it will keep generating review noise.
