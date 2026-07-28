@@ -75,6 +75,10 @@ export interface Shipments
   committerAction: 'matched' | 'created' | 'created_pending_dedup' | 'adopted_zero_id' | 'sibling_leg' | null
   committerTargetLegId: string | null
   committerCandidatesConsidered: number | null
+  /** Migration 0028 — a PERSON typed this leg (POST /shipments), not the pipeline. Same codegen caveat
+   *  as `cartons`. Two committer rules read it so they surface rather than act: see
+   *  `findPoOnlyDuplicateRisk` and `findManualIdentityClash`. */
+  createdManually: Generated<boolean>
   reviewReasons: Json<string[] | null>
   matchKeys: Json<Record<string, unknown> | null>
   criticReview: Json<CriticReview | null>

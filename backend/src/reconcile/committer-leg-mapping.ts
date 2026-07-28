@@ -32,6 +32,9 @@ export function mapFieldsToLegColumns(f: Record<string, unknown>): Record<string
     flightNo: str(f.flight_no),
     mawb: str(f.mawb),
     cargoReadyDate: date(f.cargo_ready_date),
+    // The column has existed since 0000 and the detail page edits it, but nothing mapped it here — so
+    // the committer could never write it and the human create form had no way to record it.
+    cfsCutoff: date(f.cfs_cutoff),
     warehouseStartDate: date(f.warehouse_start_date),
     warehouseEndDate: date(f.warehouse_end_date),
     etd: date(f.etd),

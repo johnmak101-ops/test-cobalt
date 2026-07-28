@@ -22,16 +22,25 @@ export function NeedsAttentionMeshMiss({
   const [open, setOpen] = useState(false)
   if (!isExpandableMiss(item)) return null
 
-  const names = item.details ?? []
+  // A collapsed line lists its parties in `details`; a single one names its party only through the
+  // candidates map. Both reach the same expansion.
+  const names = item.details ?? Object.keys(item.meshCandidates ?? {})
   const n = names.length
   const isPort = isMeshPortCollapsed(item)
+  // One party with five candidates is asking "which of these", not "which name" — label it by the
+  // thing the operator is about to choose from.
+  const singleWithCandidates = n === 1 && (item.meshCandidates?.[names[0]!]?.length ?? 0) > 0
   const showLabel = open
     ? isPort
       ? 'Hide ports'
-      : 'Hide names'
+      : singleWithCandidates
+        ? 'Hide matches'
+        : 'Hide names'
     : isPort
       ? `Show ${n} ports`
-      : `Show ${n} names`
+      : singleWithCandidates
+        ? `Show ${item.meshCandidates![names[0]!]!.length} in Mesh`
+        : `Show ${n} names`
   const rowSuffix = isPort ? ' — not in UN/LOCODE masters' : ' — not in Mesh'
   const testId = isPort ? 'mesh-port-collapsed' : 'mesh-party-collapsed'
   const expandTestId = isPort ? 'mesh-port-expand' : 'mesh-party-expand'
@@ -78,12 +87,43 @@ export function NeedsAttentionMeshMiss({
               )}
               data-testid={detailsTestId}
             >
-              {names.map((name) => (
-                <li key={name} className="text-sm leading-snug text-text-secondary">
-                  <span className="font-mono text-text-primary">{name}</span>
-                  <span className="text-text-muted">{rowSuffix}</span>
-                </li>
-              ))}
+              {names.map((name) => {
+                const candidates = item.meshCandidates?.[name] ?? []
+                return (
+                  <li key={name} className="text-sm leading-snug text-text-secondary">
+                    <span className="font-mono text-text-primary">{name}</span>
+                    {candidates.length === 0 ? (
+                      <span className="text-text-muted">{rowSuffix}</span>
+                    ) : (
+                      <>
+                        {/* Not "not in Mesh" — Mesh has it, under a longer name, N times over.
+                            The operator's question is WHICH, so answer it with the list rather
+                            than sending them to a search box for something we already know. */}
+                        <span className="text-text-muted">
+                          {candidates.length === 1
+                            ? ' — in Mesh, not linked:'
+                            : ` — ${candidates.length} in Mesh, none named exactly this:`}
+                        </span>
+                        {/* Listed, not pickable: the DECISION lives in the conflict table now
+                            (see unlinkedPartyConflicts in ReviewCard), where it has the master
+                            picker, a Current cell and Save & Approve staging. Two places to answer
+                            one question is how a desk starts disagreeing with itself. */}
+                        <span className="mt-1 flex flex-wrap gap-1.5">
+                          {candidates.map((master) => (
+                            <span
+                              key={master}
+                              data-testid="mesh-candidate-name"
+                              className="rounded border border-border px-1.5 py-0.5 font-mono text-xs text-text-secondary"
+                            >
+                              {master}
+                            </span>
+                          ))}
+                        </span>
+                      </>
+                    )}
+                  </li>
+                )
+              })}
             </ul>
           )}
         </div>

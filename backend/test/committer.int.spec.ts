@@ -805,3 +805,151 @@ describe('CommitterService — per-field apply outcome', () => {
     expect(second.supersededLockedFields).toContain('vesselName')
   })
 })
+
+/**
+ * The stale master-FK class, third path — the one the two human write paths were cured of in July and
+ * the committer was not.
+ *
+ * The committer writes the raw party twin on the LEG (`vendor_raw` / `customer_raw`), but the
+ * customer/vendor master hangs off the BOOKING, and `fillBooking` is first-writer-wins: it only fills
+ * a column that is still null. So once a booking had a vendor, a later email naming a different
+ * factory wrote the raw twin and could never move the link — and display, which prefers the master,
+ * kept showing a company the leg no longer named.
+ *
+ * Leg 20260405F1 was the live example: `vendor_raw = ELSMCO` under `booking.vendor_id = SOUOCE`, so
+ * Order Details printed SOUOCE while the review desk's Current read ELSMCO, and no click available to
+ * an operator could reconcile them.
+ */
+describe('CommitterService — the party master follows the raw twin (stale-FK, third path)', () => {
+  async function seedVendors() {
+    await db
+      .insertInto('vendors')
+      .values([
+        { code: 'MACFUN', name: 'MACAU FUNG TAI LIMITED' },
+        { code: 'ELSMCO', name: 'ELEGANT SMART CORPORATION LIMITED' },
+      ])
+      .execute()
+  }
+  const vendorIdOf = async (code: string) =>
+    (await db.selectFrom('vendors').where('code', '=', code).selectAll().executeTakeFirstOrThrow()).id
+  const bookingVendor = async (bookingId: string) =>
+    (await db.selectFrom('bookings').where('id', '=', bookingId).selectAll().executeTakeFirstOrThrow())
+      .vendorId
+  const legOf = async (shipmentId: string) =>
+    db.selectFrom('shipments').where('id', '=', shipmentId).selectAll().executeTakeFirstOrThrow()
+
+  it('amend: a later email naming a different factory re-points the booking FK', async () => {
+    await seedVendors()
+    const first = await committer.apply(
+      group({ fields: { so_no: 'SO-V1', vendor_code: 'MACFUN' }, matchKeys: { so_no: 'SO-V1' } }),
+    )
+    expect(await bookingVendor(first.bookingId)).toBe(await vendorIdOf('MACFUN'))
+
+    const second = await committer.apply(
+      group({ fields: { so_no: 'SO-V1', vendor_code: 'ELSMCO' }, matchKeys: { so_no: 'SO-V1' } }),
+    )
+    expect(second.action).toBe('amend_fields')
+    // fillBooking alone would have left MACFUN linked — this is the assertion the bug failed.
+    expect(await bookingVendor(second.bookingId)).toBe(await vendorIdOf('ELSMCO'))
+    expect((await legOf(second.shipmentId)).vendorRaw).toBe('ELSMCO')
+  })
+
+  /**
+   * De-correction: the committer never edits what the agent read. Only the LINK that display follows
+   * is kept honest.
+   */
+  it('leaves the raw value exactly as the email stated it', async () => {
+    await seedVendors()
+    const res = await committer.apply(
+      group({
+        fields: { so_no: 'SO-V2', vendor_code: 'ELEGANT SMART CORPORATION LIMITED' },
+        matchKeys: { so_no: 'SO-V2' },
+      }),
+    )
+    const leg = await legOf(res.shipmentId)
+    expect(leg.vendorRaw).toBe('ELEGANT SMART CORPORATION LIMITED')
+    // resolveVendor matches on CODE only, so the create path could not link a full name…
+    // …but the re-resolve matches name too, so the booking still ends up correctly linked.
+    expect(await bookingVendor(res.bookingId)).toBe(await vendorIdOf('ELSMCO'))
+  })
+
+  /**
+   * The regression this rule exists to prevent. `resolveAll` folds aliases and canonical customer
+   * facts (COLEB → COLE) that `customerIdExact` cannot see, so "no exact match" is NOT evidence that
+   * the existing link is wrong — unlinking on it destroyed correct alias links and broke the
+   * co-valid-parties test above. The two human paths may unlink; a person typed the value and meant
+   * it. The committer only ever re-points.
+   */
+  it('amend: never UNLINKS when the new raw matches no master', async () => {
+    await seedVendors()
+    const first = await committer.apply(
+      group({ fields: { so_no: 'SO-V3', vendor_code: 'MACFUN' }, matchKeys: { so_no: 'SO-V3' } }),
+    )
+    const second = await committer.apply(
+      group({
+        fields: { so_no: 'SO-V3', vendor_code: 'BRAND NEW KNITTERS LTD' },
+        matchKeys: { so_no: 'SO-V3' },
+      }),
+    )
+    expect(await bookingVendor(second.bookingId)).toBe(await vendorIdOf('MACFUN'))
+    // the raw still records what the email said — the desk surfaces the divergence as a question
+    expect((await legOf(second.shipmentId)).vendorRaw).toBe('BRAND NEW KNITTERS LTD')
+  })
+
+  it('writes nothing — and audits nothing — when the link already agrees', async () => {
+    await seedVendors()
+    const g = group({ fields: { so_no: 'SO-V4', vendor_code: 'MACFUN' }, matchKeys: { so_no: 'SO-V4' } })
+    const first = await committer.apply(g)
+    await committer.apply(g)
+    await committer.apply(g)
+    expect(await bookingVendor(first.bookingId)).toBe(await vendorIdOf('MACFUN'))
+    // else every commit on a settled leg would append an identical vendorId row to the audit trail
+    const vendorAudits = await db
+      .selectFrom('changeLog')
+      .where('entityId', '=', first.shipmentId)
+      .where('field', '=', 'vendorId')
+      .selectAll()
+      .execute()
+    expect(vendorAudits).toHaveLength(0)
+  })
+
+  it('records the move in the audit trail when it does re-point', async () => {
+    await seedVendors()
+    const first = await committer.apply(
+      group({ fields: { so_no: 'SO-V5', vendor_code: 'MACFUN' }, matchKeys: { so_no: 'SO-V5' } }),
+    )
+    await committer.apply(
+      group({ fields: { so_no: 'SO-V5', vendor_code: 'ELSMCO' }, matchKeys: { so_no: 'SO-V5' } }),
+    )
+    const rows = await db
+      .selectFrom('changeLog')
+      .where('entityId', '=', first.shipmentId)
+      .where('field', '=', 'vendorId')
+      .selectAll()
+      .execute()
+    expect(rows).toHaveLength(1)
+    expect(rows[0]!.oldValue).toBe(await vendorIdOf('MACFUN'))
+    expect(rows[0]!.newValue).toBe(await vendorIdOf('ELSMCO'))
+  })
+
+  it('create: a fresh booking is linked from its own raw value', async () => {
+    await seedVendors()
+    const res = await committer.apply(
+      group({ fields: { so_no: 'SO-V6', vendor_code: 'ELSMCO' }, matchKeys: { so_no: 'SO-V6' } }),
+    )
+    expect(res.action).toBe('create_booking')
+    expect(await bookingVendor(res.bookingId)).toBe(await vendorIdOf('ELSMCO'))
+  })
+
+  it('a leg that names no vendor leaves the existing link alone', async () => {
+    await seedVendors()
+    const first = await committer.apply(
+      group({ fields: { so_no: 'SO-V7', vendor_code: 'MACFUN' }, matchKeys: { so_no: 'SO-V7' } }),
+    )
+    // a later email about the same shipment that simply does not mention the factory
+    const second = await committer.apply(
+      group({ fields: { so_no: 'SO-V7', vessel_name: 'MARIBO MAERSK' }, matchKeys: { so_no: 'SO-V7' } }),
+    )
+    expect(await bookingVendor(second.bookingId)).toBe(await vendorIdOf('MACFUN'))
+  })
+})

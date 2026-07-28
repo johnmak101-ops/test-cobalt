@@ -102,11 +102,26 @@ export function deadline(rule: Rule, ref: Date, originCountry: string | null): D
   return rule.triggerType === 'days_before' ? new Date(ref.getTime() - ms) : new Date(ref.getTime() + ms)
 }
 
+/**
+ * Watches that only make sense BEFORE the cargo lands. Every one of them resolves to "chase the
+ * forwarder for a pre-arrival document or event", and once the goods are delivered there is nothing
+ * left to chase — the alert is unactionable by construction.
+ *
+ * `telex` and `invoice` are deliberately absent: freight payment and the commercial invoice are
+ * routinely still outstanding after delivery, so those chases stay live. `delivered` is absent for
+ * the obvious reason — that rule is about the arrival that has now happened, and `watchMet` already
+ * stands it down.
+ */
+const PRE_ARRIVAL_WATCHES = new Set(['so', 'draft_bl', 'final_bl', 'sailed'])
+
 /** True when the rule should raise an alert for these facts at `now`. */
 export function isFiring(rule: Rule, f: LegFacts, now: Date): boolean {
   if (!rule.enabled) return false
   // POC: only fire when the leg is in the rule's staircase state (if configured).
   if (rule.state && f.state !== rule.state) return false
+  // The cargo has arrived — a document chase for something due before it cannot be acted on. This
+  // is what let a DELIVERED leg carry a CRITICAL "175 days after ETD; chase Final B/L" banner.
+  if (f.has.delivered && PRE_ARRIVAL_WATCHES.has(rule.watchFor)) return false
   const ref = referenceTime(rule, f)
   if (!ref) return false // anchor not reached → not applicable yet
   if (watchMet(rule.watchFor, f)) return false // the awaited thing arrived → no alert

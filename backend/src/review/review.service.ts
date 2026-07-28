@@ -28,8 +28,18 @@ const KEY_TO_LEG_COLUMN: Record<IdentifyDto['field'], string> = {
  * Columns /correct may write. Must stay aligned with frontend mapCriticFieldToColumn /
  * EDITABLE_FIELDS + critic extras (polRaw, mode, …). Unknown keys → BadRequest (never SQL explode).
  */
-const CORRECTABLE_COLUMNS = new Set([
-  'bookingNo', 'soNo', 'itemStyleNo', 'qty', 'qtyUnit', 'grossWeight', 'measurement', 'htsCode',
+/**
+ * Leg columns a reviewer may write. MUST be a superset of every `column` in the review form's
+ * EDITABLE_FIELDS (frontend/src/lib/review-fields.ts) — the form renders an input, the operator types,
+ * and this set decides whether the save 400s. `review.service.spec.ts` pins the two together.
+ *
+ * `warehouseSo` was missing: the 入仓 SO got its own input in 2026-07-24 (it used to share the SO#
+ * row) and the form shipped without this set being widened, so editing it 400'd with
+ * "field not correctable: warehouseSo" — and the queue page reported that through the SUCCESS toast,
+ * so the operator saw a green tick over a save that never happened.
+ */
+export const CORRECTABLE_COLUMNS = new Set([
+  'bookingNo', 'soNo', 'warehouseSo', 'itemStyleNo', 'qty', 'qtyUnit', 'grossWeight', 'measurement', 'htsCode',
   'containerNo', 'hblAwbFcrNo', 'mbl', 'scacCode', 'consigneeName', 'consigneeAddress',
   'vesselName', 'voyageNo', 'cargoReadyDate', 'cfsCutoff', 'etd', 'atd', 'eta', 'ata',
   'warehouseStartDate', 'warehouseEndDate', 'inDcDate',
@@ -176,8 +186,17 @@ export class ReviewService {
    *  right" acceptance also vouches for every parse-derived field, so we emit a confirm-sentinel per field
    *  to the queue's learning feed (guards its held-out eval — a soul that starts mis-parsing a confirmed
    *  field regresses the score). Nothing was edited → the edited set is empty. */
-  async confirm(shipmentId: string, actorId: string, note?: string, expectedUpdatedAt?: string) {
+  async confirm(
+    shipmentId: string,
+    actorId: string,
+    note?: string,
+    expectedUpdatedAt?: string,
+    /** Per-field keep rulings (see lockKeptFields). A card whose only decision is "these stored
+     *  values are right" writes no field, so it lands here rather than on /correct. */
+    keep?: string[],
+  ) {
     const leg = await this.loadLegForReview(shipmentId, expectedUpdatedAt)
+    const keeping = this.keepFields(keep, new Set())
     // Clear any waiting stamp: the question has now been answered, so a leftover "parked" mark would
     // re-park the leg if it were ever restored to provisional.
     await this.shipments.updateLeg(shipmentId, {
@@ -196,6 +215,7 @@ export class ReviewService {
      * therefore never reaches correctField's re-resolve.
      */
     await this.reResolveBookingParties(leg as Record<string, unknown>, actorId)
+    const kept = await this.lockKeptFields(shipmentId, leg as Record<string, unknown>, keeping, actorId)
     const messageId = await this.resolveLearningMessageId(shipmentId)
     const forwarder = ((leg as Record<string, unknown>).forwarderRaw as string | null) ?? null
     await this.emitConfirms(leg as Record<string, unknown>, new Set(), messageId, forwarder)
@@ -203,7 +223,7 @@ export class ReviewService {
       shipmentId, leg, outcome: 'approved', correctedFieldCount: 0, actorId,
       reasons: note?.trim() ? [note.trim()] : null,
     })
-    return { shipmentId, reviewStatus: 'confirmed' }
+    return { shipmentId, reviewStatus: 'confirmed', kept }
   }
 
   /** Emit a "looks right" confirm-sentinel to the queue learning feed for every confirmable parse field that
@@ -319,6 +339,57 @@ export class ReviewService {
     if (Object.keys(patch).length) await this.bookings.update(bookingId, patch)
   }
 
+  /**
+   * "What the leg already holds is right" — a per-field DECISION that writes no value.
+   *
+   * The review desk previously had no way to express this: a row resolved to the stored value
+   * contributed nothing to `fields`, so the approve posted an empty set and the ruling evaporated.
+   * Meanwhile the shipment detail page locks every field a human edits — the same person making the
+   * same call got an audit trail on one screen and silence on the other.
+   *
+   * Locking at the STORED value, never at a value from the request: the client names the field, the
+   * leg supplies the value. A `keep` that could carry its own value would be a write wearing a
+   * different name.
+   *
+   * Per PR #232 a lock no longer blocks a later email — a disagreeing email still wins and the field
+   * is flagged CONTESTED. So the whole observable effect is that the next disagreement surfaces
+   * instead of passing silently, which is exactly what a recorded human ruling should buy.
+   *
+   * `written` is the set this same request is writing. A field in both is a contradictory
+   * instruction ("write X" and "do not write"), not something to silently resolve — 400.
+   */
+  private keepFields(keep: string[] | undefined, written: Set<string>): string[] {
+    const fields = [...new Set((keep ?? []).map((f) => String(f).trim()).filter(Boolean))]
+    for (const field of fields) {
+      if (!CORRECTABLE_COLUMNS.has(field)) throw new BadRequestException(`field not correctable: ${field}`)
+      if (written.has(field)) throw new BadRequestException(`field cannot be both written and kept: ${field}`)
+    }
+    return fields
+  }
+
+  /** Apply what `keepFields` validated. Split from it so `correct` can reject a bad `keep` BEFORE its
+   *  first field write, keeping the endpoint's all-or-nothing contract. */
+  private async lockKeptFields(
+    shipmentId: string,
+    leg: Record<string, unknown>,
+    fields: string[],
+    actorId: string,
+  ): Promise<string[]> {
+    for (const field of fields) {
+      const value = toStr(leg[field])
+      await this.fieldLocks.lock('shipment', shipmentId, field, value, actorId)
+      // old === new is the point: a ruling, not a change. The note is what distinguishes it from a
+      // no-op write in Change History, so it must say so plainly.
+      await this.audit.write({
+        entityType: 'shipment', entityId: shipmentId, field,
+        oldValue: value, newValue: value, changeType: 'update',
+        sourceType: 'review', actorUserId: actorId,
+        note: 'review: kept the stored value — nothing written, field locked',
+      })
+    }
+    return fields
+  }
+
   /** Correct fields on a provisional shipment: edits win, lock, are audited, and confirm the leg. */
   async correct(shipmentId: string, dto: CorrectDto, actorId: string) {
     const leg = await this.loadLegForReview(shipmentId, dto.expectedUpdatedAt)
@@ -329,6 +400,7 @@ export class ReviewService {
       if (!CORRECTABLE_COLUMNS.has(field)) throw new BadRequestException(`field not correctable: ${field}`)
       coerceLegField(field, raw)
     }
+    const keeping = this.keepFields(dto.keep, new Set(Object.keys(dto.fields ?? {})))
     const corrected: string[] = []
     // Attribute learning to a source email graph id (queue resolves it to the parsed record). When none
     // is linked, skip queue emits rather than posting the shipment UUID (#236 P2).
@@ -346,6 +418,9 @@ export class ReviewService {
     }
 
     await syncIdentityMatchKeys(this.shipments, shipmentId, correctedValues)
+    // Kept fields are disjoint from the written ones (keepFields rejects an overlap), so `current`
+    // still holds exactly the values these rulings are about.
+    const kept = await this.lockKeptFields(shipmentId, current, keeping, actorId)
 
     // The parse-derived fields the reviewer looked at and left untouched are an implicit "looks right".
     await this.emitConfirms(current, new Set(corrected), messageId, forwarder)
@@ -357,7 +432,7 @@ export class ReviewService {
       actorId,
       reasons: dto.reason ? [dto.reason] : null,
     })
-    return { shipmentId, reviewStatus: 'confirmed', corrected }
+    return { shipmentId, reviewStatus: 'confirmed', corrected, kept }
   }
 
   /** The zero-identity resolution flow: typed key exists elsewhere → offer a link candidate (never a

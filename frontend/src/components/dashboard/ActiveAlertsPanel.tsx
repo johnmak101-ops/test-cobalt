@@ -2,7 +2,10 @@ import { useNavigate } from 'react-router-dom'
 import { AlertCard } from '../alerts/AlertCard'
 import type { Alert } from '../../hooks/use-alerts'
 
-/** How many cards the dashboard shows before deferring to the Alerts page. */
+/** How many cards the dashboard shows before deferring to the Alerts page.
+ *  A prop since this panel gained a neighbour: full width it can afford five, but sitting beside the
+ *  Review Queue in a two-column band the two lists must agree on a row count or the tops stop lining
+ *  up. The caller owns the layout, so the caller owns the cap. */
 const MAX_CARDS = 5
 
 /**
@@ -41,16 +44,32 @@ export function selectLiveAlerts(alerts: Alert[]): Alert[] {
  * squeezed into a truncating grid cell. AlertCard is the same component the Alerts page renders, so
  * the two cannot drift. Which alerts qualify is selectLiveAlerts's call.
  */
-export function ActiveAlertsPanel({ alerts }: { alerts: Alert[] }) {
+export function ActiveAlertsPanel({
+  alerts,
+  maxCards = MAX_CARDS,
+  framed = false,
+}: {
+  alerts: Alert[]
+  maxCards?: number
+  /** Draw the card shell. Off by default — full width on the dashboard it sat on the page plane. */
+  framed?: boolean
+}) {
   const navigate = useNavigate()
   const active = selectLiveAlerts(alerts)
-  const shown = active.slice(0, MAX_CARDS)
+  const shown = active.slice(0, maxCards)
+  const rest = active.length - shown.length
 
   return (
-    <div className="space-y-3">
+    <div
+      className={
+        framed
+          ? 'flex min-w-0 flex-col gap-3 rounded-xl border border-border bg-surface-800 p-4'
+          : 'space-y-3'
+      }
+    >
       <div className="flex items-center justify-between gap-2">
         <h2 className="min-w-0 truncate text-sm font-semibold text-text-primary">
-          Active Alerts
+          Alerts
           {active.length > 0 && (
             <span className="ml-2 text-xs font-normal text-text-muted">· {active.length}</span>
           )}
@@ -72,6 +91,13 @@ export function ActiveAlertsPanel({ alerts }: { alerts: Alert[] }) {
             <AlertCard key={a.id} alert={a} compact />
           ))}
         </div>
+      )}
+      {/* Framed = it has a neighbour to stay level with, so the remainder gets a footer that pins to
+          the bottom of the card rather than letting the shorter list float. */}
+      {framed && rest > 0 && (
+        <p className="mt-auto border-t border-border pt-2.5 text-xs text-text-muted">
+          {rest} more active {rest === 1 ? 'alert' : 'alerts'}
+        </p>
       )}
     </div>
   )

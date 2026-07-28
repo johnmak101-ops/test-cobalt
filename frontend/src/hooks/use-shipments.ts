@@ -226,11 +226,23 @@ export function useShipment(id: string) {
 
 /** A human-entered new shipment (the pipeline never saw the booking). All fields optional; at least one
  *  identity (booking/SO/HBL/MBL/container) OR a PO is required. Camel-cased keys match the backend DTO. */
+/**
+ * POST /shipments body. Mirrors the backend `ManualShipmentInput`.
+ *
+ * The New Shipment form no longer hand-picks from this list — it generates its payload from
+ * `EDITABLE_FIELDS` via `createFieldKey`, so the fields it offers are exactly the detail page's.
+ * This type is the wire contract; `NewShipmentModal.test.tsx` asserts every editable field reaches a
+ * key the backend's CREATE_FIELD_MAP accepts, which is the guard that keeps the three lists honest.
+ */
 export interface CreateShipmentInput {
-  bookingNo?: string; soNo?: string; hblAwbFcrNo?: string; mbl?: string; containerNo?: string
-  customerCode?: string; forwarderName?: string; pol?: string; pod?: string; mode?: string
-  qty?: string; qtyUnit?: string; grossWeight?: string; measurement?: string
-  itemStyleNo?: string; consigneeName?: string; cargoReadyDate?: string; etd?: string
+  bookingNo?: string; soNo?: string; warehouseSo?: string
+  hblAwbFcrNo?: string; mbl?: string; mawb?: string; containerNo?: string; scacCode?: string
+  customerCode?: string; vendorCode?: string; forwarderName?: string; pol?: string; pod?: string; mode?: string
+  qty?: string; qtyUnit?: string
+  consigneeName?: string; consigneeAddress?: string
+  vesselName?: string; voyageNo?: string; flightNo?: string
+  cargoReadyDate?: string; cfsCutoff?: string; warehouseStartDate?: string; warehouseEndDate?: string
+  etd?: string; atd?: string; eta?: string; ata?: string; inDcDate?: string
   pos?: string[]; note?: string
 }
 

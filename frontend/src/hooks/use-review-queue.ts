@@ -44,25 +44,16 @@ export interface ReviewShipment {
   waitingAt?: string | null
   /** What the operator said they were waiting on — shown inline on the Waiting tab. */
   waitingReason?: string | null
-}
-
-/**
- * A leg the desk did not show because nothing was left to decide — every flagged value already
- * matches the shipment (backend: presentation/auto-clear.ts). Reported rather than dropped silently,
- * so "why is this not in my queue?" always has an answer.
- */
-export interface AutoClearedLeg {
-  id: string
-  bookingNo: string | null
-  customer: string | null
-  /** Plain-language grounds, e.g. "the one flagged value already matches the shipment". */
-  why: string
+  /**
+   * Approved tab only: this leg is listed because nothing was left to decide, NOT because a human
+   * approved it (backend: presentation/auto-clear.ts). Nothing was written — a later email that puts
+   * a real conflict on it returns it to Active by itself.
+   */
+  autoCleared?: boolean
 }
 
 interface ReviewQueueResponse {
   shipments: ReviewShipment[]
-  /** Active view only; absent on the history tabs. */
-  autoCleared?: AutoClearedLeg[]
 }
 
 export interface ReviewCounts {
@@ -154,15 +145,19 @@ export function useConfirmShipment() {
     mutationFn: ({
       shipmentId,
       note,
+      keep,
       expectedUpdatedAt,
     }: {
       shipmentId: string
       note?: string
+      /** Leg columns the reviewer ruled to leave as they are — locked, never written. */
+      keep?: string[]
       /** ISO from load; backend 409s if leg was modified since. */
       expectedUpdatedAt?: string
     }) =>
       api.post(`/review/${shipmentId}/confirm`, {
         ...(note?.trim() ? { note: note.trim() } : {}),
+        ...(keep?.length ? { keep } : {}),
         ...(expectedUpdatedAt ? { expectedUpdatedAt } : {}),
       }),
     onSuccess: invalidate,
@@ -181,17 +176,22 @@ export function useCorrectShipment() {
     mutationFn: ({
       shipmentId,
       fields,
+      keep,
       reason,
       expectedUpdatedAt,
     }: {
       shipmentId: string
       fields: Record<string, unknown>
+      /** Leg columns the reviewer ruled to leave as they are — locked at the stored value, never
+       *  written. Kept out of `fields` on purpose: the backend 400s a field named in both. */
+      keep?: string[]
       reason?: string
       /** ISO from load; backend 409s if leg was modified since. */
       expectedUpdatedAt?: string
     }) =>
       api.post(`/review/${shipmentId}/correct`, {
         fields: mapCriticFieldsToColumns(fields),
+        ...(keep?.length ? { keep } : {}),
         ...(reason?.trim() ? { reason: reason.trim() } : {}),
         ...(expectedUpdatedAt ? { expectedUpdatedAt } : {}),
       }),

@@ -442,12 +442,16 @@ describe('resolvePoEnrichment — T1b style broadcast across ≥3 POs of one ema
 })
 
 describe('summarizeStyleConflict (T2)', () => {
-  it('shows only differing tokens and the kept value', () => {
+  it('shows only differing tokens and names the system read', () => {
     const s = summarizeStyleConflict(['B0NNIE, PUH26BHALE', 'BONNIE, PUH26BHALE'], 'PUH26BHALE')
     expect(s).toMatch(/item\/style/)
     expect(s).toMatch(/B0NNIE/)
     expect(s).toMatch(/BONNIE/)
-    expect(s).toMatch(/kept PUH26BHALE/)
+    // `(system read: …)` not `(kept …)`: this runs in a pure plan BEFORE upsertPo, whose
+    // fill-if-null / superset-only rules routinely decline the write. Naming it as our READ
+    // stays true either way; "kept" was false on exactly the legs a human is asked to check.
+    expect(s).toMatch(/system read: PUH26BHALE/)
+    expect(s).not.toMatch(/kept/)
     expect(s).not.toMatch(/PUH26BHALE vs/) // common token not dumped as a vs pair alone
   })
 

@@ -1,5 +1,6 @@
 import { Fragment, useMemo, useReducer, useState } from 'react'
-import { Link, useLocation, useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
+import { useParties } from '../hooks/use-parties'
 import { CheckCircle, Clock, Ship, Package, Loader2, RotateCcw } from 'lucide-react'
 import {
   useReviewQueue,
@@ -21,7 +22,7 @@ import { ReviewCard } from '../components/review/ReviewCard'
 import { Pagination, usePagination, PageSizeSelect } from '../components/ui/Pagination'
 import { toast } from '../components/ui/Toast'
 import { cn, formatRelativeTime, formatShipmentId } from '../lib/utils'
-import { mapCriticFieldsToColumns } from '../lib/review-fields'
+import { keptSuffix, mapCriticFieldsToColumns } from '../lib/review-fields'
 import {
   decisionPhrase,
   AI_CONFIDENCE_LOW_REASON,
@@ -91,6 +92,21 @@ function ExpandedReviewPanel({
   const waitMutation = useWaitShipment()
   const navigate = useNavigate()
 
+  /**
+   * The Mesh mirror. The card turns an unlinked party into a conflict-table row and offers these as
+   * its candidates; it must not fetch them itself — ReviewCard must stay renderable
+   * without a QueryClient, as 134 of its tests do.
+   *
+   * Above the loading/error early returns: hooks cannot sit behind a conditional.
+   */
+  const { data: customerMasters } = useParties('customer')
+  const { data: vendorMasters } = useParties('vendor')
+  const { data: forwarderMasters } = useParties('forwarder')
+  const partyMasters = useMemo(
+    () => [...(customerMasters ?? []), ...(vendorMasters ?? []), ...(forwarderMasters ?? [])],
+    [customerMasters, vendorMasters, forwarderMasters],
+  )
+
   if (isLoading) {
     return (
       <div className="flex items-center gap-2 px-4 py-3 text-xs text-text-muted">
@@ -99,6 +115,7 @@ function ExpandedReviewPanel({
       </div>
     )
   }
+
   if (isError || !data) {
     return (
       <div className="px-4 py-3 text-xs text-status-critical">
@@ -111,6 +128,7 @@ function ExpandedReviewPanel({
     <div className="min-w-0 max-w-full border-t border-border bg-surface-900/40 px-3 py-3">
       <ReviewCard
         shipment={data}
+        partyMasters={partyMasters}
         criticReview={data.criticReview ?? null}
         compact={row.criticReviewCompact}
         emails={data.emails ?? []}
@@ -128,7 +146,7 @@ function ExpandedReviewPanel({
                   onDone?.()
                 } catch (e) {
                   const msg = e instanceof Error ? e.message.replace(/^API error \d+:\s*/i, '') : ''
-                  toast(msg || 'Reject failed — try again')
+                  toast.error(msg || 'Reject failed — try again')
                 }
               }
             : undefined
@@ -142,7 +160,7 @@ function ExpandedReviewPanel({
                   onDone?.()
                 } catch (e) {
                   const msg = e instanceof Error ? e.message.replace(/^API error \d+:\s*/i, '') : ''
-                  toast(msg || 'Park failed — try again')
+                  toast.error(msg || 'Park failed — try again')
                 }
               }
             : undefined
@@ -199,9 +217,6 @@ export default function ReviewQueuePage() {
   const [busyId, setBusyId] = useState<string | null>(null)
 
   const shipments = useMemo(() => data?.shipments ?? [], [data?.shipments])
-  /** Legs the backend kept off the desk because they had nothing left to decide (auto-clear.ts). */
-  const autoCleared = useMemo(() => data?.autoCleared ?? [], [data?.autoCleared])
-  const [autoClearedOpen, setAutoClearedOpen] = useState(false)
 
   const { totalItems, totalPages, pageSize, getPage } = usePagination(shipments, perPage)
   const pageShipments = getPage(page)
@@ -225,6 +240,7 @@ export default function ReviewQueuePage() {
 
   const saveAndApproveFor = (s: ReviewShipment) => async (payload: {
     fields: Record<string, unknown>
+    keep?: string[]
     note: string
     expectedUpdatedAt?: string
   }) => {
@@ -233,36 +249,43 @@ export default function ReviewQueuePage() {
       const fields = payload.fields
       // fields are already camelCase leg columns from ReviewCard; map is idempotent + renames any snake leftovers.
       const mapped = mapCriticFieldsToColumns(fields)
+      const keep = payload.keep ?? []
       const hasFields = Object.keys(fields).length > 0
       const hasMappable = Object.keys(mapped).length > 0
       if (hasFields && !hasMappable) {
         // Contested keys that do not map to leg columns — would have been a silent POST drop.
-        toast('Those conflict fields cannot be saved here — open full shipment to edit.')
+        toast.error('Those conflict fields cannot be saved here — open full shipment to edit.')
         return
       }
       if (hasMappable) {
         const res = await correctMutation.mutateAsync({
           shipmentId: s.id,
           fields: mapped,
+          keep,
           reason: payload.note,
           expectedUpdatedAt: payload.expectedUpdatedAt ?? s.updatedAt,
         })
         const corrected = (res as { corrected?: string[] } | undefined)?.corrected
         const n = Array.isArray(corrected) ? corrected.length : Object.keys(mapped).length
         if (n === 0) {
-          toast('Approved, but no fields were written — reload and try Approve again')
+          toast.error('Approved, but no fields were written — reload and try Approve again')
         } else {
-          toast(`Saved ${n} field${n === 1 ? '' : 's'} and approved`)
+          toast(`Saved ${n} field${n === 1 ? '' : 's'} and approved${keptSuffix(keep)}`)
         }
       } else {
         // #181: Approve with no contested-field deltas is confirm-only — operators often think
         // other edits stuck. Be explicit so this never looks like a silent no-op.
+        // A keep ruling is NOT nothing, though: it writes no value but it does lock the field, so
+        // the "nothing to save" copy would be a lie on exactly the cards this feature is for.
         toast(
-          'Confirmed — no contested field changes to save. Open full shipment to edit other fields.',
+          keep.length
+            ? `Confirmed — kept ${keep.length} stored value${keep.length === 1 ? '' : 's'} as ruled.`
+            : 'Confirmed — no contested field changes to save. Open full shipment to edit other fields.',
         )
         await confirmMutation.mutateAsync({
           shipmentId: s.id,
           note: payload.note || undefined,
+          keep,
           expectedUpdatedAt: payload.expectedUpdatedAt ?? s.updatedAt,
         })
       }
@@ -272,7 +295,7 @@ export default function ReviewQueuePage() {
         await handleStale(err)
       } catch (e) {
         const msg = e instanceof Error ? e.message : 'Save failed'
-        toast(msg.replace(/^API error \d+:\s*/i, '') || 'Save failed — try again')
+        toast.error(msg.replace(/^API error \d+:\s*/i, '') || 'Save failed — try again')
         throw e
       }
     }
@@ -344,50 +367,6 @@ export default function ReviewQueuePage() {
         ))}
       </div>
 
-      {/* Legs that never reached the desk because nothing was left to decide. Announced rather than
-          dropped silently — a queue that quietly shrinks is one nobody trusts. Nothing was written,
-          so any of these returns by itself the moment a new email puts a real conflict on it. */}
-      {autoCleared.length > 0 && (
-        <div
-          className="rounded-lg border border-border border-l-[3px] border-l-status-success bg-surface-800 px-3 py-2.5"
-          data-testid="auto-cleared"
-        >
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
-            <span className="text-sm font-semibold text-text-primary">
-              {autoCleared.length} leg{autoCleared.length === 1 ? '' : 's'} cleared {autoCleared.length === 1 ? 'itself' : 'themselves'}
-            </span>
-            <span className="min-w-0 flex-1 text-xs text-text-secondary">
-              Nothing was left to decide — {autoCleared[0]!.why}.
-            </span>
-            <button
-              type="button"
-              onClick={() => setAutoClearedOpen((v) => !v)}
-              aria-expanded={autoClearedOpen}
-              className="rounded-lg border border-border px-2.5 py-1 text-[11px] font-medium text-text-secondary transition-colors hover:bg-surface-700 hover:text-text-primary"
-              data-testid="auto-cleared-toggle"
-            >
-              {autoClearedOpen ? 'Hide' : 'Show them'}
-            </button>
-          </div>
-          {autoClearedOpen && (
-            <ul className="mt-2 space-y-1 border-t border-border pt-2" data-testid="auto-cleared-list">
-              {autoCleared.map((c) => (
-                <li key={c.id} className="flex flex-wrap items-baseline gap-x-2 text-xs">
-                  <Link
-                    to={`/review-queue/${c.id}`}
-                    className="font-mono text-cobalt-primary-light hover:underline"
-                  >
-                    {c.bookingNo?.trim() || c.id.slice(0, 8)}
-                  </Link>
-                  {c.customer && <span className="text-text-secondary">{c.customer}</span>}
-                  <span className="text-text-muted">{c.why}</span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-      )}
-
       {isLoading ? (
         <div className="flex h-64 items-center justify-center">
           <span className="text-sm text-text-muted">Loading review queue...</span>
@@ -428,7 +407,7 @@ export default function ReviewQueuePage() {
                       Status
                     </th>
                     {/* Active rows carry no Action column: the row expands on click and the panel
-                        below owns Keep Existing / Approve. Rejected/Approved keep one — Restore and Open
+                        below owns Leave As Is / Approve. Rejected/Approved keep one — Restore and Open
                         have no equivalent inside the read-only panel. */}
                     {!isActiveView && (
                       <th className="w-[6.5rem] px-3 py-3 text-right text-xs font-medium text-text-muted sm:px-4">
@@ -506,6 +485,17 @@ export default function ReviewQueuePage() {
                                 {phrase}
                               </span>
                             )}
+                            {/* On Approved: nobody signed this off — there was simply nothing to
+                                decide. Saying so keeps an auto-clear from reading as an approval. */}
+                            {s.autoCleared && (
+                              <span
+                                className="mt-0.5 block truncate text-[11px] text-text-muted"
+                                title="Nothing was left to decide — no one approved this. A later email that puts a real conflict on it returns it to Active."
+                                data-testid="auto-cleared-chip"
+                              >
+                                Cleared automatically · nothing to decide
+                              </span>
+                            )}
                             {shadow && (
                               <span className="mt-0.5 inline-flex min-w-0 flex-wrap items-center gap-1">
                                 <span
@@ -535,7 +525,7 @@ export default function ReviewQueuePage() {
                                             } catch (e) {
                                               const msg =
                                                 e instanceof Error ? e.message : 'Confirm failed'
-                                              toast(
+                                              toast.error(
                                                 msg.replace(/^API error \d+:\s*/i, '') ||
                                                   'Confirm failed — try again',
                                               )

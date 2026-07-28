@@ -137,13 +137,13 @@ describe('ReviewCard', () => {
     expect(within(table).getByText('ETA')).toBeInTheDocument()
     // OUR label, not the payload's bare 'HBL' — reviewFieldLabel prefers EDITABLE_FIELDS.
     expect(within(table).getByText('HBL / HAWB / FCR No.')).toBeInTheDocument()
-    // Multi-candidate HBL: both proposals visible in AI Proposed (not buried in a datalist)
+    // Multi-candidate HBL: every stated value visible in "Other values" (not buried in a datalist)
     expect(within(table).getByText('SE26061400005')).toBeInTheDocument()
     expect(within(table).getByText('SE26061400006')).toBeInTheDocument()
     expect(within(table).getByTestId('multi-candidate-proposed')).toBeInTheDocument()
     // Column headers — default view shows agent proposals; Resolution/Edited only after Edit / changes.
     expect(within(table).getByText('Current')).toBeInTheDocument()
-    expect(within(table).getByTestId('proposed-column-header')).toHaveTextContent('AI Proposed')
+    expect(within(table).getByTestId('proposed-column-header')).toHaveTextContent('Other values')
     expect(within(table).queryByText('Resolution')).toBeNull()
     expect(within(table).queryByText('Edited')).toBeNull()
     expect(within(table).queryByText('Recommended')).toBeNull()
@@ -470,8 +470,9 @@ describe('ReviewCard', () => {
 
     await user.click(screen.getByRole('button', { name: /^edit$/i }))
     const resolution = screen.getByTestId('datetime-date') as HTMLInputElement
-    // Pre-filled with the agent's proposal — the operator accepts or edits it.
-    expect(resolution.value).toBe('2026-07-23')
+    // Pre-filled with what the leg already STORES, not with the email's value: the rows that reach
+    // this table are the ones the commit declined to take, so the default is to keep what is there.
+    expect(resolution.value).toBe('2026-07-20')
 
     // in edit mode the primary button is Submit
     const saveBtn = screen.getByRole('button', { name: /^submit$/i })
@@ -789,7 +790,7 @@ describe('conflict table — read-only by default, Edit to change values', () =>
     expect(screen.queryByLabelText(/confirm eta/i)).toBeNull()
   })
 
-  it('Edit reveals inputs pre-filled with the agent proposal; multi-candidate keeps every option', async () => {
+  it('Edit reveals inputs pre-filled with the stored value; multi-candidate keeps every option, none pre-picked', async () => {
     const user = userEvent.setup()
     render(
       <MemoryRouter>
@@ -802,19 +803,347 @@ describe('conflict table — read-only by default, Edit to change values', () =>
         />
       </MemoryRouter>,
     )
-    expect(screen.getByTestId('proposed-column-header')).toHaveTextContent('AI Proposed')
+    expect(screen.getByTestId('proposed-column-header')).toHaveTextContent('Other values')
     await user.click(screen.getByRole('button', { name: /^edit$/i }))
     expect(screen.getByTestId('proposed-column-header')).toHaveTextContent('Resolution')
-    expect((screen.getByTestId('datetime-date') as HTMLInputElement).value).toBe('2026-07-23')
-    // hbl has NO system candidate and two proposals → the FIRST is the pick (radio below), both visible.
-    // #360: the free-typing input stays blank while a pick is active — the pick lives in the radio,
+    expect((screen.getByTestId('datetime-date') as HTMLInputElement).value).toBe('2026-07-20')
+    // hbl has NO system candidate and two proposals — both visible, NEITHER picked. Seeding the
+    // first would arm Submit with a value the committer had already declined to write.
+    // #360: the free-typing input stays blank while a radio is active — the pick lives in the radio,
     // and pre-filling it read as "this text will be written".
     expect((screen.getByLabelText(/proposed value for hbl/i) as HTMLInputElement).value).toBe('')
     const multi = screen.getByTestId('multi-candidate-proposed')
     expect(within(multi).getByText('SE26061400005')).toBeInTheDocument()
     expect(within(multi).getByText('SE26061400006')).toBeInTheDocument()
-    expect(screen.getByRole('radio', { name: /SE26061400005/i })).toBeChecked()
+    expect(screen.getByRole('radio', { name: /SE26061400005/i })).not.toBeChecked()
     expect(screen.getByRole('radio', { name: /SE26061400006/i })).not.toBeChecked()
+    // Nothing is stored for the HBL, so the group's default reads "Leave blank" — and it is a real
+    // option in the group, which is how a picked radio gets a way back.
+    expect(screen.getByTestId('conflict-keep-current')).toBeChecked()
+    expect(screen.getByLabelText(/leave HBL .* blank/i)).toBeInTheDocument()
+  })
+
+  it('the take-tick is a READ-mode gesture — Edit replaces the cell with the input', async () => {
+    const user = userEvent.setup()
+    render(
+      <MemoryRouter>
+        <ReviewCard
+          shipment={baseShipment()}
+          criticReview={baseReview({ conflicts: [conflictEta] })}
+          compact={compact}
+          defaultExpanded
+          onSaveAndApprove={vi.fn().mockResolvedValue(undefined)}
+        />
+      </MemoryRouter>,
+    )
+    expect(screen.getByTestId('conflict-take')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /^edit$/i }))
+    // Two controls for one decision would let the box and the calendar disagree.
+    expect(screen.queryByTestId('conflict-take')).toBeNull()
+    expect(screen.getByTestId('datetime-date')).toBeInTheDocument()
+  })
+
+  /** The other half of the keep option: a multi-candidate row whose leg DOES hold a value. */
+  it('names the value Keep current would keep, when the leg holds one', async () => {
+    const user = userEvent.setup()
+    render(
+      <MemoryRouter>
+        <ReviewCard
+          shipment={
+            {
+              ...baseShipment(),
+              openDecisions: {
+                settledFields: [],
+                resolvedParties: [],
+                liveValues: { hbl_awb_fcr_no: 'SE26061400001' },
+              },
+            } as unknown as ReviewShipment
+          }
+          criticReview={baseReview({ conflicts: [conflictHbl] })}
+          compact={compact}
+          defaultExpanded
+          onSaveAndApprove={vi.fn().mockResolvedValue(undefined)}
+        />
+      </MemoryRouter>,
+    )
+    const keep = screen.getByLabelText(/Keep the current HBL .*: SE26061400001/i)
+    expect(keep).toBeChecked()
+    // Picking arms an apply; the keep option takes it back off.
+    await user.click(screen.getByRole('radio', { name: /SE26061400006/i }))
+    expect(screen.getByRole('button', { name: /^apply SE26061400006$/i })).toBeInTheDocument()
+    await user.click(keep)
+    expect(screen.queryByRole('button', { name: /^apply/i })).toBeNull()
+  })
+
+  /**
+   * Reported from the running desk. A save that 400s used to drop the card back to READ mode still
+   * holding the typed values — rendered as text, no input, no Cancel — so the operator's own edits
+   * sat there armed with no way to get rid of them.
+   */
+  describe('a typed value can always be taken back', () => {
+    const renderTyped = (onSave: ReturnType<typeof vi.fn>) =>
+      render(
+        <MemoryRouter>
+          <ReviewCard
+            shipment={baseShipment()}
+            criticReview={baseReview({ conflicts: [conflictEta] })}
+            compact={compact}
+            defaultExpanded
+            onSaveAndApprove={onSave}
+          />
+        </MemoryRouter>,
+      )
+
+    it('a failed save leaves the card in edit mode, where Cancel still exists', async () => {
+      const user = userEvent.setup()
+      const onSave = vi.fn().mockRejectedValue(new Error('API error 400: bad UOM'))
+      renderTyped(onSave)
+
+      await user.click(screen.getByRole('button', { name: /^edit$/i }))
+      const eta = screen.getByTestId('datetime-date')
+      await user.clear(eta)
+      await user.type(eta, '2026-07-25')
+      await user.type(screen.getByRole('textbox', { name: /note/i }), 'carrier confirmed')
+      await user.click(screen.getByRole('button', { name: /^submit$/i }))
+
+      expect(onSave).toHaveBeenCalledTimes(1)
+      // Still editing — the inputs and the way out are both still on screen.
+      expect(screen.getByTestId('datetime-date')).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /^cancel$/i })).toBeInTheDocument()
+      /**
+       * And the card is usable again. `run()` catches the rejection so it cannot escape as an
+       * unhandled promise rejection — every call site is `void run(...)`. That leak failed the whole
+       * vitest run while every individual test still reported passing, which is how it survived
+       * unnoticed; this asserts the observable half of the same fix.
+       */
+      expect(screen.getByRole('button', { name: /^cancel$/i })).not.toBeDisabled()
+      expect(screen.getByRole('button', { name: /^submit$/i })).not.toBeDisabled()
+    })
+
+    it('no discard is offered until something is actually pending', () => {
+      renderTyped(vi.fn())
+      expect(screen.queryByTestId('discard-edits')).toBeNull()
+    })
+
+    it('one click puts every row back — after a tick, without touching the leg', async () => {
+      const user = userEvent.setup()
+      const onApprove = vi.fn()
+      render(
+        <MemoryRouter>
+          <ReviewCard
+            shipment={baseShipment()}
+            criticReview={baseReview({ conflicts: [conflictEta] })}
+            compact={compact}
+            defaultExpanded
+            onApprove={onApprove}
+            onSaveAndApprove={vi.fn()}
+          />
+        </MemoryRouter>,
+      )
+      await user.click(screen.getByTestId('conflict-take'))
+      expect(screen.getByRole('button', { name: /^apply 2026-07-23$/i })).toBeInTheDocument()
+
+      await user.click(screen.getByTestId('discard-edits'))
+
+      // Back to the opening state, and the leg is untouched — discard is not a verdict.
+      expect(screen.queryByRole('button', { name: /^apply/i })).toBeNull()
+      expect(screen.getByTestId('conflict-take')).not.toBeChecked()
+      expect(screen.getByTestId('review-decision-grid')).toHaveTextContent(/nothing to apply/i)
+      expect(onApprove).not.toHaveBeenCalled()
+    })
+
+    it('and it clears a typed override too', async () => {
+      const user = userEvent.setup()
+      renderTyped(vi.fn())
+      await user.click(screen.getByRole('button', { name: /^edit$/i }))
+      const eta = screen.getByTestId('datetime-date')
+      await user.clear(eta)
+      await user.type(eta, '2026-07-25')
+      await user.click(screen.getByRole('button', { name: /^cancel$/i }))
+
+      expect(screen.queryByTestId('conflict-override')).toBeNull()
+      expect(screen.queryByTestId('discard-edits')).toBeNull()
+      expect(screen.getByTestId('proposed-column-header')).toHaveTextContent('Other values')
+    })
+  })
+
+  /**
+   * Piece 3b of the mode-change design. The leg disagreeing with ITSELF — no email raised it, so it
+   * arrives on no risk flag and no review reason. Stated, never acted on.
+   */
+  describe('a leg that carries the other mode’s fields says so', () => {
+    const seaLegWithFlight = () =>
+      baseShipment({
+        mode: 'SEA',
+        vesselName: 'EVER GLORY',
+        flightNo: 'CX252',
+        mawb: '160-88112233',
+        reviewReasons: [],
+      } as never)
+
+    it('names the offending fields and both explanations', () => {
+      render(
+        <MemoryRouter>
+          <ReviewCard
+            shipment={seaLegWithFlight()}
+            criticReview={baseReview({ conflicts: [conflictEta], riskFlags: [], reasons: [] })}
+            compact={null}
+            defaultExpanded
+            onSaveAndApprove={vi.fn()}
+          />
+        </MemoryRouter>,
+      )
+      const panel = screen.getByTestId('needs-attention')
+      expect(panel).toHaveTextContent(/other transport mode/i)
+      expect(panel).toHaveTextContent('Flight No. CX252')
+      expect(panel).toHaveTextContent('MAWB 160-88112233')
+      expect(panel).toHaveTextContent(/mode is wrong, or they were read off the wrong document/i)
+    })
+
+    /**
+     * The line must survive the conflict table having rows. The table owns FIELD comparisons; this
+     * says the leg is internally impossible, which no row in that table states. It is also a
+     * `decision` line by enumeration — an unmapped lineId defaults to `fyi`, which the review desk
+     * filters out entirely (the tagDesk hiding class).
+     */
+    it('survives alongside a populated conflict table', () => {
+      render(
+        <MemoryRouter>
+          <ReviewCard
+            shipment={seaLegWithFlight()}
+            criticReview={baseReview({ conflicts: [conflictEta, conflictHbl], riskFlags: [], reasons: [] })}
+            compact={null}
+            defaultExpanded
+            onSaveAndApprove={vi.fn()}
+          />
+        </MemoryRouter>,
+      )
+      expect(screen.getByTestId('review-decision-grid')).toBeInTheDocument()
+      expect(screen.getByTestId('needs-attention')).toHaveTextContent(/other transport mode/i)
+    })
+
+    it('says nothing when the leg agrees with its own mode', () => {
+      render(
+        <MemoryRouter>
+          <ReviewCard
+            shipment={
+              baseShipment({ mode: 'SEA', vesselName: 'EVER GLORY', voyageNumber: '2418W', reviewReasons: [] } as never)
+            }
+            criticReview={baseReview({ conflicts: [conflictEta], riskFlags: [], reasons: [] })}
+            compact={null}
+            defaultExpanded
+            onSaveAndApprove={vi.fn()}
+          />
+        </MemoryRouter>,
+      )
+      expect(screen.queryByText(/other transport mode/i)).toBeNull()
+    })
+
+    it('never offers to fix it — the desk states the contradiction and nothing else', () => {
+      render(
+        <MemoryRouter>
+          <ReviewCard
+            shipment={seaLegWithFlight()}
+            criticReview={baseReview({ conflicts: [], riskFlags: [], reasons: [] })}
+            compact={null}
+            defaultExpanded
+            onApprove={vi.fn()}
+            onSaveAndApprove={vi.fn()}
+          />
+        </MemoryRouter>,
+      )
+      // No apply, no clear — resolving it is Open Shipment's job (de-correction).
+      expect(screen.queryByRole('button', { name: /^apply/i })).toBeNull()
+      expect(screen.queryByRole('button', { name: /clear/i })).toBeNull()
+      expect(screen.getByTestId('open-shipment')).toBeInTheDocument()
+    })
+  })
+
+  /**
+   * Piece 3a. Taking a different Mode reclassifies the leg, which strands the old mode's transport
+   * fields. The desk could not clear a field at all before this — `fieldsToApply` skips an empty
+   * resolution, because empty means "no decision" there. So the clears are an explicit signal.
+   */
+  describe('taking a Mode carries its consequence into the same apply', () => {
+    const modeConflict: CriticConflict = {
+      field: 'mode',
+      label: 'Mode',
+      candidates: [
+        { value: 'AIR', source: 'System' },
+        { value: 'SEA', source: 'Booking Confirmation' },
+      ],
+      rationale: 'The booking confirmation says ocean.',
+    }
+    const airLeg = () =>
+      baseShipment({ mode: 'AIR', flightNo: 'CX252', mawb: '160-88112233', reviewReasons: [] } as never)
+
+    const renderMode = (onSave = vi.fn().mockResolvedValue(undefined)) => {
+      render(
+        <MemoryRouter>
+          <ReviewCard
+            shipment={airLeg()}
+            criticReview={baseReview({ conflicts: [modeConflict], riskFlags: [], reasons: [] })}
+            compact={null}
+            defaultExpanded
+            onSaveAndApprove={onSave}
+          />
+        </MemoryRouter>,
+      )
+      return onSave
+    }
+
+    it('says nothing until the operator actually takes the new mode', () => {
+      renderMode()
+      expect(screen.queryByTestId('mode-carry-over')).toBeNull()
+    })
+
+    it('lists what the switch strands, ticked to clear', async () => {
+      const user = userEvent.setup()
+      renderMode()
+      await user.click(screen.getByTestId('conflict-take'))
+      const panel = screen.getByTestId('mode-carry-over')
+      expect(panel).toHaveTextContent(/Taking Mode\s*SEA also clears 2 fields/i)
+      expect(screen.getByTestId('mode-carry-over-flightNo')).toBeChecked()
+      expect(screen.getByTestId('mode-carry-over-mawb')).toBeChecked()
+    })
+
+    it('counts the clears — the button cannot understate its own reach', async () => {
+      const user = userEvent.setup()
+      renderMode()
+      await user.click(screen.getByTestId('conflict-take'))
+      // 1 mode write + 2 clears
+      expect(screen.getByRole('button', { name: /^apply 3 changes$/i })).toBeInTheDocument()
+    })
+
+    it('posts an empty string per cleared column — coerceLegField maps that to null', async () => {
+      const user = userEvent.setup()
+      const onSave = renderMode()
+      await user.click(screen.getByTestId('conflict-take'))
+      await user.click(screen.getByRole('button', { name: /^apply 3 changes$/i }))
+      expect(onSave).toHaveBeenCalledTimes(1)
+      expect(onSave.mock.calls[0][0].fields).toEqual({ mode: 'SEA', flightNo: '', mawb: '' })
+    })
+
+    it('un-ticking keeps that field and drops it from the count', async () => {
+      const user = userEvent.setup()
+      const onSave = renderMode()
+      await user.click(screen.getByTestId('conflict-take'))
+      await user.click(screen.getByTestId('mode-carry-over-mawb'))
+      expect(screen.getByTestId('mode-carry-over-mawb')).not.toBeChecked()
+      expect(screen.getByRole('button', { name: /^apply 2 changes$/i })).toBeInTheDocument()
+      await user.click(screen.getByRole('button', { name: /^apply 2 changes$/i }))
+      expect(onSave.mock.calls[0][0].fields).toEqual({ mode: 'SEA', flightNo: '' })
+    })
+
+    it('un-taking the mode takes the whole consequence back with it', async () => {
+      const user = userEvent.setup()
+      renderMode()
+      await user.click(screen.getByTestId('conflict-take'))
+      expect(screen.getByTestId('mode-carry-over')).toBeInTheDocument()
+      await user.click(screen.getByTestId('conflict-take'))
+      expect(screen.queryByTestId('mode-carry-over')).toBeNull()
+      expect(screen.queryByRole('button', { name: /^apply/i })).toBeNull()
+    })
   })
 
   it('hides bag-level Item / Style No. conflict (styles are per-PO, not Order Details)', () => {
@@ -867,7 +1196,7 @@ describe('conflict table — read-only by default, Edit to change values', () =>
     expect(screen.getByTestId('proposed-column-header')).toHaveTextContent('Resolution')
     await user.click(screen.getByRole('button', { name: /^cancel$/i }))
     // discarded → back to the agent's proposal, not a lingering "Edited" state
-    expect(screen.getByTestId('proposed-column-header')).toHaveTextContent('AI Proposed')
+    expect(screen.getByTestId('proposed-column-header')).toHaveTextContent('Other values')
     expect(screen.getByRole('button', { name: /^edit$/i })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /^submit$/i })).toBeNull()
   })
@@ -886,9 +1215,13 @@ describe('conflict table — read-only by default, Edit to change values', () =>
         />
       </MemoryRouter>,
     )
+    // Take the email's ETA first — until something is taken there is nothing to apply, and the bar
+    // carries only the plain confirmation.
+    await user.click(screen.getByTestId('conflict-take'))
+
     // idle
     expect(screen.getByRole('button', { name: /^edit$/i })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /keep current/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /^leave as is$/i })).toBeInTheDocument()
     // The primary now NAMES the value it writes rather than saying "Approve".
     expect(screen.getByRole('button', { name: /^apply 2026-07-23$/i })).toBeInTheDocument()
 
@@ -898,7 +1231,7 @@ describe('conflict table — read-only by default, Edit to change values', () =>
     expect(screen.getByRole('button', { name: /^cancel$/i })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /^submit$/i })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /^edit$/i })).toBeNull()
-    expect(screen.queryByRole('button', { name: /keep current/i })).toBeNull()
+    expect(screen.queryByRole('button', { name: /leave as is/i })).toBeNull()
     expect(screen.queryByRole('button', { name: /^apply 2026-07-23$/i })).toBeNull()
   })
 
@@ -916,6 +1249,9 @@ describe('conflict table — read-only by default, Edit to change values', () =>
         />
       </MemoryRouter>,
     )
+    // The row opens on "keep" — one tick takes the email's value, and only then is there an apply.
+    expect(screen.queryByRole('button', { name: /^apply/i })).toBeNull()
+    await user.click(screen.getByTestId('conflict-take'))
     // One click, but a click that states what it accepts — not a bare "Approve".
     const approve = screen.getByRole('button', { name: /^apply 2026-07-23$/i })
     expect(approve).not.toBeDisabled()
@@ -973,7 +1309,8 @@ describe('conflict table — read-only by default, Edit to change values', () =>
 })
 
 describe('embedded in the queue table — the row above already states identity', () => {
-  it('renders no identity header, no second chevron, and no duplicate row actions', () => {
+  it('renders no identity header, no second chevron, and no duplicate row actions', async () => {
+    const user = userEvent.setup()
     render(
       <MemoryRouter>
         <ReviewCard
@@ -995,14 +1332,17 @@ describe('embedded in the queue table — the row above already states identity'
     // ...but the detail the row cannot show is still here
     expect(screen.getByRole('table')).toBeInTheDocument()
     expect(screen.getByTestId('why-review')).toBeInTheDocument()
+    // Settle both rows the way an operator would — tick the single-candidate ETA, pick an HBL.
+    await user.click(screen.getByTestId('conflict-take'))
+    await user.click(screen.getByRole('radio', { name: /SE26061400005/i }))
     // Two contested rows → no single value to name, so the count carries it.
     expect(screen.getByRole('button', { name: /^apply 2 changes$/i })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /keep current/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /leave all as is/i })).toBeInTheDocument()
     // Not shipment is Documents-only (unlinked docs). Review queue has no dismiss path.
     expect(screen.queryByRole('button', { name: /not shipment/i })).toBeNull()
   })
 
-  it('Keep current confirms without applying AI Proposed field changes', async () => {
+  it('Keep current marks reviewed without writing anything', async () => {
     const user = userEvent.setup()
     const onApprove = vi.fn().mockResolvedValue(undefined)
     const onSave = vi.fn().mockResolvedValue(undefined)
@@ -1019,7 +1359,9 @@ describe('embedded in the queue table — the row above already states identity'
         />
       </MemoryRouter>,
     )
-    await user.click(screen.getByRole('button', { name: /keep current/i }))
+    // Keep current only exists once there is something to keep the stored value OVER.
+    await user.click(screen.getByTestId('conflict-take'))
+    await user.click(screen.getByRole('button', { name: /^leave as is$/i }))
     expect(onApprove).toHaveBeenCalledTimes(1)
     expect(onSave).not.toHaveBeenCalled()
   })
@@ -1240,7 +1582,8 @@ describe('source emails — identify WHICH email, and which is newer', () => {
 })
 
 describe('qty live-leg settle on decision table', () => {
-  it('hides qty conflict when live leg already matches AI proposed (GZL-class)', () => {
+  it('hides qty conflict when live leg already matches AI proposed (GZL-class)', async () => {
+    const user = userEvent.setup()
     const shipment = baseShipment({
       quantityShipped: 16,
       quantityUnit: 'cartons',
@@ -1298,13 +1641,15 @@ describe('qty live-leg settle on decision table', () => {
     expect(within(grid).queryByText('Total Quantity')).toBeNull()
     // Row label follows EDITABLE_FIELDS, which names the party fields by what they store (a code).
     expect(within(grid).getByText('Vendor Code')).toBeInTheDocument()
+    // Only the Vendor row is left to answer — take it, so there IS a change to count.
+    await user.click(screen.getByTestId('conflict-take'))
     // Qty settled — Approve must not double-count it as a second change. The label is now a plain
     // verb, so the count lives in the tooltip; assert there rather than losing the guard.
     // 'MACAU FUNG TAI LIMITED' is too long to print in a button, so the count carries it; the title
     // still spells out what the click does.
     expect(screen.getByRole('button', { name: /^apply 1 change$/i })).toHaveAttribute(
       'title',
-      'Apply 1 change and confirm',
+      'Apply 1 change — the leg leaves the desk',
     )
   })
 
@@ -1430,9 +1775,9 @@ describe('decision desk — ready state (no Critical for sailing band)', () => {
         />
       </MemoryRouter>,
     )
-    // Not "Keep Current" — nothing is being kept over an alternative, there is no alternative.
-    expect(screen.getByRole('button', { name: /confirm reviewed/i })).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /keep current/i })).toBeNull()
+    // Not "Leave As Is" — nothing is being declined over an alternative, there is no alternative.
+    expect(screen.getByRole('button', { name: /mark reviewed — no changes/i })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /leave as is/i })).toBeNull()
   })
 
   it('shows judgment-only line when only needs-attention (no conflicts)', () => {
@@ -1595,7 +1940,7 @@ describe('when a pick IS needed, the question and the answer are adjacent', () =
 
   it('the primary will not commit until a target is picked', () => {
     renderPicker()
-    expect(screen.getByRole('button', { name: /link & apply/i })).toBeDisabled()
+    expect(screen.getByRole('button', { name: /^link — /i })).toBeDisabled()
   })
 })
 
@@ -2099,9 +2444,22 @@ describe('candidate picking happens where the candidates are', () => {
 
   it('candidates are radios without entering Edit, and the copy no longer sends you there', () => {
     renderVendor()
-    expect(screen.getAllByRole('radio')).toHaveLength(3)
+    // Three candidates plus the way back. A radio cannot be un-picked, so "keep what is there" has
+    // to BE one of the options — and it is the one the row opens on.
+    expect(screen.getAllByRole('radio')).toHaveLength(4)
+    expect(screen.getByTestId('conflict-keep-current')).toBeChecked()
     expect(screen.queryByText(/pick one in Edit/i)).toBeNull()
     expect(screen.getByTestId('candidate-type-custom')).toBeInTheDocument()
+  })
+
+  it('a picked candidate can be un-picked — Keep current is a real option, not an implied one', async () => {
+    const user = userEvent.setup()
+    renderVendor()
+    await user.click(screen.getByRole('radio', { name: /FENIX/i }))
+    expect(screen.getByRole('button', { name: /^apply FEFALT$/i })).toBeInTheDocument()
+    await user.click(screen.getByTestId('conflict-keep-current'))
+    expect(screen.queryByRole('button', { name: /^apply/i })).toBeNull()
+    expect(screen.getByRole('radio', { name: /FENIX/i })).not.toBeChecked()
   })
 
   it('Edit disappears — every contested row is now operable in place', () => {
@@ -2120,16 +2478,20 @@ describe('candidate picking happens where the candidates are', () => {
   it('the primary names the master code it writes, and picking another changes it', async () => {
     const user = userEvent.setup()
     renderVendor()
-    // Seeded with the agent's first candidate.
+    // Nothing is armed until the operator picks — three co-current vendors have no safe default.
+    expect(screen.queryByRole('button', { name: /^apply/i })).toBeNull()
+    await user.click(screen.getByRole('radio', { name: /FENIX/i }))
     expect(screen.getByRole('button', { name: /^apply FEFALT$/i })).toBeInTheDocument()
     await user.click(screen.getByRole('radio', { name: /JINGQINGRONG/i }))
     expect(screen.getByRole('button', { name: /^apply JINGQI$/i })).toBeInTheDocument()
   })
 
-  it('nothing stored → the decline button says Leave Blank, not Keep Current', () => {
+  it('nothing stored → the decline button says Leave Blank, not Leave As Is', async () => {
+    const user = userEvent.setup()
     renderVendor()
+    await user.click(screen.getByRole('radio', { name: /FENIX/i }))
     expect(screen.getByRole('button', { name: /^leave blank$/i })).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /keep current/i })).toBeNull()
+    expect(screen.queryByRole('button', { name: /leave as is/i })).toBeNull()
   })
 
   it('a pick applies without a note — choosing a candidate is not an override', async () => {
@@ -2231,7 +2593,7 @@ describe('verdicts answer the headline question', () => {
   it('the affirmative button answers the question instead of saying "Confirm Reviewed"', () => {
     renderVerdicts()
     expect(screen.getByRole('button', { name: /track it/i })).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /keep current/i })).toBeNull()
+    expect(screen.queryByRole('button', { name: /leave as is/i })).toBeNull()
   })
 
   it('Reject is worded by the question and passes the note as the reason', async () => {
@@ -2476,19 +2838,39 @@ describe('Current is one value — the cell and the buttons cannot disagree', ()
 
   it('proposing the value already stored is not a change — the desk has nothing to apply', () => {
     renderVendorLeg({ vendor_code: 'MACFUN' })
-    // No "Apply MACFUN" / "Apply 1 Change", and no "Keep Current" either: with no alternative on
+    // No "Apply MACFUN" / "Apply 1 Change", and no "Leave As Is" either: with no alternative on
     // offer there is nothing to keep it OVER, so the card falls back to a plain confirmation.
     expect(screen.queryByRole('button', { name: /^apply/i })).toBeNull()
-    expect(screen.getByRole('button', { name: /confirm reviewed/i })).toHaveAttribute(
+    expect(screen.getByRole('button', { name: /mark reviewed — no changes/i })).toHaveAttribute(
       'title',
-      expect.stringContaining('nothing to change'),
+      expect.stringContaining('nothing is written'),
     )
   })
 
-  it('a genuinely different stored value still reads as a change', () => {
+  it('a genuinely different stored value still reads as a change — once it is taken', async () => {
+    const user = userEvent.setup()
     renderVendorLeg({ vendor_code: 'SOUOCE' })
+    // Opens on the stored value: the committer read MACFUN off the email and kept SOUOCE.
+    expect(screen.queryByRole('button', { name: /^apply/i })).toBeNull()
+    await user.click(screen.getByTestId('conflict-take'))
     expect(screen.getByRole('button', { name: /^apply/i })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /keep current/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /^leave as is$/i })).toBeInTheDocument()
+  })
+
+  it('the take-tick goes back — unticking returns the row to the stored value', async () => {
+    const user = userEvent.setup()
+    renderVendorLeg({ vendor_code: 'SOUOCE' })
+    await user.click(screen.getByTestId('conflict-take'))
+    expect(screen.getByTestId('conflict-take')).toBeChecked()
+    await user.click(screen.getByTestId('conflict-take'))
+    expect(screen.getByTestId('conflict-take')).not.toBeChecked()
+    expect(screen.queryByRole('button', { name: /^apply/i })).toBeNull()
+  })
+
+  /** Nothing left to take: the email named the value the leg already holds. */
+  it('offers no tick when the email agrees with the leg', () => {
+    renderVendorLeg({ vendor_code: 'MACFUN' })
+    expect(screen.queryByTestId('conflict-take')).toBeNull()
   })
 
   /**
@@ -2503,14 +2885,129 @@ describe('Current is one value — the cell and the buttons cannot disagree', ()
     expect(grid).not.toHaveTextContent(/1 change/i)
   })
 
-  it('and says "1 change" once a pick would actually write something', () => {
+  it('and says "1 change" once a pick would actually write something', async () => {
+    const user = userEvent.setup()
     renderVendorLeg({ vendor_code: 'SOUOCE' })
+    expect(screen.getByTestId('review-decision-grid')).toHaveTextContent(/nothing to apply/i)
+    await user.click(screen.getByTestId('conflict-take'))
     expect(screen.getByTestId('review-decision-grid')).toHaveTextContent(/Shipping\s*\(1 change\)/i)
   })
 
-  it('nothing stored anywhere still means Leave Blank', () => {
+  /**
+   * Regression, found by adversarial review of this change. Seeding from the stored value made the
+   * seed something that can MOVE — react-query refetches on window focus — where the agent's
+   * proposal never could. Keyed on field names alone, a leg corrected by someone else while the
+   * card sat open left the old value armed in `resolutions`, and the card offered to apply it.
+   */
+  it('a leg corrected underneath the open card does not leave the old value armed', () => {
+    const { rerender } = renderVendorLeg({ vendor_code: 'SOUOCE' })
+    expect(screen.queryByRole('button', { name: /^apply/i })).toBeNull()
+
+    const withNewValue = (
+      <MemoryRouter>
+        <QueryClientProvider client={new QueryClient()}>
+          <ReviewCard
+            shipment={
+              {
+                ...baseShipment({ reviewReasons: [] }),
+                openDecisions: {
+                  settledFields: [],
+                  resolvedParties: [],
+                  liveValues: { vendor_code: 'ROKNFT' },
+                },
+              } as unknown as ReviewShipment
+            }
+            criticReview={baseReview({ conflicts: [vendorNoSystemCandidate] })}
+            defaultExpanded
+            embedded
+            onApprove={vi.fn()}
+            onSaveAndApprove={vi.fn()}
+          />
+        </QueryClientProvider>
+      </MemoryRouter>
+    )
+    rerender(withNewValue)
+
+    // Current followed the leg, and the resolution followed Current — no "Apply SOUOCE".
+    expect(screen.getByTestId('review-decision-grid')).toHaveTextContent('ROKNFT')
+    expect(screen.queryByRole('button', { name: /^apply/i })).toBeNull()
+    expect(screen.getByTestId('review-decision-grid')).toHaveTextContent(/nothing to apply/i)
+  })
+
+  it('nothing stored anywhere still means Leave Blank', async () => {
+    const user = userEvent.setup()
     renderVendorLeg({})
+    await user.click(screen.getByTestId('conflict-take'))
     expect(screen.getByRole('button', { name: /leave blank/i })).toBeInTheDocument()
+  })
+})
+
+/**
+ * `open-decisions.ts` builds liveValues with `toISOString()`, so Current printed
+ * `2026-09-05T00:00:00.000Z` next to the email's clean `2026-09-09` — two renderings of the same kind
+ * of thing, with the tail left for the operator to strip by eye. It stopped being cosmetic when the
+ * seed became the stored value: `DateTimeField` reads `YYYY-MM-DD[THH:mm]`, so an ISO instant would
+ * come back out of the calendar as a change nobody made.
+ */
+describe('a stored date reads like a date — the grid never prints an ISO instant', () => {
+  const etaVsEmail: CriticConflict = {
+    field: 'eta',
+    label: 'ETA',
+    candidates: [{ value: '2026-09-09', source: 'SO' }],
+    rationale: 'The SO states a later arrival.',
+  }
+  const cutoff: CriticConflict = {
+    field: 'cfs_cutoff',
+    label: 'CFS Cut-off',
+    candidates: [{ value: '2026-08-09T18:00', source: 'Booking Confirmation' }],
+    rationale: 'Cut-off moved.',
+  }
+
+  function renderDates(liveValues: Record<string, string>, conflicts: CriticConflict[]) {
+    return render(
+      <MemoryRouter>
+        <QueryClientProvider client={new QueryClient()}>
+          <ReviewCard
+            shipment={
+              {
+                ...baseShipment({ reviewReasons: [] }),
+                openDecisions: { settledFields: [], resolvedParties: [], liveValues },
+              } as unknown as ReviewShipment
+            }
+            criticReview={baseReview({ conflicts, riskFlags: [], reasons: [] })}
+            defaultExpanded
+            embedded
+            onApprove={vi.fn()}
+            onSaveAndApprove={vi.fn()}
+          />
+        </QueryClientProvider>
+      </MemoryRouter>,
+    )
+  }
+
+  it('day-formats what the leg stores instead of printing toISOString()', () => {
+    renderDates({ eta: '2026-09-05T00:00:00.000Z' }, [etaVsEmail])
+    const grid = screen.getByTestId('review-decision-grid')
+    expect(within(grid).getByText('2026-09-05')).toBeInTheDocument()
+    expect(grid).not.toHaveTextContent('2026-09-05T00:00:00.000Z')
+  })
+
+  it("keeps a cut-off's clock time — only the ISO tail goes", () => {
+    renderDates({ cfs_cutoff: '2026-08-07T15:00:00.000Z' }, [cutoff])
+    expect(screen.getByTestId('review-decision-grid')).toHaveTextContent('2026-08-07 15:00')
+  })
+
+  it('the calendar opens on the stored day, not on an instant it cannot read', async () => {
+    const user = userEvent.setup()
+    renderDates({ eta: '2026-09-05T00:00:00.000Z' }, [etaVsEmail])
+    await user.click(screen.getByRole('button', { name: /^edit$/i }))
+    expect((screen.getByTestId('datetime-date') as HTMLInputElement).value).toBe('2026-09-05')
+  })
+
+  it('the ISO tail is not a change — an untouched date row applies nothing', () => {
+    renderDates({ eta: '2026-09-05T00:00:00.000Z' }, [etaVsEmail])
+    expect(screen.queryByRole('button', { name: /^apply/i })).toBeNull()
+    expect(screen.getByTestId('review-decision-grid')).toHaveTextContent(/nothing to apply/i)
   })
 })
 
@@ -2550,10 +3047,13 @@ describe('the card takes its shape from the leg, not from the reason text', () =
     expect(screen.queryByTestId('review-reject')).toBeNull()
   })
 
-  it('a real-looking leg keeps the grid and the field actions', () => {
+  it('a real-looking leg keeps the grid and the field actions', async () => {
+    const user = userEvent.setup()
     renderShape({}, [thinReason])
     expect(screen.getByTestId('review-decision-grid')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /keep current/i })).toBeInTheDocument()
+    // The take-tick is the field action a working card opens with; Keep current follows it.
+    await user.click(screen.getByTestId('conflict-take'))
+    expect(screen.getByRole('button', { name: /^leave as is$/i })).toBeInTheDocument()
   })
 
   it('a header-row identifier forces the verdict shape whatever else it carries', () => {
@@ -2577,5 +3077,131 @@ describe('the card takes its shape from the leg, not from the reason text', () =
     renderShape({ bookingNo: null, route: null }, [thinReason])
     expect(screen.queryByRole('button', { name: /^apply/i })).toBeNull()
     expect(screen.queryByRole('button', { name: /^edit$/i })).toBeNull()
+  })
+})
+
+/**
+ * Choosing "Keep current" on a ROW is a ruling, and it used to be a no-op: `fieldsToApply` only
+ * carries a field whose value CHANGES, so keeping what is stored contributed nothing and the approve
+ * posted an empty set. The shipment detail page, meanwhile, locks every field a human edits — the
+ * same person making the same call got an audit trail on one screen and silence on the other.
+ *
+ * The trap this suite exists to catch: the row SEEDS from the stored value, so "Keep current" is
+ * already the checked radio on every untouched card. A ruling read off state rather than off a click
+ * would lock the entire grid on every single approval.
+ */
+describe('a per-row Keep current is a ruling, not a no-op', () => {
+  /** Three vessels named across the thread, one of them the value the leg already stores. */
+  const vesselMulti: CriticConflict = {
+    field: 'vessel_name',
+    label: 'Vessel',
+    candidates: [
+      { value: 'EVER GLORY', source: 'System' },
+      { value: 'EVER GIVEN', source: 'Draft B/L' },
+      { value: 'EVER GENIUS', source: 'SO' },
+    ],
+    rationale: 'three vessels named across the thread',
+  } as CriticConflict
+
+  function renderKeepCard(conflicts: CriticConflict[]) {
+    const onSave = vi.fn().mockResolvedValue(undefined)
+    const onApprove = vi.fn().mockResolvedValue(undefined)
+    render(
+      <MemoryRouter>
+        <ReviewCard
+          shipment={baseShipment({ reviewReasons: [] })}
+          criticReview={baseReview({ conflicts, riskFlags: [], reasons: [] })}
+          compact={null}
+          defaultExpanded
+          onApprove={onApprove}
+          onSaveAndApprove={onSave}
+          onWait={vi.fn()}
+        />
+      </MemoryRouter>,
+    )
+    return { onSave, onApprove }
+  }
+
+  const keepOf = (onSave: ReturnType<typeof vi.fn>): string[] =>
+    (onSave.mock.calls[0]?.[0] as { keep?: string[] } | undefined)?.keep ?? []
+
+  /**
+   * THE negative test, written first and deliberately kept at the top of this block.
+   *
+   * "Leave All As Is" is overwhelmingly "not now" rather than a per-field verdict, so it must CLEAR
+   * the rulings — never fill them in for every row. Getting this backwards is invisible on screen
+   * and would manufacture a lock on every contested field of every leg an operator declined.
+   */
+  it('Leave All As Is on a 3-row card rules on nothing — even after a row was ruled', async () => {
+    const user = userEvent.setup()
+    const { onSave, onApprove } = renderKeepCard([vesselMulti, conflictEta, conflictHbl])
+    await user.click(screen.getByRole('radio', { name: /Keep the current Vessel/i }))
+    // The bulk decline only renders against a pending change, so give it one to decline.
+    await user.click(screen.getByRole('checkbox', { name: /Apply 2026-07-23 to ETA/i }))
+    await user.click(screen.getByRole('button', { name: /^leave all as is$/i }))
+    expect(onApprove).toHaveBeenCalledTimes(1)
+    // The bulk decline goes down the bare confirm path, which carries no payload at all — so there
+    // is no route by which a ruling could ride along with it.
+    expect(onSave).not.toHaveBeenCalled()
+  })
+
+  it('a ruling can be taken back — Discard appears for it even with nothing to write', async () => {
+    const user = userEvent.setup()
+    const { onSave, onApprove } = renderKeepCard([vesselMulti])
+    await user.click(screen.getByRole('radio', { name: /Keep the current Vessel/i }))
+    expect(screen.getByRole('button', { name: /^keep vessel$/i })).toBeInTheDocument()
+    await user.click(screen.getByTestId('discard-edits'))
+    // Back to a card that decides nothing: the primary reverts to the bare confirm.
+    expect(screen.queryByRole('button', { name: /^keep vessel$/i })).toBeNull()
+    await user.click(screen.getByRole('button', { name: /^mark reviewed/i }))
+    expect(onApprove).toHaveBeenCalledTimes(1)
+    expect(onSave).not.toHaveBeenCalled()
+  })
+
+  it('an untouched card rules on nothing — the seeded default is not a decision', async () => {
+    const user = userEvent.setup()
+    const { onSave, onApprove } = renderKeepCard([vesselMulti])
+    expect(screen.getByTestId('conflict-keep-current')).toBeChecked()
+    await user.click(screen.getByRole('button', { name: /^mark reviewed/i }))
+    expect(keepOf(onSave)).toEqual([])
+    // Nothing to write and nothing ruled — the bare confirm is the honest call here.
+    expect(onApprove).toHaveBeenCalledTimes(1)
+    expect(onSave).not.toHaveBeenCalled()
+  })
+
+  it('clicking the already-checked Keep current records the ruling and names it on the button', async () => {
+    const user = userEvent.setup()
+    const { onSave } = renderKeepCard([vesselMulti])
+    // Already checked, so this fires no change event — the click is the whole signal.
+    await user.click(screen.getByRole('radio', { name: /Keep the current Vessel/i }))
+    const commit = screen.getByRole('button', { name: /^keep vessel$/i })
+    await user.click(commit)
+    expect(keepOf(onSave)).toEqual(['vesselName'])
+    // A ruling writes no value — that is the entire point.
+    expect((onSave.mock.calls[0]![0] as { fields: Record<string, unknown> }).fields).toEqual({})
+  })
+
+  it('picking a candidate afterwards retracts the ruling — one field is never both', async () => {
+    const user = userEvent.setup()
+    const { onSave } = renderKeepCard([vesselMulti])
+    await user.click(screen.getByRole('radio', { name: /Keep the current Vessel/i }))
+    await user.click(screen.getByRole('radio', { name: /EVER GIVEN/i }))
+    await user.click(screen.getByRole('button', { name: /^apply EVER GIVEN$/i }))
+    expect(keepOf(onSave)).toEqual([])
+    expect((onSave.mock.calls[0]![0] as { fields: Record<string, unknown> }).fields).toEqual({
+      vesselName: 'EVER GIVEN',
+    })
+  })
+
+  it('a write and a ruling travel together but stay apart in the payload', async () => {
+    const user = userEvent.setup()
+    const { onSave } = renderKeepCard([vesselMulti, conflictEta])
+    await user.click(screen.getByRole('radio', { name: /Keep the current Vessel/i }))
+    // The single-candidate ETA row takes its value with the row tick.
+    await user.click(screen.getByRole('checkbox', { name: /Apply 2026-07-23 to ETA/i }))
+    await user.click(screen.getByRole('button', { name: /^apply 2026-07-23$/i }))
+    const payload = onSave.mock.calls[0]![0] as { fields: Record<string, unknown>; keep: string[] }
+    expect(payload.fields).toEqual({ eta: '2026-07-23' })
+    expect(payload.keep).toEqual(['vesselName'])
   })
 })

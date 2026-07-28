@@ -62,6 +62,32 @@ export interface EditableField {
    * 08:00 to be read as meaningful.
    */
   withTime?: true
+  /**
+   * The POST /shipments key for this field, when it differs from the leg column.
+   *
+   * The create endpoint speaks the committer's vocabulary (`customer_code` → `customerCode`), the
+   * edit endpoint speaks leg columns (`customerRaw`) — the same value, two names, because one goes
+   * through master resolution and the other writes the raw twin directly. Only the five
+   * master-resolved fields differ; everything else uses its column name, which is why this is an
+   * exception list and not a second table.
+   */
+  createKey?: string
+  /**
+   * The value is prose long enough to need more than one line, so the edit forms render a wrapping,
+   * auto-growing textarea and give it the full width of its section.
+   *
+   * Only the consignee address qualifies today: it is an address BLOCK — company, suite, street,
+   * district — stored in one column, routinely over a hundred characters. Every other editable
+   * column is a code, a name or a number that fits. The read view has wrapped all along
+   * (`.field-value`), so edit mode was the only place the operator could not see their own data
+   * without arrow-keying through a one-line box.
+   */
+  multiline?: true
+}
+
+/** POST /shipments key for an editable field — its column unless the create DTO renames it. */
+export function createFieldKey(f: EditableField): string {
+  return f.createKey ?? f.column
 }
 
 export const EDITABLE_FIELDS: EditableField[] = [
@@ -94,16 +120,16 @@ export const EDITABLE_FIELDS: EditableField[] = [
   // "…Code", not bare "Customer"/"Vendor": a pick now stores the master CODE, and the read view rows
   // are already labelled this way, so all three surfaces (read, edit, review conflict row) agree on
   // both the name and the thing named. Forwarder keeps the bare label — it stores a NAME.
-  { section: 'Shipping', label: 'Customer Code', uiKey: 'customerRaw', column: 'customerRaw', type: 'text', picker: 'customer' },
-  { section: 'Shipping', label: 'Vendor Code', uiKey: 'vendorRaw', column: 'vendorRaw', type: 'text', picker: 'vendor' },
-  { section: 'Shipping', label: 'Forwarder', uiKey: 'forwarderRaw', column: 'forwarderRaw', type: 'text', picker: 'forwarder' },
+  { section: 'Shipping', label: 'Customer Code', uiKey: 'customerRaw', column: 'customerRaw', type: 'text', picker: 'customer', createKey: 'customerCode' },
+  { section: 'Shipping', label: 'Vendor Code', uiKey: 'vendorRaw', column: 'vendorRaw', type: 'text', picker: 'vendor', createKey: 'vendorCode' },
+  { section: 'Shipping', label: 'Forwarder', uiKey: 'forwarderRaw', column: 'forwarderRaw', type: 'text', picker: 'forwarder', createKey: 'forwarderName' },
   { section: 'Shipping', label: 'Consignee Name', uiKey: 'consigneeName', column: 'consigneeName', type: 'text' },
-  { section: 'Shipping', label: 'Consignee Address', uiKey: 'consigneeAddress', column: 'consigneeAddress', type: 'text' },
+  { section: 'Shipping', label: 'Consignee Address', uiKey: 'consigneeAddress', column: 'consigneeAddress', type: 'text', multiline: true },
   { section: 'Shipping', label: 'Vessel', uiKey: 'vesselName', column: 'vesselName', type: 'text' },
   { section: 'Shipping', label: 'Voyage', uiKey: 'voyageNumber', column: 'voyageNo', type: 'text' },
   { section: 'Shipping', label: 'Flight No.', uiKey: 'flightNo', column: 'flightNo', type: 'text' },
-  { section: 'Shipping', label: 'POL', uiKey: 'polRaw', column: 'polRaw', type: 'text', picker: 'port' },
-  { section: 'Shipping', label: 'POD', uiKey: 'podRaw', column: 'podRaw', type: 'text', picker: 'port' },
+  { section: 'Shipping', label: 'POL', uiKey: 'polRaw', column: 'polRaw', type: 'text', picker: 'port', createKey: 'pol' },
+  { section: 'Shipping', label: 'POD', uiKey: 'podRaw', column: 'podRaw', type: 'text', picker: 'port', createKey: 'pod' },
   { section: 'Key Dates', label: 'Cargo Ready Date', uiKey: 'crd', column: 'cargoReadyDate', type: 'date' },
   { section: 'Key Dates', label: 'WH Start Date', uiKey: 'warehouseStartDate', column: 'warehouseStartDate', type: 'date', withTime: true },
   { section: 'Key Dates', label: 'WH End Date', uiKey: 'warehouseEndDate', column: 'warehouseEndDate', type: 'date', withTime: true },
@@ -139,37 +165,126 @@ export function numericFieldWarn(column: string, value: string | undefined): str
 }
 
 /**
+ * Columns whose value has a well-defined SHAPE, and the message when it does not have it.
+ *
+ * 🔴 These mirror `backend/src/shipments/coerce-field.ts` — same patterns, same wording, because the
+ * backend throws a 400 on a mismatch and two different phrasings of one rule is how an operator ends
+ * up distrusting both. `review-fields.format-gate.test.ts` reads that file and fails if either side
+ * moves.
+ *
+ * Without a mirror the rule still HELD — it just arrived from the server, after a round trip, as one
+ * line at the foot of a 31-field scrolling form ("Failed to create — Container No. must be 4 letters
+ * + 7 digits"), with the offending field somewhere off screen. The rule was never the problem; being
+ * told about it three hundred pixels away from the box that was wrong was.
+ *
+ * HTS is deliberately absent, on both sides: its forms vary (6/8/10-digit, dotted like 6110.20.2020),
+ * so there is no shape to gate.
+ */
+const FORMAT_GATES: Record<string, { re: RegExp; message: string }> = {
+  // SCAC = Standard Carrier Alpha Code: 2-4 letters.
+  scacCode: { re: /^[A-Za-z]{2,4}$/, message: 'SCAC Code must be 2–4 letters (e.g. MAEU)' },
+  // ISO 6346: 4 letters (owner + U/J/Z category) + 7 digits (6 serial + 1 check).
+  containerNo: { re: /^[A-Za-z]{4}\d{7}$/, message: 'Container No. must be 4 letters + 7 digits, e.g. MSBU7281200' },
+}
+
+/** Inline hard error for a leg column's FORMAT. Empty is always fine — it clears the field. */
+export function formatFieldWarn(column: string, value: string | undefined): string | null {
+  const gate = FORMAT_GATES[column]
+  if (!gate) return null
+  const v = (value ?? '').trim()
+  if (v === '') return null
+  return gate.re.test(v) ? null : gate.message
+}
+
+/**
+ * EVERY inline hard error for one field — numeric range or format.
+ *
+ * Callers use this rather than the two halves, so a gate added to either kind reaches every form
+ * without each one remembering to ask twice. That is exactly how the format gates were missed: both
+ * forms asked `numericFieldWarn` and only for `type === 'number'`, so a text column with a shape had
+ * no way to be checked at all.
+ */
+export function fieldWarn(column: string, value: string | undefined): string | null {
+  return numericFieldWarn(column, value) ?? formatFieldWarn(column, value)
+}
+
+/**
  * Cross-field date sanity for the human edit form: every departure (ETD/ATD) must be before every
  * arrival (ETA/ATA). Estimate and actual float freely — ETD↔ATD and ETA↔ATA are never compared (an
  * estimate may fall either side of the actual). Returns the first "arrival before departure"
  * violation, or null. Lives here (not backend `coerceLegField`) because it needs sibling fields.
  */
-export function dateOrderWarn(dates: {
+/**
+ * One arrival that lands before a departure, and every departure it precedes.
+ *
+ * Per ARRIVAL rather than per pair: a leg can violate several at once — ETD 12/07, ATD 08/07,
+ * ETA 07/07, ATA 29/12/2025 breaks four ways — and the old check `return`ed on the first match, so
+ * the form reported "ETA is before ETD" and said nothing about an ATA a year in the past. The
+ * operator fixed the one they were shown, saved, and met the next.
+ */
+export interface DateOrderIssue {
+  /** Leg column of the arrival that is too early — where the message belongs. */
+  arrival: 'eta' | 'ata'
+  /** Every departure it precedes; any of them could be the wrong value, so all are named. */
+  departures: ('etd' | 'atd')[]
+  message: string
+}
+
+const DATE_LABEL: Record<string, string> = { etd: 'ETD', atd: 'ATD', eta: 'ETA', ata: 'ATA' }
+
+/** Every violation on the leg, one entry per offending arrival. Empty when the dates are sane. */
+export function dateOrderIssues(dates: {
   etd?: string
   atd?: string
   eta?: string
   ata?: string
-}): string | null {
+}): DateOrderIssue[] {
   const ms = (v: string | undefined): number | null => {
     if (!v || v.trim() === '') return null
     const t = new Date(v).getTime()
     return Number.isNaN(t) ? null : t
   }
   const deps = [
-    { k: 'ETD', t: ms(dates.etd) },
-    { k: 'ATD', t: ms(dates.atd) },
-  ]
+    { col: 'etd' as const, t: ms(dates.etd) },
+    { col: 'atd' as const, t: ms(dates.atd) },
+  ].filter((d) => d.t != null)
   const arrs = [
-    { k: 'ETA', t: ms(dates.eta) },
-    { k: 'ATA', t: ms(dates.ata) },
-  ]
-  for (const d of deps) {
-    if (d.t == null) continue
-    for (const a of arrs) {
-      if (a.t != null && a.t < d.t) return `${a.k} is before ${d.k} — arrival can't be before departure`
-    }
+    { col: 'eta' as const, t: ms(dates.eta) },
+    { col: 'ata' as const, t: ms(dates.ata) },
+  ].filter((a) => a.t != null)
+
+  const out: DateOrderIssue[] = []
+  for (const a of arrs) {
+    const before = deps.filter((d) => a.t! < d.t!).map((d) => d.col)
+    if (before.length === 0) continue
+    const names = before.map((c) => DATE_LABEL[c]).join(' and ')
+    out.push({
+      arrival: a.col,
+      departures: before,
+      message: `${DATE_LABEL[a.col]} is before ${names} — arrival can't be before departure`,
+    })
   }
-  return null
+  return out
+}
+
+/** The first violation, for callers that can show only one. */
+export function dateOrderIssue(dates: {
+  etd?: string
+  atd?: string
+  eta?: string
+  ata?: string
+}): DateOrderIssue | null {
+  return dateOrderIssues(dates)[0] ?? null
+}
+
+/** Message-only form, for callers with nowhere to put a per-field marker (the review card's grid). */
+export function dateOrderWarn(dates: {
+  etd?: string
+  atd?: string
+  eta?: string
+  ata?: string
+}): string | null {
+  return dateOrderIssue(dates)?.message ?? null
 }
 
 /** Shipment value → what the <input> shows. Dates render as LOCAL datetime-local ("2026-06-29T15:00")
@@ -429,6 +544,37 @@ export function partyPickerKind(
 }
 
 /**
+ * The legal values for an enum-constrained column (UOM, Mode), or null when the column is free text.
+ *
+ * The review conflict row had every OTHER edit affordance derived from EDITABLE_FIELDS — port
+ * picker, party picker, date field, numeric field — and no enum branch, so UOM and Mode fell through
+ * to a bare text input while the Order Details form rendered a `<select>` for exactly those two. An
+ * operator could type `cartonssdfsdf` into UOM from the review desk and nowhere else.
+ *
+ * `current` is folded in when it is not already offered. `allValues` exists because Mode's offer
+ * list is deliberately shorter than its legal set (SEA/AIR offered, more stored), and a leg holding
+ * one of the unoffered values must stay selectable rather than being silently rewritten by the act
+ * of opening the dropdown.
+ */
+export function fieldOptions(
+  column: string | null | undefined,
+  current?: string | null,
+): string[] | null {
+  const meta = column ? EDITABLE_FIELDS.find((f) => f.column === column) : null
+  if (!meta?.options) return null
+  const legal = new Set<string>([...(meta.allValues ?? meta.options)])
+  const out = [...meta.options]
+  const c = (current ?? '').trim()
+  if (c !== '' && !out.some((o) => o.toUpperCase() === c.toUpperCase())) {
+    // A stored value outside the offer list is still valid (see allValues) — and even one that is
+    // NOT legal has to be offered, or the dropdown cannot represent what the leg actually holds.
+    out.push(c)
+    if (!legal.has(c)) out.sort()
+  }
+  return out
+}
+
+/**
  * Map a ReviewCard / critic payload field bag to CorrectDto keys (camelCase leg columns).
  * Drops keys that do not map to an editable leg column so we never POST snake_case garbage.
  */
@@ -519,6 +665,19 @@ export function fieldUnit(column: string): string | null {
 export function reviewFieldLabel(field: string, fallback: string): string {
   const column = mapCriticFieldToColumn(field)
   return column ? fieldLabel(column) : fallback
+}
+
+/**
+ * Toast tail naming the fields a save also RULED to leave alone — '' when there are none.
+ *
+ * Shared by the queue's expanded card and the focused review page rather than written twice: the two
+ * save handlers are deliberate near-duplicates (see ShipmentReviewFocusPage's header note), and copy
+ * about what a click did is exactly the kind of thing that drifts between them.
+ */
+export function keptSuffix(keep: string[] | undefined): string {
+  const cols = keep ?? []
+  if (cols.length === 0) return ''
+  return ` · kept ${cols.map((c) => fieldLabel(c)).join(', ')}`
 }
 
 /**

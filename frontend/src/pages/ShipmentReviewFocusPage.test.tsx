@@ -16,7 +16,14 @@ const { mockUseShipment, mutateAsync, dismissAsync, waitAsync } = vi.hoisted(() 
   waitAsync: vi.fn().mockResolvedValue(undefined),
 }))
 
-vi.mock('../hooks/use-shipments', () => ({ useShipment: mockUseShipment }))
+vi.mock('../hooks/use-shipments', () => ({
+  useShipment: mockUseShipment,
+  // The page owns the write path for "link this party to that Mesh master" and hands it to
+  // ReviewCard as a prop — the card itself stays free of the data layer.
+  useUpdateShipment: () => ({ mutateAsync: vi.fn(), isPending: false }),
+}))
+// The Mesh mirror behind the master-miss pick list; unmocked it would query from jsdom.
+vi.mock('../hooks/use-parties', () => ({ useParties: () => ({ data: [] }) }))
 vi.mock('../hooks/use-review-queue', () => ({
   useConfirmShipment: () => ({ mutateAsync }),
   useCorrectShipment: () => ({ mutateAsync }),
@@ -97,7 +104,8 @@ describe('ShipmentReviewFocusPage', () => {
     expect(screen.getByText(/loading review/i)).toBeInTheDocument()
   })
 
-  it('renders the focused review card with the conflict table and an approve action', () => {
+  it('renders the focused review card with the conflict table and an approve action', async () => {
+    const user = userEvent.setup()
     mockUseShipment.mockReturnValue({ data: fixture(), isLoading: false, isError: false })
     renderPage()
 
@@ -113,7 +121,9 @@ describe('ShipmentReviewFocusPage', () => {
     expect(screen.getByRole('table')).toBeInTheDocument()
     expect(screen.getByText('ETA')).toBeInTheDocument()
 
-    // And the commit action is live (not read-only) — it names the value it would write.
+    // And the commit action is live (not read-only) — once the operator takes the email's ETA, it
+    // names the value it would write.
+    await user.click(screen.getByTestId('conflict-take'))
     expect(screen.getByRole('button', { name: /^apply 2026-07-23$/i })).toBeInTheDocument()
     expect(screen.queryByText(/shown read-only/i)).not.toBeInTheDocument()
   })

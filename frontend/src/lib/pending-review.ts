@@ -1,6 +1,6 @@
 import { mapCriticFieldToColumn, conflictColumns } from './review-fields'
 import { isQtySettled } from './qty-conflict-settle'
-import { isMailboxPartyName, isSameCompanyName } from './party-names'
+import { isMailboxPartyName, isSameCompanyName, mastersNaming } from './party-names'
 
 /**
  * The slice of the shipment detail this derivation reads. Structural on purpose — importing
@@ -170,6 +170,15 @@ export function pendingReviewAnnotations(
     liveQty: null,
     poShipmentTotal: null,
   },
+  /**
+   * Every party master NAME the Mesh mirror holds (customers + vendors + forwarders, flat).
+   *
+   * Needed to tell "this company is not in Mesh" apart from "this company is in Mesh five times
+   * under longer names" — two situations that produced the same sentence, and whose correct
+   * operator actions are opposites. Optional: callers without the mirror loaded keep the old
+   * behaviour rather than blocking on it.
+   */
+  masterNames: string[] = [],
 ): Map<string, PendingAnnotation> {
   const out = new Map<string, PendingAnnotation>()
   if (!shipment) return out
@@ -221,9 +230,49 @@ export function pendingReviewAnnotations(
     const resolvedNames = (shipment.openDecisions?.resolvedParties ?? [])
       .map((p) => String(p.name ?? '').trim())
       .filter(Boolean)
+    /**
+     * The masters that ARE this company, when the raw name is not one of them exactly.
+     *
+     * "did not exact-match a master" is a true statement about the lookup and a false one about
+     * Mesh. Leg S2600144827 carries `forwarder_name "LOGWIN"`, and Mesh holds FIVE LOGWIN
+     * companies — Shenzhen, Guangzhou, Hong Kong, two more — none of them named just "LOGWIN". The
+     * row therefore said "not found in Mesh Database — advise add in Mesh", and an operator who
+     * followed that advice would create a sixth.
+     *
+     * So the icon stays — the leg genuinely has no forwarder linked, and which LOGWIN branch this
+     * shipment used is a real question with a real answer — but the ADVICE inverts: not "add this
+     * company", "you have five of them, say which". `isSameCompanyName` is the same predicate the
+     * resolved-name rule above uses; it already treats `LOGWIN` and `LOGWIN AIR & OCEAN HONG KONG
+     * LTD` as one company, and it is deliberately a prefix/stem test rather than a fuzzy score, so
+     * a genuinely absent company still reads as absent and still says "add in Mesh".
+     *
+     * Kind-agnostic on purpose, exactly as `resolvedNames` is: the queue files misses against the
+     * wrong slot often enough (leg 202601DD8E put a VENDOR under Forwarder) that trusting the slot
+     * here would reintroduce the bug that rule exists to kill.
+     */
     const addMiss = (col: string | null, msg: string, name?: string | null) => {
       if (col && resolvedCols.has(col)) return
       if (name && resolvedNames.some((n) => isSameCompanyName(name, n))) return
+      if (name) {
+        const hits = mastersNaming(name, masterNames)
+        if (hits.length) {
+          const shown = hits.slice(0, 3).join(', ')
+          const more = hits.length > 3 ? `, +${hits.length - 3} more` : ''
+          // 'warn', not 'miss'. A master MISS means the company is absent from Mesh and someone must
+          // add it — the red icon and the "Master Miss" heading both say so. Here Mesh has the
+          // company, five times over; what is unresolved is WHICH, and that is an open review
+          // question like any other. Filing it as a miss put the same falsehood in the heading that
+          // the body text was written to remove.
+          add(
+            col,
+            'warn',
+            hits.length === 1
+              ? `"${name}" is in Mesh as ${hits[0]} — not linked yet. Edit the field and pick it.`
+              : `"${name}" matches ${hits.length} companies in Mesh but names none of them exactly — pick the right one (${shown}${more}).`,
+          )
+          return
+        }
+      }
       add(col, 'miss', msg)
     }
     for (const c of shipment.criticReview?.conflicts ?? []) {

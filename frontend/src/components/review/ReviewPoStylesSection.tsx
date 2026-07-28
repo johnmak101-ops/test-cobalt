@@ -5,6 +5,13 @@
  */
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Check, Link2Off, Loader2, Plus, X } from 'lucide-react'
+import {
+  planAll,
+  planForPo,
+  styleTokens,
+  type PoStylePlan,
+  type PoStyleSelection,
+} from '../../lib/po-style-plan'
 import type { LinkedPO } from '../../hooks/use-shipments'
 import {
   useCreatePurchaseOrder,
@@ -37,45 +44,47 @@ function escapeRegExp(s: string): string {
 }
 
 /**
- * The style named by a `(kept …)` audit note, when it is not already what the PO stores.
+ * The style this thread resolved to, when the PO does not already carry it.
  *
- * `(kept X)` is NOT a proposal from the email. It is written by the committer's reconciler
+ * NOT a proposal from the email. It is written by the committer's reconciler
  * (`summarizeStyleConflict(enr.styleConflict, enr.itemStyleNo)` in po-enrichment.ts) to record which
- * of several competing styles it already committed — X is the value it wrote. Rendering it in the
- * AI Proposed column therefore advertised a change that writes back what is on the row, which is why
- * a leg with nothing to do read as "1 change".
+ * of several competing styles it ranked first — and `upsertPo` is fill-if-null / superset-upgrade
+ * only, so on any row that reaches this function the write was DECLINED and the PO kept what it had.
+ * A value the write path refused has no business in an apply-me colour under an apply-me heading;
+ * it renders slate under "Also Seen In Email" instead. Nothing is hidden — Edit still takes it deliberately.
  *
- * So the note only earns a cell when the kept value is genuinely absent from the PO. Absent means
- * absent as a TOKEN: `C192/FERN JUMPER` already carries `C192` (parseStyleEntries reads the part
- * before the slash as the PO/article prefix), and offering the bare code there would invite the
- * operator to overwrite the fuller value with a shorter one they already have.
+ * The suffix only earns a cell when the value is genuinely absent from the PO. Absent means absent
+ * as a TOKEN: `C192/FERN JUMPER` already carries `C192` (parseStyleEntries reads the part before the
+ * slash as the PO/article prefix), and showing the bare code there would invite the operator to
+ * overwrite the fuller value with a shorter one they already have.
  *
- * Nothing is suppressed by this — the note itself still reaches the desk as a review reason
- * ("PO 28631: item/style … — verify"). Only the false APPLY goes.
+ * Reads BOTH wordings. `(system read: X)` is what the reconciler writes now; `(kept X)` is the old
+ * phrasing, still sitting in review_reasons on every leg committed before that fix — those rows must
+ * keep rendering, so the legacy alternative stays until the column is known to be clear of them.
  */
-export function proposedStyleForPo(
+export function alsoSeenStyleForPo(
   poNumber: string,
   reviewReasons: string[],
   currentStyle?: string | null,
 ): string | null {
   const re = new RegExp(
-    `PO\\s+${escapeRegExp(poNumber)}:.*?item\\/style[\\s\\S]*?\\(kept\\s+([^)]+)\\)`,
+    `PO\\s+${escapeRegExp(poNumber)}:.*?item\\/style[\\s\\S]*?\\((?:system read:\\s*|kept\\s+)([^)]+)\\)`,
     'i',
   )
   for (const r of reviewReasons) {
     const m = r.match(re)
     if (!m?.[1]) continue
-    const kept = m[1].trim().replace(/^"|"$/g, '')
-    return styleAlreadyPresent(kept, currentStyle) ? null : kept
+    const seen = m[1].trim().replace(/^"|"$/g, '')
+    return styleAlreadyPresent(seen, currentStyle) ? null : seen
   }
   return null
 }
 
-/** True when `kept` is already carried by the stored style — as the whole value, one of its list
+/** True when `seen` is already carried by the stored style — as the whole value, one of its list
  *  entries, or an entry's article prefix (`C192` in `C192/FERN JUMPER`). */
-function styleAlreadyPresent(kept: string, currentStyle: string | null | undefined): boolean {
+function styleAlreadyPresent(seen: string, currentStyle: string | null | undefined): boolean {
   const norm = (s: string) => s.trim().toUpperCase()
-  const k = norm(kept)
+  const k = norm(seen)
   if (k === '') return true
   const current = String(currentStyle ?? '').trim()
   if (current === '') return false
@@ -116,8 +125,17 @@ export interface ReviewPoStylesSectionProps {
    * (same column tracks as field conflicts).
    */
   embedded?: boolean
-  /** Third-column header — tracks the card's state label (AI Proposed → Resolution → Edited). */
+  /** Third-column header — tracks the card's state label (Also Seen In Email → Resolution → Edited). */
   proposedColumnLabel?: string
+  /**
+   * Every PO whose style list the ticks would rewrite, emitted on each change.
+   *
+   * The section computes the plan; the CARD applies it — the same split the backend uses
+   * (planPoReconcile decides, the committer writes). The card owns applying because its primary
+   * button is what names the count and what the operator presses, and a section that wrote on its
+   * own would have changed the PO while the bar still read "No Changes".
+   */
+  onPlanChange?: (plans: PoStylePlan[]) => void
 }
 
 export function ReviewPoStylesSection({
@@ -129,6 +147,7 @@ export function ReviewPoStylesSection({
   reviewReasons = [],
   embedded = false,
   proposedColumnLabel = REVIEW_HEAD.proposed,
+  onPlanChange,
 }: ReviewPoStylesSectionProps) {
   const create = useCreatePurchaseOrder()
   const update = useUpdatePurchaseOrder()
@@ -136,6 +155,9 @@ export function ReviewPoStylesSection({
   const link = useLinkShipmentToPO()
 
   const canEdit = editing && !readOnly
+  /** What the operator has ticked, per PO. An absent entry is "untouched" — every stored token kept,
+   *  nothing added — so an untouched desk holds no state and plans to write nothing. */
+  const [selections, setSelections] = useState<Record<string, PoStyleSelection>>({})
   const [drafts, setDrafts] = useState<Record<string, Draft>>(() => draftsFromPos(linkedPOs))
   const [adding, setAdding] = useState(false)
   const [confirmUnlinkId, setConfirmUnlinkId] = useState<string | null>(null)
@@ -153,6 +175,52 @@ export function ReviewPoStylesSection({
 
   const busy =
     create.isPending || update.isPending || unlink.isPending || link.isPending
+
+  const same = (a: string, b: string) => a.trim().toUpperCase() === b.trim().toUpperCase()
+  const isDropped = (poId: string, tok: string): boolean =>
+    (selections[poId]?.dropped ?? []).some((d) => same(d, tok))
+
+  const toggleDropped = (poId: string, tok: string) =>
+    setSelections((s) => {
+      const cur = s[poId] ?? {}
+      const dropped = cur.dropped ?? []
+      const has = dropped.some((d) => same(d, tok))
+      return {
+        ...s,
+        [poId]: { ...cur, dropped: has ? dropped.filter((d) => !same(d, tok)) : [...dropped, tok] },
+      }
+    })
+
+  const toggleAdded = (poId: string) =>
+    setSelections((s) => ({ ...s, [poId]: { ...(s[poId] ?? {}), added: !s[poId]?.added } }))
+
+  /**
+   * The write plan, recomputed from the ticks and handed up on every change.
+   *
+   * Keyed on its own JSON so the card is told once per real change rather than once per render —
+   * `planAll` returns a fresh array each time, and passing that straight to an effect would loop.
+   * Refs carry the current callback and plans so neither has to sit in the dependency list and
+   * re-fire the emit when a parent re-renders for unrelated reasons.
+   *
+   * Self-clearing after an apply: once the PO stores the new list, a `dropped` token no longer
+   * matches anything and `alsoSeenStyleForPo` stops offering the added value, so both plans go null
+   * without this component having to know a write happened.
+   */
+  const plans = planAll(
+    linkedPOs,
+    (p) => alsoSeenStyleForPo(p.poNumber, reviewReasons, p.itemStyleNo),
+    selections,
+  )
+  const plansKey = JSON.stringify(plans)
+  const plansRef = useRef(plans)
+  plansRef.current = plans
+  const onPlanChangeRef = useRef(onPlanChange)
+  useEffect(() => {
+    onPlanChangeRef.current = onPlanChange
+  }, [onPlanChange])
+  useEffect(() => {
+    onPlanChangeRef.current?.(plansRef.current)
+  }, [plansKey])
 
   // View mode: derive from server (no effect mirror). Edit mode: local drafts only.
   const displayDrafts = canEdit ? drafts : draftsFromPos(linkedPOs)
@@ -262,16 +330,16 @@ export function ReviewPoStylesSection({
   }
 
   /**
-   * The review desk lists only the POs that need an answer — the ones the email proposes a different
-   * item/style for. A leg with seven POs and one proposal used to print all seven, six of them with
-   * `—` in the AI Proposed column, which reads as "something is wrong with these POs" when nothing
+   * The review desk lists only the POs that need an answer — the ones the thread stated a different
+   * item/style for. A leg with seven POs and one disagreement used to print all seven, six of them
+   * with `—` in the third column, which reads as "something is wrong with these POs" when nothing
    * is. The full list is the shipment page's job, one click away on Open Shipment.
    *
    * Edit mode shows every PO: adding, unlinking and correcting are what Edit is for.
    */
   const visiblePOs = canEdit
     ? linkedPOs
-    : linkedPOs.filter((p) => proposedStyleForPo(p.poNumber, reviewReasons, p.itemStyleNo) != null)
+    : linkedPOs.filter((p) => alsoSeenStyleForPo(p.poNumber, reviewReasons, p.itemStyleNo) != null)
   const sorted = [...visiblePOs].sort((a, b) =>
     a.poNumber.localeCompare(b.poNumber, undefined, { numeric: true }),
   )
@@ -330,12 +398,12 @@ export function ReviewPoStylesSection({
           <AddRow busy={busy} onCancel={() => setAdding(false)} onSave={handleAdd} />
         )}
         {sorted.map((po) => {
-          const proposed = proposedStyleForPo(po.poNumber, reviewReasons, po.itemStyleNo)
+          const alsoSeen = alsoSeenStyleForPo(po.poNumber, reviewReasons, po.itemStyleNo)
+          const plan = planForPo(po, alsoSeen, selections[po.id])
           const draft = displayDrafts[po.id] ?? {
             poNumber: po.poNumber,
             itemStyleNo: po.itemStyleNo?.trim() ?? '',
           }
-          const current = po.itemStyleNo?.trim() || null
 
           if (canEdit && confirmUnlinkId === po.id) {
             return (
@@ -403,21 +471,47 @@ export function ReviewPoStylesSection({
                     pairs={false}
                   />
                 ) : (
-                  <StyleListDisplay
-                    value={current ?? ''}
-                    className={current ? 'text-text-primary' : undefined}
-                    pairs={false}
-                  />
+                  /* View mode composes rather than displays: every stored token is a box, ticked,
+                     so dropping one is a click instead of a trip through Edit and a retype. */
+                  <>
+                    {styleTokens(po.itemStyleNo).map((tok) => (
+                      <StyleTick
+                        key={tok}
+                        label={tok}
+                        checked={!isDropped(po.id, tok)}
+                        tone="keep"
+                        onChange={() => toggleDropped(po.id, tok)}
+                        aria-label={`Keep style ${tok} on PO ${po.poNumber}`}
+                      />
+                    ))}
+                    {styleTokens(po.itemStyleNo).length === 0 && (
+                      <span className="text-sm text-text-muted">—</span>
+                    )}
+                    {plan && <PlanLine plan={plan} />}
+                  </>
                 )}
               </td>
               <td className={cn(REVIEW_COL.proposed, REVIEW_TD)} data-po-proposed="">
                 <div className="flex min-w-0 items-start justify-between gap-2">
                   <div className="min-w-0 flex-1">
-                    <StyleListDisplay
-                      value={proposed ?? ''}
-                      className={proposed ? 'font-medium text-ai-proposed' : undefined}
-                      pairs={false}
-                    />
+                    {/* Slate and unticked: this is a value the upsert rules refused to write, so
+                        taking it stays the operator's deliberate act. Pre-ticking it would be
+                        "AI Proposed" again, one distracted Apply from overwriting what the rules kept. */}
+                    {alsoSeen ? (
+                      canEdit ? (
+                        <StyleListDisplay value={alsoSeen} className="text-review-seen" pairs={false} />
+                      ) : (
+                        <StyleTick
+                          label={alsoSeen}
+                          checked={!!selections[po.id]?.added}
+                          tone="add"
+                          onChange={() => toggleAdded(po.id)}
+                          aria-label={`Add style ${alsoSeen} to PO ${po.poNumber}`}
+                        />
+                      )
+                    ) : (
+                      <span className="text-sm text-text-muted">—</span>
+                    )}
                   </div>
                   {canEdit && po.linkId && (
                     <IconBtn
@@ -539,5 +633,82 @@ function AddRow({
       {/* Reference Email track — keeps the add/edit row the same width as the rows around it. */}
       <td className={cn(REVIEW_COL.reference, REVIEW_TD)} aria-hidden />
     </tr>
+  )
+}
+
+/**
+ * One style, with the box that decides its fate.
+ *
+ * `keep` (left column) reads as "this stays" and opens ticked; `add` (right column) reads as "this
+ * joins" and opens empty. An unticked keep is struck through rather than hidden — the operator needs
+ * to see what they are removing right up until they press Apply, and a vanishing row reads as a bug.
+ */
+function StyleTick({
+  label,
+  checked,
+  tone,
+  onChange,
+  'aria-label': ariaLabel,
+}: {
+  label: string
+  checked: boolean
+  tone: 'keep' | 'add'
+  onChange: () => void
+  'aria-label': string
+}) {
+  const dropped = tone === 'keep' && !checked
+  return (
+    <label className="flex cursor-pointer items-start gap-2 py-0.5">
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={onChange}
+        aria-label={ariaLabel}
+        /* One colour for "the operator chose this", across every table on the card: the style
+           checkboxes, the conflict-table take, and the master radio rows. The green 'add' tone put a
+           third colour on one row — the left column blue, the "Also seen in email" tick green — which
+           read as two different kinds of choice when both are the same act. What is being added is
+           already said by which column the box sits in. */
+        className="mt-[3px] h-3.5 w-3.5 shrink-0 cursor-pointer rounded border-border accent-cobalt-primary-light"
+      />
+      <span
+        className={cn(
+          'field-value min-w-0 break-words font-mono text-sm leading-snug',
+          dropped && 'text-text-muted line-through',
+          !dropped && tone === 'keep' && 'text-text-primary',
+          tone === 'add' && (checked ? 'font-medium text-status-success' : 'text-review-seen'),
+        )}
+      >
+        {label}
+      </span>
+    </label>
+  )
+}
+
+/**
+ * The list this row will write, spelled out.
+ *
+ * A value assembled from two columns of boxes is otherwise something the operator has to hold in
+ * their head, and holding it wrong is how the wrong style gets committed. The clearing case gets its
+ * own wording and the critical colour: emptying a PO's styles is legitimate — sometimes the whole
+ * list is junk — but it must never be the quiet by-product of unticking three boxes.
+ */
+function PlanLine({ plan }: { plan: PoStylePlan }) {
+  return (
+    <p
+      data-testid={`po-plan-${plan.poId}`}
+      className="mt-2 border-t border-dashed border-border pt-1.5 text-[11px] leading-snug text-text-muted"
+    >
+      {plan.clears ? (
+        <span className="font-semibold text-status-critical">will CLEAR this PO&apos;s styles</span>
+      ) : (
+        <>
+          will write{' '}
+          <span className="field-value font-mono font-medium text-text-primary">
+            {plan.itemStyleNo}
+          </span>
+        </>
+      )}
+    </p>
   )
 }

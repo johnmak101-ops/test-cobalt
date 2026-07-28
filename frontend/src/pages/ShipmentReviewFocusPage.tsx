@@ -1,8 +1,9 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import { ArrowLeft, AlertTriangle } from 'lucide-react'
 import { useShipment } from '../hooks/use-shipments'
+import { useParties } from '../hooks/use-parties'
 import {
   useConfirmShipment,
   useCorrectShipment,
@@ -15,7 +16,7 @@ import {
 import { ReviewCard, type ReviewCardSavePayload } from '../components/review/ReviewCard'
 import { Badge } from '../components/ui/Badge'
 import { Card } from '../components/ui/Card'
-import { mapCriticFieldsToColumns } from '../lib/review-fields'
+import { keptSuffix, mapCriticFieldsToColumns } from '../lib/review-fields'
 import { formatShipmentId } from '../lib/utils'
 import { toast } from '../components/ui/Toast'
 
@@ -24,7 +25,7 @@ import { toast } from '../components/ui/Toast'
  *
  * The shipment detail page's "see conflict table" and "Review & approve" CTAs land here instead of
  * dumping the operator on the queue's landing page (where the row was often paginated out or below
- * the fold). It reuses the queue's presentational ReviewCard — the conflict table + Keep Existing /
+ * the fold). It reuses the queue's presentational ReviewCard — the conflict table + Leave As Is /
  * Approve — so there is still ONE conflict UI. The approve/correct wiring mirrors the queue's
  * ExpandedReviewPanel + saveAndApproveFor in ReviewQueuePage.tsx; keep the two in step.
  */
@@ -60,8 +61,23 @@ export default function ShipmentReviewFocusPage() {
     </button>
   )
 
+  /**
+   * The Mesh mirror. The card turns an unlinked party into a conflict-table row and offers these as
+   * its candidates; it must not fetch them itself — ReviewCard must stay renderable
+   * without a QueryClient, as 134 of its tests do.
+   *
+   * Declared BEFORE the loading/error early returns: hooks cannot sit behind a conditional.
+   */
+  const { data: customerMasters } = useParties('customer')
+  const { data: vendorMasters } = useParties('vendor')
+  const { data: forwarderMasters } = useParties('forwarder')
+  const partyMasters = useMemo(
+    () => [...(customerMasters ?? []), ...(vendorMasters ?? []), ...(forwarderMasters ?? [])],
+    [customerMasters, vendorMasters, forwarderMasters],
+  )
+
   if (isLoading) {
-    return (
+  return (
       <div className="flex h-64 items-center justify-center">
         <span className="text-sm text-text-muted">Loading review…</span>
       </div>
@@ -123,7 +139,7 @@ export default function ShipmentReviewFocusPage() {
       navigate('/review-queue')
     } catch (err) {
       const msg = err instanceof Error ? err.message.replace(/^API error \d+:\s*/i, '') : 'Reject failed'
-      toast(msg || 'Reject failed — try again')
+      toast.error(msg || 'Reject failed — try again')
     }
   }
 
@@ -136,7 +152,7 @@ export default function ShipmentReviewFocusPage() {
       navigate('/review-queue')
     } catch (err) {
       const msg = err instanceof Error ? err.message.replace(/^API error \d+:\s*/i, '') : 'Park failed'
-      toast(msg || 'Park failed — try again')
+      toast.error(msg || 'Park failed — try again')
     }
   }
 
@@ -145,34 +161,43 @@ export default function ShipmentReviewFocusPage() {
     try {
       const fields = payload.fields
       const mapped = mapCriticFieldsToColumns(fields)
+      const keep = payload.keep ?? []
       const hasFields = Object.keys(fields).length > 0
       const hasMappable = Object.keys(mapped).length > 0
       if (hasFields && !hasMappable) {
         // Contested keys that do not map to leg columns — saving here would silently drop them.
-        toast('Those conflict fields cannot be saved here — open the full shipment to edit.')
+        toast.error('Those conflict fields cannot be saved here — open the full shipment to edit.')
         return
       }
       if (hasMappable) {
         const res = await correctMutation.mutateAsync({
           shipmentId: shipment.id,
           fields: mapped,
+          keep,
           reason: payload.note,
           expectedUpdatedAt: payload.expectedUpdatedAt ?? shipment.updatedAt,
         })
         const corrected = (res as { corrected?: string[] } | undefined)?.corrected
         const n = Array.isArray(corrected) ? corrected.length : Object.keys(mapped).length
         if (n === 0) {
-          toast('Approved, but no fields were written — reload and try Approve again')
+          toast.error('Approved, but no fields were written — reload and try Approve again')
         } else {
-          toast(`Saved ${n} field${n === 1 ? '' : 's'} and approved`)
+          toast(`Saved ${n} field${n === 1 ? '' : 's'} and approved${keptSuffix(keep)}`)
         }
       } else {
         await confirmMutation.mutateAsync({
           shipmentId: shipment.id,
           note: payload.note || undefined,
+          keep,
           expectedUpdatedAt: payload.expectedUpdatedAt ?? shipment.updatedAt,
         })
-        toast('Shipment approved (no field changes)')
+        // "no field changes" is true of the values and false about the click when a row was ruled —
+        // a keep writes nothing but does lock the field.
+        toast(
+          keep.length
+            ? `Approved — kept ${keep.length} stored value${keep.length === 1 ? '' : 's'} as ruled`
+            : 'Shipment approved (no field changes)',
+        )
       }
       navigate(backToShipment)
     } catch (err) {
@@ -180,7 +205,7 @@ export default function ShipmentReviewFocusPage() {
         await handleStale(err)
       } catch (e) {
         const msg = e instanceof Error ? e.message : 'Save failed'
-        toast(msg.replace(/^API error \d+:\s*/i, '') || 'Save failed — try again')
+        toast.error(msg.replace(/^API error \d+:\s*/i, '') || 'Save failed — try again')
       }
     }
   }
@@ -226,6 +251,7 @@ export default function ShipmentReviewFocusPage() {
       <Card>
         <ReviewCard
           shipment={shipment}
+          partyMasters={partyMasters}
           criticReview={shipment.criticReview ?? null}
           emails={shipment.emails ?? []}
           defaultExpanded

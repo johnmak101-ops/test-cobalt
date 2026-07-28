@@ -466,3 +466,38 @@ describe('crdRevisionNotReflected (A7) — requested revision vs latest booking 
     ).toBeNull()
   })
 })
+
+/**
+ * False "chase the forwarder" banners found on a live leg (202601256B): AIR, DELIVERED, holding
+ * MAWB 098-32230085 and HAWB GZL26258522, every milestone except FINAL_BL_RECEIVED — and a CRITICAL
+ * "No Final B/L — 175 days after ETD. Chase Final B/L with forwarder."
+ */
+describe('document chases must be about a document that exists and an action still possible', () => {
+  it('a delivered leg is not chased for a pre-arrival document', () => {
+    const r = rule({
+      id: 'A3',
+      state: null,
+      triggerReference: 'etd',
+      watchFor: 'final_bl',
+      thresholdHours: 24,
+    })
+    const etd = D('2026-02-03T00:00:00Z')
+    const now = D('2026-07-28T00:00:00Z')
+    expect(isFiring(r, facts({ etd }), now)).toBe(true)
+    expect(isFiring(r, facts({ etd, has: hasOf({ delivered: true }) }), now)).toBe(false)
+  })
+
+  it('the invoice chase survives delivery — that one is still actionable', () => {
+    const r = rule({
+      id: 'A6',
+      state: null,
+      triggerReference: 'etd',
+      watchFor: 'invoice',
+      thresholdHours: 24,
+    })
+    const etd = D('2026-02-03T00:00:00Z')
+    expect(
+      isFiring(r, facts({ etd, has: hasOf({ delivered: true }) }), D('2026-07-28T00:00:00Z')),
+    ).toBe(true)
+  })
+})

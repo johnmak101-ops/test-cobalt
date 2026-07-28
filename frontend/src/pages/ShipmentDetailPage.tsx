@@ -10,6 +10,7 @@ import { ContestedLockCard } from '../components/shipments/ContestedLockCard'
 import { PurchaseOrdersCard } from '../components/shipments/PurchaseOrdersCard'
 import { PortPicker } from '../components/shipments/PortPicker'
 import { PartyPicker } from '../components/shipments/PartyPicker'
+import { useParties } from '../hooks/use-parties'
 import {
   FieldHistoryContext,
   FieldHistoryPopover,
@@ -23,13 +24,15 @@ import { liveQtyFromShipment, poShipmentTotalFromLinked } from '../lib/qty-confl
 import { AlertCard } from '../components/alerts/AlertCard'
 import { formatDate, formatDateTime, formatDateMaybeTime, formatShipmentId, cn } from '../lib/utils'
 import { parseSender } from '../lib/email-sender'
-import { EDITABLE_FIELDS, fieldLabel, fieldUnit, numericFieldWarn, dateOrderWarn, toInputValue, type EditableField, formatNumericDisplay, dateColumnHasTime } from '../lib/review-fields'
+import { EDITABLE_FIELDS, fieldLabel, fieldUnit, fieldWarn, dateOrderIssues, toInputValue, type EditableField, formatNumericDisplay, dateColumnHasTime } from '../lib/review-fields'
+import { isAirMode, isOffModeField, offModeFieldsOn, shippingFieldVisible, offModeHint } from '../lib/mode-fields'
 import { toast } from '../components/ui/Toast'
 import { interactiveProps } from '../lib/interactive'
 import { Pagination, usePagination, PageSizeSelect } from '../components/ui/Pagination'
 import { ArrowLeft, Mail, Clock, ClipboardList, Package, Ship, Calendar, AlertTriangle, AlertCircle, Info, Pencil, Check, X, NotebookPen } from 'lucide-react'
 import { DateTimeField } from '../components/shipments/DateTimeField'
 import { NumberField } from '../components/shipments/NumberField'
+import { TextField } from '../components/shipments/TextField'
 
 // The human-editable leg fields, grouped like the read-only card. `db` = the backend column the PATCH writes
 // (+ locks + audits); `get` reads the current value off the loaded shipment (whose UI names differ from db).
@@ -46,6 +49,7 @@ interface EditField {
   /** Full legal enum when options is a shorter offer list (Mode) — see EditableField.allValues. */
   allValues?: readonly string[]
   picker?: EditableField['picker']
+  multiline?: EditableField['multiline']
   get: (s: ShipmentDetail) => unknown
 }
 /**
@@ -66,6 +70,7 @@ const EDIT_SECTIONS: { title: string; fields: EditField[] }[] = (() => {
         options: f.options,
         allValues: f.allValues,
         picker: f.picker,
+        multiline: f.multiline,
         get: (s: ShipmentDetail) => {
           // Prefer free-text raw; fall back to resolved master name so edit is not blank when only FK is set.
           if (f.column === 'forwarderRaw') return s.forwarderRaw ?? s.forwarder?.name ?? null
@@ -90,27 +95,12 @@ const EDIT_SECTIONS: { title: string; fields: EditField[] }[] = (() => {
  */
 const PendingReviewContext = createContext<ReadonlyMap<string, PendingAnnotation>>(new Map())
 
-/** Sea modes show vessel/voyage; air modes show flight. Unknown mode shows all present fields. */
-function isAirMode(mode: string | null | undefined): boolean {
-  return (mode ?? '').toUpperCase().startsWith('AIR')
-}
-function isSeaMode(mode: string | null | undefined): boolean {
-  return (mode ?? '').toUpperCase().startsWith('SEA')
-}
-/** Hide sea-only or air-only transport/doc fields based on mode. */
-function shippingFieldVisible(dbColumn: string, mode: string | null | undefined): boolean {
-  // Sea: vessel + voyage + ocean MBL (not flight/MAWB)
-  if (dbColumn === 'vesselName' || dbColumn === 'voyageNo' || dbColumn === 'mbl') {
-    if (isAirMode(mode)) return false
-    return true
-  }
-  // Air: flight + MAWB (not vessel/voyage/MBL)
-  if (dbColumn === 'flightNo' || dbColumn === 'mawb') {
-    if (isSeaMode(mode)) return false
-    return true
-  }
-  return true
-}
+/**
+ * Hide a sea-only or air-only field — but ONLY when it is empty.
+ *
+ * `shippingFieldVisible` / `offModeHint` moved to lib/mode-fields.ts when the New Shipment form
+ * needed the same rule — see their doc comments there.
+ */
 
 /** House bill label: HAWB on air, HBL/FCR on sea. */
 function houseBillLabel(mode: string | null | undefined): string {
@@ -132,19 +122,39 @@ export default function ShipmentDetailPage() {
    * cargo figures the review desk settles qty against, so a field the desk auto-passed cannot show a
    * conflict here. The two surfaces must agree on what is open.
    */
+  /**
+   * The Mesh mirror, flat, so a miss line can tell "not in Mesh" from "in Mesh under a longer name".
+   * The pickers already load and cache all three lists for an hour, so this costs nothing extra.
+   */
+  const { data: customerMasters } = useParties('customer')
+  const { data: vendorMasters } = useParties('vendor')
+  const { data: forwarderMasters } = useParties('forwarder')
+  const masterNames = useMemo(
+    () =>
+      [...(customerMasters ?? []), ...(vendorMasters ?? []), ...(forwarderMasters ?? [])]
+        .map((p) => p.name)
+        .filter(Boolean),
+    [customerMasters, vendorMasters, forwarderMasters],
+  )
   const pendingReview = useMemo(
     () =>
-      pendingReviewAnnotations(shipment, {
-        liveQty: liveQtyFromShipment((shipment ?? {}) as { quantityShipped?: number | null }),
-        poShipmentTotal: poShipmentTotalFromLinked(shipment?.linkedPOs ?? []),
-      }),
-    [shipment],
+      pendingReviewAnnotations(
+        shipment,
+        {
+          liveQty: liveQtyFromShipment((shipment ?? {}) as { quantityShipped?: number | null }),
+          poShipmentTotal: poShipmentTotalFromLinked(shipment?.linkedPOs ?? []),
+        },
+        masterNames,
+      ),
+    [shipment, masterNames],
   )
   const [activeTab, setActiveTab] = useState<'details' | 'history'>('details')
   const update = useUpdateShipment(id!)
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState<Record<string, string>>({})
   const [note, setNote] = useState('')
+  /** Carry-over exceptions: a column in here is one the operator chose to KEEP across a mode change. */
+  const [keepOnSwitch, setKeepOnSwitch] = useState<Record<string, boolean>>({})
   /** Related Emails list pagination (client-side; threads can be 30–100+). */
   const [emailPage, setEmailPage] = useState(1)
   const [emailPerPage, setEmailPerPage] = useState(10)
@@ -207,12 +217,41 @@ export default function ShipmentDetailPage() {
     for (const sec of EDIT_SECTIONS) for (const f of sec.fields) d[f.db] = toInputValue(f.get(shipment), f.type)
     setDraft(d)
     setNote('')
+    setKeepOnSwitch({})
     setEditing(true)
   }
   const cancelEdit = () => {
     setEditing(false)
     setNote('')
   }
+  /**
+   * Fields a PENDING mode change would strand — read off the draft, against the draft's new mode.
+   *
+   * A mode change is a reclassification, not a field edit: it invalidates one set of transport fields
+   * and requires another. Nothing used to say so, so a leg switched AIR→SEA silently kept its flight
+   * number for good. Computed from the draft (not the shipment) so that clearing a row by its own
+   * `· clear` control drops it from this list too, instead of leaving a stale entry behind.
+   */
+  const modeCarryOver = editing
+    ? offModeFieldsOn({
+        mode: draft.mode,
+        vesselName: draft.vesselName,
+        voyageNumber: draft.voyageNo,
+        mblNumber: draft.mbl,
+        flightNo: draft.flightNo,
+        mawb: draft.mawb,
+      }).filter(() => (draft.mode ?? '') !== '' && (draft.mode ?? '') !== (shipment.mode ?? ''))
+    : []
+  /**
+   * Ticked = clear (the default, and the operator's stated preference). Absent means ticked; this map
+   * only records the exceptions, so a fresh mode change starts fully ticked without seeding state.
+   *
+   * Clearing is safe BECAUSE the values are preserved — every write goes through the shipment history
+   * this page already renders. So this is filing, not deletion, and a sea shipment still reporting a
+   * flight number is wrong in every downstream consumer.
+   */
+  const willClear = (column: string) => keepOnSwitch[column] !== true
+
   // draft vs the saved shipment — computed on every render so the Save gate reacts to edits live.
   const computeChanged = (): Record<string, unknown> => {
     const changed: Record<string, unknown> = {}
@@ -221,6 +260,10 @@ export default function ShipmentDetailPage() {
       const next = draft[f.db] ?? ''
       if (next !== orig) changed[f.db] = next === '' ? null : next
     }
+    // The carry-over clears ride on the SAME save, so the reclassification lands as one act rather
+    // than as a mode edit now and an orphaned field forever. The draft itself is untouched, so the
+    // rows keep showing what is about to go — nothing disappears from under the operator.
+    for (const f of modeCarryOver) if (willClear(f.column)) changed[f.column] = null
     return changed
   }
   const saveEdit = () => {
@@ -246,14 +289,26 @@ export default function ShipmentDetailPage() {
   // A note is mandatory whenever there are real edits — Save stays blocked until it's written.
   // Hard numeric errors (negative qty, etc.) also block Save (inline error + no 400 round-trip).
   const editedCount = editing ? Object.keys(computeChanged()).length : 0
-  const hasNumericErrors = editing && EDIT_SECTIONS.some((sec) =>
-    sec.fields.some((f) => f.type === 'number' && numericFieldWarn(f.db, draft[f.db]) != null),
+  // Every gate on every field, not just the numeric ones. Asking `numericFieldWarn` and only for
+  // `type === 'number'` left the SCAC / container FORMAT gates with no inline mirror at all, so a
+  // malformed container number could only be reported by the backend's 400 after a save round-trip.
+  const hasFieldErrors = editing && EDIT_SECTIONS.some((sec) =>
+    sec.fields.some((f) => fieldWarn(f.db, draft[f.db]) != null),
   )
-  // Cross-field: an arrival date earlier than a departure date is impossible — blocks Save too.
-  const dateError = editing
-    ? dateOrderWarn({ etd: draft.etd, atd: draft.atd, eta: draft.eta, ata: draft.ata })
-    : null
-  const saveBlocked = (editedCount > 0 && !note.trim()) || hasNumericErrors || dateError != null
+  /**
+   * Cross-field: an arrival earlier than a departure is impossible — blocks Save too.
+   *
+   * Structured, not just a message, so the line can sit UNDER the offending date. It used to render
+   * once at the foot of a two-column form: "ETA is before ETD" with eight date inputs above it and
+   * nothing saying which two. Per-field is also how numeric errors already work here.
+   */
+  const dateIssues = editing
+    ? dateOrderIssues({ etd: draft.etd, atd: draft.atd, eta: draft.eta, ata: draft.ata })
+    : []
+  /** Every field taking part in a clash — each offending arrival and every departure it precedes. */
+  const dateClashFields = new Set<string>(dateIssues.flatMap((i) => [i.arrival, ...i.departures]))
+  const dateError = dateIssues[0]?.message ?? null
+  const saveBlocked = (editedCount > 0 && !note.trim()) || hasFieldErrors || dateError != null
 
   return (
     <div className="space-y-6">
@@ -440,8 +495,8 @@ export default function ShipmentDetailPage() {
                 onClick={saveEdit}
                 disabled={update.isPending || saveBlocked}
                 title={
-                  hasNumericErrors
-                    ? 'Fix invalid numeric values before saving'
+                  hasFieldErrors
+                    ? 'Fix the highlighted field before saving'
                     : dateError
                       ? dateError
                       : editedCount > 0 && !note.trim()
@@ -469,14 +524,47 @@ export default function ShipmentDetailPage() {
               {EDIT_SECTIONS.map((sec) => (
                 <DetailSection key={sec.title} title={sec.title} icon={<ClipboardList size={14} className="text-text-muted" />}>
                   {sec.fields.flatMap((f) => {
-                      if (!shippingFieldVisible(f.db, draft.mode || shipment.mode)) return []
+                      if (!shippingFieldVisible(f.db, draft.mode || shipment.mode, draft[f.db])) return []
+                      const offMode = isOffModeField(f.db, draft.mode || shipment.mode)
                       const cur = draft[f.db] ?? ''
-                      const numErr = f.type === 'number' ? numericFieldWarn(f.db, cur) : null
-                      const controlClass =
-                        'h-8 w-full rounded-md border border-border bg-surface-700 px-2 text-sm text-text-primary placeholder:text-text-muted/70 focus:border-cobalt-primary focus:outline-none'
+                      const fieldErr = fieldWarn(f.db, cur)
+                      // Every field in a clash is ringed — each offending arrival AND every departure
+                      // it precedes. Any of them could be the wrong value, so ringing one would read
+                      // as a verdict about which to change.
+                      const inDateClash = dateClashFields.has(f.db)
+                      const controlClass = cn(
+                        'h-8 w-full rounded-md border bg-surface-700 px-2 text-sm text-text-primary placeholder:text-text-muted/70 focus:outline-none',
+                        inDateClash
+                          ? 'border-status-critical focus:border-status-critical'
+                          : 'border-border focus:border-cobalt-primary',
+                      )
                       return [(
-                    <div key={f.db} className="grid grid-cols-[7rem_1fr] sm:grid-cols-[9rem_1fr] items-center gap-x-2">
-                      <label htmlFor={`${fieldId}-${f.db}`} className="truncate text-xs text-text-muted">{f.label}</label>
+                    <div
+                      key={f.db}
+                      className={cn(
+                        'grid grid-cols-[7rem_1fr] gap-x-2 sm:grid-cols-[9rem_1fr]',
+                        // A label centred against a 3-line textarea floats in the middle of nothing.
+                        f.multiline ? 'items-start pt-0.5' : 'items-center',
+                      )}
+                    >
+                      {/* An off-mode field only reaches here because it HOLDS a value (see
+                          shippingFieldVisible). Say why it is on a form that would otherwise hide
+                          it, and give the one-click way to empty it — this is the only screen in
+                          the app that can. */}
+                      <label htmlFor={`${fieldId}-${f.db}`} className="truncate text-xs text-text-muted">
+                        {f.label}
+                        {offMode && (
+                          <button
+                            type="button"
+                            onClick={() => setDraft((d) => ({ ...d, [f.db]: '' }))}
+                            title={offModeHint(draft.mode || shipment.mode)}
+                            data-testid={`off-mode-clear-${f.db}`}
+                            className="mt-0.5 block text-left text-[11px] font-medium text-status-warning hover:text-status-critical hover:underline"
+                          >
+                            {isAirMode(draft.mode || shipment.mode) ? 'SEA field' : 'AIR field'} · clear
+                          </button>
+                        )}
+                      </label>
                       {f.picker === 'port' ? (
                         <PortPicker
                           id={`${fieldId}-${f.db}`}
@@ -545,15 +633,17 @@ export default function ShipmentDetailPage() {
                           /* qty's unit is the leg's own UOM (an editable field beside it); weight
                              and measurement carry a fixed one from EDITABLE_FIELDS. */
                           unit={f.db === 'qty' ? draft.qtyUnit || null : fieldUnit(f.db)}
-                          error={numErr}
+                          error={fieldErr}
                           className={controlClass}
                         />
                       ) : (
-                        <input
+                        <TextField
                           id={`${fieldId}-${f.db}`}
-                          type={f.type}
+                          ariaLabel={f.label}
                           value={cur}
-                          onChange={(e) => setDraft((d) => ({ ...d, [f.db]: e.target.value }))}
+                          onChange={(v) => setDraft((d) => ({ ...d, [f.db]: v }))}
+                          error={fieldErr}
+                          multiline={f.multiline}
                           placeholder={
                             f.db === 'polRaw' || f.db === 'podRaw'
                               ? 'UN/LOCODE or airport (e.g. CNSHA, HKG)'
@@ -564,19 +654,87 @@ export default function ShipmentDetailPage() {
                           className={controlClass}
                         />
                       )}
-                      {/* numeric errors render inside NumberField (after blur) — see its docstring */}
+                      {/* field errors render inside NumberField / TextField (after blur) — see their docstrings */}
                     </div>
-                      )]
+                      ),
+                      /*
+                        The consequence of the switch, stated where the switch is made — before Save,
+                        not after. A mode change invalidates one set of transport fields and requires
+                        another, and nothing on this form used to say so, so a leg switched AIR→SEA
+                        kept its flight number for good.
+
+                        Ticked by default. Deliberately the opposite of the review desk's default, and
+                        the reason matters: on the desk un-taking is free because the email's value is
+                        never lost, whereas these values ARE preserved — by the shipment history this
+                        page already renders. Clearing is filing, not deletion, and a sea shipment
+                        still reporting a flight number is wrong in every downstream consumer.
+                      */
+                      /* Under the offending date, not at the foot of the form. The operator was
+                         being told "ETA is before ETD" with eight date inputs above the line and
+                         nothing saying which two. Numeric errors already sit on their own field. */
+                      ...dateIssues
+                        .filter((i) => i.arrival === f.db)
+                        .map((i) => (
+                          <p
+                            key={`date-order-${i.arrival}`}
+                            data-testid="edit-date-error"
+                            className="col-span-full flex items-center gap-1.5 pl-[7rem] text-xs text-status-critical sm:pl-[9rem]"
+                          >
+                            <AlertTriangle size={13} className="shrink-0" />
+                            {i.message}
+                          </p>
+                        )),
+                      ...(f.db === 'mode' && modeCarryOver.length > 0
+                        ? [(
+                            <div
+                              key="mode-carry-over"
+                              data-testid="mode-carry-over"
+                              className="col-span-full rounded-lg border border-status-warning/35 bg-status-warning/[0.06] px-3 py-2.5"
+                            >
+                              <p className="text-sm font-semibold text-text-primary">
+                                Switching <span className="font-mono">{shipment.mode}</span> →{' '}
+                                <span className="font-mono">{draft.mode}</span>.{' '}
+                                {modeCarryOver.length} stored{' '}
+                                {modeCarryOver.length === 1 ? 'field belongs' : 'fields belong'} to the old mode.
+                              </p>
+                              <div className="mt-2 grid gap-1.5">
+                                {modeCarryOver.map((cf) => (
+                                  <label key={cf.column} className="flex cursor-pointer items-start gap-2 text-sm">
+                                    <input
+                                      type="checkbox"
+                                      checked={willClear(cf.column)}
+                                      onChange={() =>
+                                        setKeepOnSwitch((k) => ({ ...k, [cf.column]: willClear(cf.column) }))
+                                      }
+                                      data-testid={`mode-carry-over-${cf.column}`}
+                                      aria-label={`Clear ${cf.label} when switching to ${draft.mode}`}
+                                      className="mt-[3px] h-3.5 w-3.5 shrink-0 cursor-pointer rounded border-border accent-status-critical"
+                                    />
+                                    <span className="min-w-0 text-text-secondary">
+                                      Clear <span className="font-medium text-text-primary">{cf.label}</span>{' '}
+                                      <span
+                                        className={cn(
+                                          'field-value font-mono',
+                                          willClear(cf.column) ? 'text-text-muted line-through' : 'text-text-primary',
+                                        )}
+                                      >
+                                        {cf.value}
+                                      </span>
+                                    </span>
+                                  </label>
+                                ))}
+                              </div>
+                              <p className="mt-2 text-xs text-text-muted">
+                                Cleared values stay in History — this is filing, not deletion.
+                              </p>
+                            </div>
+                          )]
+                        : []),
+                      ]
                   })}
                 </DetailSection>
               ))}
             </div>
-            {dateError && (
-              <p className="mt-3 flex items-center gap-1.5 text-xs text-status-critical" data-testid="edit-date-error">
-                <AlertTriangle size={13} className="shrink-0" />
-                {dateError}
-              </p>
-            )}
             {/* Required feedback for agent-soul iteration — a save with real edits is blocked without it. */}
             <div className="mt-6 border-t border-border pt-4">
               <label htmlFor={`${fieldId}-note`} className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-text-primary">
@@ -664,7 +822,7 @@ export default function ShipmentDetailPage() {
               value={shipment.containerNo}
             />
             <DetailRow historyKey="hblAwbFcrNo" label={houseBillLabel(shipment.mode)} value={shipment.hblNumber} />
-            {shippingFieldVisible('mbl', shipment.mode) && (
+            {shippingFieldVisible('mbl', shipment.mode, shipment.mblNumber) && (
               <DetailRow
                 historyKey="mbl"
                 label={fieldLabel('mbl')}
@@ -672,8 +830,9 @@ export default function ShipmentDetailPage() {
                 hint={!shipment.mblNumber && shipment.hblNumber ? 'house B/L — carrier master B/L not shared' : undefined}
               />
             )}
-            {shippingFieldVisible('mawb', shipment.mode) && (
-              <DetailRow historyKey="mawb" label={fieldLabel('mawb')} value={shipment.mawb ?? null} />
+            {shippingFieldVisible('mawb', shipment.mode, shipment.mawb) && (
+              <DetailRow historyKey="mawb" label={fieldLabel('mawb')} value={shipment.mawb ?? null}
+                offMode={isOffModeField('mawb', shipment.mode) ? offModeHint(shipment.mode) : undefined} />
             )}
             <DetailRow historyKey="scacCode" label={fieldLabel('scacCode')} value={shipment.scacCode} />
           </DetailSection>
@@ -688,14 +847,17 @@ export default function ShipmentDetailPage() {
             />
             <DetailRow historyKey="consigneeName" label={fieldLabel('consigneeName')} value={shipment.consigneeName} />
             <DetailRow historyKey="consigneeAddress" label={fieldLabel('consigneeAddress')} value={shipment.consigneeAddress} />
-            {shippingFieldVisible('vesselName', shipment.mode) && (
-              <DetailRow historyKey="vesselName" label={fieldLabel('vesselName')} value={shipment.vesselName} />
+            {shippingFieldVisible('vesselName', shipment.mode, shipment.vesselName) && (
+              <DetailRow historyKey="vesselName" label={fieldLabel('vesselName')} value={shipment.vesselName}
+                offMode={isOffModeField('vesselName', shipment.mode) ? offModeHint(shipment.mode) : undefined} />
             )}
-            {shippingFieldVisible('voyageNo', shipment.mode) && (
-              <DetailRow historyKey="voyageNo" label={fieldLabel('voyageNo')} value={shipment.voyageNumber} />
+            {shippingFieldVisible('voyageNo', shipment.mode, shipment.voyageNumber) && (
+              <DetailRow historyKey="voyageNo" label={fieldLabel('voyageNo')} value={shipment.voyageNumber}
+                offMode={isOffModeField('voyageNo', shipment.mode) ? offModeHint(shipment.mode) : undefined} />
             )}
-            {shippingFieldVisible('flightNo', shipment.mode) && (
-              <DetailRow historyKey="flightNo" label={fieldLabel('flightNo')} value={shipment.flightNo ?? null} />
+            {shippingFieldVisible('flightNo', shipment.mode, shipment.flightNo) && (
+              <DetailRow historyKey="flightNo" label={fieldLabel('flightNo')} value={shipment.flightNo ?? null}
+                offMode={isOffModeField('flightNo', shipment.mode) ? offModeHint(shipment.mode) : undefined} />
             )}
             <DetailRow historyKey="polRaw" label={fieldLabel('polRaw')} value={shipment.polRaw ?? null} />
             <DetailRow historyKey="podRaw" label={fieldLabel('podRaw')} value={shipment.podRaw ?? null} />
@@ -757,10 +919,10 @@ export default function ShipmentDetailPage() {
 
       {activeTab === 'details' ? (
         <>
-          {/* Active Alerts */}
+          {/* Alerts — the nav, /alerts and the dashboard panel all use this one word. */}
           {shipment.alerts && shipment.alerts.some((a) => a.status === 'ACTIVE') && (
             <div className="space-y-2">
-              <h4 className="text-base font-semibold text-text-primary">Active Alerts</h4>
+              <h4 className="text-base font-semibold text-text-primary">Alerts</h4>
               {shipment.alerts.flatMap((alert) =>
                 alert.status !== 'ACTIVE'
                   ? []
@@ -967,12 +1129,20 @@ function DetailRow({
   label,
   value,
   hint,
+  offMode,
   historyKey,
 }: {
   label: string
   value: string | null | undefined
   /** shown next to "(pending)" to explain WHY a value is blank (so a gap reads as expected, not broken) */
   hint?: string
+  /**
+   * This row holds a value belonging to the OTHER transport mode — a flight number on a sea leg.
+   *
+   * Distinct from `hint`, which only renders in the empty branch: an off-mode row is by definition
+   * NOT empty (an empty one is still hidden), so it needs a marker beside the value itself.
+   */
+  offMode?: string
   /** Leg column for this field (e.g. 'qty', 'polRaw'). When it has change history the value shows a
    *  clock marker and a hover timeline popover. Omit for untracked rows. */
   historyKey?: string
@@ -1026,6 +1196,22 @@ function DetailRow({
             </span>
             {annIcon}
           </>
+        )}
+        {/*
+          AFTER the value, never before it.
+          Leading with the tag pushed the value out of the column every other row lines up on, so
+          Vessel and Voyage sat indented against Forwarder and Flight No. directly above and below
+          them. It also read backwards: the value is the row's subject and the tag annotates it,
+          which is the order MeshMissTag already uses in ConflictRow.
+        */}
+        {offMode && shown != null && (
+          <span
+            data-testid="off-mode-marker"
+            title={offMode}
+            className="ml-2 whitespace-nowrap rounded bg-status-warning/15 px-1.5 align-[2px] font-sans text-[11px] font-medium leading-4 text-status-warning"
+          >
+            {offMode}
+          </span>
         )}
       </span>
     </div>

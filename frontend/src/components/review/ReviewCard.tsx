@@ -1,14 +1,13 @@
 import { useCallback, useMemo, useState } from 'react'
 // Action-bar buttons are text-only — the only icon left in the bar is the busy spinner, which is
 // state, not decoration. ExternalLink/Mail still mark the source-email affordances.
-import { Check, ChevronDown, ChevronRight, ExternalLink, Loader2, Mail, NotebookPen } from 'lucide-react'
+import { Check, ChevronDown, ChevronRight, ExternalLink, Loader2, Mail, NotebookPen, Undo2 } from 'lucide-react'
 import { Badge } from '../ui/Badge'
 import {
   ConflictRow,
   changesStoredValue,
   currentValueOf,
   isCandidateResolution,
-  proposedResolutionOf,
   proposedValueOf,
   splitCandidates,
 } from './ConflictRow'
@@ -18,8 +17,6 @@ import {
   isPortColumn,
   mapCriticFieldToColumn,
   reviewFieldLabel,
-  isNumericColumn,
-  normalizeNumericInput,
   parseStyleEntries,
   serializeStyleEntries,
   dateOrderWarn,
@@ -32,6 +29,7 @@ import {
   poShipmentTotalFromLinked,
 } from '../../lib/qty-conflict-settle'
 import { isNonIdentifier } from '../../lib/identifier-shape'
+import { offModeFieldsOn, type ModeFieldLeg } from '../../lib/mode-fields'
 import { legLooksLikeShipment } from '../../lib/leg-shape'
 import { isCriticalColumn } from '../../lib/review-critical'
 import {
@@ -43,14 +41,24 @@ import {
 import { CandidateLegsPanel } from './CandidateLegsPanel'
 import { SharedPoPanel } from './SharedPoPanel'
 import { EvidencePanel } from './EvidencePanel'
-import { ReviewPoStylesSection, proposedStyleForPo } from './ReviewPoStylesSection'
+import { ReviewPoStylesSection, alsoSeenStyleForPo } from './ReviewPoStylesSection'
+import type { PoStylePlan } from '../../lib/po-style-plan'
+import { useUpdatePurchaseOrder } from '../../hooks/use-purchase-orders'
 import type { ReviewShipment } from '../../hooks/use-review-queue'
 import type { LinkedPO, ShipmentDetail } from '../../hooks/use-shipments'
 import { cn, formatDateTime } from '../../lib/utils'
 import { parseSender } from '../../lib/email-sender'
 import { buildNeedsAttentionGroups, isExpandableMiss, portsLinkedFromRoute } from './needs-attention'
-import { candidateDeskQuestion, conflictDeskQuestion, forWorkingCard, pickDeskQuestion } from './desk-question'
+import {
+  NO_CHANGE_VERDICT,
+  candidateDeskQuestion,
+  conflictDeskQuestion,
+  forWorkingCard,
+  pickDeskQuestion,
+} from './desk-question'
 import { NeedsAttentionMeshMiss } from './NeedsAttentionMeshMiss'
+import type { PartyMaster } from '../../hooks/use-parties'
+import { mastersNaming } from '../../lib/party-names'
 import {
   REVIEW_COL,
   REVIEW_FS,
@@ -82,6 +90,14 @@ const ACTION_VARIANT = {
   secondary: 'border-cobalt-primary/30 bg-cobalt-primary/15 text-cobalt-primary-light hover:bg-cobalt-primary/25',
   danger: 'border-status-critical/30 bg-status-critical/15 text-status-critical hover:bg-status-critical/25',
   success: 'border-status-success/30 bg-status-success/15 text-status-success hover:bg-status-success/25',
+  /**
+   * The OTHER verdict — closes the leg without writing anything. Real weight (solid fill, primary
+   * text) so it never gets mistaken for the deferral sitting next to it, but no hue of its own so it
+   * never competes with the primary. It used to be `success` green, which made the bar carry two
+   * equally loud verdicts whose labels both talked about field values and neither of which mentioned
+   * that the leg leaves the desk.
+   */
+  neutral: 'border-border-light bg-surface-700 text-text-primary hover:bg-surface-600',
   /** Neither a verdict nor a navigation — deferral. Lowest weight in the bar by design. */
   quiet: 'border-border bg-transparent text-text-secondary hover:bg-surface-700 hover:text-text-primary',
 } as const
@@ -99,6 +115,14 @@ export interface ReviewCorrection {
 
 export interface ReviewCardSavePayload {
   fields: Record<string, unknown>
+  /**
+   * Leg columns the operator ruled to LEAVE AS THEY ARE — carried apart from `fields` on purpose.
+   *
+   * `fields` means "write this"; these mean "do not write, but record that I ruled". The backend
+   * locks each at the value the leg already holds, so the ruling shows up in Change History and a
+   * later email that disagrees surfaces as CONTESTED instead of passing silently.
+   */
+  keep?: string[]
   note: string
   /** Per-field decision trail. Additive: consumers that ignore it keep working. */
   corrections?: ReviewCorrection[]
@@ -167,6 +191,12 @@ export interface ReviewCardProps {
     targetShipmentId: string,
     payload?: { fields?: Record<string, unknown>; note?: string },
   ) => Promise<void>
+  /**
+   * The Mesh party mirror (customers + vendors + forwarders, in one list). Lets a master-miss line
+   * tell "this company is absent from Mesh" from "Mesh holds five of it under longer names" — two
+   * situations whose correct operator actions are opposites. Omitted keeps the old copy.
+   */
+  partyMasters?: PartyMaster[]
 }
 
 function nameOf(value: unknown): string | null {
@@ -191,20 +221,28 @@ function identityOf(s: ReviewShipment | ShipmentDetail) {
   }
 }
 
-function initialResolutions(conflicts: CriticConflict[]): Record<string, string> {
+/**
+ * What every contested row holds before the operator has decided anything: the value the leg ALREADY
+ * stores.
+ *
+ * It used to be the agent's proposal, so a card opened reading `Apply 2026-09-09` — one press from
+ * overwriting a value the pipeline had examined and declined. That is not a display quirk: the rows
+ * that reach this table are exactly the ones the commit did NOT settle (`openDecisions` strips the
+ * rest), so the email's value is one the committer read and refused to write. Seeding the refusal as
+ * the default made the desk's safest answer the one requiring the most clicks.
+ *
+ * The cost, accepted knowingly: one extra click on every leg where the agent is right — the take-tick
+ * on the row (see ConflictRow). The trade is a deliberate act instead of a default.
+ *
+ * `keepValue` is the card's `existingValue`, threaded in rather than re-derived: it reads the LIVE
+ * leg (openDecisions.liveValues), which this module cannot see from a bare conflict.
+ */
+function initialResolutions(
+  conflicts: CriticConflict[],
+  keepValue: (c: CriticConflict) => string,
+): Record<string, string> {
   const out: Record<string, string> = {}
-  // Seeded with the agent's proposal: the table reads as a diff, and approving accepts it. A queued
-  // conflict still has no safe AUTO-pick, so the primary button NAMES the number of stored values it
-  // would overwrite ("Approve 3 changes") — pre-filled must not read as pre-approved.
-  // #360: the seed is the RESOLUTION value — the master CODE for resolved party candidates.
-  // Numeric columns are normalised first: an agent value off a packing list arrives grouped
-  // ("1,240"), and a number <input> renders a grouped string as BLANK — which would look like the
-  // agent proposed nothing. Strip the separators so the seed survives; display re-groups it.
-  for (const c of conflicts) {
-    const raw = proposedResolutionOf(c)
-    const column = mapCriticFieldToColumn(c.field)
-    out[c.field] = isNumericColumn(column) ? normalizeNumericInput(raw) : raw
-  }
+  for (const c of conflicts) out[c.field] = keepValue(c)
   return out
 }
 
@@ -255,6 +293,7 @@ export function ReviewCard({
   onWait,
   onIdentify,
   onLink,
+  partyMasters,
 }: ReviewCardProps) {
   const [expanded, setExpanded] = useState(defaultExpanded)
   const [note, setNote] = useState('')
@@ -297,6 +336,27 @@ export function ReviewCard({
   /** Multi-candidate target — must pick before Link & apply. */
   const [selectedTargetId, setSelectedTargetId] = useState<string | null>(null)
   const shipmentId = (shipment as { id?: string }).id
+  /**
+   * The Mesh mirror arrives as a PROP, never a hook. ReviewCard has 134 tests that render it bare,
+   * and a useQuery inside it fails every one of them with "No QueryClient set" — the same trap
+   * usePorts sprang here once already. The page owns the data layer; this component stays
+   * renderable from a test with a plain object.
+   */
+  const allMasters = useMemo(() => partyMasters ?? [], [partyMasters])
+  const masterNames = useMemo(() => allMasters.map((p) => p.name).filter(Boolean), [allMasters])
+  /**
+   * Link a raw party name to the Mesh master the operator chose.
+   *
+   * The COLUMN is found by matching the name against the leg's own raw twins rather than parsed out
+   * of the miss text: the queue files these against the wrong slot often enough (a VENDOR under
+   * Forwarder on leg 202601DD8E) that reading the slot would write the pick to the wrong field.
+   * Whichever twin actually holds this string is the field the operator is looking at.
+   *
+   * Customer/Vendor store the master CODE and Forwarder the NAME — the same split PartyPicker makes,
+   * for the same reason: those read views print a code, and forwarder codes are ERP sequence numbers.
+   * The write goes through the ordinary human-edit PATCH, so it resolves the FK, locks the field and
+   * lands in Change History exactly as typing it would.
+   */
   const linkTargetReady =
     !!selectedTargetId && selectedTargetId !== shipmentId
 
@@ -313,9 +373,92 @@ export function ReviewCard({
     [shipment],
   )
 
+  /**
+   * Unlinked parties that name masters Mesh ALREADY HOLDS, as conflict rows.
+   *
+   * `forwarder_name "LOGWIN" did not exact-match a master` is a true statement about the lookup and
+   * a false one about Mesh, which has five LOGWIN companies. The icon was right — the FK is null and
+   * WHICH branch shipped this is a real question — but a review reason is prose, not a decision, so
+   * there was nowhere to answer it. It briefly lived as a bespoke picker in Needs attention; a row
+   * here instead gives it the machinery every other field decision already has: the master picker,
+   * Current seeded from the leg, the note requirement, and staging into Save & Approve rather than a
+   * widget that wrote on click. Same reason the party-MISMATCH rows are synthesised server-side
+   * (backend party-mismatch-conflict.ts).
+   *
+   * Client-side because the matching lives here: `mastersNaming` and the company-name predicate it
+   * uses are frontend modules, and porting them across the package boundary would put a second copy
+   * of "are these two names one company?" in the tree — the drift class the format-gate contract test
+   * exists to police. The mirror is already loaded for the pickers.
+   *
+   * Nothing is resolved: the LLM matcher still owns fuzzy, the FK stays unlinked until a human picks,
+   * and a party with no candidates yields no row and keeps its (correct) "add in Mesh" advice.
+   */
+  const unlinkedPartyConflicts = useMemo(() => {
+    const masters = partyMasters ?? []
+    if (!masters.length) return []
+    const leg = shipment as unknown as Record<string, unknown>
+    const SLOTS = [
+      { column: 'forwarderRaw', linked: 'forwarderId', field: 'forwarder_name', label: 'Forwarder' },
+      { column: 'customerRaw', linked: 'customerId', field: 'customer_code', label: 'Customer Code' },
+      { column: 'vendorRaw', linked: 'vendorId', field: 'vendor_code', label: 'Vendor Code' },
+    ] as const
+    const rows: CriticConflict[] = []
+    for (const slot of SLOTS) {
+      const raw = String(leg[slot.column] ?? '').trim()
+      if (!raw) continue
+      // A slot the critic already contests carries the email's own candidates — a second row would
+      // ask one question twice with different options.
+      if ((criticReview?.conflicts ?? []).some((c) => c.field === slot.field)) continue
+      // Already linked ⇒ nothing to choose. Read the FK, which is the only thing that actually says
+      // so. This was an exact-NAME test, on the assumption that a raw value spelled exactly like a
+      // master must have linked — and leg 202607B738 disproves it: `vendor_raw` is
+      // "MACAU FUNG TAI LIMITED", the Mesh master is "MACAU FUNG TAI LIMITED", and `vendor_id` is
+      // NULL. The one party that most obviously needed one click got no row at all.
+      if (leg[slot.linked] != null) continue
+      const hits = mastersNaming(raw, masters.map((m) => m.name))
+      if (!hits.length) continue
+      /**
+       * A row has to present a CHOICE. One candidate spelled exactly like the stored value is not
+       * one: leg 202607B738 rendered "MACAU FUNG TAI LIMITED" against "MACAU FUNG TAI LIMITED" under
+       * "Which Vendor Code is correct?", and the only thing that actually differed — a null FK — is
+       * invisible in a comparison of two strings. The operator is asked to weigh identical text.
+       *
+       * That is a lookup that half-ran, not a decision, and it keeps its Needs attention line ("in
+       * Mesh, not linked") until it gets an affordance built for it. A single candidate that READS
+       * differently (raw "WYSE" vs master "WYSE LONDON LIMITED") is still a real choice and still
+       * gets a row.
+       */
+      if (hits.length === 1 && hits[0]!.trim().toUpperCase() === raw.toUpperCase()) continue
+      const picks = hits
+        .map((name) => masters.find((m) => m.name === name))
+        .filter((m): m is PartyMaster => !!m)
+      rows.push({
+        field: slot.field,
+        label: slot.label,
+        candidates: picks.map((m) => ({
+          value: m.name,
+          source: 'Master data',
+          // `resolutionValueOf` posts `master.code` when it is set and falls back to `value`, so an
+          // EMPTY code is what makes a forwarder post its NAME — its codes are ERP sequence numbers,
+          // the same code/name split PartyPicker makes. Emptying the code rather than nulling
+          // `master`: ConflictRow renders "not in Mesh" on `master === null`, so nulling it stamped
+          // that tag on all five Mesh masters — the exact falsehood this row exists to end.
+          master: {
+            code: slot.field === 'forwarder_name' ? '' : (m.code ?? ''),
+            name: m.name,
+          },
+        })),
+        rationale:
+          picks.length === 1
+            ? `The emails say "${raw}", which is ${picks[0]!.name} in Mesh — not linked yet. Confirm it.`
+            : `The emails say "${raw}". Mesh has ${picks.length} companies of that name and none is written exactly that way — pick the right one.`,
+      } as CriticConflict)
+    }
+    return rows
+  }, [partyMasters, shipment, criticReview])
   const rawConflicts = useMemo(
-    () => criticReview?.conflicts ?? [],
-    [criticReview],
+    () => [...(criticReview?.conflicts ?? []), ...unlinkedPartyConflicts],
+    [criticReview, unlinkedPartyConflicts],
   )
   const liveQty = useMemo(
     () => liveQtyFromShipment(shipment as { quantityShipped?: number | null }),
@@ -363,7 +506,28 @@ export function ReviewCard({
   }).openDecisions
   const settledFields = useMemo(() => new Set(openDecisions?.settledFields ?? []), [openDecisions])
   /** What the leg stores per contested field — the Current column, instead of the pre-commit snapshot. */
-  const liveValues = useMemo(() => openDecisions?.liveValues ?? {}, [openDecisions])
+  /**
+   * `openDecisions.liveValues` is computed server-side, so it has no entry for a row synthesised
+   * here — and a missing entry renders Current EMPTY and offers "Leave Blank" over a leg that
+   * plainly stores LOGWIN. presentation.service hit the identical trap when it added the party
+   * mismatch row late. Seed the raw twin for each synthetic field.
+   */
+  const liveValues = useMemo(() => {
+    const base = openDecisions?.liveValues ?? {}
+    if (!unlinkedPartyConflicts.length) return base
+    const leg = shipment as unknown as Record<string, unknown>
+    const COLUMN_BY_FIELD: Record<string, string> = {
+      forwarder_name: 'forwarderRaw',
+      customer_code: 'customerRaw',
+      vendor_code: 'vendorRaw',
+    }
+    const seeded: Record<string, string | null> = { ...base }
+    for (const c of unlinkedPartyConflicts) {
+      const col = COLUMN_BY_FIELD[c.field]
+      if (col && seeded[c.field] == null) seeded[c.field] = String(leg[col] ?? '') || null
+    }
+    return seeded
+  }, [openDecisions, unlinkedPartyConflicts, shipment])
   /**
    * The stored value for one contested row, in the form the Current column prints it. qty settles
    * against the leg's shipped figure rather than a keyed column, so it has its own reader.
@@ -437,20 +601,32 @@ export function ReviewCard({
     return out
   }, [shipment])
 
+  /**
+   * Fields the leg holds that contradict its own mode. Read off the LEG, not off the email — a queue
+   * row carries mode/vessel/flight, so this works on both the list and the focused page. Nothing here
+   * writes: the desk states the contradiction and Open Shipment resolves it.
+   */
+  const offModeFields = useMemo(
+    () => offModeFieldsOn(shipment as ModeFieldLeg),
+    [shipment],
+  )
+
   const needsAttentionGroups = useMemo(
     () =>
       buildNeedsAttentionGroups({
         riskFlags: criticReview?.riskFlags,
         reviewReasons,
         conflictsCount: tableOwnedCount,
+        masterNames,
         identityPinned,
         partiesLinked,
         portsLinked: portsLinkedFromRoute((shipment as { route?: string | null }).route),
         hasPo,
+        offModeFields,
         // Rule A: Review desk shows decision items only; FYI stays on shipment detail.
         desk: 'decision',
       }),
-    [criticReview, reviewReasons, shipment, tableOwnedCount, hasPo, linkedPOs, identityPinned, partiesLinked],
+    [criticReview, reviewReasons, shipment, tableOwnedCount, hasPo, linkedPOs, identityPinned, partiesLinked, offModeFields, masterNames],
   )
 
   /**
@@ -471,7 +647,7 @@ export function ReviewCard({
   const poProposalCount = useMemo(
     () =>
       linkedPOs.filter(
-        (p) => proposedStyleForPo(p.poNumber, reviewReasons, p.itemStyleNo) != null,
+        (p) => alsoSeenStyleForPo(p.poNumber, reviewReasons, p.itemStyleNo) != null,
       ).length,
     [linkedPOs, reviewReasons],
   )
@@ -485,6 +661,14 @@ export function ReviewCard({
    *
    * Nor does edit mode open it — this is the ONLY gate, in view and edit alike (see `showPos`).
    */
+  /**
+   * PO style lists the ticks would rewrite. Computed by ReviewPoStylesSection, applied HERE — the
+   * primary button is what names the count and what the operator presses, so the write belongs on
+   * the same click. A section that saved on its own would have changed the PO while the bar still
+   * read "No Changes".
+   */
+  const [poPlans, setPoPlans] = useState<PoStylePlan[]>([])
+  const updatePo = useUpdatePurchaseOrder()
   const poNeedsReview = poProposalCount > 0
   /**
    * Legs that also carry one of this leg's POs (backend `sharedPos`). Present only on the detail
@@ -543,7 +727,64 @@ export function ReviewCard({
     [junkIdentifier, shipment, linkedPOs],
   )
 
-  const naPick = useMemo(() => pickDeskQuestion(needsAttentionGroups), [needsAttentionGroups])
+  /**
+   * Parties that became conflict-table rows are answered THERE. Leaving their Needs attention line
+   * up asked one question twice, in two places, with two controls — which is how a desk starts
+   * disagreeing with itself. Only the names that got a row are dropped: a party with no masters to
+   * choose between keeps its line, because nothing in the table speaks for it.
+   */
+  const rowedPartyNames = useMemo(() => {
+    const leg = shipment as unknown as Record<string, unknown>
+    const COLUMN_BY_FIELD: Record<string, string> = {
+      forwarder_name: 'forwarderRaw',
+      customer_code: 'customerRaw',
+      vendor_code: 'vendorRaw',
+    }
+    return new Set(
+      unlinkedPartyConflicts
+        .map((c) => String(leg[COLUMN_BY_FIELD[c.field] ?? ''] ?? '').trim())
+        .filter(Boolean),
+    )
+  }, [unlinkedPartyConflicts, shipment])
+  const deskGroups = useMemo(() => {
+    if (!rowedPartyNames.size) return needsAttentionGroups
+    return needsAttentionGroups
+      .map((g) => ({
+        ...g,
+        items: g.items.flatMap((it) => {
+          // `details` holds EVERY party on the line; `meshCandidates` only those with masters to
+          // offer. Reading the candidates alone is what dropped leg 202607B738's LEADWAY EXPRESS —
+          // genuinely absent from Mesh, and the only line saying so — because the line ALSO named a
+          // party that had become a table row. Drop the rowed NAMES, never the line they share.
+          const named = it.details ?? Object.keys(it.meshCandidates ?? {})
+          if (!named.length) return [it]
+          const left = named.filter((n) => !rowedPartyNames.has(n))
+          if (!left.length) return [] // every party on this line is answered in the table
+          if (left.length === named.length) return [it] // nothing moved — leave it exactly as built
+          const candidates = Object.fromEntries(
+            Object.entries(it.meshCandidates ?? {}).filter(([n]) => left.includes(n)),
+          )
+          const withCandidates = Object.keys(candidates).length
+          return [
+            {
+              ...it,
+              details: left,
+              meshCandidates: withCandidates ? candidates : undefined,
+              // The summary counted parties that have since moved to the table, so it is restated for
+              // the ones still here rather than left overstating what this line is about.
+              text:
+                left.length === 1 && !withCandidates
+                  ? `"${left[0]}" not found in Mesh Database — advise add in Mesh.`
+                  : `${left.length} ${left.length === 1 ? 'party' : 'parties'} not linked to Mesh${
+                      withCandidates ? ' — expand to pick or add.' : ' — advise add in Mesh.'
+                    }`,
+            },
+          ]
+        }),
+      }))
+      .filter((g) => g.items.length > 0)
+  }, [needsAttentionGroups, rowedPartyNames])
+  const naPick = useMemo(() => pickDeskQuestion(deskGroups), [deskGroups])
   const contestedFields = useMemo(
     () =>
       conflicts.map((c) => {
@@ -555,6 +796,10 @@ export function ReviewCard({
           // Synthesised party-mismatch row: nothing here came off an email, so the copy must not
           // claim one proposed it.
           fromMasterData: proposed.length > 0 && proposed.every((p) => isMasterDataSource(p.source)),
+          // A row this card synthesised for an UNLINKED party (unlinkedPartyConflicts) — the leg has
+          // no master on that slot at all, which is the opposite of the party-mismatch case that
+          // shares this master-data branch.
+          unlinked: unlinkedPartyConflicts.some((u) => u.field === c.field),
         }
       }),
     [conflicts, existingValue],
@@ -570,7 +815,7 @@ export function ReviewCard({
         },
         detailText: `Its ${junkIdentifier.label} is “${junkIdentifier.value}” — a column heading, not a number. This leg was most likely parsed out of a spreadsheet's header row.`,
         detailItem: null,
-        rest: needsAttentionGroups,
+        rest: deskGroups,
       }
     }
     /**
@@ -589,7 +834,7 @@ export function ReviewCard({
           question: fromCandidates.question,
           detailText: fromCandidates.detail,
           detailItem: null,
-          rest: needsAttentionGroups,
+          rest: deskGroups,
         }
       }
     }
@@ -604,7 +849,7 @@ export function ReviewCard({
         question: { ...fromTable.question, reject: naPick?.question.reject ?? null },
         detailText: fromTable.detail,
         detailItem: null,
-        rest: needsAttentionGroups,
+        rest: deskGroups,
       }
     }
     if (!naPick) return null
@@ -617,7 +862,7 @@ export function ReviewCard({
   }, [
     contestedFields,
     naPick,
-    needsAttentionGroups,
+    deskGroups,
     junkIdentifier,
     hasCandidateLegs,
     matchAmbiguity,
@@ -674,33 +919,123 @@ export function ReviewCard({
   }, [emails])
 
   const [resolutions, setResolutions] = useState<Record<string, string>>(() =>
-    initialResolutions(conflicts),
+    initialResolutions(conflicts, existingValue),
   )
+  /**
+   * Rows the operator EXPLICITLY ruled to leave alone — critic field names, the same keys
+   * `resolutions` uses.
+   *
+   * Not derivable from `resolutions`. A row seeds from the stored value, so "the resolution equals
+   * what the leg holds" is the state of every untouched row on the card; reading a keep off it would
+   * lock the whole grid on every approval. Only a click on the row's own `Keep current` control puts
+   * a field in here (ConflictRow.onKeep).
+   *
+   * The bulk `Leave All As Is` button CLEARS this set rather than filling it — that button is
+   * routinely "not now", not a per-field ruling, and treating it as one would manufacture decisions
+   * nobody made. It is the line in this feature most likely to be written backwards.
+   */
+  const [keptFields, setKeptFields] = useState<Set<string>>(() => new Set())
   /** Card-level edit mode. The table reads as a clean diff until the operator asks to change it. */
   const [editing, setEditing] = useState(false)
 
-  // Re-seed when the conflict set identity changes (new payload / leg).
-  const conflictKey = useMemo(
-    () => conflicts.map((c) => c.field).join('|'),
+  /**
+   * Taking a different Mode from the email reclassifies the leg, which strands the OLD mode's
+   * transport fields. Those are computed against the mode the operator is about to take, not the one
+   * stored — that is the whole question.
+   *
+   * Empty on a queue-list row: the list DTO carries no transport columns, so nothing is claimed there.
+   * Same safe direction `openDecisions` takes when it is absent.
+   */
+  const modeConflict = useMemo(
+    () => conflicts.find((c) => mapCriticFieldToColumn(c.field) === 'mode') ?? null,
     [conflicts],
+  )
+  const modeCarryOver = useMemo(() => {
+    if (!modeConflict) return []
+    const taken = (resolutions[modeConflict.field] ?? '').trim()
+    if (taken === '' || !changesStoredValue(modeConflict, taken, liveValueFor(modeConflict))) return []
+    return offModeFieldsOn({ ...(shipment as ModeFieldLeg), mode: taken })
+  }, [modeConflict, resolutions, liveValueFor, shipment])
+  /** Exceptions only — absent means "clear it", the default the operator asked for. */
+  const [keepOnModeSwitch, setKeepOnModeSwitch] = useState<Record<string, boolean>>({})
+  const willClearOnSwitch = useCallback(
+    (column: string) => keepOnModeSwitch[column] !== true,
+    [keepOnModeSwitch],
+  )
+  /**
+   * Columns this Apply will EMPTY.
+   *
+   * The desk could not clear a field at all before this: `fieldsToApply` skips an empty resolution,
+   * because empty there means "no decision" rather than "clear it". So the clears travel separately
+   * and are merged in — an explicit signal, never an absence.
+   */
+  const clearedColumns = useMemo(
+    () => modeCarryOver.filter((f) => willClearOnSwitch(f.column)).map((f) => f.column),
+    [modeCarryOver, willClearOnSwitch],
+  )
+
+  /**
+   * Re-seed when the conflict set changes (new payload / leg) OR when the STORED value behind any
+   * contested row moves.
+   *
+   * The stored value has to be in the key now that it is the seed. Keyed on the field names alone,
+   * a refetch — react-query refetches on window focus — would move `liveValues` while `resolutions`
+   * kept the value the leg held when the card opened, and the card would offer to `Apply SOUOCE`
+   * over a leg someone else had since corrected to ROKNFT. Nobody chose that; it is the same
+   * pre-approval this seed exists to prevent, arriving through a stale copy instead of a proposal.
+   *
+   * It costs an in-progress tick whenever the leg genuinely changes underneath. That is the right
+   * way round: a decision made against a value that has since moved is a decision worth re-making.
+   * Ticking does NOT re-seed — the key reads `existingValue`, never `resolutions`.
+   */
+  const conflictKey = useMemo(
+    () => conflicts.map((c) => `${c.field}\0${existingValue(c)}`).join('|'),
+    [conflicts, existingValue],
   )
   const [seededKey, setSeededKey] = useState(conflictKey)
   if (seededKey !== conflictKey) {
     setSeededKey(conflictKey)
-    setResolutions(initialResolutions(conflicts))
+    setResolutions(initialResolutions(conflicts, existingValue))
+    // A ruling is about the value the operator was looking at. That value has just moved (or the leg
+    // has), so the ruling goes with it — same reasoning as the resolution re-seed above.
+    setKeptFields(new Set())
     setEditing(false)
   }
 
+  /**
+   * The row's VALUE changed. Any resolution that is not the stored value retracts a keep ruling on
+   * that row — picking a candidate or typing a value is the operator changing their mind, and
+   * leaving the ruling behind would post `keep` and `fields` for one field (which the backend 400s).
+   *
+   * Deliberately conditional rather than an unconditional clear: the `Keep current` radio fires this
+   * with the stored value AND `onKeep`, in an order React does not promise. Retracting only on a
+   * value that actually differs makes the pair order-independent.
+   */
   const setResolution = (field: string, v: string) => {
     setResolutions((prev) => ({ ...prev, [field]: v }))
+    const c = conflicts.find((x) => x.field === field)
+    if (c && changesStoredValue(c, v, liveValueFor(c))) {
+      setKeptFields((prev) => {
+        if (!prev.has(field)) return prev
+        const next = new Set(prev)
+        next.delete(field)
+        return next
+      })
+    }
+  }
+
+  /** The operator clicked this row's `Keep current` — a decision, not a value (see keptFields). */
+  const markKept = (field: string) => {
+    setKeptFields((prev) => (prev.has(field) ? prev : new Set(prev).add(field)))
   }
 
   const startEditing = () => setEditing(true)
 
-  /** Cancel = leave edit mode AND drop the edits, back to the agent's proposal. Leaving them applied
+  /** Cancel = leave edit mode AND drop the edits, back to the stored values. Leaving them applied
    *  after "Cancel" would silently arm Submit with values the operator just backed out of. */
   const cancelEditing = () => {
-    setResolutions(initialResolutions(conflicts))
+    setResolutions(initialResolutions(conflicts, existingValue))
+    setKeptFields(new Set())
     setEditing(false)
   }
 
@@ -753,10 +1088,41 @@ export function ReviewCard({
         fields[col] = normalized
         continue
       }
-      if (v !== existing) fields[col] = v
+      // Through changesStoredValue, not a bare `!==`: the row's resolution form is what decides
+      // (a grouped "1,240" and a stored 1240 are one value), and the count on the button, the
+      // group headers and this bag must all be answering the same question.
+      if (changesStoredValue(c, v, liveValueFor(c))) fields[col] = v
     }
+    /**
+     * The mode change's consequence rides on the SAME apply, so the reclassification lands as one act
+     * rather than as a mode edit now and an orphaned field forever. `''` is the clear: `coerceLegField`
+     * maps empty to null for every column, which is why this can be an ordinary field write.
+     */
+    for (const col of clearedColumns) fields[col] = ''
     return fields
-  }, [conflicts, resolutions, existingValue])
+  }, [conflicts, resolutions, existingValue, liveValueFor, clearedColumns])
+
+  /**
+   * The keep rulings as LEG COLUMNS — what the API takes.
+   *
+   * Filtered against the rows actually on the grid, so a ruling cannot outlive the row that carried
+   * it, and against `fieldsToApply`, because "write this" and "leave it alone" for one field is a
+   * contradiction the backend rejects outright. A verdict card decides no fields at all, for the
+   * same reason it applies none.
+   */
+  const keptRows = useMemo(() => {
+    if (cardShape === 'verdict') return []
+    const rows: { column: string; label: string }[] = []
+    for (const c of conflicts) {
+      if (!keptFields.has(c.field)) continue
+      const col = mapCriticFieldToColumn(c.field)
+      if (!col || col in fieldsToApply) continue
+      if (rows.some((r) => r.column === col)) continue
+      rows.push({ column: col, label: reviewFieldLabel(c.field, c.label) })
+    }
+    return rows
+  }, [conflicts, keptFields, fieldsToApply, cardShape])
+  const keepColumns = useMemo(() => keptRows.map((r) => r.column), [keptRows])
 
   /**
    * The learning signal (ADR-0002). `aiProposed` is what the agent suggested, `humanFinal` is what
@@ -790,9 +1156,9 @@ export function ReviewCard({
       conflicts.filter((c) => {
         const v = (resolutions[c.field] ?? '').trim()
         // #360: ANY candidate pick is not an override — only a free-typed custom value needs a note.
-        return v !== '' && v !== existingValue(c) && !isCandidateResolution(c, v)
+        return changesStoredValue(c, v, liveValueFor(c)) && !isCandidateResolution(c, v)
       }),
-    [conflicts, resolutions, existingValue],
+    [conflicts, resolutions, liveValueFor],
   )
   const noteRequired = overrides.length > 0 && !note.trim()
   /**
@@ -822,14 +1188,28 @@ export function ReviewCard({
     }
     return dateOrderWarn({ etd: pick('etd'), atd: pick('atd'), eta: pick('eta'), ata: pick('ata') })
   }, [conflicts, resolutions, shipment])
-  /** Any cell diverged from the agent's proposal (operator applied a different value). */
-  const hasHumanEdits = useMemo(
-    () =>
-      conflicts.some((c) => (resolutions[c.field] ?? '').trim() !== proposedResolutionOf(c).trim()),
-    [conflicts, resolutions],
-  )
-  // Column 3 label tracks state: agent default → edit mode → human-applied values.
-  const proposedColumnLabel = editing ? 'Resolution' : hasHumanEdits ? 'Edited' : 'AI Proposed'
+  /**
+   * A cell holds a value NOBODY offered — the operator typed it.
+   *
+   * Deliberately not "anything diverged from the default": taking the email's value or picking one of
+   * its candidates leaves the column showing exactly what the email said, which is what the idle
+   * header claims. Only a typed value makes that header false, and only then does it say "Edited".
+   * (Same reason a PO tick does not rename the column either — see ReviewPoStylesSection.)
+   */
+  const hasTypedOverride = overrides.length > 0
+  /**
+   * Column 3 label tracks state: what the thread said → edit mode → human-applied values.
+   *
+   * Idle used to read "AI Proposed", which claimed something the pipeline does not do. Conflicts the
+   * commit settled are stripped upstream (openDecisions), so every value reaching this column is one
+   * the committer read and declined to write — nothing there is queued for an apply. REVIEW_HEAD
+   * says "Also Seen In Email"; once the operator is editing, the column IS their resolution and says so.
+   */
+  const proposedColumnLabel = editing
+    ? 'Resolution'
+    : hasTypedOverride
+      ? 'Edited'
+      : REVIEW_HEAD.proposed
   /**
    * How many stored values Approve would overwrite. This is the count the primary button NAMES —
    * one informed click beats a row-by-row confirm ritual, but a bare "Approve" would hide what is
@@ -840,8 +1220,15 @@ export function ReviewCard({
       cardShape === 'verdict'
         ? 0 // nothing is being applied from a verdict card, so nothing is being counted
         : conflicts.filter((c) => changesStoredValue(c, resolutions[c.field] ?? '', liveValueFor(c)))
-            .length,
-    [conflicts, resolutions, liveValueFor, cardShape],
+            .length +
+          /* A clear IS a write, so the button must count it — otherwise "Apply 1 Change" would be
+             taking a mode AND emptying two fields, and the label would understate its own reach. */
+          clearedColumns.length +
+          /* A PO's style list is ONE field and one write, however many boxes moved to compose it —
+             counting ticks would say "4 changes" for two rows of work and would not match the field
+             grid, where one contested field is one change. */
+          poPlans.length,
+    [conflicts, resolutions, liveValueFor, cardShape, poPlans, clearedColumns],
   )
   /**
    * What the primary button will WRITE, when that is one nameable thing. A bare "Approve" made the
@@ -853,12 +1240,16 @@ export function ReviewCard({
    * than the count it replaced, so those fall back to `Apply 1 Change`. The full detail is in the title.
    */
   const applyToken = useMemo(() => {
+    // Only when this ONE field is the whole of what Save will write. changeCount also counts cleared
+    // columns and PO style plans, and naming the field alone read as "Apply 369" on a card that was
+    // also about to rewrite a PO's style list — a label that understated its own reach.
+    if (changeCount !== 1) return null
     const values = Object.values(fieldsToApply)
     if (values.length !== 1) return null
     const raw = String(values[0] ?? '').trim()
     if (!raw || raw.length > 14) return null
     return raw
-  }, [fieldsToApply])
+  }, [fieldsToApply, changeCount])
   /** Nothing is stored on any contested row, so "keep what is there" means leaving it blank — say so.
    *  Reads the LIVE value: a leg storing MACFUN with no critic System candidate was offering to
    *  "Leave Blank" a field that is not blank. */
@@ -897,8 +1288,8 @@ export function ReviewCard({
     ((conflicts.length > 0 && !allConflictsSelfServe) || poNeedsReview)
   /** Edit mode as the GRID sees it — read-only history never edits, whatever `editing` says. */
   const gridEditing = editing && !readOnly
-  const deskEmpty = needsAttentionGroups.length === 0 && conflicts.length === 0
-  const judgmentOnly = needsAttentionGroups.length > 0 && conflicts.length === 0
+  const deskEmpty = deskGroups.length === 0 && conflicts.length === 0
+  const judgmentOnly = deskGroups.length > 0 && conflicts.length === 0
   // Multi-candidate: require a real target before primary CTAs; use onLink path.
   const multiCandNeedsTarget = hasCandidateLegs && !!onLink
   const canSave =
@@ -914,10 +1305,27 @@ export function ReviewCard({
   // Collapsed on open — expand only when the operator needs the email.
   const [emailsOpen, setEmailsOpen] = useState(false)
 
+  /**
+   * Run a verdict, holding the card busy for its duration.
+   *
+   * The catch is load-bearing. Every call site is `void run(...)` with no catch of its own, so a
+   * rejected save — a 400 from a UOM the enum refuses, a stale `expectedUpdatedAt` — escaped as an
+   * unhandled promise rejection. In the browser that is a console error nobody reads; under vitest it
+   * fails the whole run while every test still reports as passing, which is exactly how it went
+   * unnoticed.
+   *
+   * Swallowed HERE, deliberately, because the message is not this component's to own: the page's
+   * mutation layer toasts the API error (ReviewQueuePage), and the card's job on failure is to stay
+   * put with the operator's edits intact. Re-throwing would only reinstate the unhandled rejection.
+   * `busy` still clears, and `setEditing(false)` in the commit path is correctly skipped, because the
+   * throw happens before it.
+   */
   const run = async (fn: () => Promise<void>) => {
     setBusy(true)
     try {
       await fn()
+    } catch {
+      // Intentionally quiet — see above. The caller surfaces it.
     } finally {
       setBusy(false)
     }
@@ -936,6 +1344,23 @@ export function ReviewCard({
     )
   }
 
+  /**
+   * Write the ticked PO style lists.
+   *
+   * Sequential, not Promise.all: these are separate PO masters and a partial failure must leave the
+   * ones already written intact rather than racing an unknown subset. Runs BEFORE the leg save so a
+   * PO write that 400s surfaces its own error instead of being masked by a leg confirm that
+   * succeeded — the operator then still sees the leg on the desk, which is the honest state.
+   *
+   * An empty list writes null: `clears` is a legitimate outcome (sometimes the whole style list is
+   * junk), and the row said so in red before the operator got here.
+   */
+  const applyPoPlans = async (): Promise<void> => {
+    for (const plan of poPlans) {
+      await updatePo.mutateAsync({ id: plan.poId, itemStyleNo: plan.itemStyleNo || null })
+    }
+  }
+
   const handleSaveAndApprove = () => {
     if (busy) return
     if (noteRequired) {
@@ -947,32 +1372,45 @@ export function ReviewCard({
       handleLinkAndApply(true)
       return
     }
-    setEditing(false)
+    const savePayload = {
+      fields: fieldsToApply,
+      keep: keepColumns,
+      note: note.trim(),
+      corrections,
+      expectedUpdatedAt: id.updatedAt,
+    }
+    /**
+     * Leave edit mode only once the write has actually landed.
+     *
+     * `setEditing(false)` used to fire here, before the request. A save that 400s — a UOM the enum
+     * rejects, a stale expectedUpdatedAt — then left the card in READ mode still holding the typed
+     * values, where the row renders as text with no input and no Cancel. The operator's own edits
+     * were stranded on screen, armed, with the only way out being to press Edit again and then
+     * Cancel, which reads like going deeper rather than backing out.
+     */
     const hasFieldEdits = Object.keys(fieldsToApply).length > 0
-    if (hasFieldEdits && onSaveAndApprove) {
-      void run(() =>
-        onSaveAndApprove({
-          fields: fieldsToApply,
-          note: note.trim(),
-          corrections,
-          expectedUpdatedAt: id.updatedAt,
-        }),
-      )
+    const commit = (fn: () => Promise<void>) =>
+      void run(async () => {
+        await applyPoPlans()
+        await fn()
+        setEditing(false)
+      })
+    /**
+     * Keep rulings ride the save path even when nothing is being written. `onApprove` is the bare
+     * confirm — it carries no payload, so routing a keep-only card there would drop every ruling on
+     * the floor, which is the no-op this feature exists to end. The page still lands on /confirm
+     * when `fields` is empty; the difference is that it can now carry `keep` with it.
+     */
+    if ((hasFieldEdits || savePayload.keep.length > 0) && onSaveAndApprove) {
+      commit(() => onSaveAndApprove(savePayload))
       return
     }
     if (onApprove) {
-      void run(() => onApprove())
+      commit(() => onApprove())
       return
     }
     if (onSaveAndApprove) {
-      void run(() =>
-        onSaveAndApprove({
-          fields: fieldsToApply,
-          note: note.trim(),
-          corrections,
-          expectedUpdatedAt: id.updatedAt,
-        }),
-      )
+      commit(() => onSaveAndApprove(savePayload))
     }
   }
 
@@ -983,6 +1421,8 @@ export function ReviewCard({
       return
     }
     if (!onApprove) return
+    // Same bulk decline as the expanded "Leave All As Is" — it clears rulings, never applies them.
+    setKeptFields(new Set())
     void run(() => onApprove())
   }
 
@@ -1038,11 +1478,13 @@ export function ReviewCard({
                 type="button"
                 onClick={handleApproveCollapsed}
                 disabled={busy}
-                title="Confirm without applying AI Proposed values"
+                title="Mark reviewed and leave every stored value alone — writes nothing, records no per-field ruling"
                 className={cn(ACTION_BTN, ACTION_VARIANT.success)}
               >
                 {busy && <Loader2 size={13} className="animate-spin" />}
-                Keep Existing
+                {/* Same verb split as the expanded bar: this is the collapsed bulk decline, so it
+                    "leaves" rather than "keeps" — see the neutral button's note below. */}
+                Leave As Is
               </button>
             )}
           </div>
@@ -1498,34 +1940,21 @@ export function ReviewCard({
             if (!showPos && !showConflicts) return null
             // Shared thead only when both blocks show (one header, two section groups).
             // Solo PO / solo conflict each render their own thead via child defaults.
-            const sharedThead = showPos && showConflicts
+            /**
+             * NO shared header. A PO row and a field row are not the same row: a PO carries a style
+             * LIST where a field carries a value, and ticking styles composes one write while picking
+             * a radio settles one field. They shared column tracks, so one header was hoisted above
+             * both — and it read "Field / PO#", a slash trying to cover two meanings, sitting above
+             * the PO section it did not describe while that section printed its own header two rows
+             * later. Two header rows in one table is the tell that the sharing never held.
+             *
+             * Each table names its own columns now. The tracks stay shared so the two still line up.
+             */
             return (
               <div
                 className="max-w-full overflow-x-auto rounded-lg border border-border"
                 data-testid="review-decision-grid"
               >
-                {sharedThead && (
-                  <table className={REVIEW_TABLE_CLASS}>
-                    <ReviewColGroup />
-                    <thead>
-                      <tr className="border-b border-border bg-surface-900/50">
-                        <th className={`${REVIEW_COL.label} ${REVIEW_TH}`}>{REVIEW_HEAD.label}</th>
-                        <th className={`${REVIEW_COL.existing} ${REVIEW_TH}`}>
-                          {REVIEW_HEAD.existing}
-                        </th>
-                        <th
-                          className={`${REVIEW_COL.proposed} ${REVIEW_TH}`}
-                          data-testid="proposed-column-header"
-                        >
-                          {proposedColumnLabel}
-                        </th>
-                        <th className={`${REVIEW_COL.reference} ${REVIEW_TH}`}>
-                          {REVIEW_HEAD.reference}
-                        </th>
-                      </tr>
-                    </thead>
-                  </table>
-                )}
                 {showPos && (
                   <ReviewPoStylesSection
                     shipmentId={shipment.id}
@@ -1538,6 +1967,7 @@ export function ReviewCard({
                     reviewReasons={reviewReasons}
                     readOnly={readOnly}
                     editing={canEditGrid}
+                    onPlanChange={setPoPlans}
                     embedded
                     proposedColumnLabel={proposedColumnLabel}
                   />
@@ -1545,8 +1975,7 @@ export function ReviewCard({
                 {showConflicts && (
                   <table className={REVIEW_TABLE_CLASS}>
                     <ReviewColGroup />
-                    {!sharedThead && (
-                      <thead>
+                    <thead>
                         <tr className="border-b border-border bg-surface-900/50">
                           <th className={`${REVIEW_COL.label} ${REVIEW_TH}`}>{REVIEW_HEAD.label}</th>
                           <th className={`${REVIEW_COL.existing} ${REVIEW_TH}`}>
@@ -1558,9 +1987,13 @@ export function ReviewCard({
                           >
                             {proposedColumnLabel}
                           </th>
+                          {/* Was only ever in the hoisted header, so removing that left this table
+                              one <th> short of its own colgroup. */}
+                          <th className={`${REVIEW_COL.reference} ${REVIEW_TH}`}>
+                            {REVIEW_HEAD.reference}
+                          </th>
                         </tr>
                       </thead>
-                    )}
                     {groupConflictFields(conflicts).map(({ group, conflicts: rows }) => {
                       /**
                        * Count what would actually be WRITTEN, not how many rows are contested.
@@ -1595,6 +2028,7 @@ export function ReviewCard({
                               conflict={c}
                               value={resolutions[c.field] ?? ''}
                               onChange={(v) => setResolution(c.field, v)}
+                              onKeep={() => markKept(c.field)}
                               editing={canEditGrid && writable}
                               existingUnit={units.existing}
                               proposedUnit={units.proposed}
@@ -1624,6 +2058,101 @@ export function ReviewCard({
               </div>
             )
           })()}
+
+          {/*
+            Put everything back — one click, next to the table it undoes.
+
+            Individually the rows are already reversible: untick the box, choose Keep current. What
+            was missing was a way to drop the LOT, and a way out of a typed value at all — outside
+            edit mode that cell renders as text, so nothing on the row can touch it. `Edit → Cancel`
+            does discard, but nobody finds it: pressing Edit to get rid of an edit reads as going
+            further in, not backing out.
+
+            Deliberately NOT in the action bar. That bar is verdicts — what happens to the leg — and
+            this changes nothing about the leg, it just puts the desk back how it was found. It also
+            appears exactly when `Leave All As Is` and `Apply N` do, and three buttons competing at
+            the same moment is how the bar drifted before.
+          */}
+          {/* A pending RULING is undoable from here too. It changes no value, so `changeCount` does
+              not see it — and without this the operator who ticked "Keep current" had no way back
+              short of reloading the card: the bulk decline beside the primary only renders when
+              there is a change to decline. */}
+          {!readOnly && !editing && (changeCount > 0 || keptRows.length > 0) && (
+            <button
+              type="button"
+              onClick={cancelEditing}
+              disabled={busy}
+              data-testid="discard-edits"
+              title={
+                changeCount > 0
+                  ? 'Put every row back to the value the shipment stores — nothing is written and the leg stays on the desk'
+                  : 'Drop the keep ruling — nothing is written or locked and the leg stays on the desk'
+              }
+              className="inline-flex items-center gap-1.5 text-xs font-medium text-text-muted transition-colors hover:text-status-critical"
+            >
+              <Undo2 size={13} />
+              {changeCount > 0 ? 'Discard changes' : 'Discard ruling'}
+              <span className="font-normal text-text-muted/70">
+                {changeCount > 0
+                  ? ` · back to ${keepMeansBlank ? 'blank' : 'the stored values'}`
+                  : ' · decide nothing here'}
+              </span>
+            </button>
+          )}
+
+          {/*
+            The consequence of taking a different Mode, stated next to the grid that offers it and
+            committed by the same button. Ticked by default — clearing is filing, not deletion: every
+            write goes through the shipment history, and a sea leg still reporting a flight number is
+            wrong in every downstream consumer.
+
+            Below the grid rather than nested inside the Mode row: the row's cell is the decision, and
+            burying a second set of ticks inside it would put two different kinds of choice in one
+            box. The count on Apply already carries these, so nothing here is silent.
+          */}
+          {!readOnly && modeCarryOver.length > 0 && (
+            <div
+              data-testid="mode-carry-over"
+              className="rounded-lg border border-status-warning/35 bg-status-warning/[0.06] px-3 py-2.5"
+            >
+              <p className={`${REVIEW_FS.body} font-semibold text-text-primary`}>
+                Taking Mode{' '}
+                <span className="field-value font-mono">{resolutions[modeConflict!.field]}</span> also
+                clears {modeCarryOver.length}{' '}
+                {modeCarryOver.length === 1 ? 'field' : 'fields'} from the old mode
+              </p>
+              <div className="mt-2 grid gap-1.5">
+                {modeCarryOver.map((cf) => (
+                  <label key={cf.column} className="flex cursor-pointer items-start gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={willClearOnSwitch(cf.column)}
+                      onChange={() =>
+                        setKeepOnModeSwitch((k) => ({ ...k, [cf.column]: willClearOnSwitch(cf.column) }))
+                      }
+                      data-testid={`mode-carry-over-${cf.column}`}
+                      aria-label={`Clear ${cf.label} when taking this mode`}
+                      className="mt-[3px] h-3.5 w-3.5 shrink-0 cursor-pointer rounded border-border accent-status-critical"
+                    />
+                    <span className="min-w-0 text-text-secondary">
+                      Clear <span className="font-medium text-text-primary">{cf.label}</span>{' '}
+                      <span
+                        className={cn(
+                          'field-value font-mono',
+                          willClearOnSwitch(cf.column) ? 'text-text-muted line-through' : 'text-text-primary',
+                        )}
+                      >
+                        {cf.value}
+                      </span>
+                    </span>
+                  </label>
+                ))}
+              </div>
+              <p className="mt-2 text-[11px] text-text-muted">
+                Cleared values stay in the shipment history — open the leg to see them.
+              </p>
+            </div>
+          )}
 
           {/* Directly under the grid whose ✉ opened it, so the row and its evidence read together. */}
           {evidence && (
@@ -1781,26 +2310,50 @@ export function ReviewCard({
                         handleLinkAndApply(false)
                         return
                       }
+                      /**
+                       * The bulk decline CLEARS the per-row rulings — it does not apply them to
+                       * everything. "Leave All As Is" is overwhelmingly "not now"; turning it into a
+                       * per-field ruling on every contested row would fabricate decisions from a
+                       * click that means the opposite, and it would do so on exactly the legs with
+                       * the most rows. A ruling comes from the row, or it does not exist.
+                       */
+                      setKeptFields(new Set())
                       if (onApprove) void run(() => onApprove())
                     }}
                     disabled={busy || (multiCandNeedsTarget && !linkTargetReady)}
                     title={
                       multiCandNeedsTarget
-                        ? 'Link into selected shipment without applying AI field proposals'
+                        ? 'Link into the selected shipment without taking any value from the email'
                         : keepMeansBlank
-                          ? 'Confirm shipment and leave these fields empty — do not apply AI Proposed'
-                          : 'Confirm shipment and keep Existing values — do not apply AI Proposed'
+                          ? 'Mark reviewed and leave these fields empty — writes nothing, records no per-field ruling, the leg leaves the desk'
+                          : 'Mark reviewed and leave every stored value alone — writes nothing, records no per-field ruling, the leg leaves the desk'
                     }
-                    className={cn(ACTION_BTN, ACTION_VARIANT.success)}
+                    className={cn(ACTION_BTN, ACTION_VARIANT.neutral)}
                   >
                     {busy && <Loader2 size={13} className="animate-spin" />}
                     {multiCandNeedsTarget
                       ? 'Link Without Field Changes'
-                      : /* "Keep Current" over an empty Current promises to keep something that is not
-                           there. What the click actually does is decline every candidate. */
+                      : /*
+                           "Leave", never "Keep".
+
+                           `Keep` now belongs to ONE thing on this card: the per-row ruling, which
+                           records a human decision and locks the field. This button is its opposite —
+                           it records nothing and clears any ruling already ticked — so a bar reading
+                           `Keep All Current` beside `Keep Vendor Code` put the two furthest-apart
+                           outcomes behind the same verb, separated only by the word "All".
+
+                           `Leave …` also matches the empty-Current wording that was already here, so
+                           the decline reads the same way whether or not the leg stores anything, and
+                           "All" still appears the moment there is more than one row — without it the
+                           label understates its reach on exactly the legs where reach matters.
+                        */
                         keepMeansBlank
-                        ? 'Leave Blank'
-                        : 'Keep Current'}
+                        ? conflicts.length > 1
+                          ? 'Leave All Blank'
+                          : 'Leave Blank'
+                        : conflicts.length > 1
+                          ? 'Leave All As Is'
+                          : 'Leave As Is'}
                   </button>
                 )}
                 {(onSaveAndApprove || onApprove || multiCandNeedsTarget) && (
@@ -1808,38 +2361,67 @@ export function ReviewCard({
                     type="button"
                     onClick={handleSaveAndApprove}
                     disabled={!canSave}
-                    /* The label is a plain verb, so the COUNT of stored values this overwrites lives
-                       here — it is the whole reason the leg is queued, and it stays assertable. */
                     title={
                       multiCandNeedsTarget
                         ? linkTargetReady
                           ? `Link into ${selectedJobLabel ?? 'selected shipment'} and apply field decisions`
                           : 'Select a shipment above first'
                         : changeCount > 0
-                          ? `Apply ${changeCount} change${changeCount === 1 ? '' : 's'} and confirm`
-                          : 'Confirm this shipment — there is nothing to change'
+                          ? `Apply ${changeCount} change${changeCount === 1 ? '' : 's'} — the leg leaves the desk`
+                          : keptRows.length > 0
+                            ? `Record that the stored ${keptRows.map((r) => r.label).join(', ')} ${
+                                keptRows.length === 1 ? 'is' : 'are'
+                              } right — no value is written, but a later email that disagrees will be flagged`
+                            : 'Mark reviewed — nothing is written, the leg leaves the desk'
                     }
                     className={cn(ACTION_BTN, ACTION_VARIANT.primary)}
                   >
                     {busy && <Loader2 size={13} className="animate-spin" />}
+                    {/*
+                      The label names the strongest true thing the click does, and nothing weaker.
+
+                      When there IS something to write, that is the apply: `Apply FEFALT`, `Link —
+                      Apply 2 Changes`. Prefixing those with `Mark Reviewed —` was tried and read as
+                      ceremony in front of the real verb — on a card already stacking three open
+                      questions, the operator has to get past a phrase about bookkeeping to reach the
+                      one word that says what changes. The leg's fate is not lost: it moves to the
+                      title, which is where a consequence belongs when the label is already carrying
+                      an action.
+
+                      When there is NOTHING to write, no action exists to name, and the old
+                      `Confirm Reviewed` / `Approve` filled that void with a word for a thing that
+                      does not happen. That is the one case the explicit verb earns its place.
+
+                      `applyToken` names the value rather than counting it — a bare count made the
+                      operator trust that the highlighted candidate was the one being taken. Capped
+                      at 14 characters upstream, so it never crowds the bar.
+                    */}
                     {editing
                       ? 'Submit'
                       : multiCandNeedsTarget
                         ? changeCount > 0
-                          ? `Link & Apply ${changeCount} Change${changeCount === 1 ? '' : 's'}`
-                          : 'Link & Apply'
+                          ? `Link — Apply ${changeCount} Change${changeCount === 1 ? '' : 's'}`
+                          : /* "Link & Apply" with nothing to apply named an action that does not
+                               happen; linking IS the whole effect here. */
+                            'Link — No Changes'
                         : changeCount > 0
-                          ? /* Name the value, not the ceremony: "Apply FEFALT" over a bare "Approve",
-                               which made the operator trust that the highlighted candidate was the one
-                               being taken. Plural falls back to the count. */
-                            applyToken
+                          ? applyToken
                             ? `Apply ${applyToken}`
                             : `Apply ${changeCount} Change${changeCount === 1 ? '' : 's'}`
-                          : /* Nothing to apply, so the label answers the headline instead ("Yes — Track
-                               It" under "Is this a real shipment?"). Falls back to Confirm Reviewed when
-                               the leg asks nothing nameable. Never "Keep Current": nothing is being kept
-                               over an alternative, because there is no alternative. */
-                            (desk?.question.affirm ?? 'Confirm Reviewed')}
+                          : keepColumns.length > 0
+                            ? /* Nothing to write, but not nothing to do: the operator ticked
+                                 "Keep current" on these rows and that ruling is what the click
+                                 commits. The old label here said "No Changes", which is true of the
+                                 VALUES and false about the click. Named like `applyToken` — the one
+                                 field when there is one, a count otherwise — and distinguished from
+                                 the bulk "Leave All As Is" beside it by naming what it is about. */
+                              keptRows.length === 1
+                              ? `Keep ${keptRows[0]!.label}`
+                              : `Keep ${keptRows.length} Fields`
+                            : /* A question with a real answer keeps it ("Track it" under "Is this a
+                                 real shipment?"); the eleven generic fall-throughs now say what the
+                                 click does instead of naming a ceremony. */
+                              (desk?.question.affirm ?? NO_CHANGE_VERDICT)}
                   </button>
                 )}
                 {/* F11: multi-candidate escape hatch — genuinely new shipment (e.g. 拼櫃) without linking */}

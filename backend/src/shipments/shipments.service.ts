@@ -18,7 +18,7 @@ export interface ManualShipmentInput {
   qty?: number | string; qtyUnit?: string; grossWeight?: number | string; measurement?: number | string
   itemStyleNo?: string; htsCode?: string; consigneeName?: string; consigneeAddress?: string
   vesselName?: string; voyageNo?: string; flightNo?: string; mawb?: string
-  cargoReadyDate?: string; warehouseStartDate?: string; warehouseEndDate?: string
+  cargoReadyDate?: string; cfsCutoff?: string; warehouseStartDate?: string; warehouseEndDate?: string
   etd?: string; atd?: string; eta?: string; ata?: string; inDcDate?: string
   pos?: string[]; note?: string
 }
@@ -51,6 +51,9 @@ const CREATE_FIELD_MAP: { dto: keyof ManualShipmentInput; parser: string; leg: s
   { dto: 'flightNo', parser: 'flight_no', leg: 'flightNo' },
   { dto: 'mawb', parser: 'mawb', leg: 'mawb' },
   { dto: 'cargoReadyDate', parser: 'cargo_ready_date', leg: 'cargoReadyDate' },
+  // CFS cut-off was editable on the detail page but absent here, so the one form meant to capture a
+  // booking the pipeline missed could not record the deadline that booking is about.
+  { dto: 'cfsCutoff', parser: 'cfs_cutoff', leg: 'cfsCutoff' },
   { dto: 'warehouseStartDate', parser: 'warehouse_start_date', leg: 'warehouseStartDate' },
   { dto: 'warehouseEndDate', parser: 'warehouse_end_date', leg: 'warehouseEndDate' },
   { dto: 'etd', parser: 'etd', leg: 'etd' },
@@ -158,6 +161,11 @@ export class ShipmentsService {
       evidenceIds: [],
       reviewStatus: 'provisional',
       fromPlatform: false,
+      // 0028 — stamp the leg as hand-typed. Two committer rules read it and stop acting automatically:
+      // a later email sharing this leg's PO but naming a different id no longer mints a silent duplicate
+      // (it reports one), and a conflicting re-key no longer dismisses this row out from under the
+      // operator's field locks. See findPoOnlyDuplicateRisk / findManualIdentityClash.
+      createdManually: true,
     }
     const res = await this.committer.apply(group)
 

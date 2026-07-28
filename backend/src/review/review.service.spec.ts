@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common'
-import { ReviewService } from './review.service'
+import { CORRECTABLE_COLUMNS, ReviewService } from './review.service'
 import type { ShipmentRepository } from '../db/repositories/shipment.repository'
 import type { BookingRepository } from '../db/repositories/booking.repository'
 import type { FieldLockRepository } from '../db/repositories/field-lock.repository'
@@ -336,7 +336,8 @@ describe('ReviewService — skip queue learning when sourceGraphIdFor is null (#
     const { svc, shipments, queueLearning } = makeService({ soNo: 'COSU123', grossWeight: 5 })
     shipments.sourceGraphIdFor.mockResolvedValue(null)
     const res = await svc.confirm('leg-1', 'user-1')
-    expect(res).toEqual({ shipmentId: 'leg-1', reviewStatus: 'confirmed' })
+    // `kept` is always present, empty when nothing was ruled — see the keep-rulings block below.
+    expect(res).toEqual({ shipmentId: 'leg-1', reviewStatus: 'confirmed', kept: [] })
     expect(queueLearning.postCorrection).not.toHaveBeenCalled()
     expect(shipments.updateLeg).toHaveBeenCalledWith(
       'leg-1',
@@ -727,5 +728,116 @@ describe('link — fold a zero-identity provisional leg into an existing shipmen
     const { svc, shipments } = makeService()
     shipments.findById.mockResolvedValueOnce({ ...zeroIdSource, reviewStatus: 'confirmed' })
     await expect(svc.link('SRC', { targetShipmentId: 'TARGET' }, 'user-1')).rejects.toBeInstanceOf(BadRequestException)
+  })
+})
+
+/**
+ * The review form and the API allowlist live in different packages, so nothing but a test keeps them
+ * honest. They drifted once already: `warehouseSo` got its own input on the form (2026-07-24, split
+ * out of the shared SO# row) and this set was never widened, so typing in that box produced
+ * "field not correctable: warehouseSo" — a 400 the queue page then reported through the SUCCESS
+ * toast, green tick and all. The operator saw a tick over a save that never happened.
+ *
+ * The list below is the `column` of every entry in frontend/src/lib/review-fields.ts EDITABLE_FIELDS.
+ * Its twin in review-fields.test.ts pins the same set from the other side, so ADDING a field to the
+ * form fails there and REMOVING one from the allowlist fails here — the two directions this can break.
+ */
+const REVIEW_FORM_COLUMNS = [
+  'bookingNo', 'soNo', 'warehouseSo',
+  'qty', 'qtyUnit', 'containerNo', 'hblAwbFcrNo', 'mbl', 'mawb', 'scacCode',
+  'mode', 'customerRaw', 'vendorRaw', 'forwarderRaw', 'consigneeName', 'consigneeAddress',
+  'vesselName', 'voyageNo', 'flightNo', 'polRaw', 'podRaw',
+  'cargoReadyDate', 'warehouseStartDate', 'warehouseEndDate', 'cfsCutoff',
+  'etd', 'atd', 'eta', 'ata', 'inDcDate',
+]
+
+describe('CORRECTABLE_COLUMNS covers everything the review form can edit', () => {
+  it('accepts every column EDITABLE_FIELDS renders an input for', () => {
+    const missing = REVIEW_FORM_COLUMNS.filter((c) => !CORRECTABLE_COLUMNS.has(c))
+    expect(missing).toEqual([])
+  })
+
+  it('correct() 400s on a column outside the set, naming it', async () => {
+    const { svc } = makeService()
+    await expect(
+      svc.correct('leg-1', { fields: { notAColumn: 'x' } } as never, 'user-1'),
+    ).rejects.toThrow(/field not correctable: notAColumn/)
+  })
+
+  /** The extras are deliberate, not oversight: measurement / gross weight / HTS were taken off Order
+   *  Details, and itemStyleNo is per-PO on Customer Purchase Orders. Pinned so a future reader does
+   *  not "tidy" them away and silently break the shipment-detail edit path that still writes them. */
+  it('keeps the four columns edited elsewhere than the review form', () => {
+    for (const c of ['grossWeight', 'measurement', 'htsCode', 'itemStyleNo']) {
+      expect(CORRECTABLE_COLUMNS.has(c)).toBe(true)
+    }
+  })
+})
+
+/**
+ * "Keep current" as a per-field DECISION: no value moves, but the ruling is recorded — the field is
+ * locked at what the leg already holds and the act lands in Change History. Before this the desk had
+ * no way to say it at all: a row resolved to the stored value contributed nothing to `fields`, so
+ * the approve posted an empty set and the judgement evaporated.
+ */
+describe('ReviewService — keep rulings lock without writing', () => {
+  it('confirm locks each kept field at the value the leg already holds', async () => {
+    const { svc, locks, shipments, audit } = makeService({ vesselName: 'EVER GLORY', grossWeight: 5 })
+    const res = await svc.confirm('leg-1', 'user-1', undefined, undefined, ['vesselName'])
+    expect(res.kept).toEqual(['vesselName'])
+    expect(locks.lock).toHaveBeenCalledWith('shipment', 'leg-1', 'vesselName', 'EVER GLORY', 'user-1')
+    // The value is read off the LEG, never off the request — a keep that carried its own value would
+    // be a write wearing a different name.
+    // The repo fakes take no declared params, so their recorded calls are typed as empty tuples —
+    // read them as plain arrays rather than widening every fake in the harness.
+    const legPatches = shipments.updateLeg.mock.calls as unknown as unknown[][]
+    const wroteVessel = legPatches.some(
+      (c) => 'vesselName' in ((c[1] ?? {}) as Record<string, unknown>),
+    )
+    expect(wroteVessel).toBe(false)
+    // old === new is the point: a ruling, not a change.
+    const row = (audit.write.mock.calls as unknown as unknown[][])
+      .map((c) => c[0] as Record<string, unknown>)
+      .find((r) => r.field === 'vesselName')
+    expect(row).toMatchObject({ oldValue: 'EVER GLORY', newValue: 'EVER GLORY', sourceType: 'review' })
+    expect(String(row?.note)).toMatch(/kept the stored value/i)
+  })
+
+  it('an absent keep list locks nothing — the common path is untouched', async () => {
+    const { svc, locks } = makeService({ vesselName: 'EVER GLORY' })
+    const res = await svc.confirm('leg-1', 'user-1')
+    expect(res.kept).toEqual([])
+    expect(locks.lock).not.toHaveBeenCalled()
+  })
+
+  it('correct carries writes and rulings together, and keeps them apart', async () => {
+    const { svc, locks } = makeService({ vesselName: 'EVER GLORY', eta: null })
+    const res = await svc.correct(
+      'leg-1',
+      { fields: { eta: '2026-08-01' }, keep: ['vesselName'] },
+      'user-1',
+    )
+    expect(res.corrected).toEqual(['eta'])
+    expect(res.kept).toEqual(['vesselName'])
+    expect(locks.lock).toHaveBeenCalledWith('shipment', 'leg-1', 'vesselName', 'EVER GLORY', 'user-1')
+  })
+
+  it('a field named as BOTH written and kept is a contradiction — 400, nothing written', async () => {
+    const { svc, shipments, locks } = makeService({ vesselName: 'EVER GLORY' })
+    await expect(
+      svc.correct('leg-1', { fields: { vesselName: 'EVER GIVEN' }, keep: ['vesselName'] }, 'user-1'),
+    ).rejects.toBeInstanceOf(BadRequestException)
+    // Rejected in the same pre-flight as a bad value, so the leg is untouched.
+    expect(shipments.updateLeg).not.toHaveBeenCalled()
+    expect(locks.lock).not.toHaveBeenCalled()
+  })
+
+  it('an unknown column cannot be kept either — the allowlist is one allowlist', async () => {
+    const { svc, locks } = makeService()
+    await expect(svc.confirm('leg-1', 'user-1', undefined, undefined, ['notAColumn'])).rejects.toBeInstanceOf(
+      BadRequestException,
+    )
+    expect(locks.lock).not.toHaveBeenCalled()
+    expect([...CORRECTABLE_COLUMNS]).not.toContain('notAColumn')
   })
 })

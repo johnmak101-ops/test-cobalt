@@ -3,7 +3,7 @@ import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import {
   ReviewPoStylesSection,
-  proposedStyleForPo,
+  alsoSeenStyleForPo,
 } from './ReviewPoStylesSection'
 import type { LinkedPO } from '../../hooks/use-shipments'
 
@@ -69,53 +69,74 @@ beforeEach(() => {
   updateMutateAsync.mockResolvedValue({})
 })
 
-describe('proposedStyleForPo', () => {
-  it('extracts kept style', () => {
+describe('alsoSeenStyleForPo', () => {
+  it('extracts the style the thread resolved to', () => {
     expect(
-      proposedStyleForPo('6495962', [
+      alsoSeenStyleForPo('6495962', [
+        'PO 6495962: item/style "OLD" vs "NEW" (system read: NEW-STYLE)',
+      ]),
+    ).toBe('NEW-STYLE')
+  })
+
+  /**
+   * Legacy wording. Every leg committed before the `(kept X)` → `(system read: X)` fix still carries
+   * the old phrasing in review_reasons, and those rows must keep rendering — the reason strings are
+   * recomputed per commit, not backfilled, so a leg nobody re-amends keeps its old sentence forever.
+   */
+  it('reads the legacy (kept X) wording too', () => {
+    expect(
+      alsoSeenStyleForPo('6495962', [
         'PO 6495962: item/style "OLD" vs "NEW" (kept NEW-STYLE)',
       ]),
     ).toBe('NEW-STYLE')
   })
 
   /**
-   * `(kept X)` records what the committer's reconciler ALREADY wrote (po-enrichment.ts:
-   * summarizeStyleConflict(styleConflict, enr.itemStyleNo)). When the PO carries it, offering it as
-   * an AI proposal advertised a change that writes back the value already on the row — leg
-   * 202601AEA6 read "Shipping (1 change)" with nothing to change.
+   * The named value is `enr.itemStyleNo` — the resolver's rank-one pick, computed BEFORE anything is
+   * written. When the PO already carries it there is nothing to show: the column exists to surface a
+   * value the row does NOT have, and printing one it does have made leg 202601AEA6 read
+   * "Shipping (1 change)" with nothing to change.
    */
-  it('does not re-propose a kept style the PO already stores', () => {
+  it('shows nothing when the PO already stores that style', () => {
     expect(
-      proposedStyleForPo(
+      alsoSeenStyleForPo(
         '6495962',
-        ['PO 6495962: item/style "OLD" vs "NEW" (kept NEW-STYLE)'],
+        ['PO 6495962: item/style "OLD" vs "NEW" (system read: NEW-STYLE)'],
         'NEW-STYLE',
       ),
     ).toBeNull()
   })
 
-  it('does not propose a bare article code the stored style already carries', () => {
-    // C192/FERN JUMPER already IS C192 — proposing `C192` invited overwriting the fuller value.
+  it('shows nothing for a bare article code the stored style already carries', () => {
+    // C192/FERN JUMPER already IS C192 — showing `C192` invited overwriting the fuller value.
     expect(
-      proposedStyleForPo('28631', ['PO 28631: item/style "A" vs "B" (kept C192)'], 'C192/FERN JUMPER'),
+      alsoSeenStyleForPo(
+        '28631',
+        ['PO 28631: item/style "A" vs "B" (system read: C192)'],
+        'C192/FERN JUMPER',
+      ),
     ).toBeNull()
   })
 
-  it('still proposes a kept style the PO does not carry', () => {
+  it('still shows a style the PO does not carry', () => {
     expect(
-      proposedStyleForPo('28631', ['PO 28631: item/style "A" vs "B" (kept C192)'], 'C700/OTHER'),
+      alsoSeenStyleForPo(
+        '28631',
+        ['PO 28631: item/style "A" vs "B" (system read: C192)'],
+        'C700/OTHER',
+      ),
     ).toBe('C192')
     // and when the PO has no style at all
     expect(
-      proposedStyleForPo('28631', ['PO 28631: item/style "A" vs "B" (kept C192)'], null),
+      alsoSeenStyleForPo('28631', ['PO 28631: item/style "A" vs "B" (system read: C192)'], null),
     ).toBe('C192')
   })
 })
 
 describe('ReviewPoStylesSection — page-level Edit', () => {
-  /** View mode lists only POs the email proposes a change for (#2026-07-27) — so the fixture needs
-   *  a proposal, otherwise the row is correctly absent. Edit mode still shows every PO. */
-  const PROPOSAL = ['PO 6495962: item/style "OLD" vs "NEW" (kept 999-NEW-STYLE)']
+  /** View mode lists only POs the thread stated a different style for (#2026-07-27) — so the fixture
+   *  needs one, otherwise the row is correctly absent. Edit mode still shows every PO. */
+  const PROPOSAL = ['PO 6495962: item/style "OLD" vs "NEW" (system read: 999-NEW-STYLE)']
 
   it('view: values only, no section Edit button', () => {
     renderSection({ reviewReasons: PROPOSAL })
@@ -128,25 +149,74 @@ describe('ReviewPoStylesSection — page-level Edit', () => {
     renderSection({ reviewReasons: PROPOSAL })
     expect(screen.getByRole('columnheader', { name: 'PO' })).toBeInTheDocument()
     expect(screen.getByRole('columnheader', { name: 'Item/Style' })).toBeInTheDocument()
-    // third column tracks the card's state label; default = the shared proposed wording
-    expect(screen.getByTestId('po-proposed-column-header')).toHaveTextContent('From email / AI')
+    // third column tracks the card's state label; default = the shared wording. NOT "AI Proposed":
+    // openDecisions strips settled conflicts upstream, so what lands here is what the committer
+    // read and declined to write.
+    expect(screen.getByTestId('po-proposed-column-header')).toHaveTextContent('Other values')
   })
 
-  it('view: multi-style value is one line per style, not a comma blob', () => {
+  /** One box per style, never a comma blob — and every stored one opens TICKED, because what the
+   *  shipment holds today is the default and dropping it has to be a deliberate click. */
+  it('view: one tick box per style, all kept by default', () => {
     renderSection({
       reviewReasons: PROPOSAL,
-      linkedPOs: [
-        po({
-          itemStyleNo: 'AW26-XS-L, AW26-S-XL, AW26-M-XXL',
-        }),
-      ],
+      linkedPOs: [po({ itemStyleNo: 'AW26-XS-L, AW26-S-XL, AW26-M-XXL' })],
     })
-    // Two style lists now render — the stored one and the proposal; this asserts the stored cell.
-    const list = screen.getAllByTestId('style-list-display')[0]!
-    expect(within(list).getByText('AW26-XS-L')).toBeInTheDocument()
-    expect(within(list).getByText('AW26-S-XL')).toBeInTheDocument()
-    expect(within(list).getByText('AW26-M-XXL')).toBeInTheDocument()
+    for (const tok of ['AW26-XS-L', 'AW26-S-XL', 'AW26-M-XXL']) {
+      const box = screen.getByRole('checkbox', { name: `Keep style ${tok} on PO 6495962` })
+      expect(box).toBeChecked()
+    }
     expect(screen.queryByText(/AW26-XS-L, AW26-S-XL/)).not.toBeInTheDocument()
+  })
+
+  it('view: the seen value gets its own box, and it opens UNTICKED', () => {
+    renderSection({ reviewReasons: PROPOSAL })
+    // Pre-ticking would be "AI Proposed" again — this is a value upsertPo declined to write.
+    expect(
+      screen.getByRole('checkbox', { name: 'Add style 999-NEW-STYLE to PO 6495962' }),
+    ).not.toBeChecked()
+  })
+
+  it('ticking composes the list and states what will be written', async () => {
+    const user = userEvent.setup()
+    renderSection({
+      reviewReasons: PROPOSAL,
+      linkedPOs: [po({ itemStyleNo: 'AW26-XS-L, JUNK' })],
+    })
+    await user.click(screen.getByRole('checkbox', { name: 'Keep style JUNK on PO 6495962' }))
+    await user.click(
+      screen.getByRole('checkbox', { name: 'Add style 999-NEW-STYLE to PO 6495962' }),
+    )
+    expect(screen.getByTestId('po-plan-po1')).toHaveTextContent('AW26-XS-L, 999-NEW-STYLE')
+  })
+
+  it('unticking every style says CLEAR, in words, before anyone presses Apply', async () => {
+    const user = userEvent.setup()
+    renderSection({ reviewReasons: PROPOSAL, linkedPOs: [po({ itemStyleNo: 'ONLY-ONE' })] })
+    await user.click(screen.getByRole('checkbox', { name: 'Keep style ONLY-ONE on PO 6495962' }))
+    expect(screen.getByTestId('po-plan-po1')).toHaveTextContent(/CLEAR/i)
+  })
+
+  it('reports the plan up so the card can count and apply it', async () => {
+    const user = userEvent.setup()
+    const onPlanChange = vi.fn()
+    render(
+      <ReviewPoStylesSection
+        shipmentId="ship-1"
+        linkedPOs={[po()]}
+        reviewReasons={PROPOSAL}
+        customerId="c1"
+        onPlanChange={onPlanChange}
+      />,
+    )
+    // Untouched → the card must be told there is nothing to write.
+    expect(onPlanChange).toHaveBeenLastCalledWith([])
+    await user.click(
+      screen.getByRole('checkbox', { name: 'Add style 999-NEW-STYLE to PO 6495962' }),
+    )
+    expect(onPlanChange).toHaveBeenLastCalledWith([
+      expect.objectContaining({ poId: 'po1', itemStyleNo: '263121585, 999-NEW-STYLE', clears: false }),
+    ])
   })
 
   it('card Edit: all rows become inputs at once', () => {

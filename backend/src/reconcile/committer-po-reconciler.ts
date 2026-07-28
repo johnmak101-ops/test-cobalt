@@ -98,8 +98,13 @@ export function planPoReconcile(args: {
     // Broadcast totals (same carton count on every PO) are normal for multi-PO bookings — the UI shows
     // a single shipment cargo total, not per-PO order qty. Keep the value on purchase_orders; do NOT
     // review-flag (enr.broadcastSuspected still drives sharedBroadcastTotal presentation only).
+    // `(system read: …)` not `(kept …)` — same correction as summarizeStyleConflict, same reason:
+    // brand is fill-if-null on upsertPo, so a PO that already carries a brand keeps it and the value
+    // named here is our READ of the thread, not what the row ends up storing.
     if (enr?.brandConflict)
-      poFlagReasons.push(`PO ${poNo}: brand conflict ${enr.brandConflict.join(' vs ')} (kept ${enr.brand}) — verify`)
+      poFlagReasons.push(
+        `PO ${poNo}: brand conflict ${enr.brandConflict.join(' vs ')} (system read: ${enr.brand}) — verify`,
+      )
     // Split across legs with diverging qty/unit: no single leg's shipped figure is the ORDERED total, so
     // total_quantity was left unset rather than resolved to whichever leg committed first — ERP must fill it.
     if (enr?.qtyConflict)
@@ -165,6 +170,12 @@ export function isRecomputedDataIssueReason(reason: string): boolean {
   if (/^PO\s+\S+:\s*demoted — packing-line/i.test(r)) return true
   // empty cargo escalation (committer)
   if (/booked shipment missing cargo detail/i.test(r)) return true
+  // duplicate risk against a hand-typed leg (0028 — findManualIdentityClash / findPoOnlyDuplicateRisk).
+  // MUST be recomputed: once the operator folds one leg into the other (or an email re-keys it), the
+  // other leg stops being a candidate and the warning has to disappear by itself. A sticky "possible
+  // duplicate" on a pair that was reconciled weeks ago is the kind of noise that teaches operators to
+  // stop reading review reasons.
+  if (/^possible duplicate of\b/i.test(r)) return true
   return false
 }
 

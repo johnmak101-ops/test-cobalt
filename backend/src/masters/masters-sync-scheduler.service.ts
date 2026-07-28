@@ -5,6 +5,7 @@ import { SettingsRepository } from '../db/repositories/settings.repository'
 import { MeshClient } from './mesh/mesh.client'
 import { meshConfigFromEnv } from './mesh/mesh.config'
 import { MastersSyncService, type SyncSummary } from './mesh/masters-sync.service'
+import { PartyRelinkService } from './party-relink.service'
 
 /** Default: daily. Override with MESH_SYNC_INTERVAL_MS; 0 = Nest schedule off (CLI still works). */
 const DEFAULT_INTERVAL_MS = 86_400_000
@@ -30,6 +31,7 @@ export class MastersSyncSchedulerService implements OnModuleInit, OnModuleDestro
     private readonly masters: MastersRepository,
     private readonly settings: SettingsRepository,
     private readonly config: ConfigService,
+    private readonly relink: PartyRelinkService,
   ) {}
 
   onModuleInit(): void {
@@ -101,6 +103,22 @@ export class MastersSyncSchedulerService implements OnModuleInit, OnModuleDestro
       }
       if (!summary.some((s) => s.error)) {
         await this.settings.set(MESH_SYNC_LAST_OK_KEY, new Date().toISOString())
+      }
+      /**
+       * A master that arrives TODAY may answer a raw party name a leg has carried unlinked for
+       * months — nothing else re-asks that question, so the leg keeps advising an operator to go and
+       * pick a master by hand that we can identify exactly. Runs even on a partial sync: whatever
+       * did land is worth re-resolving against.
+       *
+       * Best-effort by design. A re-link failure must not fail the sync or lose its last-ok stamp;
+       * the sweep is idempotent, so the next tick simply tries again.
+       */
+      try {
+        await this.relink.relinkAll()
+      } catch (err) {
+        this.log.warn(
+          `party re-link after sync failed (${reason}): ${err instanceof Error ? err.message : String(err)}`,
+        )
       }
       return summary
     } catch (err) {
