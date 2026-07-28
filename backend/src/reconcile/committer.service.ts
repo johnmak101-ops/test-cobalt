@@ -28,6 +28,8 @@ import {
   findExistingLeg,
   findAdoptableZeroIdLeg,
   findSupersededByIdentityCorrection,
+  findManualIdentityClash,
+  findPoOnlyDuplicateRisk,
   findSiblingBooking,
   strongKeysConflict,
 } from './committer-match'
@@ -73,6 +75,10 @@ export interface ReconGroup {
    *  attribute a real qty to an individual PO; absent (or a PO omitted) when the qty is a broadcast total. */
   poQty?: Record<string, number>
   matchKeys: Record<string, unknown>
+  /** A PERSON typed this shipment into the New Shipment form (POST /shipments), rather than the
+   *  pipeline deriving it from mail. Stamped on the leg (0028) because two committer rules must not
+   *  act automatically on a hand-typed row — see findPoOnlyDuplicateRisk / findManualIdentityClash. */
+  createdManually?: boolean
   emailTypes: string[]
   events: { emailType: string; receivedAt: string; graphId?: string | null }[]
   mode: string | null
@@ -414,6 +420,7 @@ export class CommitterService {
           criticReview: g.criticReview ?? null,
           committerAction: 'sibling_leg',
           committerCandidatesConsidered: candidatesConsidered,
+          createdManually: g.createdManually === true,
         })
         shipmentId = leg.id
         action = 'create_booking'
@@ -465,6 +472,9 @@ export class CommitterService {
           committerAction:
             candidatesConsidered != null && candidatesConsidered >= 2 ? 'created_pending_dedup' : 'created',
           committerCandidatesConsidered: candidatesConsidered,
+          // 0028 — provenance, stamped only where a leg is BORN. An amend leaves it alone: a human
+          // filling gaps on an agent leg does not make the agent's leg hand-made.
+          createdManually: g.createdManually === true,
         })
         shipmentId = leg.id
         action = 'create_booking'
@@ -502,6 +512,38 @@ export class CommitterService {
           actorUserId: null,
           note: 'identity corrected by re-parse — superseded by a newer leg',
         })
+      }
+    }
+
+    // 0028 — the two situations the committer must REPORT rather than settle, because a leg a PERSON
+    // typed is on one side of them. Neither can be decided from the data: whether two legs are one
+    // shipment is a judgement about physical cargo, and acting either way silently (merging them, or
+    // dismissing the human's row) destroys information the operator would need to undo it. So both
+    // become review reasons naming the other leg's job number — the desk already has the link action.
+    // Recomputed every commit and stripped when they stop holding (isRecomputedDataIssueReason), so a
+    // pair the operator has since folded or re-keyed does not leave a warning on the leg forever.
+    const duplicateRiskReasons: string[] = []
+    const seenRisk = new Set<string>()
+    const riskLegs = [
+      ...(gk.size > 0 ? findManualIdentityClash(legs, gk, shipmentId) : []).map((l) => ({ leg: l, kind: 'clash' as const })),
+      ...findPoOnlyDuplicateRisk(legs, posByBooking, gk, groupPos, g.createdManually === true, shipmentId).map(
+        (l) => ({ leg: l, kind: 'shared_po' as const }),
+      ),
+    ]
+    for (const { leg: l, kind } of riskLegs) {
+      if (seenRisk.has(l.id)) continue
+      seenRisk.add(l.id)
+      const bk = await this.bookings.findById(l.bookingId)
+      const other = bk?.jobNo ?? l.id
+      if (kind === 'clash') {
+        duplicateRiskReasons.push(
+          `possible duplicate of ${other} — that shipment was entered by hand and its booking/SO number disagrees with this email; kept both`,
+        )
+      } else {
+        const shared = (posByBooking.get(l.bookingId) ?? []).find((p) => groupPos.has(normKey(p)))
+        duplicateRiskReasons.push(
+          `possible duplicate of ${other} — shares PO ${shared ?? '(unknown)'} but states a different booking/SO/HBL; one of the two was entered by hand`,
+        )
       }
     }
 
@@ -580,6 +622,11 @@ export class CommitterService {
       ...poQtyIssues,
       ...poFlagReasons,
       ...(cargoMissing ? ['booked shipment missing cargo detail (qty/weight/volume) — source attachment likely not ingested'] : []),
+      // (iii) DUPLICATE RISK against a hand-typed leg (0028). Recomputed here rather than pushed into
+      //       `reviewHints` above because it needs the candidate legs, which are not loaded until after
+      //       the gate is decided — and because it must CLEAR when the pair is resolved, which is
+      //       exactly what this pass gives it.
+      ...duplicateRiskReasons,
     ]
     const priorReasons = parseReasonList(c?.reviewReasons)
     const mergedReasons = mergeReviewReasonsWithDataIssues(priorReasons, dataIssues)

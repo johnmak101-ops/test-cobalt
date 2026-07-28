@@ -62,6 +62,21 @@ export interface EditableField {
    * 08:00 to be read as meaningful.
    */
   withTime?: true
+  /**
+   * The POST /shipments key for this field, when it differs from the leg column.
+   *
+   * The create endpoint speaks the committer's vocabulary (`customer_code` → `customerCode`), the
+   * edit endpoint speaks leg columns (`customerRaw`) — the same value, two names, because one goes
+   * through master resolution and the other writes the raw twin directly. Only the five
+   * master-resolved fields differ; everything else uses its column name, which is why this is an
+   * exception list and not a second table.
+   */
+  createKey?: string
+}
+
+/** POST /shipments key for an editable field — its column unless the create DTO renames it. */
+export function createFieldKey(f: EditableField): string {
+  return f.createKey ?? f.column
 }
 
 export const EDITABLE_FIELDS: EditableField[] = [
@@ -94,16 +109,16 @@ export const EDITABLE_FIELDS: EditableField[] = [
   // "…Code", not bare "Customer"/"Vendor": a pick now stores the master CODE, and the read view rows
   // are already labelled this way, so all three surfaces (read, edit, review conflict row) agree on
   // both the name and the thing named. Forwarder keeps the bare label — it stores a NAME.
-  { section: 'Shipping', label: 'Customer Code', uiKey: 'customerRaw', column: 'customerRaw', type: 'text', picker: 'customer' },
-  { section: 'Shipping', label: 'Vendor Code', uiKey: 'vendorRaw', column: 'vendorRaw', type: 'text', picker: 'vendor' },
-  { section: 'Shipping', label: 'Forwarder', uiKey: 'forwarderRaw', column: 'forwarderRaw', type: 'text', picker: 'forwarder' },
+  { section: 'Shipping', label: 'Customer Code', uiKey: 'customerRaw', column: 'customerRaw', type: 'text', picker: 'customer', createKey: 'customerCode' },
+  { section: 'Shipping', label: 'Vendor Code', uiKey: 'vendorRaw', column: 'vendorRaw', type: 'text', picker: 'vendor', createKey: 'vendorCode' },
+  { section: 'Shipping', label: 'Forwarder', uiKey: 'forwarderRaw', column: 'forwarderRaw', type: 'text', picker: 'forwarder', createKey: 'forwarderName' },
   { section: 'Shipping', label: 'Consignee Name', uiKey: 'consigneeName', column: 'consigneeName', type: 'text' },
   { section: 'Shipping', label: 'Consignee Address', uiKey: 'consigneeAddress', column: 'consigneeAddress', type: 'text' },
   { section: 'Shipping', label: 'Vessel', uiKey: 'vesselName', column: 'vesselName', type: 'text' },
   { section: 'Shipping', label: 'Voyage', uiKey: 'voyageNumber', column: 'voyageNo', type: 'text' },
   { section: 'Shipping', label: 'Flight No.', uiKey: 'flightNo', column: 'flightNo', type: 'text' },
-  { section: 'Shipping', label: 'POL', uiKey: 'polRaw', column: 'polRaw', type: 'text', picker: 'port' },
-  { section: 'Shipping', label: 'POD', uiKey: 'podRaw', column: 'podRaw', type: 'text', picker: 'port' },
+  { section: 'Shipping', label: 'POL', uiKey: 'polRaw', column: 'polRaw', type: 'text', picker: 'port', createKey: 'pol' },
+  { section: 'Shipping', label: 'POD', uiKey: 'podRaw', column: 'podRaw', type: 'text', picker: 'port', createKey: 'pod' },
   { section: 'Key Dates', label: 'Cargo Ready Date', uiKey: 'crd', column: 'cargoReadyDate', type: 'date' },
   { section: 'Key Dates', label: 'WH Start Date', uiKey: 'warehouseStartDate', column: 'warehouseStartDate', type: 'date', withTime: true },
   { section: 'Key Dates', label: 'WH End Date', uiKey: 'warehouseEndDate', column: 'warehouseEndDate', type: 'date', withTime: true },

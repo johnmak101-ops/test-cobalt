@@ -69,3 +69,112 @@ describe('ShipmentsService.createManual — human-created shipments (integration
     await expect(svc.createManual({ consigneeName: 'Someone' }, null)).rejects.toThrow()
   })
 })
+
+/**
+ * 0028 — the committer must not act automatically on a leg a PERSON typed. Both situations below end
+ * with TWO legs and a review reason naming the other one, because whether they are one shipment is a
+ * judgement about physical cargo that the data genuinely does not settle.
+ */
+describe('createManual — a hand-typed leg is protected from the committer, not hidden from it', () => {
+  const reasonsOf = async (id: string): Promise<string[]> => {
+    const [leg] = await db.selectFrom('shipments').where('id', '=', id).selectAll().execute()
+    return (leg?.reviewReasons ?? []) as string[]
+  }
+  const legsNow = () => db.selectFrom('shipments').selectAll().execute()
+
+  it('a conflicting re-key no longer DISMISSES the human row (it reports instead)', async () => {
+    // The operator typed the booking number they had plus an SO number that turns out to be the
+    // shipment reference. Before 0028 the next email retired this leg outright — and its field locks,
+    // which live per shipment id and do not travel to the successor, went with it.
+    const typed = await svc.createManual({ bookingNo: 'BK-CLASH', soNo: 'SHIPMENT-REF' }, null)
+    const res = await committer.apply(
+      agentGroup({
+        matchKeys: { booking_no: 'BK-CLASH', so_no: 'REAL-ORDER-NO' },
+        fields: { booking_no: 'BK-CLASH', so_no: 'REAL-ORDER-NO' },
+      }),
+    )
+    expect(res.shipmentId).not.toBe(typed.id) // the SO conflict still blocks a silent amend
+
+    const [human] = await db.selectFrom('shipments').where('id', '=', typed.id).selectAll().execute()
+    expect(human!.dismissedAt).toBeNull() // ← the fix: still on the desk
+    expect(human!.linkedShipmentId).toBeNull()
+    expect(await legsNow()).toHaveLength(2)
+
+    const reasons = await reasonsOf(res.shipmentId)
+    expect(reasons.some((r) => /^possible duplicate of .*entered by hand/i.test(r))).toBe(true)
+  })
+
+  it('an email that can only reach the human leg by PO says so, instead of quietly minting a twin', async () => {
+    // The booking mail was never ingested, so the operator entered the booking number by hand. The
+    // forwarder's later email cites its HBL and the same PO — but not that booking number, so the
+    // shared-PO branch of findExistingLeg (which needs one side to have NO identity) cannot fire.
+    const typed = await svc.createManual({ bookingNo: 'BK-PO', pos: ['PO-DUP-1'] }, null)
+    const res = await committer.apply(
+      agentGroup({
+        matchKeys: { hbl_awb_fcr_no: 'HBL-DUP-9' },
+        fields: { hbl_awb_fcr_no: 'HBL-DUP-9' },
+        pos: ['PO-DUP-1'],
+      }),
+    )
+    expect(res.shipmentId).not.toBe(typed.id) // still not merged — that judgement is the operator's
+    expect(await legsNow()).toHaveLength(2)
+
+    const reasons = await reasonsOf(res.shipmentId)
+    expect(reasons.some((r) => /^possible duplicate of .*shares PO PO-DUP-1/i.test(r))).toBe(true)
+    // it names the OTHER leg's job number, which is what the operator searches on to compare them
+    const [bk] = await db.selectFrom('bookings').selectAll().orderBy('jobNo').execute()
+    expect(reasons.join(' ')).toContain(bk!.jobNo)
+  })
+
+  it('the warning CLEARS itself once the pair is resolved — never a sticky duplicate flag', async () => {
+    const typed = await svc.createManual({ bookingNo: 'BK-CLEAR', pos: ['PO-CLEAR-1'] }, null)
+    const group = agentGroup({
+      matchKeys: { hbl_awb_fcr_no: 'HBL-CLEAR' },
+      fields: { hbl_awb_fcr_no: 'HBL-CLEAR' },
+      pos: ['PO-CLEAR-1'],
+    })
+    const res = await committer.apply(group)
+    expect((await reasonsOf(res.shipmentId)).some((r) => /^possible duplicate of/i.test(r))).toBe(true)
+
+    // the operator folds the hand-typed leg into the agent's (review desk link action)
+    await db
+      .updateTable('shipments')
+      .set({ dismissedAt: new Date(), linkedShipmentId: res.shipmentId })
+      .where('id', '=', typed.id)
+      .execute()
+
+    // re-ingest of the same email amends the same leg — and the reason is gone, not accumulated
+    const again = await committer.apply(group)
+    expect(again.shipmentId).toBe(res.shipmentId)
+    expect((await reasonsOf(res.shipmentId)).some((r) => /^possible duplicate of/i.test(r))).toBe(false)
+  })
+
+  it('two AGENT legs sharing a PO stay silent — that is the ordinary case, not a duplicate', async () => {
+    await committer.apply(
+      agentGroup({ matchKeys: { booking_no: 'AG-1' }, fields: { booking_no: 'AG-1' }, pos: ['PO-SHARED'] }),
+    )
+    const second = await committer.apply(
+      agentGroup({
+        conversationId: 'agent-conv-2',
+        matchKeys: { hbl_awb_fcr_no: 'AG-HBL-2' },
+        fields: { hbl_awb_fcr_no: 'AG-HBL-2' },
+        pos: ['PO-SHARED'],
+      }),
+    )
+    expect((await reasonsOf(second.shipmentId)).some((r) => /^possible duplicate of/i.test(r))).toBe(false)
+  })
+
+  it('stamps the provenance so every later commit can tell who made the leg', async () => {
+    const typed = await svc.createManual({ bookingNo: 'BK-STAMP' }, null)
+    const agent = await committer.apply(agentGroup({ matchKeys: { booking_no: 'AGENT-ONLY' }, fields: { booking_no: 'AGENT-ONLY' } }))
+    const rows = await db.selectFrom('shipments').select(['id', 'createdManually']).execute()
+    expect(rows.find((r) => r.id === typed.id)!.createdManually).toBe(true)
+    expect(rows.find((r) => r.id === agent.shipmentId)!.createdManually).toBe(false)
+  })
+
+  it('records the CFS cut-off the form could not reach before', async () => {
+    const res = await svc.createManual({ bookingNo: 'BK-CFS', cfsCutoff: '2026-08-03' }, null)
+    const [leg] = await db.selectFrom('shipments').where('id', '=', res.id).selectAll().execute()
+    expect(leg!.cfsCutoff).not.toBeNull()
+  })
+})
