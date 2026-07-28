@@ -1854,34 +1854,21 @@ export function ReviewCard({
             if (!showPos && !showConflicts) return null
             // Shared thead only when both blocks show (one header, two section groups).
             // Solo PO / solo conflict each render their own thead via child defaults.
-            const sharedThead = showPos && showConflicts
+            /**
+             * NO shared header. A PO row and a field row are not the same row: a PO carries a style
+             * LIST where a field carries a value, and ticking styles composes one write while picking
+             * a radio settles one field. They shared column tracks, so one header was hoisted above
+             * both — and it read "Field / PO#", a slash trying to cover two meanings, sitting above
+             * the PO section it did not describe while that section printed its own header two rows
+             * later. Two header rows in one table is the tell that the sharing never held.
+             *
+             * Each table names its own columns now. The tracks stay shared so the two still line up.
+             */
             return (
               <div
                 className="max-w-full overflow-x-auto rounded-lg border border-border"
                 data-testid="review-decision-grid"
               >
-                {sharedThead && (
-                  <table className={REVIEW_TABLE_CLASS}>
-                    <ReviewColGroup />
-                    <thead>
-                      <tr className="border-b border-border bg-surface-900/50">
-                        <th className={`${REVIEW_COL.label} ${REVIEW_TH}`}>{REVIEW_HEAD.label}</th>
-                        <th className={`${REVIEW_COL.existing} ${REVIEW_TH}`}>
-                          {REVIEW_HEAD.existing}
-                        </th>
-                        <th
-                          className={`${REVIEW_COL.proposed} ${REVIEW_TH}`}
-                          data-testid="proposed-column-header"
-                        >
-                          {proposedColumnLabel}
-                        </th>
-                        <th className={`${REVIEW_COL.reference} ${REVIEW_TH}`}>
-                          {REVIEW_HEAD.reference}
-                        </th>
-                      </tr>
-                    </thead>
-                  </table>
-                )}
                 {showPos && (
                   <ReviewPoStylesSection
                     shipmentId={shipment.id}
@@ -1902,8 +1889,7 @@ export function ReviewCard({
                 {showConflicts && (
                   <table className={REVIEW_TABLE_CLASS}>
                     <ReviewColGroup />
-                    {!sharedThead && (
-                      <thead>
+                    <thead>
                         <tr className="border-b border-border bg-surface-900/50">
                           <th className={`${REVIEW_COL.label} ${REVIEW_TH}`}>{REVIEW_HEAD.label}</th>
                           <th className={`${REVIEW_COL.existing} ${REVIEW_TH}`}>
@@ -1915,9 +1901,13 @@ export function ReviewCard({
                           >
                             {proposedColumnLabel}
                           </th>
+                          {/* Was only ever in the hoisted header, so removing that left this table
+                              one <th> short of its own colgroup. */}
+                          <th className={`${REVIEW_COL.reference} ${REVIEW_TH}`}>
+                            {REVIEW_HEAD.reference}
+                          </th>
                         </tr>
                       </thead>
-                    )}
                     {groupConflictFields(conflicts).map(({ group, conflicts: rows }) => {
                       /**
                        * Count what would actually be WRITTEN, not how many rows are contested.

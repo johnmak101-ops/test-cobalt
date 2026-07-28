@@ -75,7 +75,9 @@ export const REVIEW_GROUP_HEADER = `px-3 py-2 text-left ${REVIEW_FS.meta} font-s
  *  values" is true of both, and each row still shows its own provenance (a master code chip, the
  *  reference email) where the header cannot. */
 export const REVIEW_HEAD = {
-  label: 'Field / PO#',
+  // Just 'Field'. The slash existed because ONE header sat above both the PO section and the field
+  // rows; each table names its own columns now, and the PO table says 'PO'.
+  label: 'Field',
   existing: 'Current',
   proposed: 'Other values',
   reference: 'Reference Email',
