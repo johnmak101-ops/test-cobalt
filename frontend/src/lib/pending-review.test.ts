@@ -198,7 +198,7 @@ describe('pendingReviewAnnotations — a mailbox is not a party either', () => {
     expect(ann.get('forwarderRaw')).toBeUndefined()
   })
 
-  it('leaves a plain company name alone', () => {
+  it('leaves a plain company name alone (mailbox guard only)', () => {
     const ann = pendingReviewAnnotations({
       reviewStatus: 'provisional',
       criticReview: {
@@ -206,6 +206,63 @@ describe('pendingReviewAnnotations — a mailbox is not a party either', () => {
           { type: 'forwarder', rawName: '鼎赋供应链管理（东莞）有限公司', field: 'forwarder_name' },
         ],
       },
+    })
+    expect(ann.get('forwarderRaw')?.level).toBe('miss')
+  })
+})
+
+/**
+ * Leg 202601DD8E: `SOUTH OCEAN KNITTERS LIMITED` hung off the Forwarder row as "not found in Mesh
+ * Database — advise add in Mesh" while the leg's VENDOR was linked to `SOUTH OCEAN KNITTERS LTD`.
+ * The company was in Mesh throughout; the queue had merely tried to resolve the factory as a
+ * forwarder. Following that advice mints a duplicate master under the wrong type.
+ *
+ * The suppression was slot-scoped, so it checked only the (genuinely unlinked) forwarder slot. It
+ * now matches on the NAME across every resolved slot — which `resolvedParties` has always carried.
+ */
+describe('pendingReviewAnnotations — a company already in Mesh is never "add it in Mesh"', () => {
+  const SOUTH_OCEAN =
+    'Cannot match "SOUTH OCEAN KNITTERS LIMITED" in the forwarder list. Please add it in Cobalt Fashion Data Mesh System, then rematch.'
+  const FAIRATE = 'forwarder_name "FAIRATE" did not exact-match a master (LLM matcher owns fuzzy; left unlinked)'
+  const resolved = {
+    settledFields: [],
+    resolvedParties: [
+      { slot: 'customer', name: 'DOCLASSE CO., LTD.' },
+      { slot: 'vendor', name: 'SOUTH OCEAN KNITTERS LTD' },
+    ],
+  }
+
+  it('drops the vendor-in-Mesh line but KEEPS the genuinely unknown forwarder', () => {
+    const ann = pendingReviewAnnotations({
+      reviewStatus: 'provisional',
+      reviewReasons: [SOUTH_OCEAN, FAIRATE],
+      openDecisions: resolved,
+    })
+    expect(ann.get('forwarderRaw')?.messages).toEqual([
+      '"FAIRATE" not found in Mesh Database — advise add in Mesh.',
+    ])
+  })
+
+  it('drops it from the structured masterMisses path too', () => {
+    const ann = pendingReviewAnnotations({
+      reviewStatus: 'provisional',
+      openDecisions: resolved,
+      criticReview: {
+        masterMisses: [
+          { type: 'forwarder', rawName: 'SOUTH OCEAN KNITTERS LIMITED', field: 'forwarder_name' },
+        ],
+      },
+    })
+    expect(ann.get('forwarderRaw')).toBeUndefined()
+  })
+
+  it('a different company is still a real miss, whatever else the leg resolved', () => {
+    const ann = pendingReviewAnnotations({
+      reviewStatus: 'provisional',
+      reviewReasons: [
+        'Cannot match "SOUTH PACIFIC KNITTERS LTD" in the forwarder list. Please add it in Cobalt Fashion Data Mesh System, then rematch.',
+      ],
+      openDecisions: resolved,
     })
     expect(ann.get('forwarderRaw')?.level).toBe('miss')
   })
