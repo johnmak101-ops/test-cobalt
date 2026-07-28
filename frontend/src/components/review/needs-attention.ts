@@ -9,7 +9,7 @@ import {
   type ReasonCategory,
 } from '../../lib/review-reasons'
 import { AI_CONFIDENCE_LOW_REASON } from '../../lib/decision-phrase'
-import { isMailboxPartyName } from '../../lib/party-names'
+import { isMailboxPartyName, isSameCompanyName } from '../../lib/party-names'
 
 /** Queue risk flags → ReasonCategory (also used for category suppress). */
 export const RISK_CODE_CATEGORY: Record<string, ReasonCategory> = {
@@ -1701,28 +1701,11 @@ export type PartiesLinked = {
 
 export type PartySlot = keyof PartiesLinked
 
-/** Strip everything but letters and digits — "Land's End" and "LANDS END" are one company. */
-function companyKey(s: string): string {
-  return String(s ?? '').toUpperCase().replace(/[^\p{L}\p{N}]/gu, '')
-}
-
 /**
- * The same company written shorter or longer: `WHISTLES` vs `WHISTLES LIMITED`, `Land's End` vs
- * `LANDS END EUROPE LIMITED`. A prefix relation, floored at 4 characters so short codes cannot collide
- * by accident.
- *
- * Deliberately NOT a fuzzy score. It has one job — decide whether a miss line describes the company the
- * slot already resolved to — and it must say no for a genuinely different entity. `Ligentia China Ltd.`
- * against a linked `LIGENTIA ASIA LTD` is not a prefix either way, so that line correctly survives.
+ * Re-exported, not redefined — Order Details applies the same rule. See lib/party-names, which also
+ * carries the legal-suffix handling (`… LIMITED` vs `… LTD`) the bare prefix could not see through.
  */
-export function isSameCompanyName(a: string | null | undefined, b: string | null | undefined): boolean {
-  const x = companyKey(a ?? '')
-  const y = companyKey(b ?? '')
-  if (!x || !y) return false
-  if (x === y) return true
-  const [short, long] = x.length <= y.length ? [x, y] : [y, x]
-  return short.length >= 4 && long.startsWith(short)
-}
+export { isSameCompanyName }
 
 /** Which party slot a miss line is about, read from the prose that produced it. */
 export function partyMissSlot(raw: string): PartySlot | null {
@@ -1857,20 +1840,26 @@ export function buildNeedsAttention(opts: {
    */
   const parties: PartiesLinked = opts.partiesLinked ?? {}
   /**
-   * This line's slot already resolved to the very company it is complaining about. The name half of
-   * matching failed while the code half succeeded, and only the failure left a note — so the desk kept
-   * asking ops to add a master the shipment was already pointing at.
+   * ANY slot on this leg already resolved to the very company the line is complaining about — so
+   * "not found in Mesh Database — advise add in Mesh" is simply false, and acting on it would create
+   * a duplicate master under the wrong type.
    *
-   * Keyed on the RAW prose because that is where the slot is named ("in the customer list").
+   * This was slot-scoped until 2026-07-28: the line died only if the slot IT named was the slot that
+   * resolved. Leg 202601DD8E showed why that is too narrow. `SOUTH OCEAN KNITTERS LIMITED` came back
+   * as a FORWARDER miss while the leg's VENDOR was linked to `SOUTH OCEAN KNITTERS LTD` — the same
+   * company, in Mesh the whole time, filed against the wrong slot upstream. The old rule looked only
+   * at the (genuinely unlinked) forwarder slot and let the line through.
+   *
+   * The trade this accepts, deliberately: a slot that really is unresolved goes quiet when some other
+   * slot holds the same company. That reverses the older "a different slot being linked must not
+   * silence this one" (leg BDB973EA); the false "add it in Mesh" was judged the worse of the two.
+   * The unresolved slot is still visible — it just stops being described as missing master data.
    */
   const dropResolvedPartyMiss = (hit: { lineId: string; text: string }, raw: string): boolean => {
     if (!hit.lineId.startsWith('m-party:')) return false
-    const slot = partyMissSlot(raw)
-    if (!slot) return false
-    const linked = parties[slot]
-    if (!linked) return false
     const missed = extractQuotedParty(raw) ?? hit.text.match(/"([^"]+)"/)?.[1] ?? ''
-    return isSameCompanyName(missed, linked)
+    if (!missed) return false
+    return Object.values(parties).some((linked) => !!linked && isSameCompanyName(missed, linked))
   }
 
   const dropPortMiss = (hit: { lineId: string; text: string }): boolean => {

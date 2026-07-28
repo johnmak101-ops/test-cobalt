@@ -1,6 +1,6 @@
 import { mapCriticFieldToColumn, conflictColumns } from './review-fields'
 import { isQtySettled } from './qty-conflict-settle'
-import { isMailboxPartyName } from './party-names'
+import { isMailboxPartyName, isSameCompanyName } from './party-names'
 
 /**
  * The slice of the shipment detail this derivation reads. Structural on purpose — importing
@@ -208,8 +208,22 @@ export function pendingReviewAnnotations(
         .map((p) => SLOT_COLUMN[String(p.slot ?? '').toLowerCase()])
         .filter((c): c is string => !!c),
     )
-    const addMiss = (col: string | null, msg: string) => {
+    /**
+     * The master NAMES this leg resolved, on any slot. `resolvedParties` has carried them all along
+     * ("a miss line naming one is stale", open-decisions.ts) and both surfaces read only the slot.
+     *
+     * Leg 202601DD8E is what that cost: `SOUTH OCEAN KNITTERS LIMITED` hung off the Forwarder row as
+     * "not found in Mesh Database — advise add in Mesh" while the leg's VENDOR was linked to
+     * `SOUTH OCEAN KNITTERS LTD`. Same company, in Mesh throughout, filed against the wrong slot
+     * upstream — and the advice, if followed, creates a second master for a factory under the
+     * forwarder type. Matching by name kills it wherever the queue filed it.
+     */
+    const resolvedNames = (shipment.openDecisions?.resolvedParties ?? [])
+      .map((p) => String(p.name ?? '').trim())
+      .filter(Boolean)
+    const addMiss = (col: string | null, msg: string, name?: string | null) => {
       if (col && resolvedCols.has(col)) return
+      if (name && resolvedNames.some((n) => isSameCompanyName(name, n))) return
       add(col, 'miss', msg)
     }
     for (const c of shipment.criticReview?.conflicts ?? []) {
@@ -263,6 +277,7 @@ export function pendingReviewAnnotations(
           name
             ? `"${name}" not found in Mesh Database — advise add in Mesh.`
             : 'Not found in Mesh Database — advise add in Mesh.',
+          name,
         )
       }
       else if (CONFLICT_REASON_RE.test(r) && !isPoScopedReason(r))
@@ -277,6 +292,7 @@ export function pendingReviewAnnotations(
       addMiss(
         mapCriticFieldToColumn(m.field) ?? missColumn(m.field + ' "x"'),
         `"${m.rawName}" not found in Mesh Database — advise add in Mesh.`,
+        m.rawName,
       )
     }
   }
