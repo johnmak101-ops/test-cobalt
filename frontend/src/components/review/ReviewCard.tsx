@@ -411,11 +411,14 @@ export function ReviewCard({
         field: slot.field,
         label: slot.label,
         candidates: picks.map((m) => ({
-          // The NAME prints in the cell; the code rides in `master` as the chip and is what a pick
-          // posts for customer/vendor. Code in both is what once made a cell read "SOUOCESOUOCE".
           value: m.name,
           source: 'Master data',
-          master: { code: m.code ?? '', name: m.name },
+          // `resolutionValueOf` posts `master.code` when it is set, so the code is supplied ONLY for
+          // the slots that store one. Forwarder stores the NAME (its codes are ERP sequence numbers)
+          // — leaving the code here would have written "369" into forwarder_raw and shown the
+          // operator `Apply 369`, which is what the branch was parked over. Same code/name split
+          // PartyPicker makes, for the same reason.
+          master: slot.field === 'forwarder_name' ? null : { code: m.code ?? '', name: m.name },
         })),
         rationale:
           picks.length === 1
@@ -696,7 +699,38 @@ export function ReviewCard({
     [junkIdentifier, shipment, linkedPOs],
   )
 
-  const naPick = useMemo(() => pickDeskQuestion(needsAttentionGroups), [needsAttentionGroups])
+  /**
+   * Parties that became conflict-table rows are answered THERE. Leaving their Needs attention line
+   * up asked one question twice, in two places, with two controls — which is how a desk starts
+   * disagreeing with itself. Only the names that got a row are dropped: a party with no masters to
+   * choose between keeps its line, because nothing in the table speaks for it.
+   */
+  const rowedPartyNames = useMemo(() => {
+    const leg = shipment as unknown as Record<string, unknown>
+    const COLUMN_BY_FIELD: Record<string, string> = {
+      forwarder_name: 'forwarderRaw',
+      customer_code: 'customerRaw',
+      vendor_code: 'vendorRaw',
+    }
+    return new Set(
+      unlinkedPartyConflicts
+        .map((c) => String(leg[COLUMN_BY_FIELD[c.field] ?? ''] ?? '').trim())
+        .filter(Boolean),
+    )
+  }, [unlinkedPartyConflicts, shipment])
+  const deskGroups = useMemo(() => {
+    if (!rowedPartyNames.size) return needsAttentionGroups
+    return needsAttentionGroups
+      .map((g) => ({
+        ...g,
+        items: g.items.filter((it) => {
+          const named = Object.keys(it.meshCandidates ?? {})
+          return !named.length || !named.every((n) => rowedPartyNames.has(n))
+        }),
+      }))
+      .filter((g) => g.items.length > 0)
+  }, [needsAttentionGroups, rowedPartyNames])
+  const naPick = useMemo(() => pickDeskQuestion(deskGroups), [deskGroups])
   const contestedFields = useMemo(
     () =>
       conflicts.map((c) => {
@@ -723,7 +757,7 @@ export function ReviewCard({
         },
         detailText: `Its ${junkIdentifier.label} is “${junkIdentifier.value}” — a column heading, not a number. This leg was most likely parsed out of a spreadsheet's header row.`,
         detailItem: null,
-        rest: needsAttentionGroups,
+        rest: deskGroups,
       }
     }
     /**
@@ -742,7 +776,7 @@ export function ReviewCard({
           question: fromCandidates.question,
           detailText: fromCandidates.detail,
           detailItem: null,
-          rest: needsAttentionGroups,
+          rest: deskGroups,
         }
       }
     }
@@ -757,7 +791,7 @@ export function ReviewCard({
         question: { ...fromTable.question, reject: naPick?.question.reject ?? null },
         detailText: fromTable.detail,
         detailItem: null,
-        rest: needsAttentionGroups,
+        rest: deskGroups,
       }
     }
     if (!naPick) return null
@@ -770,7 +804,7 @@ export function ReviewCard({
   }, [
     contestedFields,
     naPick,
-    needsAttentionGroups,
+    deskGroups,
     junkIdentifier,
     hasCandidateLegs,
     matchAmbiguity,
@@ -1085,12 +1119,16 @@ export function ReviewCard({
    * than the count it replaced, so those fall back to `Apply 1 Change`. The full detail is in the title.
    */
   const applyToken = useMemo(() => {
+    // Only when this ONE field is the whole of what Save will write. changeCount also counts cleared
+    // columns and PO style plans, and naming the field alone read as "Apply 369" on a card that was
+    // also about to rewrite a PO's style list — a label that understated its own reach.
+    if (changeCount !== 1) return null
     const values = Object.values(fieldsToApply)
     if (values.length !== 1) return null
     const raw = String(values[0] ?? '').trim()
     if (!raw || raw.length > 14) return null
     return raw
-  }, [fieldsToApply])
+  }, [fieldsToApply, changeCount])
   /** Nothing is stored on any contested row, so "keep what is there" means leaving it blank — say so.
    *  Reads the LIVE value: a leg storing MACFUN with no critic System candidate was offering to
    *  "Leave Blank" a field that is not blank. */
@@ -1129,8 +1167,8 @@ export function ReviewCard({
     ((conflicts.length > 0 && !allConflictsSelfServe) || poNeedsReview)
   /** Edit mode as the GRID sees it — read-only history never edits, whatever `editing` says. */
   const gridEditing = editing && !readOnly
-  const deskEmpty = needsAttentionGroups.length === 0 && conflicts.length === 0
-  const judgmentOnly = needsAttentionGroups.length > 0 && conflicts.length === 0
+  const deskEmpty = deskGroups.length === 0 && conflicts.length === 0
+  const judgmentOnly = deskGroups.length > 0 && conflicts.length === 0
   // Multi-candidate: require a real target before primary CTAs; use onLink path.
   const multiCandNeedsTarget = hasCandidateLegs && !!onLink
   const canSave =
