@@ -144,3 +144,59 @@ describe('NewShipmentModal — the same fields, editors and rules as the shipmen
     expect(screen.getByRole('button', { name: /Create shipment/ })).toBeEnabled()
   })
 })
+
+/**
+ * The backend has always rejected a malformed container number. It arrived as a single line at the
+ * foot of a 31-field scrolling form — "Failed to create — Container No. must be 4 letters + 7 digits"
+ * — after a round trip, naming a field that had scrolled off screen. The rule was never the problem.
+ */
+describe('NewShipmentModal — a format error belongs on its own field', () => {
+  it('flags a malformed container number inline, and blocks the round-trip', async () => {
+    const user = userEvent.setup()
+    renderModal()
+    await user.type(inputFor('Booking No.'), 'BK-1')
+    await user.type(inputFor('Container No.'), '123123123')
+
+    // nothing yet — "MSBU" is a normal thing to have typed on the way to "MSBU7281200"
+    expect(screen.queryByTestId('text-field-error')).not.toBeInTheDocument()
+    await user.tab()
+
+    expect(screen.getByTestId('text-field-error')).toHaveTextContent(/4 letters \+ 7 digits/)
+    expect(screen.getByRole('button', { name: /Create shipment/ })).toBeDisabled()
+  })
+
+  it('flags a malformed SCAC the same way', async () => {
+    const user = userEvent.setup()
+    renderModal()
+    await user.type(inputFor('Booking No.'), 'BK-1')
+    await user.type(inputFor('SCAC Code'), '12345')
+    await user.tab()
+    expect(screen.getByTestId('text-field-error')).toHaveTextContent(/2–4 letters/)
+    expect(screen.getByRole('button', { name: /Create shipment/ })).toBeDisabled()
+  })
+
+  it('clears once the value is right, and the create goes through', async () => {
+    const user = userEvent.setup()
+    mutate.mockClear()
+    renderModal()
+    await user.type(inputFor('Booking No.'), 'BK-1')
+    await user.type(inputFor('Container No.'), '123')
+    await user.tab()
+    expect(screen.getByTestId('text-field-error')).toBeInTheDocument()
+
+    await user.clear(inputFor('Container No.'))
+    await user.type(inputFor('Container No.'), 'MSBU7281200')
+    expect(screen.queryByTestId('text-field-error')).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: /Create shipment/ }))
+    expect(mutate.mock.calls[0]![0]).toMatchObject({ containerNo: 'MSBU7281200' })
+  })
+
+  it('leaves ungated text fields alone — no shape means no complaint', async () => {
+    const user = userEvent.setup()
+    renderModal()
+    await user.type(inputFor('Vessel'), '!!! whatever 123')
+    await user.tab()
+    expect(screen.queryByTestId('text-field-error')).not.toBeInTheDocument()
+  })
+})

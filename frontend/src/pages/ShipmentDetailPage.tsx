@@ -23,7 +23,7 @@ import { liveQtyFromShipment, poShipmentTotalFromLinked } from '../lib/qty-confl
 import { AlertCard } from '../components/alerts/AlertCard'
 import { formatDate, formatDateTime, formatDateMaybeTime, formatShipmentId, cn } from '../lib/utils'
 import { parseSender } from '../lib/email-sender'
-import { EDITABLE_FIELDS, fieldLabel, fieldUnit, numericFieldWarn, dateOrderIssues, toInputValue, type EditableField, formatNumericDisplay, dateColumnHasTime } from '../lib/review-fields'
+import { EDITABLE_FIELDS, fieldLabel, fieldUnit, fieldWarn, dateOrderIssues, toInputValue, type EditableField, formatNumericDisplay, dateColumnHasTime } from '../lib/review-fields'
 import { isAirMode, isOffModeField, offModeFieldsOn, shippingFieldVisible, offModeHint } from '../lib/mode-fields'
 import { toast } from '../components/ui/Toast'
 import { interactiveProps } from '../lib/interactive'
@@ -31,6 +31,7 @@ import { Pagination, usePagination, PageSizeSelect } from '../components/ui/Pagi
 import { ArrowLeft, Mail, Clock, ClipboardList, Package, Ship, Calendar, AlertTriangle, AlertCircle, Info, Pencil, Check, X, NotebookPen } from 'lucide-react'
 import { DateTimeField } from '../components/shipments/DateTimeField'
 import { NumberField } from '../components/shipments/NumberField'
+import { TextField } from '../components/shipments/TextField'
 
 // The human-editable leg fields, grouped like the read-only card. `db` = the backend column the PATCH writes
 // (+ locks + audits); `get` reads the current value off the loaded shipment (whose UI names differ from db).
@@ -267,8 +268,11 @@ export default function ShipmentDetailPage() {
   // A note is mandatory whenever there are real edits — Save stays blocked until it's written.
   // Hard numeric errors (negative qty, etc.) also block Save (inline error + no 400 round-trip).
   const editedCount = editing ? Object.keys(computeChanged()).length : 0
-  const hasNumericErrors = editing && EDIT_SECTIONS.some((sec) =>
-    sec.fields.some((f) => f.type === 'number' && numericFieldWarn(f.db, draft[f.db]) != null),
+  // Every gate on every field, not just the numeric ones. Asking `numericFieldWarn` and only for
+  // `type === 'number'` left the SCAC / container FORMAT gates with no inline mirror at all, so a
+  // malformed container number could only be reported by the backend's 400 after a save round-trip.
+  const hasFieldErrors = editing && EDIT_SECTIONS.some((sec) =>
+    sec.fields.some((f) => fieldWarn(f.db, draft[f.db]) != null),
   )
   /**
    * Cross-field: an arrival earlier than a departure is impossible — blocks Save too.
@@ -283,7 +287,7 @@ export default function ShipmentDetailPage() {
   /** Every field taking part in a clash — each offending arrival and every departure it precedes. */
   const dateClashFields = new Set<string>(dateIssues.flatMap((i) => [i.arrival, ...i.departures]))
   const dateError = dateIssues[0]?.message ?? null
-  const saveBlocked = (editedCount > 0 && !note.trim()) || hasNumericErrors || dateError != null
+  const saveBlocked = (editedCount > 0 && !note.trim()) || hasFieldErrors || dateError != null
 
   return (
     <div className="space-y-6">
@@ -470,8 +474,8 @@ export default function ShipmentDetailPage() {
                 onClick={saveEdit}
                 disabled={update.isPending || saveBlocked}
                 title={
-                  hasNumericErrors
-                    ? 'Fix invalid numeric values before saving'
+                  hasFieldErrors
+                    ? 'Fix the highlighted field before saving'
                     : dateError
                       ? dateError
                       : editedCount > 0 && !note.trim()
@@ -502,7 +506,7 @@ export default function ShipmentDetailPage() {
                       if (!shippingFieldVisible(f.db, draft.mode || shipment.mode, draft[f.db])) return []
                       const offMode = isOffModeField(f.db, draft.mode || shipment.mode)
                       const cur = draft[f.db] ?? ''
-                      const numErr = f.type === 'number' ? numericFieldWarn(f.db, cur) : null
+                      const fieldErr = fieldWarn(f.db, cur)
                       // Every field in a clash is ringed — each offending arrival AND every departure
                       // it precedes. Any of them could be the wrong value, so ringing one would read
                       // as a verdict about which to change.
@@ -601,15 +605,16 @@ export default function ShipmentDetailPage() {
                           /* qty's unit is the leg's own UOM (an editable field beside it); weight
                              and measurement carry a fixed one from EDITABLE_FIELDS. */
                           unit={f.db === 'qty' ? draft.qtyUnit || null : fieldUnit(f.db)}
-                          error={numErr}
+                          error={fieldErr}
                           className={controlClass}
                         />
                       ) : (
-                        <input
+                        <TextField
                           id={`${fieldId}-${f.db}`}
-                          type={f.type}
+                          ariaLabel={f.label}
                           value={cur}
-                          onChange={(e) => setDraft((d) => ({ ...d, [f.db]: e.target.value }))}
+                          onChange={(v) => setDraft((d) => ({ ...d, [f.db]: v }))}
+                          error={fieldErr}
                           placeholder={
                             f.db === 'polRaw' || f.db === 'podRaw'
                               ? 'UN/LOCODE or airport (e.g. CNSHA, HKG)'
@@ -620,7 +625,7 @@ export default function ShipmentDetailPage() {
                           className={controlClass}
                         />
                       )}
-                      {/* numeric errors render inside NumberField (after blur) — see its docstring */}
+                      {/* field errors render inside NumberField / TextField (after blur) — see their docstrings */}
                     </div>
                       ),
                       /*
