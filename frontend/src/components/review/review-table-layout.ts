@@ -67,11 +67,17 @@ export const REVIEW_GROUP_HEADER = `px-3 py-2 text-left ${REVIEW_FS.meta} font-s
  *
  *  `proposed` is a track name, not a claim: nothing in that column is awaiting an apply. Conflicts
  *  the commit settled are stripped upstream (openDecisions), so every value that reaches it is one
- *  the committer read and did not write. "Also Seen In Email" says that; "AI Proposed" said the opposite. */
+ *  the committer read and did not write. "AI Proposed" said the opposite and was wrong.
+ *
+ *  It said "Also Seen In Email", which was true while every value in the column came from an email.
+ *  It no longer does: an unlinked party's row offers Mesh MASTERS — five LOGWIN branches that appear
+ *  in no email at all — so the header was captioning them as something the sender wrote. "Other
+ *  values" is true of both, and each row still shows its own provenance (a master code chip, the
+ *  reference email) where the header cannot. */
 export const REVIEW_HEAD = {
   label: 'Field / PO#',
   existing: 'Current',
-  proposed: 'Also Seen In Email',
+  proposed: 'Other values',
   reference: 'Reference Email',
 } as const
 
