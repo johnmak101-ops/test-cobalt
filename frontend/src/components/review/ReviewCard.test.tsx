@@ -910,6 +910,14 @@ describe('conflict table — read-only by default, Edit to change values', () =>
       // Still editing — the inputs and the way out are both still on screen.
       expect(screen.getByTestId('datetime-date')).toBeInTheDocument()
       expect(screen.getByRole('button', { name: /^cancel$/i })).toBeInTheDocument()
+      /**
+       * And the card is usable again. `run()` catches the rejection so it cannot escape as an
+       * unhandled promise rejection — every call site is `void run(...)`. That leak failed the whole
+       * vitest run while every individual test still reported passing, which is how it survived
+       * unnoticed; this asserts the observable half of the same fix.
+       */
+      expect(screen.getByRole('button', { name: /^cancel$/i })).not.toBeDisabled()
+      expect(screen.getByRole('button', { name: /^submit$/i })).not.toBeDisabled()
     })
 
     it('no discard is offered until something is actually pending', () => {
