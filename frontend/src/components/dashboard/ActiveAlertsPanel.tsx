@@ -69,7 +69,7 @@ export function ActiveAlertsPanel({
     >
       <div className="flex items-center justify-between gap-2">
         <h2 className="min-w-0 truncate text-sm font-semibold text-text-primary">
-          Active Alerts
+          Alerts
           {active.length > 0 && (
             <span className="ml-2 text-xs font-normal text-text-muted">· {active.length}</span>
           )}

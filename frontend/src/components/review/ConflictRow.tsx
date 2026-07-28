@@ -196,7 +196,7 @@ function isItemStyleField(field: string): boolean {
  * Only renders structured `CriticConflict` data — never invents from proposedChanges.
  *
  * Multi-candidate fields (e.g. two co-current forwarders / HBLs) list every value the thread stated
- * in the "Also seen" column — never bury the 2nd+ option in a browser datalist the operator can't see.
+ * in the "Also Seen In Email" column — never bury the 2nd+ option in a browser datalist the operator can't see.
  * Item/Style lists use one input per style (not a comma-joined mega-string).
  */
 export function ConflictRow({

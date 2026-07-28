@@ -44,6 +44,8 @@ import { CandidateLegsPanel } from './CandidateLegsPanel'
 import { SharedPoPanel } from './SharedPoPanel'
 import { EvidencePanel } from './EvidencePanel'
 import { ReviewPoStylesSection, alsoSeenStyleForPo } from './ReviewPoStylesSection'
+import type { PoStylePlan } from '../../lib/po-style-plan'
+import { useUpdatePurchaseOrder } from '../../hooks/use-purchase-orders'
 import type { ReviewShipment } from '../../hooks/use-review-queue'
 import type { LinkedPO, ShipmentDetail } from '../../hooks/use-shipments'
 import { cn, formatDateTime } from '../../lib/utils'
@@ -499,6 +501,14 @@ export function ReviewCard({
    *
    * Nor does edit mode open it — this is the ONLY gate, in view and edit alike (see `showPos`).
    */
+  /**
+   * PO style lists the ticks would rewrite. Computed by ReviewPoStylesSection, applied HERE — the
+   * primary button is what names the count and what the operator presses, so the write belongs on
+   * the same click. A section that saved on its own would have changed the PO while the bar still
+   * read "No Changes".
+   */
+  const [poPlans, setPoPlans] = useState<PoStylePlan[]>([])
+  const updatePo = useUpdatePurchaseOrder()
   const poNeedsReview = poProposalCount > 0
   /**
    * Legs that also carry one of this leg's POs (backend `sharedPos`). Present only on the detail
@@ -848,7 +858,7 @@ export function ReviewCard({
    * Idle used to read "AI Proposed", which claimed something the pipeline does not do. Conflicts the
    * commit settled are stripped upstream (openDecisions), so every value reaching this column is one
    * the committer read and declined to write — nothing there is queued for an apply. REVIEW_HEAD
-   * says "Also seen"; once the operator is editing, the column IS their resolution and says so.
+   * says "Also Seen In Email"; once the operator is editing, the column IS their resolution and says so.
    */
   const proposedColumnLabel = editing
     ? 'Resolution'
@@ -865,8 +875,12 @@ export function ReviewCard({
       cardShape === 'verdict'
         ? 0 // nothing is being applied from a verdict card, so nothing is being counted
         : conflicts.filter((c) => changesStoredValue(c, resolutions[c.field] ?? '', liveValueFor(c)))
-            .length,
-    [conflicts, resolutions, liveValueFor, cardShape],
+            .length +
+          /* A PO's style list is ONE field and one write, however many boxes moved to compose it —
+             counting ticks would say "4 changes" for two rows of work and would not match the field
+             grid, where one contested field is one change. */
+          poPlans.length,
+    [conflicts, resolutions, liveValueFor, cardShape, poPlans],
   )
   /**
    * What the primary button will WRITE, when that is one nameable thing. A bare "Approve" made the
@@ -961,6 +975,23 @@ export function ReviewCard({
     )
   }
 
+  /**
+   * Write the ticked PO style lists.
+   *
+   * Sequential, not Promise.all: these are separate PO masters and a partial failure must leave the
+   * ones already written intact rather than racing an unknown subset. Runs BEFORE the leg save so a
+   * PO write that 400s surfaces its own error instead of being masked by a leg confirm that
+   * succeeded — the operator then still sees the leg on the desk, which is the honest state.
+   *
+   * An empty list writes null: `clears` is a legitimate outcome (sometimes the whole style list is
+   * junk), and the row said so in red before the operator got here.
+   */
+  const applyPoPlans = async (): Promise<void> => {
+    for (const plan of poPlans) {
+      await updatePo.mutateAsync({ id: plan.poId, itemStyleNo: plan.itemStyleNo || null })
+    }
+  }
+
   const handleSaveAndApprove = () => {
     if (busy) return
     if (noteRequired) {
@@ -973,31 +1004,32 @@ export function ReviewCard({
       return
     }
     setEditing(false)
+    const savePayload = {
+      fields: fieldsToApply,
+      note: note.trim(),
+      corrections,
+      expectedUpdatedAt: id.updatedAt,
+    }
     const hasFieldEdits = Object.keys(fieldsToApply).length > 0
     if (hasFieldEdits && onSaveAndApprove) {
-      void run(() =>
-        onSaveAndApprove({
-          fields: fieldsToApply,
-          note: note.trim(),
-          corrections,
-          expectedUpdatedAt: id.updatedAt,
-        }),
-      )
+      void run(async () => {
+        await applyPoPlans()
+        await onSaveAndApprove(savePayload)
+      })
       return
     }
     if (onApprove) {
-      void run(() => onApprove())
+      void run(async () => {
+        await applyPoPlans()
+        await onApprove()
+      })
       return
     }
     if (onSaveAndApprove) {
-      void run(() =>
-        onSaveAndApprove({
-          fields: fieldsToApply,
-          note: note.trim(),
-          corrections,
-          expectedUpdatedAt: id.updatedAt,
-        }),
-      )
+      void run(async () => {
+        await applyPoPlans()
+        await onSaveAndApprove(savePayload)
+      })
     }
   }
 
@@ -1563,6 +1595,7 @@ export function ReviewCard({
                     reviewReasons={reviewReasons}
                     readOnly={readOnly}
                     editing={canEditGrid}
+                    onPlanChange={setPoPlans}
                     embedded
                     proposedColumnLabel={proposedColumnLabel}
                   />

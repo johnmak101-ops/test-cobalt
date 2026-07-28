@@ -1,5 +1,5 @@
 /**
- * Row metrics for the dashboard's two side-by-side desks (Active Alerts · Review Queue).
+ * Row metrics for the dashboard's two side-by-side desks (Alerts · Review Queue).
  *
  * The two panels sit in one grid band, so their Nth rows are read across as a pair. Left to
  * themselves the rows size to their content — a two-line alert message beside a one-line review

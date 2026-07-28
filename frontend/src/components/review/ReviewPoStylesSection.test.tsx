@@ -152,24 +152,71 @@ describe('ReviewPoStylesSection — page-level Edit', () => {
     // third column tracks the card's state label; default = the shared wording. NOT "AI Proposed":
     // openDecisions strips settled conflicts upstream, so what lands here is what the committer
     // read and declined to write.
-    expect(screen.getByTestId('po-proposed-column-header')).toHaveTextContent('Also seen')
+    expect(screen.getByTestId('po-proposed-column-header')).toHaveTextContent('Also Seen In Email')
   })
 
-  it('view: multi-style value is one line per style, not a comma blob', () => {
+  /** One box per style, never a comma blob — and every stored one opens TICKED, because what the
+   *  shipment holds today is the default and dropping it has to be a deliberate click. */
+  it('view: one tick box per style, all kept by default', () => {
     renderSection({
       reviewReasons: PROPOSAL,
-      linkedPOs: [
-        po({
-          itemStyleNo: 'AW26-XS-L, AW26-S-XL, AW26-M-XXL',
-        }),
-      ],
+      linkedPOs: [po({ itemStyleNo: 'AW26-XS-L, AW26-S-XL, AW26-M-XXL' })],
     })
-    // Two style lists now render — the stored one and the proposal; this asserts the stored cell.
-    const list = screen.getAllByTestId('style-list-display')[0]!
-    expect(within(list).getByText('AW26-XS-L')).toBeInTheDocument()
-    expect(within(list).getByText('AW26-S-XL')).toBeInTheDocument()
-    expect(within(list).getByText('AW26-M-XXL')).toBeInTheDocument()
+    for (const tok of ['AW26-XS-L', 'AW26-S-XL', 'AW26-M-XXL']) {
+      const box = screen.getByRole('checkbox', { name: `Keep style ${tok} on PO 6495962` })
+      expect(box).toBeChecked()
+    }
     expect(screen.queryByText(/AW26-XS-L, AW26-S-XL/)).not.toBeInTheDocument()
+  })
+
+  it('view: the seen value gets its own box, and it opens UNTICKED', () => {
+    renderSection({ reviewReasons: PROPOSAL })
+    // Pre-ticking would be "AI Proposed" again — this is a value upsertPo declined to write.
+    expect(
+      screen.getByRole('checkbox', { name: 'Add style 999-NEW-STYLE to PO 6495962' }),
+    ).not.toBeChecked()
+  })
+
+  it('ticking composes the list and states what will be written', async () => {
+    const user = userEvent.setup()
+    renderSection({
+      reviewReasons: PROPOSAL,
+      linkedPOs: [po({ itemStyleNo: 'AW26-XS-L, JUNK' })],
+    })
+    await user.click(screen.getByRole('checkbox', { name: 'Keep style JUNK on PO 6495962' }))
+    await user.click(
+      screen.getByRole('checkbox', { name: 'Add style 999-NEW-STYLE to PO 6495962' }),
+    )
+    expect(screen.getByTestId('po-plan-po1')).toHaveTextContent('AW26-XS-L, 999-NEW-STYLE')
+  })
+
+  it('unticking every style says CLEAR, in words, before anyone presses Apply', async () => {
+    const user = userEvent.setup()
+    renderSection({ reviewReasons: PROPOSAL, linkedPOs: [po({ itemStyleNo: 'ONLY-ONE' })] })
+    await user.click(screen.getByRole('checkbox', { name: 'Keep style ONLY-ONE on PO 6495962' }))
+    expect(screen.getByTestId('po-plan-po1')).toHaveTextContent(/CLEAR/i)
+  })
+
+  it('reports the plan up so the card can count and apply it', async () => {
+    const user = userEvent.setup()
+    const onPlanChange = vi.fn()
+    render(
+      <ReviewPoStylesSection
+        shipmentId="ship-1"
+        linkedPOs={[po()]}
+        reviewReasons={PROPOSAL}
+        customerId="c1"
+        onPlanChange={onPlanChange}
+      />,
+    )
+    // Untouched → the card must be told there is nothing to write.
+    expect(onPlanChange).toHaveBeenLastCalledWith([])
+    await user.click(
+      screen.getByRole('checkbox', { name: 'Add style 999-NEW-STYLE to PO 6495962' }),
+    )
+    expect(onPlanChange).toHaveBeenLastCalledWith([
+      expect.objectContaining({ poId: 'po1', itemStyleNo: '263121585, 999-NEW-STYLE', clears: false }),
+    ])
   })
 
   it('card Edit: all rows become inputs at once', () => {
