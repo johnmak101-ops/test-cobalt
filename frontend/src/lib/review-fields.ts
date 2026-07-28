@@ -72,6 +72,17 @@ export interface EditableField {
    * exception list and not a second table.
    */
   createKey?: string
+  /**
+   * The value is prose long enough to need more than one line, so the edit forms render a wrapping,
+   * auto-growing textarea and give it the full width of its section.
+   *
+   * Only the consignee address qualifies today: it is an address BLOCK — company, suite, street,
+   * district — stored in one column, routinely over a hundred characters. Every other editable
+   * column is a code, a name or a number that fits. The read view has wrapped all along
+   * (`.field-value`), so edit mode was the only place the operator could not see their own data
+   * without arrow-keying through a one-line box.
+   */
+  multiline?: true
 }
 
 /** POST /shipments key for an editable field — its column unless the create DTO renames it. */
@@ -113,7 +124,7 @@ export const EDITABLE_FIELDS: EditableField[] = [
   { section: 'Shipping', label: 'Vendor Code', uiKey: 'vendorRaw', column: 'vendorRaw', type: 'text', picker: 'vendor', createKey: 'vendorCode' },
   { section: 'Shipping', label: 'Forwarder', uiKey: 'forwarderRaw', column: 'forwarderRaw', type: 'text', picker: 'forwarder', createKey: 'forwarderName' },
   { section: 'Shipping', label: 'Consignee Name', uiKey: 'consigneeName', column: 'consigneeName', type: 'text' },
-  { section: 'Shipping', label: 'Consignee Address', uiKey: 'consigneeAddress', column: 'consigneeAddress', type: 'text' },
+  { section: 'Shipping', label: 'Consignee Address', uiKey: 'consigneeAddress', column: 'consigneeAddress', type: 'text', multiline: true },
   { section: 'Shipping', label: 'Vessel', uiKey: 'vesselName', column: 'vesselName', type: 'text' },
   { section: 'Shipping', label: 'Voyage', uiKey: 'voyageNumber', column: 'voyageNo', type: 'text' },
   { section: 'Shipping', label: 'Flight No.', uiKey: 'flightNo', column: 'flightNo', type: 'text' },

@@ -48,6 +48,7 @@ interface EditField {
   /** Full legal enum when options is a shorter offer list (Mode) — see EditableField.allValues. */
   allValues?: readonly string[]
   picker?: EditableField['picker']
+  multiline?: EditableField['multiline']
   get: (s: ShipmentDetail) => unknown
 }
 /**
@@ -68,6 +69,7 @@ const EDIT_SECTIONS: { title: string; fields: EditField[] }[] = (() => {
         options: f.options,
         allValues: f.allValues,
         picker: f.picker,
+        multiline: f.multiline,
         get: (s: ShipmentDetail) => {
           // Prefer free-text raw; fall back to resolved master name so edit is not blank when only FK is set.
           if (f.column === 'forwarderRaw') return s.forwarderRaw ?? s.forwarder?.name ?? null
@@ -518,7 +520,14 @@ export default function ShipmentDetailPage() {
                           : 'border-border focus:border-cobalt-primary',
                       )
                       return [(
-                    <div key={f.db} className="grid grid-cols-[7rem_1fr] sm:grid-cols-[9rem_1fr] items-center gap-x-2">
+                    <div
+                      key={f.db}
+                      className={cn(
+                        'grid grid-cols-[7rem_1fr] gap-x-2 sm:grid-cols-[9rem_1fr]',
+                        // A label centred against a 3-line textarea floats in the middle of nothing.
+                        f.multiline ? 'items-start pt-0.5' : 'items-center',
+                      )}
+                    >
                       {/* An off-mode field only reaches here because it HOLDS a value (see
                           shippingFieldVisible). Say why it is on a form that would otherwise hide
                           it, and give the one-click way to empty it — this is the only screen in
@@ -615,6 +624,7 @@ export default function ShipmentDetailPage() {
                           value={cur}
                           onChange={(v) => setDraft((d) => ({ ...d, [f.db]: v }))}
                           error={fieldErr}
+                          multiline={f.multiline}
                           placeholder={
                             f.db === 'polRaw' || f.db === 'podRaw'
                               ? 'UN/LOCODE or airport (e.g. CNSHA, HKG)'
