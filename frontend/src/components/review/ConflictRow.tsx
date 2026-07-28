@@ -32,6 +32,19 @@ export interface ConflictRowProps {
   /** Controlled value of the Proposed cell (seeded with the agent's proposal). */
   value: string
   onChange: (v: string) => void
+  /**
+   * The operator EXPLICITLY ruled to leave this field as it is — distinct from the row merely
+   * sitting on its seeded default.
+   *
+   * It has to be its own signal, because the two are indistinguishable from `value`: the row opens
+   * holding the stored value, so "Keep current" is already the selected radio before anyone has
+   * looked at the card. Reading a keep off the state would lock every multi-candidate row on every
+   * approval — the exact opposite of a recorded decision.
+   *
+   * Fired from the radio's `onClick`, not its `onChange`: React fires no change event for a click on
+   * an already-checked radio, which is precisely the case this exists to catch.
+   */
+  onKeep?: () => void
   /** Card-level edit mode. Off = a clean read-only diff; on = the value becomes an input. */
   editing: boolean
   /** Unit shown beside the stored value ('KGS', the leg's UOM …). Null = this field has none. */
@@ -263,6 +276,7 @@ export function ConflictRow({
   conflict,
   value,
   onChange,
+  onKeep,
   editing,
   existingUnit,
   proposedUnit,
@@ -480,6 +494,7 @@ export function ConflictRow({
             keepValue={existingDisplay}
             keepLabel={printed(existingDisplay)}
             onChange={onChange}
+            onKeep={onKeep}
             editing={editing}
             canEdit={canEdit}
             onRequestEdit={onRequestEdit}
@@ -969,6 +984,7 @@ function MultiCandidateProposed({
   keepValue,
   keepLabel,
   onChange,
+  onKeep,
   editing,
   canEdit,
   onRequestEdit,
@@ -983,6 +999,8 @@ function MultiCandidateProposed({
   /** `keepValue` as this row prints it (numbers grouped, dates without their `T`). */
   keepLabel: string
   onChange: (v: string) => void
+  /** The operator clicked "Keep current" — see ConflictRowProps.onKeep. */
+  onKeep?: () => void
   editing: boolean
   /** Operator may resolve this row at all (Active queue). False on Approved/Rejected history. */
   canEdit: boolean
@@ -1025,6 +1043,16 @@ function MultiCandidateProposed({
                 className="mt-0.5 shrink-0"
                 checked={keepSelected}
                 onChange={() => onChange(keepValue)}
+                /**
+                 * The RULING, separate from the value.
+                 *
+                 * `onChange` cannot carry it: this radio starts checked (the row seeds from the
+                 * stored value), so clicking it from its default state fires no change event at all
+                 * — and that click is the commonest way an operator says "I looked, and what we have
+                 * is right". `onClick` fires either way, and the card treats the two signals as
+                 * independent: the value goes through onChange, the decision through here.
+                 */
+                onClick={() => onKeep?.()}
                 data-testid="conflict-keep-current"
                 aria-label={
                   keepValue === ''

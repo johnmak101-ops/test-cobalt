@@ -16,7 +16,7 @@ import {
 import { ReviewCard, type ReviewCardSavePayload } from '../components/review/ReviewCard'
 import { Badge } from '../components/ui/Badge'
 import { Card } from '../components/ui/Card'
-import { mapCriticFieldsToColumns } from '../lib/review-fields'
+import { keptSuffix, mapCriticFieldsToColumns } from '../lib/review-fields'
 import { formatShipmentId } from '../lib/utils'
 import { toast } from '../components/ui/Toast'
 
@@ -25,7 +25,7 @@ import { toast } from '../components/ui/Toast'
  *
  * The shipment detail page's "see conflict table" and "Review & approve" CTAs land here instead of
  * dumping the operator on the queue's landing page (where the row was often paginated out or below
- * the fold). It reuses the queue's presentational ReviewCard — the conflict table + Keep Existing /
+ * the fold). It reuses the queue's presentational ReviewCard — the conflict table + Leave As Is /
  * Approve — so there is still ONE conflict UI. The approve/correct wiring mirrors the queue's
  * ExpandedReviewPanel + saveAndApproveFor in ReviewQueuePage.tsx; keep the two in step.
  */
@@ -161,6 +161,7 @@ export default function ShipmentReviewFocusPage() {
     try {
       const fields = payload.fields
       const mapped = mapCriticFieldsToColumns(fields)
+      const keep = payload.keep ?? []
       const hasFields = Object.keys(fields).length > 0
       const hasMappable = Object.keys(mapped).length > 0
       if (hasFields && !hasMappable) {
@@ -172,6 +173,7 @@ export default function ShipmentReviewFocusPage() {
         const res = await correctMutation.mutateAsync({
           shipmentId: shipment.id,
           fields: mapped,
+          keep,
           reason: payload.note,
           expectedUpdatedAt: payload.expectedUpdatedAt ?? shipment.updatedAt,
         })
@@ -180,15 +182,22 @@ export default function ShipmentReviewFocusPage() {
         if (n === 0) {
           toast.error('Approved, but no fields were written — reload and try Approve again')
         } else {
-          toast(`Saved ${n} field${n === 1 ? '' : 's'} and approved`)
+          toast(`Saved ${n} field${n === 1 ? '' : 's'} and approved${keptSuffix(keep)}`)
         }
       } else {
         await confirmMutation.mutateAsync({
           shipmentId: shipment.id,
           note: payload.note || undefined,
+          keep,
           expectedUpdatedAt: payload.expectedUpdatedAt ?? shipment.updatedAt,
         })
-        toast('Shipment approved (no field changes)')
+        // "no field changes" is true of the values and false about the click when a row was ruled —
+        // a keep writes nothing but does lock the field.
+        toast(
+          keep.length
+            ? `Approved — kept ${keep.length} stored value${keep.length === 1 ? '' : 's'} as ruled`
+            : 'Shipment approved (no field changes)',
+        )
       }
       navigate(backToShipment)
     } catch (err) {

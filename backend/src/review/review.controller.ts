@@ -30,7 +30,7 @@ export class ReviewController {
   }
 
   @Post(':id/confirm') confirm(@Param('id') id: string, @Body() dto: ConfirmDto, @CurrentUser() actor: AuthUser) {
-    return this.review.confirm(id, actor.id, dto?.note, dto?.expectedUpdatedAt)
+    return this.review.confirm(id, actor.id, dto?.note, dto?.expectedUpdatedAt, dto?.keep)
   }
 
   @Post(':id/correct') correct(@Param('id') id: string, @Body() dto: CorrectDto, @CurrentUser() actor: AuthUser) {

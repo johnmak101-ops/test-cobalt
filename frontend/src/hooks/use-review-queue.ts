@@ -145,15 +145,19 @@ export function useConfirmShipment() {
     mutationFn: ({
       shipmentId,
       note,
+      keep,
       expectedUpdatedAt,
     }: {
       shipmentId: string
       note?: string
+      /** Leg columns the reviewer ruled to leave as they are — locked, never written. */
+      keep?: string[]
       /** ISO from load; backend 409s if leg was modified since. */
       expectedUpdatedAt?: string
     }) =>
       api.post(`/review/${shipmentId}/confirm`, {
         ...(note?.trim() ? { note: note.trim() } : {}),
+        ...(keep?.length ? { keep } : {}),
         ...(expectedUpdatedAt ? { expectedUpdatedAt } : {}),
       }),
     onSuccess: invalidate,
@@ -172,17 +176,22 @@ export function useCorrectShipment() {
     mutationFn: ({
       shipmentId,
       fields,
+      keep,
       reason,
       expectedUpdatedAt,
     }: {
       shipmentId: string
       fields: Record<string, unknown>
+      /** Leg columns the reviewer ruled to leave as they are — locked at the stored value, never
+       *  written. Kept out of `fields` on purpose: the backend 400s a field named in both. */
+      keep?: string[]
       reason?: string
       /** ISO from load; backend 409s if leg was modified since. */
       expectedUpdatedAt?: string
     }) =>
       api.post(`/review/${shipmentId}/correct`, {
         fields: mapCriticFieldsToColumns(fields),
+        ...(keep?.length ? { keep } : {}),
         ...(reason?.trim() ? { reason: reason.trim() } : {}),
         ...(expectedUpdatedAt ? { expectedUpdatedAt } : {}),
       }),

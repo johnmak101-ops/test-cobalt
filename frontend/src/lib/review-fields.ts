@@ -668,6 +668,19 @@ export function reviewFieldLabel(field: string, fallback: string): string {
 }
 
 /**
+ * Toast tail naming the fields a save also RULED to leave alone — '' when there are none.
+ *
+ * Shared by the queue's expanded card and the focused review page rather than written twice: the two
+ * save handlers are deliberate near-duplicates (see ShipmentReviewFocusPage's header note), and copy
+ * about what a click did is exactly the kind of thing that drifts between them.
+ */
+export function keptSuffix(keep: string[] | undefined): string {
+  const cols = keep ?? []
+  if (cols.length === 0) return ''
+  return ` · kept ${cols.map((c) => fieldLabel(c)).join(', ')}`
+}
+
+/**
  * Bucket contested fields into the demo's group headers, in REVIEW_GROUP_ORDER. Groups with no
  * conflicts are omitted (the card renders ONLY contested rows — an empty header is noise), and an
  * empty conflict set yields no groups at all so the caller can render its zero-conflict state.
