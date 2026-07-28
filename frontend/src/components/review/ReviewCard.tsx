@@ -744,27 +744,34 @@ export function ReviewCard({
       .map((g) => ({
         ...g,
         items: g.items.flatMap((it) => {
+          // `details` holds EVERY party on the line; `meshCandidates` only those with masters to
+          // offer. Reading the candidates alone is what dropped leg 202607B738's LEADWAY EXPRESS —
+          // genuinely absent from Mesh, and the only line saying so — because the line ALSO named a
+          // party that had become a table row. Drop the rowed NAMES, never the line they share.
           const named = it.details ?? Object.keys(it.meshCandidates ?? {})
           if (!named.length) return [it]
-          // Drop the rowed NAMES, not the whole line. Keying on meshCandidates alone lost leg
-          // 202607B738's LEADWAY EXPRESS — genuinely absent from Mesh, and the only place saying so —
-          // because the line ALSO named MACAU FUNG TAI, which had just become a table row.
           const left = named.filter((n) => !rowedPartyNames.has(n))
-          if (!left.length) return []
-          if (left.length === named.length) return [it]
+          if (!left.length) return [] // every party on this line is answered in the table
+          if (left.length === named.length) return [it] // nothing moved — leave it exactly as built
           const candidates = Object.fromEntries(
             Object.entries(it.meshCandidates ?? {}).filter(([n]) => left.includes(n)),
           )
-          return [{
-            ...it,
-            details: left,
-            meshCandidates: Object.keys(candidates).length ? candidates : undefined,
-            // The summary counted the parties that have since moved to the table, so it is restated
-            // for the ones that remain rather than left overstating what is still open here.
-            text: left.length === 1 && !Object.keys(candidates).length
-              ? `"${left[0]}" not found in Mesh Database — advise add in Mesh.`
-              : `${left.length} ${left.length === 1 ? 'party' : 'parties'} not linked to Mesh.`,
-          }]
+          const withCandidates = Object.keys(candidates).length
+          return [
+            {
+              ...it,
+              details: left,
+              meshCandidates: withCandidates ? candidates : undefined,
+              // The summary counted parties that have since moved to the table, so it is restated for
+              // the ones still here rather than left overstating what this line is about.
+              text:
+                left.length === 1 && !withCandidates
+                  ? `"${left[0]}" not found in Mesh Database — advise add in Mesh.`
+                  : `${left.length} ${left.length === 1 ? 'party' : 'parties'} not linked to Mesh${
+                      withCandidates ? ' — expand to pick or add.' : ' — advise add in Mesh.'
+                    }`,
+            },
+          ]
         }),
       }))
       .filter((g) => g.items.length > 0)
