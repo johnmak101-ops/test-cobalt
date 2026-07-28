@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Badge } from '../ui/Badge'
-import { formatDate, parsePONumbers } from '../../lib/utils'
+import { formatDate, formatShipmentId, parsePONumbers } from '../../lib/utils'
 import { interactiveProps } from '../../lib/interactive'
 import { ALL_TIME, DateRangeSelect, inRange, type DateRange } from './DateRangeSelect'
 import type { Shipment } from '../../hooks/use-shipments'
@@ -50,7 +50,7 @@ export function ActiveShipmentsTable({ shipments }: { shipments: Shipment[] }) {
           <table className="w-full min-w-[40rem] table-fixed">
             <thead>
               <tr className="border-b border-border bg-surface-900/50">
-                <th className="w-[20%] px-5 py-2.5 text-left text-xs font-medium text-text-muted">Booking / PO#</th>
+                <th className="w-[20%] px-5 py-2.5 text-left text-xs font-medium text-text-muted">Shipment ID</th>
                 <th className="w-[20%] px-5 py-2.5 text-left text-xs font-medium text-text-muted">Customer</th>
                 <th className="w-[14%] px-5 py-2.5 text-left text-xs font-medium text-text-muted">Route</th>
                 <th className="w-[8.5rem] px-5 py-2.5 text-left text-xs font-medium text-text-muted">Status</th>
@@ -63,7 +63,16 @@ export function ActiveShipmentsTable({ shipments }: { shipments: Shipment[] }) {
                 const pos = parsePONumbers(s.poNumbers)
                 const poLabel =
                   pos.length > 0 ? pos.slice(0, 3).join(', ') + (pos.length > 3 ? ` +${pos.length - 3}` : '') : null
-                const primary = s.bookingNo?.trim() || s.soNumber?.trim() || poLabel || '—'
+                /**
+                 * #348/#350: a row is named by the derived Shipment ID — the SAME string the tracker,
+                 * alerts, review queue and detail pages show, off the same endpoint, so the dashboard
+                 * cannot call a leg one thing and the page it links to another. The booking/SO/PO the
+                 * row used to lead with drops to the reference line: still the number you quote at a
+                 * forwarder, no longer the row's identity.
+                 */
+                const shipmentId = formatShipmentId(s.id, s.firstEmailAt ?? s.createdAt)
+                const booking = s.bookingNo?.trim() || s.soNumber?.trim() || null
+                const reference = booking || poLabel
                 return (
                   <tr
                     key={s.id}
@@ -71,12 +80,23 @@ export function ActiveShipmentsTable({ shipments }: { shipments: Shipment[] }) {
                     className="cursor-pointer border-b border-border last:border-0 hover:bg-surface-700"
                   >
                     <td className="min-w-0 max-w-0 px-5 py-3">
-                      <span className="block truncate font-mono text-sm text-text-primary" title={primary}>
-                        {primary}
+                      <span
+                        className="block truncate font-mono text-sm font-medium text-cobalt-primary-light"
+                        title={shipmentId}
+                      >
+                        {shipmentId}
+                        {(s.legCount ?? 1) > 1 && (
+                          <span className="ml-1 text-[11px] font-normal text-text-muted">
+                            · Leg {s.legNo ?? 1}/{s.legCount}
+                          </span>
+                        )}
                       </span>
-                      {s.bookingNo && poLabel && (
-                        <span className="mt-0.5 block truncate text-[11px] text-text-muted" title={poLabel}>
-                          {poLabel}
+                      {reference && (
+                        <span
+                          className="mt-0.5 block truncate font-mono text-[11px] text-text-muted"
+                          title={[booking, poLabel].filter(Boolean).join(' · ')}
+                        >
+                          {reference}
                         </span>
                       )}
                     </td>

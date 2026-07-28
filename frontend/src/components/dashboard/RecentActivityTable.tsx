@@ -1,5 +1,5 @@
 import { Badge } from '../ui/Badge'
-import { parsePONumbers, formatRelativeTime, formatDate } from '../../lib/utils'
+import { parsePONumbers, formatRelativeTime, formatDate, formatShipmentId } from '../../lib/utils'
 import { useNavigate } from 'react-router-dom'
 import { interactiveProps } from '../../lib/interactive'
 
@@ -13,6 +13,9 @@ interface Shipment {
   bookingNo?: string | null
   etd?: string | null
   actualDeparture?: string | null
+  /** #350: anchor fields for the derived Shipment ID (firstEmailAt ?? createdAt). */
+  firstEmailAt?: string | null
+  createdAt: string
   customer: { name: string } | null
   forwarder: { name: string } | null
 }
@@ -37,7 +40,7 @@ export function RecentActivityTable({ shipments }: RecentActivityTableProps) {
           <table className="w-full min-w-[36rem] table-fixed">
             <thead>
               <tr className="border-b border-border bg-surface-900/50">
-                <th className="w-[22%] px-5 py-2.5 text-left text-xs font-medium text-text-muted">Booking / PO#</th>
+                <th className="w-[22%] px-5 py-2.5 text-left text-xs font-medium text-text-muted">Shipment ID</th>
                 <th className="w-[24%] px-5 py-2.5 text-left text-xs font-medium text-text-muted">Customer</th>
                 <th className="w-[16%] px-5 py-2.5 text-left text-xs font-medium text-text-muted">Route</th>
                 <th className="w-[8.5rem] px-5 py-2.5 text-left text-xs font-medium text-text-muted">Status</th>
@@ -48,7 +51,10 @@ export function RecentActivityTable({ shipments }: RecentActivityTableProps) {
               {shipments.map((s) => {
                 const pos = parsePONumbers(s.poNumbers)
                 const poLabel = pos.length > 0 ? pos.slice(0, 3).join(', ') + (pos.length > 3 ? ` +${pos.length - 3}` : '') : null
-                const primary = s.bookingNo?.trim() || poLabel || '—'
+                // #348/#350: same derived identity as every other surface; booking/PO is the reference line.
+                const shipmentId = formatShipmentId(s.id, s.firstEmailAt ?? s.createdAt)
+                const booking = s.bookingNo?.trim() || null
+                const reference = booking || poLabel
                 const sailedAt = s.actualDeparture || s.etd
                 return (
                   <tr
@@ -57,12 +63,18 @@ export function RecentActivityTable({ shipments }: RecentActivityTableProps) {
                     className="cursor-pointer border-b border-border last:border-0 hover:bg-surface-700"
                   >
                     <td className="min-w-0 max-w-0 px-5 py-3">
-                      <span className="block truncate font-mono text-sm text-text-primary" title={primary}>
-                        {primary}
+                      <span
+                        className="block truncate font-mono text-sm font-medium text-cobalt-primary-light"
+                        title={shipmentId}
+                      >
+                        {shipmentId}
                       </span>
-                      {s.bookingNo && poLabel && (
-                        <span className="mt-0.5 block truncate text-[11px] text-text-muted" title={poLabel}>
-                          {poLabel}
+                      {reference && (
+                        <span
+                          className="mt-0.5 block truncate font-mono text-[11px] text-text-muted"
+                          title={[booking, poLabel].filter(Boolean).join(' · ')}
+                        >
+                          {reference}
                         </span>
                       )}
                     </td>
