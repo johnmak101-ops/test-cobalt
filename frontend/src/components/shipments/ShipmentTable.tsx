@@ -4,6 +4,30 @@ import { Badge } from '../ui/Badge'
 import { formatShipmentId, formatShortDate, formatRelativeTime, cn } from '../../lib/utils'
 import { useNavigate } from 'react-router-dom'
 import { AlertTriangle, Package } from 'lucide-react'
+
+/**
+ * A route, breakable only at the arrow.
+ *
+ * "CNYTN→NLRTM" is one token to the browser, so a column too narrow for it broke it wherever it
+ * happened to run out — "CNYTN→NL / RTM". A port code split across two lines is not a shortened
+ * label, it is a different string the operator has to reassemble before they can read it.
+ *
+ * `<wbr>` gives the ONLY legal break point, after the arrow, so the worst case is
+ * "CNYTN→ / NLRTM" — both codes still intact.
+ */
+function routeParts(route: string | null | undefined) {
+  const r = (route ?? '').trim()
+  if (r === '') return '—'
+  const i = r.indexOf('→')
+  if (i < 0) return r
+  return (
+    <>
+      {r.slice(0, i + 1)}
+      <wbr />
+      {r.slice(i + 1)}
+    </>
+  )
+}
 import type { LinkedPO, Shipment } from '../../hooks/use-shipments'
 import { interactiveProps } from '../../lib/interactive'
 
@@ -138,7 +162,9 @@ function CustomerPoChip({
       <span
         ref={anchorRef}
         data-testid="customer-po-chip"
-        className="inline-flex cursor-default items-center gap-1.5 rounded-md bg-surface-600 px-2 py-0.5 text-xs font-medium text-text-secondary"
+        /* nowrap: "0 POs" / "2 POs" wrapped onto two lines in the narrow PO column, inflating the
+           chip into a tall oval beside the single-line "1 PO" chips on every other row. */
+        className="inline-flex cursor-default items-center gap-1.5 whitespace-nowrap rounded-md bg-surface-600 px-2 py-0.5 text-xs font-medium text-text-secondary"
         onMouseEnter={openPopover}
         onMouseLeave={scheduleClose}
       >
@@ -192,7 +218,11 @@ export function ShipmentTable({ shipments }: ShipmentTableProps) {
             the columns, and responsive hiding needs width + visibility on the SAME element. */}
         {/* No min-width below md: with three columns the table fits any phone, and forcing 560px
             would invent a sideways scroll where none is needed. */}
-        <table className="w-full table-fixed md:min-w-[600px] lg:min-w-[1000px]">
+        {/* lg shows all ten columns; 1000px could not seat them, so every column was squeezed
+            below its content and the cells broke tokens to cope ("CNYTN→NL / RTM"). 1240px is the
+            sum of what the columns actually need — narrower viewports scroll, with Shipment ID
+            pinned, which is what the sticky column and this scroll container are for. */}
+        <table className="w-full table-fixed md:min-w-[600px] lg:min-w-[1240px]">
           <thead>
             <tr className="border-b border-border bg-surface-850">
               {/* Shipment ID is pinned: once the table scrolls sideways, row identity must stay put.
@@ -201,10 +231,18 @@ export function ShipmentTable({ shipments }: ShipmentTableProps) {
                   Tailwind's preflight collapses table borders. */}
               <th className={cn('sticky left-0 z-[1] w-[12%] bg-surface-850 px-3 py-3 text-left text-xs font-medium text-text-muted', scrolled && PINNED_DIVIDER)}>Shipment ID</th>
               <th className="hidden w-[9%] px-3 py-3 text-left text-xs font-medium text-text-muted lg:table-cell">Customer PO#</th>
-              <th className="hidden w-[12%] px-3 py-3 text-left text-xs font-medium text-text-muted lg:table-cell">Customer</th>
-              <th className="hidden w-[11%] px-3 py-3 text-left text-xs font-medium text-text-muted md:table-cell">Forwarder</th>
+              {/* Codes need 6%, but these cells WRAP rather than truncate, so the width that matters
+                  is the one the exception needs: at 6% an unresolved "STRAUSS OPERATIONS Gmbh & Co.
+                  KG" wrapped to five lines and made a 169px row. 9% lands it in three. */}
+              <th className="hidden w-[9%] px-3 py-3 text-left text-xs font-medium text-text-muted lg:table-cell">Customer</th>
+              {/* Sized for the longest real agent name to wrap in two lines, not five. */}
+              <th className="hidden w-[15%] px-3 py-3 text-left text-xs font-medium text-text-muted md:table-cell">Forwarder</th>
               <th className="w-[12%] px-3 py-3 text-left text-xs font-medium text-text-muted">Route</th>
-              <th className="w-[11%] px-3 py-3 text-left text-xs font-medium text-text-muted">Status</th>
+              {/* 13%, not 11%: the Badge truncates itself to fit its cell, so the longest status
+                  ("Booking Request") rendered as "Booking Reque" — a clipped word reads as a broken
+                  chip, not as a shortened one. Route gives up the 2%; it truncates a route legibly
+                  ("CNYTN→NL…"), a status label does not. */}
+              <th className="w-[13%] px-3 py-3 text-left text-xs font-medium text-text-muted">Status</th>
               <th className="hidden w-[8%] px-3 py-3 text-left text-xs font-medium text-text-muted lg:table-cell">ETD</th>
               <th className="hidden w-[8%] px-3 py-3 text-left text-xs font-medium text-text-muted lg:table-cell">ETA</th>
               <th className="hidden w-[10%] px-3 py-3 text-left text-xs font-medium text-text-muted lg:table-cell">Last Activity</th>
@@ -216,7 +254,12 @@ export function ShipmentTable({ shipments }: ShipmentTableProps) {
               <tr
                 key={s.id}
                 {...interactiveProps(() => navigate(`/shipments/${s.id}`))}
-                className="group cursor-pointer border-b border-border last:border-0 hover:bg-surface-700 transition-colors"
+                /* Fixed height, two lines' worth.
+                   Wrapping alone gave every row its own height (50-169px) and the table lost its
+                   rhythm — scanning a column of ETDs meant re-finding the line each time. Two lines
+                   is where the trade sits: it holds every value the table actually carries except one
+                   46-character agent name, and the cells clamp rather than push the row taller. */
+                className="group h-[68px] cursor-pointer border-b border-border last:border-0 hover:bg-surface-700 transition-colors"
               >
                 {/* group-hover mirrors the row's hover onto the pinned cell — without it the sticky
                     column stays dark while the rest of the row lights up. */}
@@ -241,14 +284,43 @@ export function ShipmentTable({ shipments }: ShipmentTableProps) {
                     }
                   />
                 </td>
-                <td className="hidden truncate px-3 py-3 text-sm text-text-secondary lg:table-cell">
-                  {s.customer?.name ?? s.customerRaw ?? '—'}
+                {/* The CODE, not the name.
+                    "WYSE LONDON LI…" spent 12% of the table to say less than "WYSE" does: four rows
+                    of it were indistinguishable, and the part that would have told them apart is the
+                    part that got cut. Codes are what operators quote, they are 4-6 chars, and they
+                    never truncate. The full legal name is one hover away. */}
+                {/* WRAPS, never truncates.
+                    A code fits on one line, so the common row is unchanged; it is the exception —
+                    a leg whose customer never resolved and falls back to a raw name — that used to
+                    read "STRA…". In a table whose whole job is telling rows apart, a second line
+                    costs less than a cut word. `break-words` only breaks when a token genuinely
+                    cannot fit, so "STRAUSS OPERATIONS Gmbh & Co. KG" wraps at its spaces. */}
+                <td
+                  className="hidden px-3 py-3 align-middle text-sm lg:table-cell"
+                  title={s.customer?.name ?? s.customerRaw ?? undefined}
+                >
+                  <span
+                    className="line-clamp-2 font-mono text-text-secondary"
+                    data-testid="customer-code"
+                  >
+                    {s.customer?.code ?? s.customerRaw ?? s.customer?.name ?? '—'}
+                  </span>
                 </td>
-                <td className="hidden truncate px-3 py-3 text-sm text-text-secondary md:table-cell">
-                  {s.forwarder?.name ?? s.forwarderRaw ?? '—'}
+                {/* "Logimark International Limited Guangzhou Branch" is 46 characters — no column
+                    width reaches it, and every Logimark row read "Logimark Internation…", which is
+                    nine rows rendered indistinguishable. Two lines tells them apart. */}
+                <td
+                  className="hidden px-3 py-3 align-middle text-sm text-text-secondary md:table-cell"
+                  title={s.forwarder?.name ?? s.forwarderRaw ?? undefined}
+                >
+                  <span className="line-clamp-2">{s.forwarder?.name ?? s.forwarderRaw ?? '—'}</span>
                 </td>
-                <td className="truncate px-3 py-3 text-sm text-text-secondary">{s.route ?? '—'}</td>
-                <td className="px-3 py-3">
+                {/* Routes are short once both ports resolve; the long ones are exactly the rows worth
+                    seeing — an unresolved POL showing as a city name ("HONG KONG→GBFXT"). */}
+                <td className="px-3 py-3 align-middle text-sm text-text-secondary" title={s.route ?? undefined}>
+                  <span className="line-clamp-2">{routeParts(s.route)}</span>
+                </td>
+                <td className="whitespace-nowrap px-3 py-3">
                   <Badge variant="status" value={s.status} />
                 </td>
                 <td className="hidden whitespace-nowrap px-3 py-3 text-sm text-text-secondary lg:table-cell">

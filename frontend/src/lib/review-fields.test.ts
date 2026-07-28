@@ -26,6 +26,8 @@ import {
   serializeStyleEntries,
   numericFieldWarn,
   dateOrderWarn,
+  dateOrderIssue,
+  dateOrderIssues,
 } from './review-fields'
 import { MODE_OPTIONS, UOM_OPTIONS } from './enums'
 
@@ -635,5 +637,70 @@ describe('EDITABLE_FIELDS columns are mirrored in the backend allowlist', () => 
     const wh = EDITABLE_FIELDS.find((f) => f.column === 'warehouseSo')
     expect(wh).toBeDefined()
     expect(wh?.label).toBe('Warehouse SO')
+  })
+})
+
+/**
+ * The message used to render once at the foot of a two-column edit form — "ETA is before ETD" with
+ * eight date inputs above it and nothing saying which two. Naming the columns lets the form put the
+ * line under the offending date and ring both ends of the clash.
+ */
+describe('dateOrderIssue — names the fields, not just the problem', () => {
+  it('points at the arrival that is too early and the departure it precedes', () => {
+    const issue = dateOrderIssue({ etd: '2026-07-12', eta: '2026-07-07' })
+    expect(issue).toMatchObject({ arrival: 'eta', departures: ['etd'] })
+    expect(issue?.message).toBe("ETA is before ETD — arrival can't be before departure")
+  })
+
+  it('handles the actual pair too', () => {
+    expect(dateOrderIssue({ atd: '2026-07-14', ata: '2026-07-10' })).toMatchObject({
+      arrival: 'ata',
+      departures: ['atd'],
+    })
+  })
+
+  /**
+   * The screenshot that prompted this: ETD 12/07, ATD 08/07, ETA 07/07, ATA 29/12/2025 breaks four
+   * ways. The old check returned on the FIRST match, so the form said "ETA is before ETD" and left an
+   * ATA a year in the past unringed and unmentioned — the operator fixed what they were shown, saved,
+   * and met the next one.
+   */
+  it('reports EVERY offending arrival, not just the first', () => {
+    const issues = dateOrderIssues({
+      etd: '2026-07-12',
+      atd: '2026-07-08',
+      eta: '2026-07-07',
+      ata: '2025-12-29',
+    })
+    expect(issues.map((i) => i.arrival)).toEqual(['eta', 'ata'])
+    // ETA precedes both departures; so does the year-old ATA
+    expect(issues[0]).toMatchObject({ arrival: 'eta', departures: ['etd', 'atd'] })
+    expect(issues[1]).toMatchObject({ arrival: 'ata', departures: ['etd', 'atd'] })
+    expect(issues[1]?.message).toBe("ATA is before ETD and ATD — arrival can't be before departure")
+  })
+
+  it('names only the departures actually violated', () => {
+    // ETA 09/07 is after ATD 08/07 but before ETD 12/07 — only ETD is named
+    const [issue] = dateOrderIssues({ etd: '2026-07-12', atd: '2026-07-08', eta: '2026-07-09' })
+    expect(issue).toMatchObject({ arrival: 'eta', departures: ['etd'] })
+  })
+
+  it('is empty when every arrival follows every departure', () => {
+    expect(
+      dateOrderIssues({ etd: '2026-07-01', atd: '2026-07-02', eta: '2026-07-09', ata: '2026-07-10' }),
+    ).toEqual([])
+  })
+
+  it('is null when the order is sane, or a side is missing', () => {
+    expect(dateOrderIssue({ etd: '2026-07-01', eta: '2026-07-09' })).toBeNull()
+    expect(dateOrderIssue({ eta: '2026-07-07' })).toBeNull()
+    expect(dateOrderIssue({})).toBeNull()
+  })
+
+  it('dateOrderWarn still returns just the message, for callers with nowhere to put a marker', () => {
+    expect(dateOrderWarn({ etd: '2026-07-12', eta: '2026-07-07' })).toBe(
+      "ETA is before ETD — arrival can't be before departure",
+    )
+    expect(dateOrderWarn({ etd: '2026-07-01', eta: '2026-07-09' })).toBeNull()
   })
 })

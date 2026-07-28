@@ -23,7 +23,7 @@ import { liveQtyFromShipment, poShipmentTotalFromLinked } from '../lib/qty-confl
 import { AlertCard } from '../components/alerts/AlertCard'
 import { formatDate, formatDateTime, formatDateMaybeTime, formatShipmentId, cn } from '../lib/utils'
 import { parseSender } from '../lib/email-sender'
-import { EDITABLE_FIELDS, fieldLabel, fieldUnit, numericFieldWarn, dateOrderWarn, toInputValue, type EditableField, formatNumericDisplay, dateColumnHasTime } from '../lib/review-fields'
+import { EDITABLE_FIELDS, fieldLabel, fieldUnit, numericFieldWarn, dateOrderIssues, toInputValue, type EditableField, formatNumericDisplay, dateColumnHasTime } from '../lib/review-fields'
 import { isAirMode, isOffModeField, offModeFieldsOn } from '../lib/mode-fields'
 import { toast } from '../components/ui/Toast'
 import { interactiveProps } from '../lib/interactive'
@@ -295,10 +295,19 @@ export default function ShipmentDetailPage() {
   const hasNumericErrors = editing && EDIT_SECTIONS.some((sec) =>
     sec.fields.some((f) => f.type === 'number' && numericFieldWarn(f.db, draft[f.db]) != null),
   )
-  // Cross-field: an arrival date earlier than a departure date is impossible — blocks Save too.
-  const dateError = editing
-    ? dateOrderWarn({ etd: draft.etd, atd: draft.atd, eta: draft.eta, ata: draft.ata })
-    : null
+  /**
+   * Cross-field: an arrival earlier than a departure is impossible — blocks Save too.
+   *
+   * Structured, not just a message, so the line can sit UNDER the offending date. It used to render
+   * once at the foot of a two-column form: "ETA is before ETD" with eight date inputs above it and
+   * nothing saying which two. Per-field is also how numeric errors already work here.
+   */
+  const dateIssues = editing
+    ? dateOrderIssues({ etd: draft.etd, atd: draft.atd, eta: draft.eta, ata: draft.ata })
+    : []
+  /** Every field taking part in a clash — each offending arrival and every departure it precedes. */
+  const dateClashFields = new Set<string>(dateIssues.flatMap((i) => [i.arrival, ...i.departures]))
+  const dateError = dateIssues[0]?.message ?? null
   const saveBlocked = (editedCount > 0 && !note.trim()) || hasNumericErrors || dateError != null
 
   return (
@@ -519,8 +528,16 @@ export default function ShipmentDetailPage() {
                       const offMode = isOffModeField(f.db, draft.mode || shipment.mode)
                       const cur = draft[f.db] ?? ''
                       const numErr = f.type === 'number' ? numericFieldWarn(f.db, cur) : null
-                      const controlClass =
-                        'h-8 w-full rounded-md border border-border bg-surface-700 px-2 text-sm text-text-primary placeholder:text-text-muted/70 focus:border-cobalt-primary focus:outline-none'
+                      // Every field in a clash is ringed — each offending arrival AND every departure
+                      // it precedes. Any of them could be the wrong value, so ringing one would read
+                      // as a verdict about which to change.
+                      const inDateClash = dateClashFields.has(f.db)
+                      const controlClass = cn(
+                        'h-8 w-full rounded-md border bg-surface-700 px-2 text-sm text-text-primary placeholder:text-text-muted/70 focus:outline-none',
+                        inDateClash
+                          ? 'border-status-critical focus:border-status-critical'
+                          : 'border-border focus:border-cobalt-primary',
+                      )
                       return [(
                     <div key={f.db} className="grid grid-cols-[7rem_1fr] sm:grid-cols-[9rem_1fr] items-center gap-x-2">
                       {/* An off-mode field only reaches here because it HOLDS a value (see
@@ -643,6 +660,21 @@ export default function ShipmentDetailPage() {
                         page already renders. Clearing is filing, not deletion, and a sea shipment
                         still reporting a flight number is wrong in every downstream consumer.
                       */
+                      /* Under the offending date, not at the foot of the form. The operator was
+                         being told "ETA is before ETD" with eight date inputs above the line and
+                         nothing saying which two. Numeric errors already sit on their own field. */
+                      ...dateIssues
+                        .filter((i) => i.arrival === f.db)
+                        .map((i) => (
+                          <p
+                            key={`date-order-${i.arrival}`}
+                            data-testid="edit-date-error"
+                            className="col-span-full flex items-center gap-1.5 pl-[7rem] text-xs text-status-critical sm:pl-[9rem]"
+                          >
+                            <AlertTriangle size={13} className="shrink-0" />
+                            {i.message}
+                          </p>
+                        )),
                       ...(f.db === 'mode' && modeCarryOver.length > 0
                         ? [(
                             <div
@@ -694,12 +726,6 @@ export default function ShipmentDetailPage() {
                 </DetailSection>
               ))}
             </div>
-            {dateError && (
-              <p className="mt-3 flex items-center gap-1.5 text-xs text-status-critical" data-testid="edit-date-error">
-                <AlertTriangle size={13} className="shrink-0" />
-                {dateError}
-              </p>
-            )}
             {/* Required feedback for agent-soul iteration — a save with real edits is blocked without it. */}
             <div className="mt-6 border-t border-border pt-4">
               <label htmlFor={`${fieldId}-note`} className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-text-primary">

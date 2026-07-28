@@ -144,32 +144,77 @@ export function numericFieldWarn(column: string, value: string | undefined): str
  * estimate may fall either side of the actual). Returns the first "arrival before departure"
  * violation, or null. Lives here (not backend `coerceLegField`) because it needs sibling fields.
  */
-export function dateOrderWarn(dates: {
+/**
+ * One arrival that lands before a departure, and every departure it precedes.
+ *
+ * Per ARRIVAL rather than per pair: a leg can violate several at once — ETD 12/07, ATD 08/07,
+ * ETA 07/07, ATA 29/12/2025 breaks four ways — and the old check `return`ed on the first match, so
+ * the form reported "ETA is before ETD" and said nothing about an ATA a year in the past. The
+ * operator fixed the one they were shown, saved, and met the next.
+ */
+export interface DateOrderIssue {
+  /** Leg column of the arrival that is too early — where the message belongs. */
+  arrival: 'eta' | 'ata'
+  /** Every departure it precedes; any of them could be the wrong value, so all are named. */
+  departures: ('etd' | 'atd')[]
+  message: string
+}
+
+const DATE_LABEL: Record<string, string> = { etd: 'ETD', atd: 'ATD', eta: 'ETA', ata: 'ATA' }
+
+/** Every violation on the leg, one entry per offending arrival. Empty when the dates are sane. */
+export function dateOrderIssues(dates: {
   etd?: string
   atd?: string
   eta?: string
   ata?: string
-}): string | null {
+}): DateOrderIssue[] {
   const ms = (v: string | undefined): number | null => {
     if (!v || v.trim() === '') return null
     const t = new Date(v).getTime()
     return Number.isNaN(t) ? null : t
   }
   const deps = [
-    { k: 'ETD', t: ms(dates.etd) },
-    { k: 'ATD', t: ms(dates.atd) },
-  ]
+    { col: 'etd' as const, t: ms(dates.etd) },
+    { col: 'atd' as const, t: ms(dates.atd) },
+  ].filter((d) => d.t != null)
   const arrs = [
-    { k: 'ETA', t: ms(dates.eta) },
-    { k: 'ATA', t: ms(dates.ata) },
-  ]
-  for (const d of deps) {
-    if (d.t == null) continue
-    for (const a of arrs) {
-      if (a.t != null && a.t < d.t) return `${a.k} is before ${d.k} — arrival can't be before departure`
-    }
+    { col: 'eta' as const, t: ms(dates.eta) },
+    { col: 'ata' as const, t: ms(dates.ata) },
+  ].filter((a) => a.t != null)
+
+  const out: DateOrderIssue[] = []
+  for (const a of arrs) {
+    const before = deps.filter((d) => a.t! < d.t!).map((d) => d.col)
+    if (before.length === 0) continue
+    const names = before.map((c) => DATE_LABEL[c]).join(' and ')
+    out.push({
+      arrival: a.col,
+      departures: before,
+      message: `${DATE_LABEL[a.col]} is before ${names} — arrival can't be before departure`,
+    })
   }
-  return null
+  return out
+}
+
+/** The first violation, for callers that can show only one. */
+export function dateOrderIssue(dates: {
+  etd?: string
+  atd?: string
+  eta?: string
+  ata?: string
+}): DateOrderIssue | null {
+  return dateOrderIssues(dates)[0] ?? null
+}
+
+/** Message-only form, for callers with nowhere to put a per-field marker (the review card's grid). */
+export function dateOrderWarn(dates: {
+  etd?: string
+  atd?: string
+  eta?: string
+  ata?: string
+}): string | null {
+  return dateOrderIssue(dates)?.message ?? null
 }
 
 /** Shipment value → what the <input> shows. Dates render as LOCAL datetime-local ("2026-06-29T15:00")
