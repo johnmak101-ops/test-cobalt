@@ -3,7 +3,7 @@ import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import {
   ReviewPoStylesSection,
-  proposedStyleForPo,
+  alsoSeenStyleForPo,
 } from './ReviewPoStylesSection'
 import type { LinkedPO } from '../../hooks/use-shipments'
 
@@ -69,53 +69,74 @@ beforeEach(() => {
   updateMutateAsync.mockResolvedValue({})
 })
 
-describe('proposedStyleForPo', () => {
-  it('extracts kept style', () => {
+describe('alsoSeenStyleForPo', () => {
+  it('extracts the style the thread resolved to', () => {
     expect(
-      proposedStyleForPo('6495962', [
+      alsoSeenStyleForPo('6495962', [
+        'PO 6495962: item/style "OLD" vs "NEW" (system read: NEW-STYLE)',
+      ]),
+    ).toBe('NEW-STYLE')
+  })
+
+  /**
+   * Legacy wording. Every leg committed before the `(kept X)` → `(system read: X)` fix still carries
+   * the old phrasing in review_reasons, and those rows must keep rendering — the reason strings are
+   * recomputed per commit, not backfilled, so a leg nobody re-amends keeps its old sentence forever.
+   */
+  it('reads the legacy (kept X) wording too', () => {
+    expect(
+      alsoSeenStyleForPo('6495962', [
         'PO 6495962: item/style "OLD" vs "NEW" (kept NEW-STYLE)',
       ]),
     ).toBe('NEW-STYLE')
   })
 
   /**
-   * `(kept X)` records what the committer's reconciler ALREADY wrote (po-enrichment.ts:
-   * summarizeStyleConflict(styleConflict, enr.itemStyleNo)). When the PO carries it, offering it as
-   * an AI proposal advertised a change that writes back the value already on the row — leg
-   * 202601AEA6 read "Shipping (1 change)" with nothing to change.
+   * The named value is `enr.itemStyleNo` — the resolver's rank-one pick, computed BEFORE anything is
+   * written. When the PO already carries it there is nothing to show: the column exists to surface a
+   * value the row does NOT have, and printing one it does have made leg 202601AEA6 read
+   * "Shipping (1 change)" with nothing to change.
    */
-  it('does not re-propose a kept style the PO already stores', () => {
+  it('shows nothing when the PO already stores that style', () => {
     expect(
-      proposedStyleForPo(
+      alsoSeenStyleForPo(
         '6495962',
-        ['PO 6495962: item/style "OLD" vs "NEW" (kept NEW-STYLE)'],
+        ['PO 6495962: item/style "OLD" vs "NEW" (system read: NEW-STYLE)'],
         'NEW-STYLE',
       ),
     ).toBeNull()
   })
 
-  it('does not propose a bare article code the stored style already carries', () => {
-    // C192/FERN JUMPER already IS C192 — proposing `C192` invited overwriting the fuller value.
+  it('shows nothing for a bare article code the stored style already carries', () => {
+    // C192/FERN JUMPER already IS C192 — showing `C192` invited overwriting the fuller value.
     expect(
-      proposedStyleForPo('28631', ['PO 28631: item/style "A" vs "B" (kept C192)'], 'C192/FERN JUMPER'),
+      alsoSeenStyleForPo(
+        '28631',
+        ['PO 28631: item/style "A" vs "B" (system read: C192)'],
+        'C192/FERN JUMPER',
+      ),
     ).toBeNull()
   })
 
-  it('still proposes a kept style the PO does not carry', () => {
+  it('still shows a style the PO does not carry', () => {
     expect(
-      proposedStyleForPo('28631', ['PO 28631: item/style "A" vs "B" (kept C192)'], 'C700/OTHER'),
+      alsoSeenStyleForPo(
+        '28631',
+        ['PO 28631: item/style "A" vs "B" (system read: C192)'],
+        'C700/OTHER',
+      ),
     ).toBe('C192')
     // and when the PO has no style at all
     expect(
-      proposedStyleForPo('28631', ['PO 28631: item/style "A" vs "B" (kept C192)'], null),
+      alsoSeenStyleForPo('28631', ['PO 28631: item/style "A" vs "B" (system read: C192)'], null),
     ).toBe('C192')
   })
 })
 
 describe('ReviewPoStylesSection — page-level Edit', () => {
-  /** View mode lists only POs the email proposes a change for (#2026-07-27) — so the fixture needs
-   *  a proposal, otherwise the row is correctly absent. Edit mode still shows every PO. */
-  const PROPOSAL = ['PO 6495962: item/style "OLD" vs "NEW" (kept 999-NEW-STYLE)']
+  /** View mode lists only POs the thread stated a different style for (#2026-07-27) — so the fixture
+   *  needs one, otherwise the row is correctly absent. Edit mode still shows every PO. */
+  const PROPOSAL = ['PO 6495962: item/style "OLD" vs "NEW" (system read: 999-NEW-STYLE)']
 
   it('view: values only, no section Edit button', () => {
     renderSection({ reviewReasons: PROPOSAL })
@@ -128,8 +149,10 @@ describe('ReviewPoStylesSection — page-level Edit', () => {
     renderSection({ reviewReasons: PROPOSAL })
     expect(screen.getByRole('columnheader', { name: 'PO' })).toBeInTheDocument()
     expect(screen.getByRole('columnheader', { name: 'Item/Style' })).toBeInTheDocument()
-    // third column tracks the card's state label; default = the shared proposed wording
-    expect(screen.getByTestId('po-proposed-column-header')).toHaveTextContent('From email / AI')
+    // third column tracks the card's state label; default = the shared wording. NOT "AI Proposed":
+    // openDecisions strips settled conflicts upstream, so what lands here is what the committer
+    // read and declined to write.
+    expect(screen.getByTestId('po-proposed-column-header')).toHaveTextContent('Also seen')
   })
 
   it('view: multi-style value is one line per style, not a comma blob', () => {

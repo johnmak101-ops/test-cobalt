@@ -165,11 +165,14 @@ export function EvidencePanel({ emailId, value, onClose }: EvidencePanelProps) {
               className="whitespace-pre-wrap break-words font-mono text-[12px] leading-relaxed text-text-secondary"
               data-testid="evidence-body"
             >
+              {/* The hit keeps amber (as `evidence-hit`) while the review grid moved to slate: this
+                  highlight's job is finding a token in a wall of email text, which needs the
+                  attention weight the third column deliberately gave up. */}
               {parts.map((p, i) =>
                 p.hit ? (
                   <mark
                     key={i}
-                    className="rounded-sm bg-ai-proposed/25 px-0.5 text-ai-proposed ring-1 ring-ai-proposed/40"
+                    className="rounded-sm bg-evidence-hit/25 px-0.5 text-evidence-hit ring-1 ring-evidence-hit/40"
                   >
                     {p.text}
                   </mark>

@@ -28,8 +28,18 @@ const KEY_TO_LEG_COLUMN: Record<IdentifyDto['field'], string> = {
  * Columns /correct may write. Must stay aligned with frontend mapCriticFieldToColumn /
  * EDITABLE_FIELDS + critic extras (polRaw, mode, …). Unknown keys → BadRequest (never SQL explode).
  */
-const CORRECTABLE_COLUMNS = new Set([
-  'bookingNo', 'soNo', 'itemStyleNo', 'qty', 'qtyUnit', 'grossWeight', 'measurement', 'htsCode',
+/**
+ * Leg columns a reviewer may write. MUST be a superset of every `column` in the review form's
+ * EDITABLE_FIELDS (frontend/src/lib/review-fields.ts) — the form renders an input, the operator types,
+ * and this set decides whether the save 400s. `review.service.spec.ts` pins the two together.
+ *
+ * `warehouseSo` was missing: the 入仓 SO got its own input in 2026-07-24 (it used to share the SO#
+ * row) and the form shipped without this set being widened, so editing it 400'd with
+ * "field not correctable: warehouseSo" — and the queue page reported that through the SUCCESS toast,
+ * so the operator saw a green tick over a save that never happened.
+ */
+export const CORRECTABLE_COLUMNS = new Set([
+  'bookingNo', 'soNo', 'warehouseSo', 'itemStyleNo', 'qty', 'qtyUnit', 'grossWeight', 'measurement', 'htsCode',
   'containerNo', 'hblAwbFcrNo', 'mbl', 'scacCode', 'consigneeName', 'consigneeAddress',
   'vesselName', 'voyageNo', 'cargoReadyDate', 'cfsCutoff', 'etd', 'atd', 'eta', 'ata',
   'warehouseStartDate', 'warehouseEndDate', 'inDcDate',

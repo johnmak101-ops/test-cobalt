@@ -195,8 +195,8 @@ function isItemStyleField(field: string): boolean {
  * One contested field: Existing · Proposed.
  * Only renders structured `CriticConflict` data — never invents from proposedChanges.
  *
- * Multi-candidate fields (e.g. two co-current forwarders / HBLs) list every proposal in the
- * AI Proposed column — never bury the 2nd+ option in a browser datalist the operator can't see.
+ * Multi-candidate fields (e.g. two co-current forwarders / HBLs) list every value the thread stated
+ * in the "Also seen" column — never bury the 2nd+ option in a browser datalist the operator can't see.
  * Item/Style lists use one input per style (not a comma-joined mega-string).
  */
 export function ConflictRow({
@@ -316,7 +316,7 @@ export function ConflictRow({
             <div className="min-w-0 space-y-1">
               <StyleListDisplay
                 value={value}
-                className={changed ? 'text-ai-proposed font-medium' : 'text-text-primary'}
+                className={changed ? 'text-review-seen' : 'text-text-primary'}
               />
               {canCopyAll && (
                 <button
@@ -419,11 +419,14 @@ export function ConflictRow({
           )
         ) : value ? (
           <span className="inline-flex max-w-full flex-wrap items-center gap-x-1.5">
-            {/* Colour alone carries "this differs from stored" — the arrow said the same thing twice. */}
+            {/* Colour alone carries "this differs from stored" — the arrow said the same thing twice.
+                Slate, not amber: openDecisions strips every conflict the commit settled, so a row
+                that differs is one the committer read and did not write. It is worth SEEING, not
+                worth urging. */}
             <span
               className={cn(
                 'field-value font-mono text-sm leading-snug',
-                changed ? 'font-medium text-ai-proposed' : 'text-text-primary',
+                changed ? 'text-review-seen' : 'text-text-primary',
               )}
             >
               {activeProposed?.master ? <MasterCodeChip code={activeProposed.master.code} /> : null}
@@ -829,7 +832,7 @@ function MultiCandidateProposed({
                     'inline-flex max-w-full rounded border px-2 py-0.5',
                     selected
                       ? changed
-                        ? 'border-ai-proposed/40 bg-ai-proposed/5'
+                        ? 'border-review-seen/40 bg-review-seen/5'
                         : 'border-border bg-surface-900/50'
                       : 'border-transparent',
                   )}
@@ -838,7 +841,7 @@ function MultiCandidateProposed({
                     className={cn(
                       'field-value font-mono text-sm leading-snug',
                       selected && changed
-                        ? 'font-medium text-ai-proposed'
+                        ? 'text-review-seen'
                         : selected
                           ? 'text-text-primary'
                           : 'text-text-secondary',

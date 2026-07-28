@@ -17,11 +17,24 @@
   --color-status-info: #3B82F6;
   --color-status-success: #22C55E;
 
-  /* An agent-proposed value that differs from what is stored (review queue). Unlike the status
-     colours above this one is THEME-DEPENDENT: amber carries the "look at me" weight on the dark
-     default, but on the light surface it reads as a warning rather than a suggestion, so light
-     flips it to the brand blue. Overridden in [data-theme="light"] below — keep the two in sync. */
-  --color-ai-proposed: #F59E0B; /* = status-warning */
+  /* A value an email stated that the leg does NOT store — the review grid's third column.
+     It was `--color-ai-proposed`, amber, sharing the "apply me" weight of the status colours. That
+     was a misread of what reaches the column: openDecisions (presentation/open-decisions.ts) has
+     already removed every conflict the commit settled, so what survives is the residue the committer
+     saw and DECLINED to write — precedence said no, or a PO style lost the upsert rules. Rendering a
+     refused value in the apply-me colour, under the word "Proposed", pushed operators to overwrite
+     the value the write path had just protected.
+     Slate because it is the one region of this palette nothing has claimed: amber, teal, purple,
+     green and red all already carry meanings on a shipment screen, so slate can be learned cleanly as
+     "seen, not taken". Widest visual distance from amber, which is the one bit the operator reads at
+     a glance. Not theme-flipped — it means the same thing on both grounds; light only darkens for
+     contrast. Overridden in [data-theme="light"] below — keep the two in sync. */
+  --color-review-seen: #8FA0C0;
+
+  /* Where a value appears in the source email (EvidencePanel word highlight). Split out of the old
+     `--color-ai-proposed` when that became `--color-review-seen`: this one's job is FINDABILITY in a
+     wall of text, not "apply me", so it keeps the attention weight the column gave up. */
+  --color-evidence-hit: #F59E0B; /* = status-warning */
 
   /* A STORED value with something open against it (a provisional review conflict or a contested
      lock) — the Order Details word-highlight. Distinct from ai-proposed, which colours the
@@ -90,8 +103,11 @@
   --color-text-secondary: #3F3F46;
   --color-text-muted: #71717A;
 
-  /* see @theme: amber reads as a warning on a light surface — blue reads as a suggestion */
-  --color-ai-proposed: #2563EB; /* = cobalt-primary-light */
+  /* see @theme: same slate, darkened for contrast on white (#8FA0C0 on #FFF is ~2.4:1) */
+  --color-review-seen: #55617A;
+
+  /* see @theme: the email highlight keeps amber's weight; darkened for AA on the light surface */
+  --color-evidence-hit: #B45309;
 
   /* see @theme: darker amber text for contrast on white (AA); wash stays raw amber */
   --color-review-pending: #B45309;

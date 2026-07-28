@@ -128,7 +128,7 @@ function ExpandedReviewPanel({
                   onDone?.()
                 } catch (e) {
                   const msg = e instanceof Error ? e.message.replace(/^API error \d+:\s*/i, '') : ''
-                  toast(msg || 'Reject failed — try again')
+                  toast.error(msg || 'Reject failed — try again')
                 }
               }
             : undefined
@@ -142,7 +142,7 @@ function ExpandedReviewPanel({
                   onDone?.()
                 } catch (e) {
                   const msg = e instanceof Error ? e.message.replace(/^API error \d+:\s*/i, '') : ''
-                  toast(msg || 'Park failed — try again')
+                  toast.error(msg || 'Park failed — try again')
                 }
               }
             : undefined
@@ -237,7 +237,7 @@ export default function ReviewQueuePage() {
       const hasMappable = Object.keys(mapped).length > 0
       if (hasFields && !hasMappable) {
         // Contested keys that do not map to leg columns — would have been a silent POST drop.
-        toast('Those conflict fields cannot be saved here — open full shipment to edit.')
+        toast.error('Those conflict fields cannot be saved here — open full shipment to edit.')
         return
       }
       if (hasMappable) {
@@ -250,7 +250,7 @@ export default function ReviewQueuePage() {
         const corrected = (res as { corrected?: string[] } | undefined)?.corrected
         const n = Array.isArray(corrected) ? corrected.length : Object.keys(mapped).length
         if (n === 0) {
-          toast('Approved, but no fields were written — reload and try Approve again')
+          toast.error('Approved, but no fields were written — reload and try Approve again')
         } else {
           toast(`Saved ${n} field${n === 1 ? '' : 's'} and approved`)
         }
@@ -272,7 +272,7 @@ export default function ReviewQueuePage() {
         await handleStale(err)
       } catch (e) {
         const msg = e instanceof Error ? e.message : 'Save failed'
-        toast(msg.replace(/^API error \d+:\s*/i, '') || 'Save failed — try again')
+        toast.error(msg.replace(/^API error \d+:\s*/i, '') || 'Save failed — try again')
         throw e
       }
     }
@@ -535,7 +535,7 @@ export default function ReviewQueuePage() {
                                             } catch (e) {
                                               const msg =
                                                 e instanceof Error ? e.message : 'Confirm failed'
-                                              toast(
+                                              toast.error(
                                                 msg.replace(/^API error \d+:\s*/i, '') ||
                                                   'Confirm failed — try again',
                                               )

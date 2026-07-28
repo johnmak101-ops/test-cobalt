@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common'
-import { ReviewService } from './review.service'
+import { CORRECTABLE_COLUMNS, ReviewService } from './review.service'
 import type { ShipmentRepository } from '../db/repositories/shipment.repository'
 import type { BookingRepository } from '../db/repositories/booking.repository'
 import type { FieldLockRepository } from '../db/repositories/field-lock.repository'
@@ -727,5 +727,48 @@ describe('link — fold a zero-identity provisional leg into an existing shipmen
     const { svc, shipments } = makeService()
     shipments.findById.mockResolvedValueOnce({ ...zeroIdSource, reviewStatus: 'confirmed' })
     await expect(svc.link('SRC', { targetShipmentId: 'TARGET' }, 'user-1')).rejects.toBeInstanceOf(BadRequestException)
+  })
+})
+
+/**
+ * The review form and the API allowlist live in different packages, so nothing but a test keeps them
+ * honest. They drifted once already: `warehouseSo` got its own input on the form (2026-07-24, split
+ * out of the shared SO# row) and this set was never widened, so typing in that box produced
+ * "field not correctable: warehouseSo" — a 400 the queue page then reported through the SUCCESS
+ * toast, green tick and all. The operator saw a tick over a save that never happened.
+ *
+ * The list below is the `column` of every entry in frontend/src/lib/review-fields.ts EDITABLE_FIELDS.
+ * Its twin in review-fields.test.ts pins the same set from the other side, so ADDING a field to the
+ * form fails there and REMOVING one from the allowlist fails here — the two directions this can break.
+ */
+const REVIEW_FORM_COLUMNS = [
+  'bookingNo', 'soNo', 'warehouseSo',
+  'qty', 'qtyUnit', 'containerNo', 'hblAwbFcrNo', 'mbl', 'mawb', 'scacCode',
+  'mode', 'customerRaw', 'vendorRaw', 'forwarderRaw', 'consigneeName', 'consigneeAddress',
+  'vesselName', 'voyageNo', 'flightNo', 'polRaw', 'podRaw',
+  'cargoReadyDate', 'warehouseStartDate', 'warehouseEndDate', 'cfsCutoff',
+  'etd', 'atd', 'eta', 'ata', 'inDcDate',
+]
+
+describe('CORRECTABLE_COLUMNS covers everything the review form can edit', () => {
+  it('accepts every column EDITABLE_FIELDS renders an input for', () => {
+    const missing = REVIEW_FORM_COLUMNS.filter((c) => !CORRECTABLE_COLUMNS.has(c))
+    expect(missing).toEqual([])
+  })
+
+  it('correct() 400s on a column outside the set, naming it', async () => {
+    const { svc } = makeService()
+    await expect(
+      svc.correct('leg-1', { fields: { notAColumn: 'x' } } as never, 'user-1'),
+    ).rejects.toThrow(/field not correctable: notAColumn/)
+  })
+
+  /** The extras are deliberate, not oversight: measurement / gross weight / HTS were taken off Order
+   *  Details, and itemStyleNo is per-PO on Customer Purchase Orders. Pinned so a future reader does
+   *  not "tidy" them away and silently break the shipment-detail edit path that still writes them. */
+  it('keeps the four columns edited elsewhere than the review form', () => {
+    for (const c of ['grossWeight', 'measurement', 'htsCode', 'itemStyleNo']) {
+      expect(CORRECTABLE_COLUMNS.has(c)).toBe(true)
+    }
   })
 })
