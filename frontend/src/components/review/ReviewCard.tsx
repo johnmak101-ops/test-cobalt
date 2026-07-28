@@ -989,10 +989,27 @@ export function ReviewCard({
   // Collapsed on open — expand only when the operator needs the email.
   const [emailsOpen, setEmailsOpen] = useState(false)
 
+  /**
+   * Run a verdict, holding the card busy for its duration.
+   *
+   * The catch is load-bearing. Every call site is `void run(...)` with no catch of its own, so a
+   * rejected save — a 400 from a UOM the enum refuses, a stale `expectedUpdatedAt` — escaped as an
+   * unhandled promise rejection. In the browser that is a console error nobody reads; under vitest it
+   * fails the whole run while every test still reports as passing, which is exactly how it went
+   * unnoticed.
+   *
+   * Swallowed HERE, deliberately, because the message is not this component's to own: the page's
+   * mutation layer toasts the API error (ReviewQueuePage), and the card's job on failure is to stay
+   * put with the operator's edits intact. Re-throwing would only reinstate the unhandled rejection.
+   * `busy` still clears, and `setEditing(false)` in the commit path is correctly skipped, because the
+   * throw happens before it.
+   */
   const run = async (fn: () => Promise<void>) => {
     setBusy(true)
     try {
       await fn()
+    } catch {
+      // Intentionally quiet — see above. The caller surfaces it.
     } finally {
       setBusy(false)
     }
