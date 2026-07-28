@@ -181,7 +181,11 @@ describe('ShipmentTable — column layout (#119)', () => {
     const table = screen.getByRole('table')
     // No base min-width: three columns fit any phone, so forcing one would invent a scrollbar.
     expect(table).not.toHaveClass('min-w-[560px]')
-    expect(table).toHaveClass('md:min-w-[600px]', 'lg:min-w-[1000px]')
+    // lg shows all ten columns. 1000px could not seat them: every column was squeezed under its
+    // content, so Shipment ID and the Status badge clipped and the text cells broke tokens mid-word
+    // to cope ("CNYTN→NL / RTM"). 1240px is what the columns actually need; below it the container
+    // scrolls with Shipment ID pinned, which is what the sticky column is for.
+    expect(table).toHaveClass('md:min-w-[600px]', 'lg:min-w-[1240px]')
   })
 
   // The pinned column's rule marks content sliding UNDER it. With nothing scrolled it is just a
@@ -205,5 +209,62 @@ describe('ShipmentTable — column layout (#119)', () => {
     expect(icon).toHaveAttribute('title', 'Awaiting review')
     // Status column still shows the badge label only
     expect(screen.getByText(/booking request/i)).toBeInTheDocument()
+  })
+})
+
+/**
+ * The tracker's job is telling rows apart, and truncation was defeating it: nine consecutive rows
+ * read "Logimark Internation…", four read "WYSE LONDON LI…", and the Status column clipped its
+ * longest label to "Booking Reque" — a cut word reads as a broken chip, not a shortened one.
+ */
+describe('ShipmentTable — the row must be readable, not just tidy (2026-07-28)', () => {
+  it('shows the customer CODE, with the full name on hover', () => {
+    renderTable([baseShipment()])
+    const cell = screen.getByTestId('customer-code')
+    expect(cell).toHaveTextContent('COLE')
+    expect(cell.closest('td')).toHaveAttribute('title', 'Cole Haan')
+  })
+
+  it('falls back to the raw twin, then the name, when no master resolved', () => {
+    renderTable([baseShipment({ customer: null, customerRaw: 'UNKNOWN SENDER' } as Partial<Shipment>)])
+    expect(screen.getByTestId('customer-code')).toHaveTextContent('UNKNOWN SENDER')
+  })
+
+  /**
+   * "CNYTN→NLRTM" is one token to the browser, so a narrow column broke it wherever it ran out —
+   * "CNYTN→NL / RTM". A port code split across lines is not a shorter label, it is a different
+   * string the operator has to reassemble. The <wbr> is the only legal break point.
+   */
+  it('lets a route break at the arrow and nowhere else', () => {
+    renderTable([baseShipment({ route: 'CNYTN→GBFXT' })])
+    const cell = screen.getByText(/CNYTN/).closest('td')!
+    expect(cell).toHaveAttribute('title', 'CNYTN→GBFXT')
+    expect(cell.querySelectorAll('wbr')).toHaveLength(1)
+    // both codes survive intact either side of the break opportunity
+    expect(cell.textContent).toBe('CNYTN→GBFXT')
+  })
+
+  it('leaves a route with no arrow alone', () => {
+    renderTable([baseShipment({ route: 'CNYTN' })])
+    expect(screen.getByText('CNYTN').closest('td')!.querySelectorAll('wbr')).toHaveLength(0)
+  })
+
+  it('clamps a long value to two lines rather than pushing the row taller', () => {
+    renderTable([baseShipment({ forwarderId: 'f1', forwarder: { id: 'f1', name: 'Logimark International Limited Guangzhou Branch' } } as Partial<Shipment>)])
+    const span = screen.getByText('Logimark International Limited Guangzhou Branch')
+    expect(span).toHaveClass('line-clamp-2')
+    expect(span.closest('td')).toHaveAttribute('title', 'Logimark International Limited Guangzhou Branch')
+  })
+
+  it('holds every row to one height, so a wrapped cell cannot break the rhythm', () => {
+    renderTable([baseShipment(), baseShipment({ id: 'CCCC3333-0000-4000-8000-000000000003' })])
+    for (const row of screen.getAllByRole('row').slice(1)) {
+      expect(row).toHaveClass('h-[68px]')
+    }
+  })
+
+  it('keeps the PO chip on one line — "0 POs" wrapped into a tall oval beside the "1 PO" rows', () => {
+    renderTable([baseShipment({ linkedPOs: [] })])
+    expect(screen.getByTestId('customer-po-chip')).toHaveClass('whitespace-nowrap')
   })
 })
