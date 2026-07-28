@@ -507,3 +507,69 @@ describe('pendingReviewAnnotations — a mesh miss lands on the field it is abou
     expect(fwd.get('vendorRaw')).toBeUndefined()
   })
 })
+
+/**
+ * "did not exact-match a master" is a true statement about the LOOKUP and a false one about Mesh.
+ * Leg S2600144827 carries `forwarder_name "LOGWIN"`; Mesh holds five LOGWIN companies, none named
+ * just "LOGWIN". The row said "not found in Mesh Database — advise add in Mesh", and following that
+ * advice creates a sixth.
+ */
+describe('pendingReviewAnnotations — "in Mesh five times" is not "not in Mesh"', () => {
+  const LOGWIN_MASTERS = [
+    'LOGWIN AIR & OCEAN CHINA LTD.SHENZHEN BRANCH',
+    'LOGWIN AIR & OCEAN CHINA  LTD GUANGZHOU BRANCH',
+    'LOGWIN AIR + OCEAN CHINA LTD   SHENZHEN BRANCH',
+    'LOGWIN AIR & OCEAN HONG KONG LTD',
+    'LOGWIN AIR+OCEAN',
+  ]
+  const leg = {
+    reviewStatus: 'provisional',
+    reviewReasons: [
+      'forwarder_name "LOGWIN" did not exact-match a master (LLM matcher owns fuzzy; left unlinked)',
+    ],
+  }
+
+  it('stops telling the operator to add a company Mesh already holds five of', () => {
+    const ann = pendingReviewAnnotations(leg, undefined, LOGWIN_MASTERS)
+    expect(ann.get('forwarderRaw')?.messages.join(' ')).not.toMatch(/advise add in Mesh/i)
+  })
+
+  it('says how many there are and names them, because the question is WHICH one', () => {
+    const msg = pendingReviewAnnotations(leg, undefined, LOGWIN_MASTERS).get('forwarderRaw')!.messages.join(' ')
+    expect(msg).toMatch(/matches 5 companies in Mesh/i)
+    expect(msg).toContain('LOGWIN AIR & OCEAN CHINA LTD.SHENZHEN BRANCH')
+    expect(msg).toMatch(/\+2 more/)
+  })
+
+  it('keeps the icon — the leg still has no forwarder linked, and that is a real gap', () => {
+    expect(pendingReviewAnnotations(leg, undefined, LOGWIN_MASTERS).get('forwarderRaw')?.level).toBe('miss')
+  })
+
+  it('a single near-match reads as "pick it", not as a count', () => {
+    const msg = pendingReviewAnnotations(leg, undefined, ['LOGWIN AIR+OCEAN']).get('forwarderRaw')!.messages.join(' ')
+    expect(msg).toMatch(/is in Mesh as LOGWIN AIR\+OCEAN — not linked yet/i)
+  })
+
+  it('a genuinely absent company still says add it in Mesh', () => {
+    const absent = {
+      reviewStatus: 'provisional',
+      reviewReasons: ['forwarder_name "KUEHNE NAGEL" did not exact-match a master (LLM matcher owns fuzzy; left unlinked)'],
+    }
+    const msg = pendingReviewAnnotations(absent, undefined, LOGWIN_MASTERS).get('forwarderRaw')!.messages.join(' ')
+    expect(msg).toMatch(/not found in Mesh Database — advise add in Mesh/i)
+  })
+
+  it('without the mirror loaded, behaviour is exactly what it was', () => {
+    const msg = pendingReviewAnnotations(leg).get('forwarderRaw')!.messages.join(' ')
+    expect(msg).toMatch(/not found in Mesh Database — advise add in Mesh/i)
+  })
+
+  it('still defers to a RESOLVED party — that line is stale, not a pick-one', () => {
+    const ann = pendingReviewAnnotations(
+      { ...leg, openDecisions: { resolvedParties: [{ slot: 'forwarder', name: 'LOGWIN AIR+OCEAN' }] } },
+      undefined,
+      LOGWIN_MASTERS,
+    )
+    expect(ann.get('forwarderRaw')).toBeUndefined()
+  })
+})

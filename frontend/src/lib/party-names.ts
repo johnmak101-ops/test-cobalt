@@ -76,3 +76,31 @@ export function isSameCompanyName(a: string | null | undefined, b: string | null
   return prefixMatch(companyKey(a ?? ''), companyKey(b ?? '')) ||
     prefixMatch(companyStem(a ?? ''), companyStem(b ?? ''))
 }
+
+/**
+ * The masters this raw party name is naming — every mirror entry {@link isSameCompanyName} accepts.
+ *
+ * "did not exact-match a master" is a true statement about the LOOKUP and a false one about Mesh,
+ * and the two have opposite operator actions. Leg S2600144827 carries `forwarder_name "LOGWIN"`;
+ * Mesh holds FIVE LOGWIN companies — Shenzhen, Guangzhou, Hong Kong and two more — none named just
+ * "LOGWIN". Every surface said "not found in Mesh Database — advise add in Mesh", and an operator
+ * who followed that would create a sixth master for a company already there five times.
+ *
+ * Empty means genuinely absent, and "add it in Mesh" is then the right advice. A non-empty result
+ * means the opposite question: WHICH of these, which only a human can answer — these are different
+ * legal entities and branches, not spellings of one row.
+ *
+ * Deliberately not party-kind aware. The queue files misses against the wrong slot often enough
+ * (leg 202601DD8E put a VENDOR under Forwarder) that trusting the slot would reintroduce the very
+ * bug the name-based checks exist to kill. Sorted for a stable list on screen and in tests.
+ */
+export function mastersNaming(
+  raw: string | null | undefined,
+  masterNames: readonly string[],
+): string[] {
+  const name = String(raw ?? '').trim()
+  if (!name) return []
+  return masterNames
+    .filter((m) => m && isSameCompanyName(name, m))
+    .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
+}

@@ -1,5 +1,7 @@
-import { Fragment, useMemo, useReducer, useState } from 'react'
+import { Fragment, useCallback, useMemo, useReducer, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
+import { useParties } from '../hooks/use-parties'
+import { useUpdateShipment } from '../hooks/use-shipments'
 import { CheckCircle, Clock, Ship, Package, Loader2, RotateCcw } from 'lucide-react'
 import {
   useReviewQueue,
@@ -91,6 +93,28 @@ function ExpandedReviewPanel({
   const waitMutation = useWaitShipment()
   const navigate = useNavigate()
 
+  const updateForPick = useUpdateShipment(data?.id ?? '')
+  /**
+   * The Mesh mirror + the write path for "link this party to that master". The card resolves which
+   * column and what to store; the page owns the data layer — ReviewCard must stay renderable
+   * without a QueryClient, as 134 of its tests do.
+   *
+   * Above the loading/error early returns: hooks cannot sit behind a conditional.
+   */
+  const { data: customerMasters } = useParties('customer')
+  const { data: vendorMasters } = useParties('vendor')
+  const { data: forwarderMasters } = useParties('forwarder')
+  const partyMasters = useMemo(
+    () => [...(customerMasters ?? []), ...(vendorMasters ?? []), ...(forwarderMasters ?? [])],
+    [customerMasters, vendorMasters, forwarderMasters],
+  )
+  const pickMaster = useCallback(
+    async (column: string, value: string, note: string) => {
+      await updateForPick.mutateAsync({ fields: { [column]: value }, note })
+    },
+    [updateForPick],
+  )
+
   if (isLoading) {
     return (
       <div className="flex items-center gap-2 px-4 py-3 text-xs text-text-muted">
@@ -99,6 +123,7 @@ function ExpandedReviewPanel({
       </div>
     )
   }
+
   if (isError || !data) {
     return (
       <div className="px-4 py-3 text-xs text-status-critical">
@@ -111,6 +136,8 @@ function ExpandedReviewPanel({
     <div className="min-w-0 max-w-full border-t border-border bg-surface-900/40 px-3 py-3">
       <ReviewCard
         shipment={data}
+        partyMasters={partyMasters}
+        onPickMaster={pickMaster}
         criticReview={data.criticReview ?? null}
         compact={row.criticReviewCompact}
         emails={data.emails ?? []}

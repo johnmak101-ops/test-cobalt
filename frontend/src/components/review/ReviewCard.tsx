@@ -57,6 +57,7 @@ import {
   pickDeskQuestion,
 } from './desk-question'
 import { NeedsAttentionMeshMiss } from './NeedsAttentionMeshMiss'
+import type { PartyMaster, PartyKind } from '../../hooks/use-parties'
 import {
   REVIEW_COL,
   REVIEW_FS,
@@ -181,6 +182,17 @@ export interface ReviewCardProps {
     targetShipmentId: string,
     payload?: { fields?: Record<string, unknown>; note?: string },
   ) => Promise<void>
+  /**
+   * The Mesh party mirror (customers + vendors + forwarders, in one list). Lets a master-miss line
+   * tell "this company is absent from Mesh" from "Mesh holds five of it under longer names" — two
+   * situations whose correct operator actions are opposites. Omitted keeps the old copy.
+   */
+  partyMasters?: PartyMaster[]
+  /**
+   * Link a raw party to the master the operator picked. The card resolves WHICH column and what to
+   * store; the page owns the write, so this component stays free of the data layer.
+   */
+  onPickMaster?: (column: string, value: string, note: string) => Promise<void> | void
 }
 
 function nameOf(value: unknown): string | null {
@@ -277,6 +289,8 @@ export function ReviewCard({
   onWait,
   onIdentify,
   onLink,
+  partyMasters,
+  onPickMaster,
 }: ReviewCardProps) {
   const [expanded, setExpanded] = useState(defaultExpanded)
   const [note, setNote] = useState('')
@@ -319,6 +333,86 @@ export function ReviewCard({
   /** Multi-candidate target — must pick before Link & apply. */
   const [selectedTargetId, setSelectedTargetId] = useState<string | null>(null)
   const shipmentId = (shipment as { id?: string }).id
+  /**
+   * The Mesh mirror arrives as a PROP, never a hook. ReviewCard has 134 tests that render it bare,
+   * and a useQuery inside it fails every one of them with "No QueryClient set" — the same trap
+   * usePorts sprang here once already. The page owns the data layer; this component stays
+   * renderable from a test with a plain object.
+   */
+  const allMasters = useMemo(() => partyMasters ?? [], [partyMasters])
+  const masterNames = useMemo(() => allMasters.map((p) => p.name).filter(Boolean), [allMasters])
+  const [pickingParty, setPickingParty] = useState<string | null>(null)
+  /**
+   * Link a raw party name to the Mesh master the operator chose.
+   *
+   * The COLUMN is found by matching the name against the leg's own raw twins rather than parsed out
+   * of the miss text: the queue files these against the wrong slot often enough (a VENDOR under
+   * Forwarder on leg 202601DD8E) that reading the slot would write the pick to the wrong field.
+   * Whichever twin actually holds this string is the field the operator is looking at.
+   *
+   * Customer/Vendor store the master CODE and Forwarder the NAME — the same split PartyPicker makes,
+   * for the same reason: those read views print a code, and forwarder codes are ERP sequence numbers.
+   * The write goes through the ordinary human-edit PATCH, so it resolves the FK, locks the field and
+   * lands in Change History exactly as typing it would.
+   */
+  const pickMasterValue = useCallback(
+    (partyName: string, storedValue: string) => {
+      if (!shipmentId || !onPickMaster) return
+      const leg = shipment as unknown as Record<string, unknown>
+      const column = (['forwarderRaw', 'customerRaw', 'vendorRaw'] as const).find(
+        (c) => String(leg[c] ?? '').trim() === partyName.trim(),
+      )
+      if (!column) return
+      // `storedValue` is already in the form the column wants — PartyPicker applied the code/name
+      // split on the way out. The master NAME is looked up only to write a readable audit note.
+      const master = allMasters.find(
+        (m) =>
+          m.name.trim() === storedValue.trim() ||
+          (m.code ?? '').trim().toUpperCase() === storedValue.trim().toUpperCase(),
+      )
+      setPickingParty(partyName)
+      void Promise.resolve(
+        onPickMaster(
+          column,
+          storedValue,
+          `linked to Mesh master ${master?.name ?? storedValue} (email said "${partyName}")`,
+        ),
+      ).finally(() => setPickingParty(null))
+    },
+    [shipmentId, shipment, allMasters, onPickMaster],
+  )
+  /**
+   * The pick context for the master-miss rows: which party KIND each raw name belongs to (found by
+   * matching the leg's own raw twins — never parsed out of the miss text, which the queue files
+   * against the wrong slot often enough to matter), and what counts as a real master identifier.
+   */
+  const meshPick = useMemo(() => {
+    if (!shipmentId || !onPickMaster) return undefined
+    const leg = shipment as unknown as Record<string, unknown>
+    const COLUMN_KIND = {
+      forwarderRaw: 'forwarder',
+      customerRaw: 'customer',
+      vendorRaw: 'vendor',
+    } as const
+    return {
+      kindFor: (partyName: string): PartyKind | null => {
+        const col = (Object.keys(COLUMN_KIND) as (keyof typeof COLUMN_KIND)[]).find(
+          (c) => String(leg[c] ?? '').trim() === partyName.trim(),
+        )
+        return col ? COLUMN_KIND[col] : null
+      },
+      // Forwarder stores the NAME, Customer/Vendor the CODE — the split PartyPicker itself makes,
+      // so whatever it hands back on a pick is exactly what is checked here.
+      isMasterValue: (kind: PartyKind, value: string): boolean => {
+        const v = value.trim()
+        if (!v) return false
+        return kind === 'forwarder'
+          ? allMasters.some((m) => m.name.trim() === v)
+          : allMasters.some((m) => (m.code ?? '').trim().toUpperCase() === v.toUpperCase())
+      },
+      onPick: (partyName: string, storedValue: string) => pickMasterValue(partyName, storedValue),
+    }
+  }, [shipmentId, onPickMaster, shipment, allMasters, pickMasterValue])
   const linkTargetReady =
     !!selectedTargetId && selectedTargetId !== shipmentId
 
@@ -475,6 +569,7 @@ export function ReviewCard({
         riskFlags: criticReview?.riskFlags,
         reviewReasons,
         conflictsCount: tableOwnedCount,
+        masterNames,
         identityPinned,
         partiesLinked,
         portsLinked: portsLinkedFromRoute((shipment as { route?: string | null }).route),
@@ -483,7 +578,7 @@ export function ReviewCard({
         // Rule A: Review desk shows decision items only; FYI stays on shipment detail.
         desk: 'decision',
       }),
-    [criticReview, reviewReasons, shipment, tableOwnedCount, hasPo, linkedPOs, identityPinned, partiesLinked, offModeFields],
+    [criticReview, reviewReasons, shipment, tableOwnedCount, hasPo, linkedPOs, identityPinned, partiesLinked, offModeFields, masterNames],
   )
 
   /**
@@ -1290,7 +1385,7 @@ export function ReviewCard({
                 {desk?.detailItem &&
                   (isExpandableMiss(desk.detailItem) ? (
                     <ul className="mt-1">
-                      <NeedsAttentionMeshMiss item={desk.detailItem} />
+                      <NeedsAttentionMeshMiss item={desk.detailItem} pick={meshPick} picking={pickingParty} />
                     </ul>
                   ) : (
                     <p
@@ -1329,7 +1424,7 @@ export function ReviewCard({
                           <ul className={REVIEW_PANEL_LIST}>
                             {g.items.map((r) =>
                               isExpandableMiss(r) ? (
-                                <NeedsAttentionMeshMiss key={r.key} item={r} />
+                                <NeedsAttentionMeshMiss key={r.key} item={r} pick={meshPick} picking={pickingParty} />
                               ) : (
                                 <li
                                   key={r.key}
