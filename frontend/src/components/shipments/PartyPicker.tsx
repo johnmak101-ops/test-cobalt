@@ -1,5 +1,6 @@
 import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { useParties, type PartyMaster, type PartyKind } from '../../hooks/use-parties'
+import { ANCHORED_LIST_CLASS, useAnchoredListbox } from './use-anchored-listbox'
 
 interface PartyPickerProps {
   kind: PartyKind
@@ -67,6 +68,7 @@ export function PartyPicker({
   const [active, setActive] = useState(0)
   const rootRef = useRef<HTMLDivElement>(null)
   const listboxId = useId()
+  const { anchorRef, listStyle } = useAnchoredListbox(open)
 
   const text = value ?? ''
 
@@ -145,6 +147,7 @@ export function PartyPicker({
   return (
     <div ref={rootRef} className="relative">
       <input
+        ref={anchorRef}
         id={id}
         type="text"
         value={text}
@@ -181,7 +184,8 @@ export function PartyPicker({
         <ul
           id={listboxId}
           role="listbox"
-          className="absolute z-30 mt-1 max-h-60 w-full overflow-auto rounded-lg border border-border bg-surface-800 py-1 shadow-lg"
+          style={listStyle}
+          className={ANCHORED_LIST_CLASS}
         >
           {matches.map((p, i) => (
             <li

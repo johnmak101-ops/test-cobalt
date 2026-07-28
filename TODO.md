@@ -80,12 +80,27 @@ Not covered by the live check: **no active leg carries a multi-candidate row**, 
 radio and its un-pick are proven by unit tests only. Worth a look the next time a two-vendor or
 two-B/L leg reaches the queue.
 
-Left alone deliberately — two pieces of UI that cannot currently render. The `Edited` column header
-(`hasTypedOverride`) and the `→ will write X` override span both require `editing === false`, but a
-typed override can only be HELD while editing: `cancelEditing` re-seeds and submit closes the card.
-So the states are unreachable in steady state. The gating predates this work (`hasHumanEdits` had it
-too) and no wrong label is ever shown, so nothing is broken — but two branches of the third column
-are dead until either the override survives leaving edit mode, or they come out.
+**Corrected 2026-07-28.** An earlier note here claimed the `Edited` header and the `→ will write X`
+override span were unreachable. They were not: `handleSaveAndApprove` called `setEditing(false)`
+*before* the request, so a save that 400s dropped the card into READ mode still holding the typed
+values — rendered as text, no input, no Cancel. An operator hit exactly that and had no way to clear
+it. Fixed by leaving edit mode only after the write lands, plus a `Discard changes` control under the
+grid (see below). Do not re-assert "unreachable" about UI without driving the failure path.
+
+### Dropdowns inside the decision grid must not use `absolute` (2026-07-28)
+
+The party/port pickers rendered their suggestion list `absolute z-30` inside their own `relative`
+wrapper. Measured on the running desk, that list has **seven** clipping ancestors: `REVIEW_TD`
+(`overflow-hidden`, so a long value cannot blow out a `table-fixed` cell) cuts 259px off a 266px
+list, the decision-grid wrapper (`overflow-x-auto`, which computes `overflow-y: auto`) cuts another
+206px, and five more above that. Operators saw one truncated option on a tall row and a ~7px sliver
+on a short one, which reads as "search is broken".
+
+`z-index` cannot fix clipping. Both pickers now position the list `fixed` via
+`use-anchored-listbox.ts`, which also flips it above the input near the viewport bottom. Anything new
+that drops a menu inside this grid needs the same treatment — and note the caveat in that file: a
+`transform`, `filter` or `contain` on an ancestor would become the containing block and reintroduce
+the bug.
 
 ## Do not re-open
 

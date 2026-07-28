@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useState } from 'react'
 // Action-bar buttons are text-only — the only icon left in the bar is the busy spinner, which is
 // state, not decoration. ExternalLink/Mail still mark the source-email affordances.
-import { Check, ChevronDown, ChevronRight, ExternalLink, Loader2, Mail, NotebookPen } from 'lucide-react'
+import { Check, ChevronDown, ChevronRight, ExternalLink, Loader2, Mail, NotebookPen, Undo2 } from 'lucide-react'
 import { Badge } from '../ui/Badge'
 import {
   ConflictRow,
@@ -1027,33 +1027,38 @@ export function ReviewCard({
       handleLinkAndApply(true)
       return
     }
-    setEditing(false)
     const savePayload = {
       fields: fieldsToApply,
       note: note.trim(),
       corrections,
       expectedUpdatedAt: id.updatedAt,
     }
+    /**
+     * Leave edit mode only once the write has actually landed.
+     *
+     * `setEditing(false)` used to fire here, before the request. A save that 400s — a UOM the enum
+     * rejects, a stale expectedUpdatedAt — then left the card in READ mode still holding the typed
+     * values, where the row renders as text with no input and no Cancel. The operator's own edits
+     * were stranded on screen, armed, with the only way out being to press Edit again and then
+     * Cancel, which reads like going deeper rather than backing out.
+     */
     const hasFieldEdits = Object.keys(fieldsToApply).length > 0
-    if (hasFieldEdits && onSaveAndApprove) {
+    const commit = (fn: () => Promise<void>) =>
       void run(async () => {
         await applyPoPlans()
-        await onSaveAndApprove(savePayload)
+        await fn()
+        setEditing(false)
       })
+    if (hasFieldEdits && onSaveAndApprove) {
+      commit(() => onSaveAndApprove(savePayload))
       return
     }
     if (onApprove) {
-      void run(async () => {
-        await applyPoPlans()
-        await onApprove()
-      })
+      commit(() => onApprove())
       return
     }
     if (onSaveAndApprove) {
-      void run(async () => {
-        await applyPoPlans()
-        await onSaveAndApprove(savePayload)
-      })
+      commit(() => onSaveAndApprove(savePayload))
     }
   }
 
@@ -1706,6 +1711,37 @@ export function ReviewCard({
               </div>
             )
           })()}
+
+          {/*
+            Put everything back — one click, next to the table it undoes.
+
+            Individually the rows are already reversible: untick the box, choose Keep current. What
+            was missing was a way to drop the LOT, and a way out of a typed value at all — outside
+            edit mode that cell renders as text, so nothing on the row can touch it. `Edit → Cancel`
+            does discard, but nobody finds it: pressing Edit to get rid of an edit reads as going
+            further in, not backing out.
+
+            Deliberately NOT in the action bar. That bar is verdicts — what happens to the leg — and
+            this changes nothing about the leg, it just puts the desk back how it was found. It also
+            appears exactly when `Keep All Current` and `Apply N` do, and three buttons competing at
+            the same moment is how the bar drifted before.
+          */}
+          {!readOnly && !editing && changeCount > 0 && (
+            <button
+              type="button"
+              onClick={cancelEditing}
+              disabled={busy}
+              data-testid="discard-edits"
+              title="Put every row back to the value the shipment stores — nothing is written and the leg stays on the desk"
+              className="inline-flex items-center gap-1.5 text-xs font-medium text-text-muted transition-colors hover:text-status-critical"
+            >
+              <Undo2 size={13} />
+              Discard changes
+              <span className="font-normal text-text-muted/70">
+                · back to {keepMeansBlank ? 'blank' : 'the stored values'}
+              </span>
+            </button>
+          )}
 
           {/* Directly under the grid whose ✉ opened it, so the row and its evidence read together. */}
           {evidence && (

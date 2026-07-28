@@ -277,6 +277,109 @@ describe('ConflictRow take-tick — what one click actually posts', () => {
   })
 })
 
+/**
+ * Reported from the running desk: UOM took free text here and a `<select>` everywhere else, so
+ * `cartonssdfsdf` was reachable from the review row and nowhere else in the app.
+ */
+describe('ConflictRow enum columns — the same select the edit form renders', () => {
+  const uom: CriticConflict = {
+    field: 'qty_unit',
+    label: 'UOM',
+    rationale: 'One email counts cartons, another pieces',
+    candidates: [
+      { value: 'cartons', source: 'system' },
+      { value: 'pieces', source: 'Packing List' },
+    ],
+  }
+
+  it('offers a dropdown, not a text box', () => {
+    render(
+      <table>
+        <tbody>
+          <ConflictRow conflict={uom} value="cartons" onChange={vi.fn()} editing canEdit />
+        </tbody>
+      </table>,
+    )
+    const control = screen.getByLabelText('Proposed value for UOM')
+    expect(control.tagName).toBe('SELECT')
+    const values = [...(control as HTMLSelectElement).options].map((o) => o.value)
+    // Every legal unit, plus an empty option — clearing is a real answer a select must be able
+    // to express.
+    expect(values).toContain('')
+    expect(values).toContain('cartons')
+    expect(values).toContain('pieces')
+  })
+
+  it('keeps a stored value the offer list does not carry', () => {
+    const odd: CriticConflict = {
+      ...uom,
+      candidates: [
+        { value: 'BALES', source: 'system' },
+        { value: 'pieces', source: 'Packing List' },
+      ],
+    }
+    render(
+      <table>
+        <tbody>
+          <ConflictRow conflict={odd} value="BALES" onChange={vi.fn()} editing canEdit />
+        </tbody>
+      </table>,
+    )
+    const control = screen.getByLabelText('Proposed value for UOM') as HTMLSelectElement
+    // Opening the dropdown must not be able to silently rewrite what the leg holds.
+    expect([...control.options].map((o) => o.value)).toContain('BALES')
+    expect(control.value).toBe('BALES')
+  })
+
+  it('a free-text column is still a text box', () => {
+    const vessel: CriticConflict = {
+      field: 'vessel_name',
+      label: 'Vessel',
+      rationale: 'x',
+      candidates: [
+        { value: 'EVER GLORY', source: 'system' },
+        { value: 'EVER GIVEN', source: 'Draft B/L' },
+      ],
+    }
+    render(
+      <table>
+        <tbody>
+          <ConflictRow conflict={vessel} value="EVER GIVEN" onChange={vi.fn()} editing canEdit />
+        </tbody>
+      </table>,
+    )
+    expect(screen.getByLabelText('Proposed value for Vessel').tagName).toBe('INPUT')
+  })
+})
+
+describe('ConflictRow override line — the pending write is not the smallest thing in the row', () => {
+  it('renders the typed value at the row value size, not 11px caption', () => {
+    const eta: CriticConflict = {
+      field: 'eta',
+      label: 'ETA',
+      rationale: 'r',
+      candidates: [
+        { value: '2026-07-20', source: 'system' },
+        { value: '2026-07-23', source: 'SO' },
+      ],
+    }
+    render(
+      <table>
+        <tbody>
+          <ConflictRow conflict={eta} value="2026-07-25" onChange={vi.fn()} editing={false} canEdit />
+        </tbody>
+      </table>,
+    )
+    const override = screen.getByTestId('conflict-override')
+    expect(override).toHaveTextContent('will write 2026-07-25')
+    // The VALUE carries the emphasis — it is what the click commits.
+    const value = within(override).getByText('2026-07-25')
+    expect(value).toHaveClass('text-sm')
+    expect(value).toHaveClass('text-status-success')
+    expect(value.className).not.toMatch(/text-\[11px\]/)
+  })
+})
+
 describe('ConflictRow critical badge', () => {
   it('shows Critical badge when critical is true', () => {
     renderRow({ critical: true })
