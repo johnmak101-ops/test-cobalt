@@ -24,6 +24,7 @@ import { AlertCard } from '../components/alerts/AlertCard'
 import { formatDate, formatDateTime, formatDateMaybeTime, formatShipmentId, cn } from '../lib/utils'
 import { parseSender } from '../lib/email-sender'
 import { EDITABLE_FIELDS, fieldLabel, fieldUnit, numericFieldWarn, dateOrderWarn, toInputValue, type EditableField, formatNumericDisplay, dateColumnHasTime } from '../lib/review-fields'
+import { isAirMode, isOffModeField } from '../lib/mode-fields'
 import { toast } from '../components/ui/Toast'
 import { interactiveProps } from '../lib/interactive'
 import { Pagination, usePagination, PageSizeSelect } from '../components/ui/Pagination'
@@ -90,26 +91,30 @@ const EDIT_SECTIONS: { title: string; fields: EditField[] }[] = (() => {
  */
 const PendingReviewContext = createContext<ReadonlyMap<string, PendingAnnotation>>(new Map())
 
-/** Sea modes show vessel/voyage; air modes show flight. Unknown mode shows all present fields. */
-function isAirMode(mode: string | null | undefined): boolean {
-  return (mode ?? '').toUpperCase().startsWith('AIR')
+/**
+ * Hide a sea-only or air-only field — but ONLY when it is empty.
+ *
+ * It used to hide on mode alone, in the read view AND the edit form, which orphaned data: a leg
+ * switched to SEA kept its `flightNo`, and no screen could reach it. Not the read view (hidden), not
+ * the edit form (hidden), and not the review desk either — `fieldsToApply` skips empty values, so an
+ * empty resolution there means "no decision", never "clear it". The value stayed in the database, the
+ * API payload and every export, with nothing in the app able to touch it.
+ *
+ * Hiding a populated field does not remove the value. It removes the operator. So the rule is now:
+ * off-mode AND empty hides; off-mode AND populated always shows, flagged, with a way to clear it.
+ */
+function shippingFieldVisible(
+  dbColumn: string,
+  mode: string | null | undefined,
+  value?: unknown,
+): boolean {
+  if (!isOffModeField(dbColumn, mode)) return true
+  return String(value ?? '').trim() !== ''
 }
-function isSeaMode(mode: string | null | undefined): boolean {
-  return (mode ?? '').toUpperCase().startsWith('SEA')
-}
-/** Hide sea-only or air-only transport/doc fields based on mode. */
-function shippingFieldVisible(dbColumn: string, mode: string | null | undefined): boolean {
-  // Sea: vessel + voyage + ocean MBL (not flight/MAWB)
-  if (dbColumn === 'vesselName' || dbColumn === 'voyageNo' || dbColumn === 'mbl') {
-    if (isAirMode(mode)) return false
-    return true
-  }
-  // Air: flight + MAWB (not vessel/voyage/MBL)
-  if (dbColumn === 'flightNo' || dbColumn === 'mawb') {
-    if (isSeaMode(mode)) return false
-    return true
-  }
-  return true
+
+/** The marker an off-mode row wears, so a stale value reads as a problem rather than as data. */
+function offModeHint(mode: string | null | undefined): string {
+  return isAirMode(mode) ? 'sea field on an air shipment' : 'air field on a sea shipment'
 }
 
 /** House bill label: HAWB on air, HBL/FCR on sea. */
@@ -469,14 +474,32 @@ export default function ShipmentDetailPage() {
               {EDIT_SECTIONS.map((sec) => (
                 <DetailSection key={sec.title} title={sec.title} icon={<ClipboardList size={14} className="text-text-muted" />}>
                   {sec.fields.flatMap((f) => {
-                      if (!shippingFieldVisible(f.db, draft.mode || shipment.mode)) return []
+                      if (!shippingFieldVisible(f.db, draft.mode || shipment.mode, draft[f.db])) return []
+                      const offMode = isOffModeField(f.db, draft.mode || shipment.mode)
                       const cur = draft[f.db] ?? ''
                       const numErr = f.type === 'number' ? numericFieldWarn(f.db, cur) : null
                       const controlClass =
                         'h-8 w-full rounded-md border border-border bg-surface-700 px-2 text-sm text-text-primary placeholder:text-text-muted/70 focus:border-cobalt-primary focus:outline-none'
                       return [(
                     <div key={f.db} className="grid grid-cols-[7rem_1fr] sm:grid-cols-[9rem_1fr] items-center gap-x-2">
-                      <label htmlFor={`${fieldId}-${f.db}`} className="truncate text-xs text-text-muted">{f.label}</label>
+                      {/* An off-mode field only reaches here because it HOLDS a value (see
+                          shippingFieldVisible). Say why it is on a form that would otherwise hide
+                          it, and give the one-click way to empty it — this is the only screen in
+                          the app that can. */}
+                      <label htmlFor={`${fieldId}-${f.db}`} className="truncate text-xs text-text-muted">
+                        {f.label}
+                        {offMode && (
+                          <button
+                            type="button"
+                            onClick={() => setDraft((d) => ({ ...d, [f.db]: '' }))}
+                            title={offModeHint(draft.mode || shipment.mode)}
+                            data-testid={`off-mode-clear-${f.db}`}
+                            className="mt-0.5 block text-left text-[11px] font-medium text-status-warning hover:text-status-critical hover:underline"
+                          >
+                            {isAirMode(draft.mode || shipment.mode) ? 'sea field' : 'air field'} · clear
+                          </button>
+                        )}
+                      </label>
                       {f.picker === 'port' ? (
                         <PortPicker
                           id={`${fieldId}-${f.db}`}
@@ -664,7 +687,7 @@ export default function ShipmentDetailPage() {
               value={shipment.containerNo}
             />
             <DetailRow historyKey="hblAwbFcrNo" label={houseBillLabel(shipment.mode)} value={shipment.hblNumber} />
-            {shippingFieldVisible('mbl', shipment.mode) && (
+            {shippingFieldVisible('mbl', shipment.mode, shipment.mblNumber) && (
               <DetailRow
                 historyKey="mbl"
                 label={fieldLabel('mbl')}
@@ -672,8 +695,9 @@ export default function ShipmentDetailPage() {
                 hint={!shipment.mblNumber && shipment.hblNumber ? 'house B/L — carrier master B/L not shared' : undefined}
               />
             )}
-            {shippingFieldVisible('mawb', shipment.mode) && (
-              <DetailRow historyKey="mawb" label={fieldLabel('mawb')} value={shipment.mawb ?? null} />
+            {shippingFieldVisible('mawb', shipment.mode, shipment.mawb) && (
+              <DetailRow historyKey="mawb" label={fieldLabel('mawb')} value={shipment.mawb ?? null}
+                offMode={isOffModeField('mawb', shipment.mode) ? offModeHint(shipment.mode) : undefined} />
             )}
             <DetailRow historyKey="scacCode" label={fieldLabel('scacCode')} value={shipment.scacCode} />
           </DetailSection>
@@ -688,14 +712,17 @@ export default function ShipmentDetailPage() {
             />
             <DetailRow historyKey="consigneeName" label={fieldLabel('consigneeName')} value={shipment.consigneeName} />
             <DetailRow historyKey="consigneeAddress" label={fieldLabel('consigneeAddress')} value={shipment.consigneeAddress} />
-            {shippingFieldVisible('vesselName', shipment.mode) && (
-              <DetailRow historyKey="vesselName" label={fieldLabel('vesselName')} value={shipment.vesselName} />
+            {shippingFieldVisible('vesselName', shipment.mode, shipment.vesselName) && (
+              <DetailRow historyKey="vesselName" label={fieldLabel('vesselName')} value={shipment.vesselName}
+                offMode={isOffModeField('vesselName', shipment.mode) ? offModeHint(shipment.mode) : undefined} />
             )}
-            {shippingFieldVisible('voyageNo', shipment.mode) && (
-              <DetailRow historyKey="voyageNo" label={fieldLabel('voyageNo')} value={shipment.voyageNumber} />
+            {shippingFieldVisible('voyageNo', shipment.mode, shipment.voyageNumber) && (
+              <DetailRow historyKey="voyageNo" label={fieldLabel('voyageNo')} value={shipment.voyageNumber}
+                offMode={isOffModeField('voyageNo', shipment.mode) ? offModeHint(shipment.mode) : undefined} />
             )}
-            {shippingFieldVisible('flightNo', shipment.mode) && (
-              <DetailRow historyKey="flightNo" label={fieldLabel('flightNo')} value={shipment.flightNo ?? null} />
+            {shippingFieldVisible('flightNo', shipment.mode, shipment.flightNo) && (
+              <DetailRow historyKey="flightNo" label={fieldLabel('flightNo')} value={shipment.flightNo ?? null}
+                offMode={isOffModeField('flightNo', shipment.mode) ? offModeHint(shipment.mode) : undefined} />
             )}
             <DetailRow historyKey="polRaw" label={fieldLabel('polRaw')} value={shipment.polRaw ?? null} />
             <DetailRow historyKey="podRaw" label={fieldLabel('podRaw')} value={shipment.podRaw ?? null} />
@@ -967,12 +994,20 @@ function DetailRow({
   label,
   value,
   hint,
+  offMode,
   historyKey,
 }: {
   label: string
   value: string | null | undefined
   /** shown next to "(pending)" to explain WHY a value is blank (so a gap reads as expected, not broken) */
   hint?: string
+  /**
+   * This row holds a value belonging to the OTHER transport mode — a flight number on a sea leg.
+   *
+   * Distinct from `hint`, which only renders in the empty branch: an off-mode row is by definition
+   * NOT empty (an empty one is still hidden), so it needs a marker beside the value itself.
+   */
+  offMode?: string
   /** Leg column for this field (e.g. 'qty', 'polRaw'). When it has change history the value shows a
    *  clock marker and a hover timeline popover. Omit for untracked rows. */
   historyKey?: string
@@ -1026,6 +1061,22 @@ function DetailRow({
             </span>
             {annIcon}
           </>
+        )}
+        {/*
+          AFTER the value, never before it.
+          Leading with the tag pushed the value out of the column every other row lines up on, so
+          Vessel and Voyage sat indented against Forwarder and Flight No. directly above and below
+          them. It also read backwards: the value is the row's subject and the tag annotates it,
+          which is the order MeshMissTag already uses in ConflictRow.
+        */}
+        {offMode && shown != null && (
+          <span
+            data-testid="off-mode-marker"
+            title={offMode}
+            className="ml-2 whitespace-nowrap rounded bg-status-warning/15 px-1.5 align-[2px] font-sans text-[11px] font-medium leading-4 text-status-warning"
+          >
+            {offMode}
+          </span>
         )}
       </span>
     </div>
