@@ -50,7 +50,10 @@ describe('MastersSyncSchedulerService', () => {
     }) as unknown as MastersRepository
 
   const envConfig = { get: (k: string) => process.env[k] } as any
-  const makeSvc = () => new MastersSyncSchedulerService(makeMasters(), makeSettings(), envConfig)
+  /** The post-sync exact-name re-link sweep — stubbed: these tests are about the SCHEDULE. */
+  const makeRelink = () => ({ relinkAll: vi.fn().mockResolvedValue({ scanned: 0, linked: {} }) }) as any
+  const makeSvc = () =>
+    new MastersSyncSchedulerService(makeMasters(), makeSettings(), envConfig, makeRelink())
 
   it('onModuleInit does nothing when MESH_SYNC_INTERVAL_MS is 0', async () => {
     process.env.MESH_SYNC_INTERVAL_MS = '0'

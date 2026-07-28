@@ -22,7 +22,7 @@ import { ReviewCard } from '../components/review/ReviewCard'
 import { Pagination, usePagination, PageSizeSelect } from '../components/ui/Pagination'
 import { toast } from '../components/ui/Toast'
 import { cn, formatRelativeTime, formatShipmentId } from '../lib/utils'
-import { mapCriticFieldsToColumns } from '../lib/review-fields'
+import { keptSuffix, mapCriticFieldsToColumns } from '../lib/review-fields'
 import {
   decisionPhrase,
   AI_CONFIDENCE_LOW_REASON,
@@ -240,6 +240,7 @@ export default function ReviewQueuePage() {
 
   const saveAndApproveFor = (s: ReviewShipment) => async (payload: {
     fields: Record<string, unknown>
+    keep?: string[]
     note: string
     expectedUpdatedAt?: string
   }) => {
@@ -248,6 +249,7 @@ export default function ReviewQueuePage() {
       const fields = payload.fields
       // fields are already camelCase leg columns from ReviewCard; map is idempotent + renames any snake leftovers.
       const mapped = mapCriticFieldsToColumns(fields)
+      const keep = payload.keep ?? []
       const hasFields = Object.keys(fields).length > 0
       const hasMappable = Object.keys(mapped).length > 0
       if (hasFields && !hasMappable) {
@@ -259,6 +261,7 @@ export default function ReviewQueuePage() {
         const res = await correctMutation.mutateAsync({
           shipmentId: s.id,
           fields: mapped,
+          keep,
           reason: payload.note,
           expectedUpdatedAt: payload.expectedUpdatedAt ?? s.updatedAt,
         })
@@ -267,17 +270,22 @@ export default function ReviewQueuePage() {
         if (n === 0) {
           toast.error('Approved, but no fields were written — reload and try Approve again')
         } else {
-          toast(`Saved ${n} field${n === 1 ? '' : 's'} and approved`)
+          toast(`Saved ${n} field${n === 1 ? '' : 's'} and approved${keptSuffix(keep)}`)
         }
       } else {
         // #181: Approve with no contested-field deltas is confirm-only — operators often think
         // other edits stuck. Be explicit so this never looks like a silent no-op.
+        // A keep ruling is NOT nothing, though: it writes no value but it does lock the field, so
+        // the "nothing to save" copy would be a lie on exactly the cards this feature is for.
         toast(
-          'Confirmed — no contested field changes to save. Open full shipment to edit other fields.',
+          keep.length
+            ? `Confirmed — kept ${keep.length} stored value${keep.length === 1 ? '' : 's'} as ruled.`
+            : 'Confirmed — no contested field changes to save. Open full shipment to edit other fields.',
         )
         await confirmMutation.mutateAsync({
           shipmentId: s.id,
           note: payload.note || undefined,
+          keep,
           expectedUpdatedAt: payload.expectedUpdatedAt ?? s.updatedAt,
         })
       }
@@ -399,7 +407,7 @@ export default function ReviewQueuePage() {
                       Status
                     </th>
                     {/* Active rows carry no Action column: the row expands on click and the panel
-                        below owns Keep Existing / Approve. Rejected/Approved keep one — Restore and Open
+                        below owns Leave As Is / Approve. Rejected/Approved keep one — Restore and Open
                         have no equivalent inside the read-only panel. */}
                     {!isActiveView && (
                       <th className="w-[6.5rem] px-3 py-3 text-right text-xs font-medium text-text-muted sm:px-4">

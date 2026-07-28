@@ -5,6 +5,7 @@ import { CandidatesService } from './candidates.service'
 import { MastersSyncSchedulerService } from './masters-sync-scheduler.service'
 import { PortsSyncService } from './ports-sync.service'
 import { PortsSyncSchedulerService } from './ports-sync-scheduler.service'
+import { PartyRelinkService } from './party-relink.service'
 
 @Module({
   controllers: [MastersController],
@@ -12,9 +13,10 @@ import { PortsSyncSchedulerService } from './ports-sync-scheduler.service'
     MastersService,
     CandidatesService,
     MastersSyncSchedulerService,
+    PartyRelinkService,
     PortsSyncService,
     PortsSyncSchedulerService,
   ],
-  exports: [MastersSyncSchedulerService, PortsSyncSchedulerService, PortsSyncService],
+  exports: [MastersSyncSchedulerService, PortsSyncSchedulerService, PortsSyncService, PartyRelinkService],
 })
 export class MastersModule {}

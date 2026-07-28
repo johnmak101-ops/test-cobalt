@@ -236,6 +236,38 @@ export class ShipmentRepository {
 
   /** Provisional legs awaiting human review (lowest confidence first). Dismissed rows are excluded —
    *  a human already ruled "not a trackable shipment" (see reviewQueue views). */
+  /**
+   * Legs carrying a raw party name whose master link is still null — the input to the post-Mesh-sync
+   * re-link sweep (PartyRelinkService).
+   *
+   * The forwarder FK lives on the leg and the customer/vendor FKs on the booking, which is why this
+   * has to join: "unlinked" is not answerable from the shipments row alone.
+   */
+  legsWithUnlinkedRawParties() {
+    return this.db
+      .selectFrom('shipments')
+      .innerJoin('bookings', 'shipments.bookingId', 'bookings.id')
+      .where('shipments.kind', '=', 'SHIPMENT')
+      .where((eb) =>
+        eb.or([
+          eb.and([eb('shipments.forwarderRaw', 'is not', null), eb('shipments.forwarderId', 'is', null)]),
+          eb.and([eb('shipments.vendorRaw', 'is not', null), eb('bookings.vendorId', 'is', null)]),
+          eb.and([eb('shipments.customerRaw', 'is not', null), eb('bookings.customerId', 'is', null)]),
+        ]),
+      )
+      .select([
+        'shipments.id as id',
+        'shipments.bookingId as bookingId',
+        'shipments.forwarderRaw as forwarderRaw',
+        'shipments.forwarderId as forwarderId',
+        'shipments.vendorRaw as vendorRaw',
+        'shipments.customerRaw as customerRaw',
+        'bookings.vendorId as bookingVendorId',
+        'bookings.customerId as bookingCustomerId',
+      ])
+      .execute()
+  }
+
   provisionalLegs() {
     return this.db
       .selectFrom('shipments')

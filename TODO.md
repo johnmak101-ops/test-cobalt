@@ -59,6 +59,13 @@ Not covered by the live check: **no active leg carries a multi-candidate row**, 
 radio and its un-pick are proven by unit tests only. Worth a look the next time a two-vendor or
 two-B/L leg reaches the queue.
 
+**2026-07-29:** the desk no longer has to wait for one — `25-two-vendors-two-bls` is now in the
+fixture set, and the row was READ on the running app (`Keep current — MACAU FUNG TAI LIMITED`
+plus ROKNFT / GOLDEN SUN options, and `Leave blank` on the B/L row that stores nothing). Picking
+one on screen was still not driven: the browser pane stopped compositing part-way through the
+session, and with no frames neither synthetic clicks nor focus+Space reach React at all — the DOM
+`checked` flips and the component never sees it. Do not read that as an app bug; it is the harness.
+
 **Corrected 2026-07-28.** An earlier note here claimed the `Edited` header and the `→ will write X`
 override span were unreachable. They were not: `handleSaveAndApprove` called `setEditing(false)`
 *before* the request, so a save that 400s dropped the card into READ mode still holding the typed
@@ -127,61 +134,59 @@ All six merged to `main` (`d50a1cc`). frontend 1064 · backend 1312 · typecheck
 CI has been blocked on GitHub billing all along — everything below rests on local
 verification plus browser walkthroughs.
 
-### 1. Lost writes — UNRESOLVED, do this first
+### 1. Lost writes — DISPROVED (2026-07-29)
 
 Reported: "update of review queue fields and keep current, all not linked to backend."
-Not reproduced, and not disproved either.
+Half of it was item 2 (keep current really did write nothing). The other half does not exist.
 
-Found no evidence: the one write driven end to end landed correctly —
-`forwarder_raw` = LOGWIN AIR & OCEAN HONG KONG LTD, `forwarder_id` = 367,
-`change_log` row with `source_type='review'`.
+Driven end to end on `UXDEMO-22-one-change`, the one leg on the dev desk carrying an
+ordinary — not party — field candidate. Take-tick → `Key Dates (1 change)` →
+`Apply 2026-09-09`:
 
-Two innocent explanations that fit the symptom, both correct behaviour:
-- an APPROVED leg renders read-only — controls and buttons vanish, so clicking
-  saves nothing because there is nothing to save with
-- verdict-shape cards stage no field changes by design, yet still show fields
+    shipments.eta   2026-09-05 → 2026-09-09,  review_status=confirmed, reviewed_by set
+    change_log      seq 292157  eta  2026-09-05→2026-09-09  source_type='review'
+    field_locks     eta = 2026-09-09
 
-What was never done: drive a leg whose button actually reads `Apply N Change(s)`.
-That is the only state where a write is even attempted. Of 10 provisional legs,
-7 are in the queue; JOB-2026-0006 deep-links to the list instead of a card, and
-UXDEMO-02 has no candidate checkboxes at all — no ordinary field candidate was
-ever in front of me.
+Do not re-open this without a specific leg. The reason it stayed open so long is that
+the desk had exactly ONE such leg and nobody had reached it; that is now fixed at the
+source — see the fixture note under item 4.
 
-    -- after ticking an ordinary candidate (a vessel or a date, NOT a party) and applying:
-    SELECT vessel_name, eta, review_status FROM shipments WHERE id = '<leg>';
-    SELECT TOP 5 field, old_value, new_value, source_type
-      FROM change_log WHERE entity_id = '<leg>' ORDER BY seq DESC;
+### 2. "Keep current" locks the field — BUILT (2026-07-29)
 
-Column moved + a `source_type='review'` row ⇒ writes are fine, and the real defect
-is that a read-only card does not say so loudly enough. Neither ⇒ genuine lost
-write, and item 2 waits.
+The spec was right about the shape and understated the trap. A row SEEDS from the
+stored value, so `Keep current` is the checked radio on every untouched card before
+anyone has looked at it. Reading a ruling off state — the obvious implementation —
+would have locked every contested field of every leg on every single approval.
 
-If there is a specific leg where this was seen, that beats hunting for one.
+So the ruling is a signal of its own, not a state: `ConflictRow.onKeep`, fired from the
+radio's **`onClick`**, because React fires no change event for a click on an
+already-checked radio and that click is precisely the gesture that matters. `onChange`
+still carries the value; the two are independent and their order does not matter
+(`setResolution` only retracts a ruling when the value actually differs from stored).
 
-### 2. "Keep current" should lock the field — designed, NOT built
+- `keptFields` adds on that click, retracts on any resolution that changes the value,
+  and **`Keep All Current` CLEARS it** — both the expanded bar and the collapsed row
+- payload is `{ fields, keep: [...], note }`; `keep` rides `/correct` **and** `/confirm`,
+  since a keep-only card writes nothing and so takes the confirm path
+- backend locks each at the value read off the LEG, never one from the request; audits it
+  `old === new` with `note='review: kept the stored value — nothing written, field locked'`;
+  400s a field named in both `fields` and `keep`
+- primary reads `Keep ETA` / `Keep 2 Fields` where it used to say "No Changes" — which was
+  true of the values and false about the click. `Discard ruling` appears under the grid for
+  it, because the bulk decline only renders against a pending change
 
-Today it is a no-op: `fieldsToApply` only includes a field when `changesStoredValue`
-is true, so keeping the stored value contributes nothing and the approve posts an
-empty field set. Meanwhile the DETAIL page locks every field a human edits
-(`editFields`). Same person, same judgement, two outcomes.
+Verified against the live API (backend rebuilt + restarted), not only in tests:
+`confirm {keep:['vendorRaw']}` → `field_locks.vendorRaw`, a `review: kept…` change-log row,
+`vendor_raw` untouched. Both rejection paths 400 with the right message.
 
-Lock the per-row pick, never the bulk button. Selecting "Keep current — LOGWIN"
-with five alternatives underneath is the same work as typing a value. "Keep All
-Current" is frequently "not now", not a per-field ruling.
+**Known gap, deliberate.** Only the MULTI-candidate row can carry a ruling. A single-candidate
+row's control is the take-tick, whose default is un-ticked — indistinguishable from untouched —
+so there is nowhere to put "I looked and ours is right" without a second control on the
+commonest row on the desk. Left alone rather than guessed at.
 
-- `ReviewCard` gains `keptFields: Set<string>`; the per-row radio adds, any other
-  option removes, and **`Keep All Current` CLEARS it** — that line is the whole
-  point and the one most likely to be written backwards
-- approve payload carries them apart from `fields`: `{ fields, keep: [...], note }`
-  — `fields` means "write this", these mean "do not write, but record that I ruled"
-- backend approve locks each at its stored value via the same `fieldLocks.lock(...)`
-  `editFields` uses; no value write, an audit of a DECISION
-- write the NEGATIVE test first: `Keep All Current` on a 3-row card ⇒ `keep: []`
-
-Decide before coding: per PR #232 a lock no longer blocks a later email — it wins
-and flags CONTESTED. So the entire observable effect is that the next disagreement
-surfaces as contested instead of passing silently. That is probably right, but it
-will generate more contested flags and nobody has measured how many.
+**Still unmeasured** (as flagged before coding): per PR #232 a lock no longer blocks a later
+email — it wins and flags CONTESTED. So the observable effect is more contested flags, and
+nobody has counted how many. 85 locks exist on the dev DB today for comparison.
 
 ### 3. Prod migration 0028 — local only
 
@@ -199,6 +204,56 @@ introduced while fixing the previous one. Worth a deliberate pass: the conflict
 row's rendering (miss tags, chips, option colours, which control appears) is
 almost entirely unasserted, and the deskGroups filter is inline in `ReviewCard`
 where no unit test can reach it — extract it to a pure function.
+
+**The desk had no multi-candidate leg at all — fixed at the fixture (2026-07-29).**
+`_inject-review-queue-samples.ts` gained `25-two-vendors-two-bls`: three vendors and two
+co-current B/Ls on one leg. Every other card offers ONE value per row, which is why the
+`Keep current` radio and its un-pick had only ever been seen by unit tests, and why item 1
+took a whole session to disprove. Re-run the injector (`--yes`) to arm it; it restores
+first, so it is safe to repeat and it re-arms `22-one-change` after that card is spent.
+Note `backend/src/dev/_*` is gitignored, so this card exists on this box only — a clone gets a
+desk with no multi-candidate leg again.
+
+Watch the interaction with the auto-link below: a fixture whose "master miss" names a
+company Mesh actually holds will now HEAL ITSELF on the next sync. `04-master-miss-party`
+survives only because its forwarder (LEADWAY EXPRESS) is genuinely absent from Mesh —
+its vendor line will disappear.
+
+### 6. Two false warnings, both fixed (2026-07-29)
+
+**"No Final B/L" on an air leg.** 202601256B — AIR, DELIVERED, MAWB 098-32230085,
+HAWB GZL26258522, every milestone except `FINAL_BL_RECEIVED` — carried a CRITICAL
+"175 days after ETD. Chase Final B/L with forwarder". `buildFacts` read the milestone and
+nothing else, while the line directly above it (`so`) already read milestone OR column.
+
+Two fixes, either of which alone clears this one: `finalDocumentReceived()` treats an
+AIR leg's MAWB as its final transport document (there is no B/L to wait for), and
+`isFiring` stands down every PRE_ARRIVAL_WATCHES rule once the cargo is delivered — a
+document chase you cannot act on is noise. `telex` and `invoice` deliberately stay live
+after delivery. The alert auto-resolved on the first evaluator tick after the restart.
+
+Deliberately NOT `|| !!leg.hblAwbFcrNo`, which looks like the same fix: that same leg
+proves a house B/L number arrives at DRAFT stage, so accepting it would silence the
+genuine sea-freight chase this rule exists for.
+
+**"in Mesh, not linked — edit the field and pick it"** over a name spelled identically to
+the master. That is a lookup with one unambiguous answer, not a decision — which is why
+auto-filling it does not breach de-correction: no value is corrected, the raw name is left
+exactly as parsed, and only a null FK moves. The desk already refuses to make a conflict
+row of it ("a row has to present a CHOICE") and then left the advice line with nothing
+behind it.
+
+`PartyRelinkService` runs after each successful Mesh sync, because timing is the whole bug:
+masters mirror daily and lag ~2 months, so the commit that created the leg genuinely had no
+master to link, and nothing re-asked once one arrived. Uses the same `*Exact` resolvers the
+human-edit and confirm paths already call; audits each as `sourceType='system'`.
+
+Dry run on the dev DB: 16 candidate legs → would link 4 vendors + 2 customers, and **zero
+forwarders** — SEH, LOGWIN, TCI, LOGIMARK, LEADWAY EXPRESS, 纯通国际物流 are all
+abbreviations with no exact master, correctly left to the LLM matcher.
+
+Not verified live: the sweep itself only runs behind a real Mesh sync, which hits the
+production ERP, so only its SQL was exercised (above) plus unit tests.
 
 ### 5. Agent churn on `consigneeAddress`
 

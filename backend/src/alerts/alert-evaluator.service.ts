@@ -18,6 +18,31 @@ import type { CriticReview } from '../decisions/critic-review.types'
 
 /** Past the point where a cargo-ready revision is still actionable (Final BOL cut or later). */
 const POST_DOCUMENT_STATES = new Set(['SAILED', 'RELEASED', 'DELIVERED'])
+
+/**
+ * Has the leg's FINAL transport document arrived?
+ *
+ * On an AIR leg that document IS the air waybill — there is no bill of lading to wait for — so a leg
+ * holding an MAWB already has the thing this watch watches for. Shipment 202601256B (AIR, DELIVERED,
+ * MAWB 098-32230085, HAWB GZL26258522) carried every milestone EXCEPT `FINAL_BL_RECEIVED` and so
+ * drew a CRITICAL "No Final B/L — 175 days after ETD. Chase Final B/L with forwarder", about a
+ * document that does not exist for air freight, on cargo that had already landed.
+ *
+ * Deliberately NOT `|| !!leg.hblAwbFcrNo`, which looks like the same fix and is the opposite of one:
+ * a HOUSE B/L number is issued at DRAFT stage — that same leg carries one alongside
+ * `DRAFT_BL_RECEIVED` and no final — so honouring it would silence the genuine sea-freight chase
+ * this rule exists for. The MAWB has no draft counterpart in this pipeline.
+ *
+ * Exported for the same reason `legIsAlertEligible` is: `buildFacts` is private, and this is the
+ * kind of judgement that has to be pinned by a test rather than by reading it.
+ */
+export function finalDocumentReceived(
+  leg: { mode?: string | null; mawb?: string | null },
+  finalBlAt: Date | null,
+): boolean {
+  if (finalBlAt) return true
+  return leg.mode === 'AIR' && !!String(leg.mawb ?? '').trim()
+}
 /** Physically departed. RELEASED is the badge "Departure"; SAILED is only the "Final BOL" document stage. */
 const DEPARTED_STATES = new Set(['RELEASED', 'DELIVERED'])
 /** Threshold rules that participate in fire + auto-resolve (not A7 built-in). */
@@ -249,7 +274,7 @@ export class AlertEvaluatorService {
       has: {
         so: !!at('SO_RECEIVED') || !!leg.soNo,
         draftBl: !!draftBlAt,
-        finalBl: !!finalBlAt,
+        finalBl: finalDocumentReceived(leg, finalBlAt),
         telex: !!at('TELEX_RELEASED'),
         invoice: !!at('INVOICE_RECEIVED'),
         // "Sailed" = physically departed, which is RELEASED (badge "Departure") and beyond — NOT the

@@ -10,6 +10,14 @@ import { ArrayNotEmpty, IsArray, IsIn, IsObject, IsOptional, IsString, Length } 
 export class CorrectDto {
   @IsObject()
   fields!: Record<string, unknown>
+  /**
+   * Fields the reviewer ruled to LEAVE AS THEY ARE — deliberately apart from `fields`.
+   *
+   * `fields` means "write this"; these mean "do not write, but record that I ruled". Fusing them
+   * would make a keep indistinguishable from a rewrite of the same value, and the whole point is
+   * that no value moves. The backend locks each at what the leg already stores.
+   */
+  @IsOptional() @IsArray() @IsString({ each: true }) keep?: string[]
   @IsOptional() @IsString() reason?: string
   /** ISO timestamp from the client load; rejects with 409 when the leg has since been updated. */
   @IsOptional() @IsString() expectedUpdatedAt?: string
@@ -18,6 +26,9 @@ export class CorrectDto {
 /** Approve-as-is, optionally with a reviewer note (audited — harvested for agent-soul feedback). */
 export class ConfirmDto {
   @IsOptional() @IsString() note?: string
+  /** Per-field keep rulings (see CorrectDto.keep). Present here because a card whose ONLY decision
+   *  is "these stored values are right" writes no field and so takes the confirm path. */
+  @IsOptional() @IsArray() @IsString({ each: true }) keep?: string[]
   /** ISO timestamp from the client load; rejects with 409 when the leg has since been updated. */
   @IsOptional() @IsString() expectedUpdatedAt?: string
 }

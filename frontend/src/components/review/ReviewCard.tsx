@@ -115,6 +115,14 @@ export interface ReviewCorrection {
 
 export interface ReviewCardSavePayload {
   fields: Record<string, unknown>
+  /**
+   * Leg columns the operator ruled to LEAVE AS THEY ARE — carried apart from `fields` on purpose.
+   *
+   * `fields` means "write this"; these mean "do not write, but record that I ruled". The backend
+   * locks each at the value the leg already holds, so the ruling shows up in Change History and a
+   * later email that disagrees surfaces as CONTESTED instead of passing silently.
+   */
+  keep?: string[]
   note: string
   /** Per-field decision trail. Additive: consumers that ignore it keep working. */
   corrections?: ReviewCorrection[]
@@ -913,6 +921,20 @@ export function ReviewCard({
   const [resolutions, setResolutions] = useState<Record<string, string>>(() =>
     initialResolutions(conflicts, existingValue),
   )
+  /**
+   * Rows the operator EXPLICITLY ruled to leave alone — critic field names, the same keys
+   * `resolutions` uses.
+   *
+   * Not derivable from `resolutions`. A row seeds from the stored value, so "the resolution equals
+   * what the leg holds" is the state of every untouched row on the card; reading a keep off it would
+   * lock the whole grid on every approval. Only a click on the row's own `Keep current` control puts
+   * a field in here (ConflictRow.onKeep).
+   *
+   * The bulk `Leave All As Is` button CLEARS this set rather than filling it — that button is
+   * routinely "not now", not a per-field ruling, and treating it as one would manufacture decisions
+   * nobody made. It is the line in this feature most likely to be written backwards.
+   */
+  const [keptFields, setKeptFields] = useState<Set<string>>(() => new Set())
   /** Card-level edit mode. The table reads as a clean diff until the operator asks to change it. */
   const [editing, setEditing] = useState(false)
 
@@ -974,11 +996,37 @@ export function ReviewCard({
   if (seededKey !== conflictKey) {
     setSeededKey(conflictKey)
     setResolutions(initialResolutions(conflicts, existingValue))
+    // A ruling is about the value the operator was looking at. That value has just moved (or the leg
+    // has), so the ruling goes with it — same reasoning as the resolution re-seed above.
+    setKeptFields(new Set())
     setEditing(false)
   }
 
+  /**
+   * The row's VALUE changed. Any resolution that is not the stored value retracts a keep ruling on
+   * that row — picking a candidate or typing a value is the operator changing their mind, and
+   * leaving the ruling behind would post `keep` and `fields` for one field (which the backend 400s).
+   *
+   * Deliberately conditional rather than an unconditional clear: the `Keep current` radio fires this
+   * with the stored value AND `onKeep`, in an order React does not promise. Retracting only on a
+   * value that actually differs makes the pair order-independent.
+   */
   const setResolution = (field: string, v: string) => {
     setResolutions((prev) => ({ ...prev, [field]: v }))
+    const c = conflicts.find((x) => x.field === field)
+    if (c && changesStoredValue(c, v, liveValueFor(c))) {
+      setKeptFields((prev) => {
+        if (!prev.has(field)) return prev
+        const next = new Set(prev)
+        next.delete(field)
+        return next
+      })
+    }
+  }
+
+  /** The operator clicked this row's `Keep current` — a decision, not a value (see keptFields). */
+  const markKept = (field: string) => {
+    setKeptFields((prev) => (prev.has(field) ? prev : new Set(prev).add(field)))
   }
 
   const startEditing = () => setEditing(true)
@@ -987,6 +1035,7 @@ export function ReviewCard({
    *  after "Cancel" would silently arm Submit with values the operator just backed out of. */
   const cancelEditing = () => {
     setResolutions(initialResolutions(conflicts, existingValue))
+    setKeptFields(new Set())
     setEditing(false)
   }
 
@@ -1052,6 +1101,28 @@ export function ReviewCard({
     for (const col of clearedColumns) fields[col] = ''
     return fields
   }, [conflicts, resolutions, existingValue, liveValueFor, clearedColumns])
+
+  /**
+   * The keep rulings as LEG COLUMNS — what the API takes.
+   *
+   * Filtered against the rows actually on the grid, so a ruling cannot outlive the row that carried
+   * it, and against `fieldsToApply`, because "write this" and "leave it alone" for one field is a
+   * contradiction the backend rejects outright. A verdict card decides no fields at all, for the
+   * same reason it applies none.
+   */
+  const keptRows = useMemo(() => {
+    if (cardShape === 'verdict') return []
+    const rows: { column: string; label: string }[] = []
+    for (const c of conflicts) {
+      if (!keptFields.has(c.field)) continue
+      const col = mapCriticFieldToColumn(c.field)
+      if (!col || col in fieldsToApply) continue
+      if (rows.some((r) => r.column === col)) continue
+      rows.push({ column: col, label: reviewFieldLabel(c.field, c.label) })
+    }
+    return rows
+  }, [conflicts, keptFields, fieldsToApply, cardShape])
+  const keepColumns = useMemo(() => keptRows.map((r) => r.column), [keptRows])
 
   /**
    * The learning signal (ADR-0002). `aiProposed` is what the agent suggested, `humanFinal` is what
@@ -1303,6 +1374,7 @@ export function ReviewCard({
     }
     const savePayload = {
       fields: fieldsToApply,
+      keep: keepColumns,
       note: note.trim(),
       corrections,
       expectedUpdatedAt: id.updatedAt,
@@ -1323,7 +1395,13 @@ export function ReviewCard({
         await fn()
         setEditing(false)
       })
-    if (hasFieldEdits && onSaveAndApprove) {
+    /**
+     * Keep rulings ride the save path even when nothing is being written. `onApprove` is the bare
+     * confirm — it carries no payload, so routing a keep-only card there would drop every ruling on
+     * the floor, which is the no-op this feature exists to end. The page still lands on /confirm
+     * when `fields` is empty; the difference is that it can now carry `keep` with it.
+     */
+    if ((hasFieldEdits || savePayload.keep.length > 0) && onSaveAndApprove) {
       commit(() => onSaveAndApprove(savePayload))
       return
     }
@@ -1343,6 +1421,8 @@ export function ReviewCard({
       return
     }
     if (!onApprove) return
+    // Same bulk decline as the expanded "Leave All As Is" — it clears rulings, never applies them.
+    setKeptFields(new Set())
     void run(() => onApprove())
   }
 
@@ -1398,11 +1478,13 @@ export function ReviewCard({
                 type="button"
                 onClick={handleApproveCollapsed}
                 disabled={busy}
-                title="Mark reviewed and keep every stored value — writes nothing"
+                title="Mark reviewed and leave every stored value alone — writes nothing, records no per-field ruling"
                 className={cn(ACTION_BTN, ACTION_VARIANT.success)}
               >
                 {busy && <Loader2 size={13} className="animate-spin" />}
-                Keep Existing
+                {/* Same verb split as the expanded bar: this is the collapsed bulk decline, so it
+                    "leaves" rather than "keeps" — see the neutral button's note below. */}
+                Leave As Is
               </button>
             )}
           </div>
@@ -1946,6 +2028,7 @@ export function ReviewCard({
                               conflict={c}
                               value={resolutions[c.field] ?? ''}
                               onChange={(v) => setResolution(c.field, v)}
+                              onKeep={() => markKept(c.field)}
                               editing={canEditGrid && writable}
                               existingUnit={units.existing}
                               proposedUnit={units.proposed}
@@ -1987,22 +2070,32 @@ export function ReviewCard({
 
             Deliberately NOT in the action bar. That bar is verdicts — what happens to the leg — and
             this changes nothing about the leg, it just puts the desk back how it was found. It also
-            appears exactly when `Keep All Current` and `Apply N` do, and three buttons competing at
+            appears exactly when `Leave All As Is` and `Apply N` do, and three buttons competing at
             the same moment is how the bar drifted before.
           */}
-          {!readOnly && !editing && changeCount > 0 && (
+          {/* A pending RULING is undoable from here too. It changes no value, so `changeCount` does
+              not see it — and without this the operator who ticked "Keep current" had no way back
+              short of reloading the card: the bulk decline beside the primary only renders when
+              there is a change to decline. */}
+          {!readOnly && !editing && (changeCount > 0 || keptRows.length > 0) && (
             <button
               type="button"
               onClick={cancelEditing}
               disabled={busy}
               data-testid="discard-edits"
-              title="Put every row back to the value the shipment stores — nothing is written and the leg stays on the desk"
+              title={
+                changeCount > 0
+                  ? 'Put every row back to the value the shipment stores — nothing is written and the leg stays on the desk'
+                  : 'Drop the keep ruling — nothing is written or locked and the leg stays on the desk'
+              }
               className="inline-flex items-center gap-1.5 text-xs font-medium text-text-muted transition-colors hover:text-status-critical"
             >
               <Undo2 size={13} />
-              Discard changes
+              {changeCount > 0 ? 'Discard changes' : 'Discard ruling'}
               <span className="font-normal text-text-muted/70">
-                · back to {keepMeansBlank ? 'blank' : 'the stored values'}
+                {changeCount > 0
+                  ? ` · back to ${keepMeansBlank ? 'blank' : 'the stored values'}`
+                  : ' · decide nothing here'}
               </span>
             </button>
           )}
@@ -2217,6 +2310,14 @@ export function ReviewCard({
                         handleLinkAndApply(false)
                         return
                       }
+                      /**
+                       * The bulk decline CLEARS the per-row rulings — it does not apply them to
+                       * everything. "Leave All As Is" is overwhelmingly "not now"; turning it into a
+                       * per-field ruling on every contested row would fabricate decisions from a
+                       * click that means the opposite, and it would do so on exactly the legs with
+                       * the most rows. A ruling comes from the row, or it does not exist.
+                       */
+                      setKeptFields(new Set())
                       if (onApprove) void run(() => onApprove())
                     }}
                     disabled={busy || (multiCandNeedsTarget && !linkTargetReady)}
@@ -2224,25 +2325,35 @@ export function ReviewCard({
                       multiCandNeedsTarget
                         ? 'Link into the selected shipment without taking any value from the email'
                         : keepMeansBlank
-                          ? 'Mark reviewed and leave these fields empty — writes nothing, the leg leaves the desk'
-                          : 'Mark reviewed and keep every stored value — writes nothing, the leg leaves the desk'
+                          ? 'Mark reviewed and leave these fields empty — writes nothing, records no per-field ruling, the leg leaves the desk'
+                          : 'Mark reviewed and leave every stored value alone — writes nothing, records no per-field ruling, the leg leaves the desk'
                     }
                     className={cn(ACTION_BTN, ACTION_VARIANT.neutral)}
                   >
                     {busy && <Loader2 size={13} className="animate-spin" />}
                     {multiCandNeedsTarget
                       ? 'Link Without Field Changes'
-                      : /* "Keep Current" over an empty Current promises to keep something that is not
-                           there. What the click actually does is decline every candidate — so say
-                           "All" the moment there is more than one, or the label understates its reach
-                           on exactly the legs where reach matters. */
+                      : /*
+                           "Leave", never "Keep".
+
+                           `Keep` now belongs to ONE thing on this card: the per-row ruling, which
+                           records a human decision and locks the field. This button is its opposite —
+                           it records nothing and clears any ruling already ticked — so a bar reading
+                           `Keep All Current` beside `Keep Vendor Code` put the two furthest-apart
+                           outcomes behind the same verb, separated only by the word "All".
+
+                           `Leave …` also matches the empty-Current wording that was already here, so
+                           the decline reads the same way whether or not the leg stores anything, and
+                           "All" still appears the moment there is more than one row — without it the
+                           label understates its reach on exactly the legs where reach matters.
+                        */
                         keepMeansBlank
                         ? conflicts.length > 1
                           ? 'Leave All Blank'
                           : 'Leave Blank'
                         : conflicts.length > 1
-                          ? 'Keep All Current'
-                          : 'Keep Current'}
+                          ? 'Leave All As Is'
+                          : 'Leave As Is'}
                   </button>
                 )}
                 {(onSaveAndApprove || onApprove || multiCandNeedsTarget) && (
@@ -2257,7 +2368,11 @@ export function ReviewCard({
                           : 'Select a shipment above first'
                         : changeCount > 0
                           ? `Apply ${changeCount} change${changeCount === 1 ? '' : 's'} — the leg leaves the desk`
-                          : 'Mark reviewed — nothing is written, the leg leaves the desk'
+                          : keptRows.length > 0
+                            ? `Record that the stored ${keptRows.map((r) => r.label).join(', ')} ${
+                                keptRows.length === 1 ? 'is' : 'are'
+                              } right — no value is written, but a later email that disagrees will be flagged`
+                            : 'Mark reviewed — nothing is written, the leg leaves the desk'
                     }
                     className={cn(ACTION_BTN, ACTION_VARIANT.primary)}
                   >
@@ -2293,10 +2408,20 @@ export function ReviewCard({
                           ? applyToken
                             ? `Apply ${applyToken}`
                             : `Apply ${changeCount} Change${changeCount === 1 ? '' : 's'}`
-                          : /* A question with a real answer keeps it ("Track it" under "Is this a
-                               real shipment?"); the eleven generic fall-throughs now say what the
-                               click does instead of naming a ceremony. */
-                            (desk?.question.affirm ?? NO_CHANGE_VERDICT)}
+                          : keepColumns.length > 0
+                            ? /* Nothing to write, but not nothing to do: the operator ticked
+                                 "Keep current" on these rows and that ruling is what the click
+                                 commits. The old label here said "No Changes", which is true of the
+                                 VALUES and false about the click. Named like `applyToken` — the one
+                                 field when there is one, a count otherwise — and distinguished from
+                                 the bulk "Leave All As Is" beside it by naming what it is about. */
+                              keptRows.length === 1
+                              ? `Keep ${keptRows[0]!.label}`
+                              : `Keep ${keptRows.length} Fields`
+                            : /* A question with a real answer keeps it ("Track it" under "Is this a
+                                 real shipment?"); the eleven generic fall-throughs now say what the
+                                 click does instead of naming a ceremony. */
+                              (desk?.question.affirm ?? NO_CHANGE_VERDICT)}
                   </button>
                 )}
                 {/* F11: multi-candidate escape hatch — genuinely new shipment (e.g. 拼櫃) without linking */}
