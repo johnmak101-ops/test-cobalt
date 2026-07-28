@@ -102,6 +102,40 @@ that drops a menu inside this grid needs the same treatment — and note the cav
 `transform`, `filter` or `contain` on an ancestor would become the containing block and reintroduce
 the bug.
 
+### Mode change is a reclassification — the design, and what shipped (2026-07-28)
+
+A mode change invalidates one set of transport fields and requires another. Treating it as an
+ordinary field edit is what orphaned data. Four pieces were designed; all four shipped. Mockup:
+`mode-change-mockup.html` (desktop).
+
+- **1 · never hide a populated field.** Off-mode AND empty hides; off-mode AND populated always
+  shows, tagged, with a one-click clear on the edit form. Before this, `SEA` + `flightNo` was
+  invisible in the read view, the edit form AND the desk (`fieldsToApply` skips empty, so empty means
+  "no decision" there) — present in the DB, the API and every export, reachable from nothing.
+- **2 · carry-over panel on the edit form.** A pending mode change lists what it strands, ticked to
+  clear, values struck through and still on screen. Rides on the same Save.
+- **3a · the desk carries the consequence.** Taking a Mode from an email clears the old mode's fields
+  in the same Apply, and the count includes them. This is what forced the explicit clear signal:
+  `clearedColumns` posts `''` per column, because an empty resolution already means "undecided".
+  `coerceLegField` maps `''` → null for every column, so a clear is an ordinary field write.
+- **3b · the desk states a contradiction it did not cause.** A leg holding the other mode's fields
+  gets `i-mode-mismatch` — stated, never acted on. Enumerated in `DESK_DECISION_LINE_IDS` because an
+  unmapped lineId defaults to `fyi`, which the desk filters out entirely.
+
+**Clear-by-default is deliberate and is the OPPOSITE of the review desk's take-tick default.** On the
+desk, un-taking is free because the email's value is never lost. Here the values are preserved by the
+shipment history, so clearing is filing rather than deletion — and a sea leg still reporting a flight
+number is wrong in every downstream consumer.
+
+**Deliberately NOT done: filtering contested rows by mode on the review desk.** Mode is itself a
+contested row there, so filtering would mean choosing between the stored mode and the proposed one,
+and rows would appear and vanish as the operator ticks Mode. One field silently changing which other
+fields are decidable is worse than showing a contradiction.
+
+Mode vocabulary lives in `lib/mode-fields.ts` — one place, because it was private to
+ShipmentDetailPage and the desk could not ask the question. An unknown mode claims neither set, so an
+unclassified leg is never called contradictory.
+
 ## Do not re-open
 
 - Postgres / Drizzle as primary store

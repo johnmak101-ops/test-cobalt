@@ -24,7 +24,7 @@ import { AlertCard } from '../components/alerts/AlertCard'
 import { formatDate, formatDateTime, formatDateMaybeTime, formatShipmentId, cn } from '../lib/utils'
 import { parseSender } from '../lib/email-sender'
 import { EDITABLE_FIELDS, fieldLabel, fieldUnit, numericFieldWarn, dateOrderWarn, toInputValue, type EditableField, formatNumericDisplay, dateColumnHasTime } from '../lib/review-fields'
-import { isAirMode, isOffModeField } from '../lib/mode-fields'
+import { isAirMode, isOffModeField, offModeFieldsOn } from '../lib/mode-fields'
 import { toast } from '../components/ui/Toast'
 import { interactiveProps } from '../lib/interactive'
 import { Pagination, usePagination, PageSizeSelect } from '../components/ui/Pagination'
@@ -156,6 +156,8 @@ export default function ShipmentDetailPage() {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState<Record<string, string>>({})
   const [note, setNote] = useState('')
+  /** Carry-over exceptions: a column in here is one the operator chose to KEEP across a mode change. */
+  const [keepOnSwitch, setKeepOnSwitch] = useState<Record<string, boolean>>({})
   /** Related Emails list pagination (client-side; threads can be 30–100+). */
   const [emailPage, setEmailPage] = useState(1)
   const [emailPerPage, setEmailPerPage] = useState(10)
@@ -218,12 +220,41 @@ export default function ShipmentDetailPage() {
     for (const sec of EDIT_SECTIONS) for (const f of sec.fields) d[f.db] = toInputValue(f.get(shipment), f.type)
     setDraft(d)
     setNote('')
+    setKeepOnSwitch({})
     setEditing(true)
   }
   const cancelEdit = () => {
     setEditing(false)
     setNote('')
   }
+  /**
+   * Fields a PENDING mode change would strand — read off the draft, against the draft's new mode.
+   *
+   * A mode change is a reclassification, not a field edit: it invalidates one set of transport fields
+   * and requires another. Nothing used to say so, so a leg switched AIR→SEA silently kept its flight
+   * number for good. Computed from the draft (not the shipment) so that clearing a row by its own
+   * `· clear` control drops it from this list too, instead of leaving a stale entry behind.
+   */
+  const modeCarryOver = editing
+    ? offModeFieldsOn({
+        mode: draft.mode,
+        vesselName: draft.vesselName,
+        voyageNumber: draft.voyageNo,
+        mblNumber: draft.mbl,
+        flightNo: draft.flightNo,
+        mawb: draft.mawb,
+      }).filter(() => (draft.mode ?? '') !== '' && (draft.mode ?? '') !== (shipment.mode ?? ''))
+    : []
+  /**
+   * Ticked = clear (the default, and the operator's stated preference). Absent means ticked; this map
+   * only records the exceptions, so a fresh mode change starts fully ticked without seeding state.
+   *
+   * Clearing is safe BECAUSE the values are preserved — every write goes through the shipment history
+   * this page already renders. So this is filing, not deletion, and a sea shipment still reporting a
+   * flight number is wrong in every downstream consumer.
+   */
+  const willClear = (column: string) => keepOnSwitch[column] !== true
+
   // draft vs the saved shipment — computed on every render so the Save gate reacts to edits live.
   const computeChanged = (): Record<string, unknown> => {
     const changed: Record<string, unknown> = {}
@@ -232,6 +263,10 @@ export default function ShipmentDetailPage() {
       const next = draft[f.db] ?? ''
       if (next !== orig) changed[f.db] = next === '' ? null : next
     }
+    // The carry-over clears ride on the SAME save, so the reclassification lands as one act rather
+    // than as a mode edit now and an orphaned field forever. The draft itself is untouched, so the
+    // rows keep showing what is about to go — nothing disappears from under the operator.
+    for (const f of modeCarryOver) if (willClear(f.column)) changed[f.column] = null
     return changed
   }
   const saveEdit = () => {
@@ -595,7 +630,66 @@ export default function ShipmentDetailPage() {
                       )}
                       {/* numeric errors render inside NumberField (after blur) — see its docstring */}
                     </div>
-                      )]
+                      ),
+                      /*
+                        The consequence of the switch, stated where the switch is made — before Save,
+                        not after. A mode change invalidates one set of transport fields and requires
+                        another, and nothing on this form used to say so, so a leg switched AIR→SEA
+                        kept its flight number for good.
+
+                        Ticked by default. Deliberately the opposite of the review desk's default, and
+                        the reason matters: on the desk un-taking is free because the email's value is
+                        never lost, whereas these values ARE preserved — by the shipment history this
+                        page already renders. Clearing is filing, not deletion, and a sea shipment
+                        still reporting a flight number is wrong in every downstream consumer.
+                      */
+                      ...(f.db === 'mode' && modeCarryOver.length > 0
+                        ? [(
+                            <div
+                              key="mode-carry-over"
+                              data-testid="mode-carry-over"
+                              className="col-span-full rounded-lg border border-status-warning/35 bg-status-warning/[0.06] px-3 py-2.5"
+                            >
+                              <p className="text-sm font-semibold text-text-primary">
+                                Switching <span className="font-mono">{shipment.mode}</span> →{' '}
+                                <span className="font-mono">{draft.mode}</span>.{' '}
+                                {modeCarryOver.length} stored{' '}
+                                {modeCarryOver.length === 1 ? 'field belongs' : 'fields belong'} to the old mode.
+                              </p>
+                              <div className="mt-2 grid gap-1.5">
+                                {modeCarryOver.map((cf) => (
+                                  <label key={cf.column} className="flex cursor-pointer items-start gap-2 text-sm">
+                                    <input
+                                      type="checkbox"
+                                      checked={willClear(cf.column)}
+                                      onChange={() =>
+                                        setKeepOnSwitch((k) => ({ ...k, [cf.column]: willClear(cf.column) }))
+                                      }
+                                      data-testid={`mode-carry-over-${cf.column}`}
+                                      aria-label={`Clear ${cf.label} when switching to ${draft.mode}`}
+                                      className="mt-[3px] h-3.5 w-3.5 shrink-0 cursor-pointer rounded border-border accent-status-critical"
+                                    />
+                                    <span className="min-w-0 text-text-secondary">
+                                      Clear <span className="font-medium text-text-primary">{cf.label}</span>{' '}
+                                      <span
+                                        className={cn(
+                                          'field-value font-mono',
+                                          willClear(cf.column) ? 'text-text-muted line-through' : 'text-text-primary',
+                                        )}
+                                      >
+                                        {cf.value}
+                                      </span>
+                                    </span>
+                                  </label>
+                                ))}
+                              </div>
+                              <p className="mt-2 text-xs text-text-muted">
+                                Cleared values stay in History — this is filing, not deletion.
+                              </p>
+                            </div>
+                          )]
+                        : []),
+                      ]
                   })}
                 </DetailSection>
               ))}

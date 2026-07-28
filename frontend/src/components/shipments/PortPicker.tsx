@@ -114,8 +114,9 @@ export function PortPicker({ value, onChange, id, ariaLabel, placeholder, classN
         onFocus={() => setOpen(true)}
         onKeyDown={onKeyDown}
       />
+      {/* Under the field, never over it — see PartyPicker for why. */}
       {resolved && !open && (
-        <span className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-xs text-text-muted">
+        <span className="mt-0.5 block truncate text-[11px] leading-tight text-text-muted">
           {resolved.name}
         </span>
       )}

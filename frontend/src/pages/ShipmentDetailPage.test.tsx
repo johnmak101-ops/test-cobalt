@@ -417,3 +417,82 @@ describe('ShipmentDetailPage — header identity', () => {
     expect(screen.getAllByText('GZL26261147').length).toBeGreaterThan(0)
   })
 })
+
+/**
+ * Piece 2 of the mode-change design. A mode change is a reclassification: it invalidates one set of
+ * transport fields and requires another. Nothing on this form used to say so, so a leg switched
+ * AIR→SEA kept its flight number for good — hidden by the old mode-only visibility rule, and
+ * unreachable from every other screen.
+ */
+describe('ShipmentDetailPage — switching mode states what it strands', () => {
+  beforeEach(() => {
+    mockUseShipment.mockReset()
+    mutateSpy.mockClear()
+  })
+
+  const airLegWithAirFields = () =>
+    fixture({ mode: 'AIR', flightNo: 'CX252', mawb: '160-88112233' } as Partial<ShipmentDetail>)
+
+  const openEditor = async (user: ReturnType<typeof userEvent.setup>) => {
+    mockUseShipment.mockReturnValue({ data: airLegWithAirFields(), isLoading: false, isError: false })
+    renderPage()
+    await user.click(screen.getByRole('button', { name: /^edit$/i }))
+  }
+
+  it('says nothing while the mode is unchanged', async () => {
+    const user = userEvent.setup()
+    await openEditor(user)
+    expect(screen.queryByTestId('mode-carry-over')).toBeNull()
+  })
+
+  it('lists the stranded fields the moment the mode changes, ticked to clear', async () => {
+    const user = userEvent.setup()
+    await openEditor(user)
+    await user.selectOptions(screen.getByLabelText('Mode'), 'SEA')
+
+    const panel = screen.getByTestId('mode-carry-over')
+    expect(panel).toHaveTextContent(/Switching\s*AIR\s*→\s*SEA/)
+    expect(panel).toHaveTextContent(/2 stored fields belong to the old mode/i)
+    expect(screen.getByTestId('mode-carry-over-flightNo')).toBeChecked()
+    expect(screen.getByTestId('mode-carry-over-mawb')).toBeChecked()
+    // The values stay on screen — nothing vanishes from under the operator before they save.
+    expect(panel).toHaveTextContent('CX252')
+  })
+
+  it('saves the mode and the clears as one act', async () => {
+    const user = userEvent.setup()
+    await openEditor(user)
+    await user.selectOptions(screen.getByLabelText('Mode'), 'SEA')
+    await user.type(screen.getByRole('textbox', { name: /note/i }), 'booking moved to ocean')
+    await user.click(screen.getByRole('button', { name: /^save$/i }))
+
+    expect(mutateSpy).toHaveBeenCalledTimes(1)
+    expect(mutateSpy.mock.calls[0][0].fields).toMatchObject({
+      mode: 'SEA',
+      flightNo: null,
+      mawb: null,
+    })
+  })
+
+  it('un-ticking keeps that field across the switch', async () => {
+    const user = userEvent.setup()
+    await openEditor(user)
+    await user.selectOptions(screen.getByLabelText('Mode'), 'SEA')
+    await user.click(screen.getByTestId('mode-carry-over-mawb'))
+    await user.type(screen.getByRole('textbox', { name: /note/i }), 'keep the MAWB for the claim')
+    await user.click(screen.getByRole('button', { name: /^save$/i }))
+
+    const sent = mutateSpy.mock.calls[0][0].fields
+    expect(sent).toMatchObject({ mode: 'SEA', flightNo: null })
+    expect(sent).not.toHaveProperty('mawb')
+  })
+
+  it('changing the mode back withdraws the whole consequence', async () => {
+    const user = userEvent.setup()
+    await openEditor(user)
+    await user.selectOptions(screen.getByLabelText('Mode'), 'SEA')
+    expect(screen.getByTestId('mode-carry-over')).toBeInTheDocument()
+    await user.selectOptions(screen.getByLabelText('Mode'), 'AIR')
+    expect(screen.queryByTestId('mode-carry-over')).toBeNull()
+  })
+})
