@@ -401,9 +401,14 @@ export function ReviewCard({
       // A slot the critic already contests carries the email's own candidates — a second row would
       // ask one question twice with different options.
       if ((criticReview?.conflicts ?? []).some((c) => c.field === slot.field)) continue
+      // Already linked ⇒ nothing to choose. Read the FK, which is the only thing that actually says
+      // so. This was an exact-NAME test, on the assumption that a raw value spelled exactly like a
+      // master must have linked — and leg 202607B738 disproves it: `vendor_raw` is
+      // "MACAU FUNG TAI LIMITED", the Mesh master is "MACAU FUNG TAI LIMITED", and `vendor_id` is
+      // NULL. The one party that most obviously needed one click got no row at all.
+      if (leg[slot.linked] != null) continue
       const hits = mastersNaming(raw, masters.map((m) => m.name))
-      // An EXACT master name is already linked (or will be) — nothing to choose between.
-      if (!hits.length || hits.some((h) => h.trim().toUpperCase() === raw.toUpperCase())) continue
+      if (!hits.length) continue
       const picks = hits
         .map((name) => masters.find((m) => m.name === name))
         .filter((m): m is PartyMaster => !!m)
