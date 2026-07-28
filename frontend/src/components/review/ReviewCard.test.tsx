@@ -137,13 +137,13 @@ describe('ReviewCard', () => {
     expect(within(table).getByText('ETA')).toBeInTheDocument()
     // OUR label, not the payload's bare 'HBL' — reviewFieldLabel prefers EDITABLE_FIELDS.
     expect(within(table).getByText('HBL / HAWB / FCR No.')).toBeInTheDocument()
-    // Multi-candidate HBL: every stated value visible in "Also Seen In Email" (not buried in a datalist)
+    // Multi-candidate HBL: every stated value visible in "Other values" (not buried in a datalist)
     expect(within(table).getByText('SE26061400005')).toBeInTheDocument()
     expect(within(table).getByText('SE26061400006')).toBeInTheDocument()
     expect(within(table).getByTestId('multi-candidate-proposed')).toBeInTheDocument()
     // Column headers — default view shows agent proposals; Resolution/Edited only after Edit / changes.
     expect(within(table).getByText('Current')).toBeInTheDocument()
-    expect(within(table).getByTestId('proposed-column-header')).toHaveTextContent('Also Seen In Email')
+    expect(within(table).getByTestId('proposed-column-header')).toHaveTextContent('Other values')
     expect(within(table).queryByText('Resolution')).toBeNull()
     expect(within(table).queryByText('Edited')).toBeNull()
     expect(within(table).queryByText('Recommended')).toBeNull()
@@ -803,7 +803,7 @@ describe('conflict table — read-only by default, Edit to change values', () =>
         />
       </MemoryRouter>,
     )
-    expect(screen.getByTestId('proposed-column-header')).toHaveTextContent('Also Seen In Email')
+    expect(screen.getByTestId('proposed-column-header')).toHaveTextContent('Other values')
     await user.click(screen.getByRole('button', { name: /^edit$/i }))
     expect(screen.getByTestId('proposed-column-header')).toHaveTextContent('Resolution')
     expect((screen.getByTestId('datetime-date') as HTMLInputElement).value).toBe('2026-07-20')
@@ -963,7 +963,7 @@ describe('conflict table — read-only by default, Edit to change values', () =>
 
       expect(screen.queryByTestId('conflict-override')).toBeNull()
       expect(screen.queryByTestId('discard-edits')).toBeNull()
-      expect(screen.getByTestId('proposed-column-header')).toHaveTextContent('Also Seen In Email')
+      expect(screen.getByTestId('proposed-column-header')).toHaveTextContent('Other values')
     })
   })
 
@@ -1196,7 +1196,7 @@ describe('conflict table — read-only by default, Edit to change values', () =>
     expect(screen.getByTestId('proposed-column-header')).toHaveTextContent('Resolution')
     await user.click(screen.getByRole('button', { name: /^cancel$/i }))
     // discarded → back to the agent's proposal, not a lingering "Edited" state
-    expect(screen.getByTestId('proposed-column-header')).toHaveTextContent('Also Seen In Email')
+    expect(screen.getByTestId('proposed-column-header')).toHaveTextContent('Other values')
     expect(screen.getByRole('button', { name: /^edit$/i })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /^submit$/i })).toBeNull()
   })

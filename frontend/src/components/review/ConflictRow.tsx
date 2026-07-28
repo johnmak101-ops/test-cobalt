@@ -64,6 +64,10 @@ function Unit({ unit }: { unit?: string | null }) {
 /** Mesh master code beside the party name (variant A) — the code is a chip, never part of the
  *  committed value string. */
 function MasterCodeChip({ code }: { code: string }) {
+  // A master with no code to show is not a master with an empty chip. Forwarders store their NAME
+  // (their codes are ERP sequence numbers), so their candidates carry `code: ''` deliberately — and
+  // an empty chip rendered as a stray blue dash in front of every option.
+  if (!code.trim()) return null
   return (
     <span
       data-testid="master-code-chip"
@@ -601,7 +605,11 @@ export function ConflictRow({
                           ? `Keep the current ${label} instead of ${emailCandidate!.value}`
                           : `Apply ${emailCandidate!.value} to ${label}`
                       }
-                      className="mt-[3px] h-3.5 w-3.5 shrink-0 cursor-pointer rounded border-border accent-status-success"
+                      /* Blue, like every other "the operator chose this" control in these tables: the radio
+                         rows below (border-cobalt-primary) and the PO checkboxes. Green here meant
+                         nothing — the add/remove tones in ReviewPoStylesSection are semantic, this is
+                         the same plain act of taking a value, so it read as a third kind of choice. */
+                      className="mt-[3px] h-3.5 w-3.5 shrink-0 cursor-pointer rounded border-border accent-cobalt-primary-light"
                     />
                     {valueText}
                   </label>
@@ -1005,7 +1013,10 @@ function MultiCandidateProposed({
                 'flex cursor-pointer items-start gap-2 rounded border px-2 py-1 text-xs transition-colors',
                 keepSelected
                   ? 'border-cobalt-primary bg-cobalt-primary/10'
-                  : 'border-border bg-surface-900 hover:bg-surface-700',
+                  /* Raised, not sunk. bg-surface-900 is the input colour — darker than the card it
+                     sits on — so a list of five options read as five holes in the table rather than
+                     five things to choose between. An option is a target, not a field. */
+                  : 'border-border bg-surface-700 hover:bg-surface-600',
               )}
             >
               <input
@@ -1045,7 +1056,7 @@ function MultiCandidateProposed({
                     'flex cursor-pointer items-start gap-2 rounded border px-2 py-1 text-xs transition-colors',
                     selected
                       ? 'border-cobalt-primary bg-cobalt-primary/10'
-                      : 'border-border bg-surface-900 hover:bg-surface-700',
+                      : 'border-border bg-surface-700 hover:bg-surface-600',
                   )}
                 >
                   <input

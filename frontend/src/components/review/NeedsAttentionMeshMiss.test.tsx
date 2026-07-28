@@ -75,7 +75,7 @@ describe('NeedsAttentionMeshMiss', () => {
   })
 })
 
-describe('NeedsAttentionMeshMiss — five LOGWINs are a choice, not a missing company', () => {
+describe('NeedsAttentionMeshMiss — names the masters, but does not ask for the decision', () => {
   const LOGWIN = [
     'LOGWIN AIR & OCEAN HONG KONG LTD',
     'LOGWIN AIR+OCEAN',
@@ -91,42 +91,19 @@ describe('NeedsAttentionMeshMiss — five LOGWINs are a choice, not a missing co
     details: ['LOGWIN'],
     meshCandidates: { LOGWIN },
   }
-  const pickCtx = (onPick = vi.fn()) => ({
-    kindFor: () => 'forwarder' as const,
-    isMasterValue: (_k: 'forwarder' | 'customer' | 'vendor', v: string) => LOGWIN.includes(v),
-    onPick,
-  })
 
-  it('uses the SAME PartyPicker as Customer Code and Vendor Code — one control, one decision', async () => {
-    render(<ul><NeedsAttentionMeshMiss item={meshItem} pick={pickCtx()} /></ul>)
-    await userEvent.click(screen.getByTestId('mesh-party-expand'))
-    const control = screen.getByTestId('mesh-candidate-picker').querySelector('input')!
-    expect(control).toHaveAttribute('role', 'combobox')
-    // seeded with the raw name, so the list opens already narrowed — no searching for what we know
-    expect(control).toHaveValue('LOGWIN')
-  })
-
-  it('writes the value PartyPicker hands back, tagged with the raw name it replaces', async () => {
-    const onPick = vi.fn()
-    render(<ul><NeedsAttentionMeshMiss item={meshItem} pick={pickCtx(onPick)} /></ul>)
-    await userEvent.click(screen.getByTestId('mesh-party-expand'))
-    await userEvent.click(screen.getByTestId('mesh-candidate-picker').querySelector('input')!)
-    await userEvent.click(await screen.findByText('LOGWIN AIR+OCEAN'))
-    expect(onPick).toHaveBeenCalledWith('LOGWIN', 'LOGWIN AIR+OCEAN')
-  })
-
-  it('a column it cannot identify on this leg lists the masters instead of offering a dead control', async () => {
-    render(<ul><NeedsAttentionMeshMiss item={meshItem} pick={{ ...pickCtx(), kindFor: () => null }} /></ul>)
-    await userEvent.click(screen.getByTestId('mesh-party-expand'))
-    expect(screen.queryByTestId('mesh-candidate-picker')).not.toBeInTheDocument()
-    expect(screen.getAllByTestId('mesh-candidate-name')).toHaveLength(3)
-  })
-
-  it('without a write path the candidates still show — read-only surfaces list, not act', async () => {
+  it('lists the masters instead of claiming the company is missing', async () => {
     render(<ul><NeedsAttentionMeshMiss item={meshItem} /></ul>)
     await userEvent.click(screen.getByTestId('mesh-party-expand'))
     expect(screen.getAllByTestId('mesh-candidate-name')).toHaveLength(3)
-    expect(screen.queryByTestId('mesh-candidate-picker')).not.toBeInTheDocument()
+    expect(screen.queryByText(/not in Mesh/)).not.toBeInTheDocument()
+  })
+
+  it('offers no control — the decision belongs to the conflict table, and asking twice is how a desk disagrees with itself', async () => {
+    render(<ul><NeedsAttentionMeshMiss item={meshItem} /></ul>)
+    await userEvent.click(screen.getByTestId('mesh-party-expand'))
+    expect(screen.queryByRole('combobox')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('mesh-candidate-pick')).not.toBeInTheDocument()
   })
 
   it('a name with no candidates keeps the "not in Mesh" wording', async () => {

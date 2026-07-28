@@ -1,8 +1,8 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import { ArrowLeft, AlertTriangle } from 'lucide-react'
-import { useShipment, useUpdateShipment } from '../hooks/use-shipments'
+import { useShipment } from '../hooks/use-shipments'
 import { useParties } from '../hooks/use-parties'
 import {
   useConfirmShipment,
@@ -61,10 +61,9 @@ export default function ShipmentReviewFocusPage() {
     </button>
   )
 
-  const updateForPick = useUpdateShipment(id ?? '')
   /**
-   * The Mesh mirror + the write path for "link this party to that master". The card resolves which
-   * column and what to store; the page owns the data layer — ReviewCard must stay renderable
+   * The Mesh mirror. The card turns an unlinked party into a conflict-table row and offers these as
+   * its candidates; it must not fetch them itself — ReviewCard must stay renderable
    * without a QueryClient, as 134 of its tests do.
    *
    * Declared BEFORE the loading/error early returns: hooks cannot sit behind a conditional.
@@ -75,12 +74,6 @@ export default function ShipmentReviewFocusPage() {
   const partyMasters = useMemo(
     () => [...(customerMasters ?? []), ...(vendorMasters ?? []), ...(forwarderMasters ?? [])],
     [customerMasters, vendorMasters, forwarderMasters],
-  )
-  const pickMaster = useCallback(
-    async (column: string, value: string, note: string) => {
-      await updateForPick.mutateAsync({ fields: { [column]: value }, note })
-    },
-    [updateForPick],
   )
 
   if (isLoading) {
@@ -250,7 +243,6 @@ export default function ShipmentReviewFocusPage() {
         <ReviewCard
           shipment={shipment}
           partyMasters={partyMasters}
-          onPickMaster={pickMaster}
           criticReview={shipment.criticReview ?? null}
           emails={shipment.emails ?? []}
           defaultExpanded

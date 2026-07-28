@@ -664,10 +664,12 @@ function StyleTick({
         checked={checked}
         onChange={onChange}
         aria-label={ariaLabel}
-        className={cn(
-          'mt-[3px] h-3.5 w-3.5 shrink-0 cursor-pointer rounded border-border',
-          tone === 'add' ? 'accent-status-success' : 'accent-cobalt-primary-light',
-        )}
+        /* One colour for "the operator chose this", across every table on the card: the style
+           checkboxes, the conflict-table take, and the master radio rows. The green 'add' tone put a
+           third colour on one row — the left column blue, the "Also seen in email" tick green — which
+           read as two different kinds of choice when both are the same act. What is being added is
+           already said by which column the box sits in. */
+        className="mt-[3px] h-3.5 w-3.5 shrink-0 cursor-pointer rounded border-border accent-cobalt-primary-light"
       />
       <span
         className={cn(

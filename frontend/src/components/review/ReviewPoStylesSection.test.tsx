@@ -152,7 +152,7 @@ describe('ReviewPoStylesSection — page-level Edit', () => {
     // third column tracks the card's state label; default = the shared wording. NOT "AI Proposed":
     // openDecisions strips settled conflicts upstream, so what lands here is what the committer
     // read and declined to write.
-    expect(screen.getByTestId('po-proposed-column-header')).toHaveTextContent('Also Seen In Email')
+    expect(screen.getByTestId('po-proposed-column-header')).toHaveTextContent('Other values')
   })
 
   /** One box per style, never a comma blob — and every stored one opens TICKED, because what the

@@ -155,6 +155,11 @@ export type ContestedFieldSummary = {
    * 17 messages for a sentence that does not exist.
    */
   fromMasterData?: boolean
+  /**
+   * The leg is linked to NO master on this slot, as opposed to a different one. Both cases offer
+   * master-data values, and they are opposite statements about the shipment — see the detail copy.
+   */
+  unlinked?: boolean
 }
 
 /**
@@ -192,9 +197,17 @@ export function conflictDeskQuestion(
       reject: null,
     },
     detail: f.fromMasterData
-      ? // No email said this. Name the real source, and say what is actually at odds — the value on
-        // the leg versus the company it is linked to in master data.
-        `This shipment is linked to a different company in master data — apply the master's ${f.label}, ${keepClause}.`
+      ? f.unlinked
+        ? // Nothing is linked on this slot, so there is no "different company" to be at odds with.
+          // Saying there was is what made the row read as a contradiction that did not exist: the
+          // shipment is not linked to someone ELSE, it is linked to nobody. What is missing is the
+          // link, and only a person can say which company it should point at.
+          f.candidateCount > 1
+            ? `This ${f.label} is not linked to master data — ${f.candidateCount} companies in Mesh are written like it. Pick the right one, ${keepClause}.`
+            : `This ${f.label} is not linked to master data — Mesh has one company written like it. Link it, ${keepClause}.`
+        : // No email said this. Name the real source, and say what is actually at odds — the value on
+          // the leg versus the company it is linked to in master data.
+          `This shipment is linked to a different company in master data — apply the master's ${f.label}, ${keepClause}.`
       : f.candidateCount > 1
         ? `${f.candidateCount} candidates from the email — pick one below, ${keepClause}.`
         : `The email proposes a different ${f.label} — apply it, ${keepClause}.`,

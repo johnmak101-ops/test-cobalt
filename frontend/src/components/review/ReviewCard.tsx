@@ -57,7 +57,8 @@ import {
   pickDeskQuestion,
 } from './desk-question'
 import { NeedsAttentionMeshMiss } from './NeedsAttentionMeshMiss'
-import type { PartyMaster, PartyKind } from '../../hooks/use-parties'
+import type { PartyMaster } from '../../hooks/use-parties'
+import { mastersNaming } from '../../lib/party-names'
 import {
   REVIEW_COL,
   REVIEW_FS,
@@ -188,11 +189,6 @@ export interface ReviewCardProps {
    * situations whose correct operator actions are opposites. Omitted keeps the old copy.
    */
   partyMasters?: PartyMaster[]
-  /**
-   * Link a raw party to the master the operator picked. The card resolves WHICH column and what to
-   * store; the page owns the write, so this component stays free of the data layer.
-   */
-  onPickMaster?: (column: string, value: string, note: string) => Promise<void> | void
 }
 
 function nameOf(value: unknown): string | null {
@@ -290,7 +286,6 @@ export function ReviewCard({
   onIdentify,
   onLink,
   partyMasters,
-  onPickMaster,
 }: ReviewCardProps) {
   const [expanded, setExpanded] = useState(defaultExpanded)
   const [note, setNote] = useState('')
@@ -341,7 +336,6 @@ export function ReviewCard({
    */
   const allMasters = useMemo(() => partyMasters ?? [], [partyMasters])
   const masterNames = useMemo(() => allMasters.map((p) => p.name).filter(Boolean), [allMasters])
-  const [pickingParty, setPickingParty] = useState<string | null>(null)
   /**
    * Link a raw party name to the Mesh master the operator chose.
    *
@@ -355,64 +349,6 @@ export function ReviewCard({
    * The write goes through the ordinary human-edit PATCH, so it resolves the FK, locks the field and
    * lands in Change History exactly as typing it would.
    */
-  const pickMasterValue = useCallback(
-    (partyName: string, storedValue: string) => {
-      if (!shipmentId || !onPickMaster) return
-      const leg = shipment as unknown as Record<string, unknown>
-      const column = (['forwarderRaw', 'customerRaw', 'vendorRaw'] as const).find(
-        (c) => String(leg[c] ?? '').trim() === partyName.trim(),
-      )
-      if (!column) return
-      // `storedValue` is already in the form the column wants — PartyPicker applied the code/name
-      // split on the way out. The master NAME is looked up only to write a readable audit note.
-      const master = allMasters.find(
-        (m) =>
-          m.name.trim() === storedValue.trim() ||
-          (m.code ?? '').trim().toUpperCase() === storedValue.trim().toUpperCase(),
-      )
-      setPickingParty(partyName)
-      void Promise.resolve(
-        onPickMaster(
-          column,
-          storedValue,
-          `linked to Mesh master ${master?.name ?? storedValue} (email said "${partyName}")`,
-        ),
-      ).finally(() => setPickingParty(null))
-    },
-    [shipmentId, shipment, allMasters, onPickMaster],
-  )
-  /**
-   * The pick context for the master-miss rows: which party KIND each raw name belongs to (found by
-   * matching the leg's own raw twins — never parsed out of the miss text, which the queue files
-   * against the wrong slot often enough to matter), and what counts as a real master identifier.
-   */
-  const meshPick = useMemo(() => {
-    if (!shipmentId || !onPickMaster) return undefined
-    const leg = shipment as unknown as Record<string, unknown>
-    const COLUMN_KIND = {
-      forwarderRaw: 'forwarder',
-      customerRaw: 'customer',
-      vendorRaw: 'vendor',
-    } as const
-    return {
-      kindFor: (partyName: string): PartyKind | null => {
-        const col = (Object.keys(COLUMN_KIND) as (keyof typeof COLUMN_KIND)[]).find(
-          (c) => String(leg[c] ?? '').trim() === partyName.trim(),
-        )
-        return col ? COLUMN_KIND[col] : null
-      },
-      // Forwarder stores the NAME, Customer/Vendor the CODE — the split PartyPicker itself makes,
-      // so whatever it hands back on a pick is exactly what is checked here.
-      isMasterValue: (kind: PartyKind, value: string): boolean => {
-        const v = value.trim()
-        if (!v) return false
-        return kind === 'forwarder'
-          ? allMasters.some((m) => m.name.trim() === v)
-          : allMasters.some((m) => (m.code ?? '').trim().toUpperCase() === v.toUpperCase())
-      },
-      onPick: (partyName: string, storedValue: string) => pickMasterValue(partyName, storedValue),
-    }
-  }, [shipmentId, onPickMaster, shipment, allMasters, pickMasterValue])
   const linkTargetReady =
     !!selectedTargetId && selectedTargetId !== shipmentId
 
@@ -429,9 +365,92 @@ export function ReviewCard({
     [shipment],
   )
 
+  /**
+   * Unlinked parties that name masters Mesh ALREADY HOLDS, as conflict rows.
+   *
+   * `forwarder_name "LOGWIN" did not exact-match a master` is a true statement about the lookup and
+   * a false one about Mesh, which has five LOGWIN companies. The icon was right — the FK is null and
+   * WHICH branch shipped this is a real question — but a review reason is prose, not a decision, so
+   * there was nowhere to answer it. It briefly lived as a bespoke picker in Needs attention; a row
+   * here instead gives it the machinery every other field decision already has: the master picker,
+   * Current seeded from the leg, the note requirement, and staging into Save & Approve rather than a
+   * widget that wrote on click. Same reason the party-MISMATCH rows are synthesised server-side
+   * (backend party-mismatch-conflict.ts).
+   *
+   * Client-side because the matching lives here: `mastersNaming` and the company-name predicate it
+   * uses are frontend modules, and porting them across the package boundary would put a second copy
+   * of "are these two names one company?" in the tree — the drift class the format-gate contract test
+   * exists to police. The mirror is already loaded for the pickers.
+   *
+   * Nothing is resolved: the LLM matcher still owns fuzzy, the FK stays unlinked until a human picks,
+   * and a party with no candidates yields no row and keeps its (correct) "add in Mesh" advice.
+   */
+  const unlinkedPartyConflicts = useMemo(() => {
+    const masters = partyMasters ?? []
+    if (!masters.length) return []
+    const leg = shipment as unknown as Record<string, unknown>
+    const SLOTS = [
+      { column: 'forwarderRaw', linked: 'forwarderId', field: 'forwarder_name', label: 'Forwarder' },
+      { column: 'customerRaw', linked: 'customerId', field: 'customer_code', label: 'Customer Code' },
+      { column: 'vendorRaw', linked: 'vendorId', field: 'vendor_code', label: 'Vendor Code' },
+    ] as const
+    const rows: CriticConflict[] = []
+    for (const slot of SLOTS) {
+      const raw = String(leg[slot.column] ?? '').trim()
+      if (!raw) continue
+      // A slot the critic already contests carries the email's own candidates — a second row would
+      // ask one question twice with different options.
+      if ((criticReview?.conflicts ?? []).some((c) => c.field === slot.field)) continue
+      // Already linked ⇒ nothing to choose. Read the FK, which is the only thing that actually says
+      // so. This was an exact-NAME test, on the assumption that a raw value spelled exactly like a
+      // master must have linked — and leg 202607B738 disproves it: `vendor_raw` is
+      // "MACAU FUNG TAI LIMITED", the Mesh master is "MACAU FUNG TAI LIMITED", and `vendor_id` is
+      // NULL. The one party that most obviously needed one click got no row at all.
+      if (leg[slot.linked] != null) continue
+      const hits = mastersNaming(raw, masters.map((m) => m.name))
+      if (!hits.length) continue
+      /**
+       * A row has to present a CHOICE. One candidate spelled exactly like the stored value is not
+       * one: leg 202607B738 rendered "MACAU FUNG TAI LIMITED" against "MACAU FUNG TAI LIMITED" under
+       * "Which Vendor Code is correct?", and the only thing that actually differed — a null FK — is
+       * invisible in a comparison of two strings. The operator is asked to weigh identical text.
+       *
+       * That is a lookup that half-ran, not a decision, and it keeps its Needs attention line ("in
+       * Mesh, not linked") until it gets an affordance built for it. A single candidate that READS
+       * differently (raw "WYSE" vs master "WYSE LONDON LIMITED") is still a real choice and still
+       * gets a row.
+       */
+      if (hits.length === 1 && hits[0]!.trim().toUpperCase() === raw.toUpperCase()) continue
+      const picks = hits
+        .map((name) => masters.find((m) => m.name === name))
+        .filter((m): m is PartyMaster => !!m)
+      rows.push({
+        field: slot.field,
+        label: slot.label,
+        candidates: picks.map((m) => ({
+          value: m.name,
+          source: 'Master data',
+          // `resolutionValueOf` posts `master.code` when it is set and falls back to `value`, so an
+          // EMPTY code is what makes a forwarder post its NAME — its codes are ERP sequence numbers,
+          // the same code/name split PartyPicker makes. Emptying the code rather than nulling
+          // `master`: ConflictRow renders "not in Mesh" on `master === null`, so nulling it stamped
+          // that tag on all five Mesh masters — the exact falsehood this row exists to end.
+          master: {
+            code: slot.field === 'forwarder_name' ? '' : (m.code ?? ''),
+            name: m.name,
+          },
+        })),
+        rationale:
+          picks.length === 1
+            ? `The emails say "${raw}", which is ${picks[0]!.name} in Mesh — not linked yet. Confirm it.`
+            : `The emails say "${raw}". Mesh has ${picks.length} companies of that name and none is written exactly that way — pick the right one.`,
+      } as CriticConflict)
+    }
+    return rows
+  }, [partyMasters, shipment, criticReview])
   const rawConflicts = useMemo(
-    () => criticReview?.conflicts ?? [],
-    [criticReview],
+    () => [...(criticReview?.conflicts ?? []), ...unlinkedPartyConflicts],
+    [criticReview, unlinkedPartyConflicts],
   )
   const liveQty = useMemo(
     () => liveQtyFromShipment(shipment as { quantityShipped?: number | null }),
@@ -479,7 +498,28 @@ export function ReviewCard({
   }).openDecisions
   const settledFields = useMemo(() => new Set(openDecisions?.settledFields ?? []), [openDecisions])
   /** What the leg stores per contested field — the Current column, instead of the pre-commit snapshot. */
-  const liveValues = useMemo(() => openDecisions?.liveValues ?? {}, [openDecisions])
+  /**
+   * `openDecisions.liveValues` is computed server-side, so it has no entry for a row synthesised
+   * here — and a missing entry renders Current EMPTY and offers "Leave Blank" over a leg that
+   * plainly stores LOGWIN. presentation.service hit the identical trap when it added the party
+   * mismatch row late. Seed the raw twin for each synthetic field.
+   */
+  const liveValues = useMemo(() => {
+    const base = openDecisions?.liveValues ?? {}
+    if (!unlinkedPartyConflicts.length) return base
+    const leg = shipment as unknown as Record<string, unknown>
+    const COLUMN_BY_FIELD: Record<string, string> = {
+      forwarder_name: 'forwarderRaw',
+      customer_code: 'customerRaw',
+      vendor_code: 'vendorRaw',
+    }
+    const seeded: Record<string, string | null> = { ...base }
+    for (const c of unlinkedPartyConflicts) {
+      const col = COLUMN_BY_FIELD[c.field]
+      if (col && seeded[c.field] == null) seeded[c.field] = String(leg[col] ?? '') || null
+    }
+    return seeded
+  }, [openDecisions, unlinkedPartyConflicts, shipment])
   /**
    * The stored value for one contested row, in the form the Current column prints it. qty settles
    * against the leg's shipped figure rather than a keyed column, so it has its own reader.
@@ -679,7 +719,64 @@ export function ReviewCard({
     [junkIdentifier, shipment, linkedPOs],
   )
 
-  const naPick = useMemo(() => pickDeskQuestion(needsAttentionGroups), [needsAttentionGroups])
+  /**
+   * Parties that became conflict-table rows are answered THERE. Leaving their Needs attention line
+   * up asked one question twice, in two places, with two controls — which is how a desk starts
+   * disagreeing with itself. Only the names that got a row are dropped: a party with no masters to
+   * choose between keeps its line, because nothing in the table speaks for it.
+   */
+  const rowedPartyNames = useMemo(() => {
+    const leg = shipment as unknown as Record<string, unknown>
+    const COLUMN_BY_FIELD: Record<string, string> = {
+      forwarder_name: 'forwarderRaw',
+      customer_code: 'customerRaw',
+      vendor_code: 'vendorRaw',
+    }
+    return new Set(
+      unlinkedPartyConflicts
+        .map((c) => String(leg[COLUMN_BY_FIELD[c.field] ?? ''] ?? '').trim())
+        .filter(Boolean),
+    )
+  }, [unlinkedPartyConflicts, shipment])
+  const deskGroups = useMemo(() => {
+    if (!rowedPartyNames.size) return needsAttentionGroups
+    return needsAttentionGroups
+      .map((g) => ({
+        ...g,
+        items: g.items.flatMap((it) => {
+          // `details` holds EVERY party on the line; `meshCandidates` only those with masters to
+          // offer. Reading the candidates alone is what dropped leg 202607B738's LEADWAY EXPRESS —
+          // genuinely absent from Mesh, and the only line saying so — because the line ALSO named a
+          // party that had become a table row. Drop the rowed NAMES, never the line they share.
+          const named = it.details ?? Object.keys(it.meshCandidates ?? {})
+          if (!named.length) return [it]
+          const left = named.filter((n) => !rowedPartyNames.has(n))
+          if (!left.length) return [] // every party on this line is answered in the table
+          if (left.length === named.length) return [it] // nothing moved — leave it exactly as built
+          const candidates = Object.fromEntries(
+            Object.entries(it.meshCandidates ?? {}).filter(([n]) => left.includes(n)),
+          )
+          const withCandidates = Object.keys(candidates).length
+          return [
+            {
+              ...it,
+              details: left,
+              meshCandidates: withCandidates ? candidates : undefined,
+              // The summary counted parties that have since moved to the table, so it is restated for
+              // the ones still here rather than left overstating what this line is about.
+              text:
+                left.length === 1 && !withCandidates
+                  ? `"${left[0]}" not found in Mesh Database — advise add in Mesh.`
+                  : `${left.length} ${left.length === 1 ? 'party' : 'parties'} not linked to Mesh${
+                      withCandidates ? ' — expand to pick or add.' : ' — advise add in Mesh.'
+                    }`,
+            },
+          ]
+        }),
+      }))
+      .filter((g) => g.items.length > 0)
+  }, [needsAttentionGroups, rowedPartyNames])
+  const naPick = useMemo(() => pickDeskQuestion(deskGroups), [deskGroups])
   const contestedFields = useMemo(
     () =>
       conflicts.map((c) => {
@@ -691,6 +788,10 @@ export function ReviewCard({
           // Synthesised party-mismatch row: nothing here came off an email, so the copy must not
           // claim one proposed it.
           fromMasterData: proposed.length > 0 && proposed.every((p) => isMasterDataSource(p.source)),
+          // A row this card synthesised for an UNLINKED party (unlinkedPartyConflicts) — the leg has
+          // no master on that slot at all, which is the opposite of the party-mismatch case that
+          // shares this master-data branch.
+          unlinked: unlinkedPartyConflicts.some((u) => u.field === c.field),
         }
       }),
     [conflicts, existingValue],
@@ -706,7 +807,7 @@ export function ReviewCard({
         },
         detailText: `Its ${junkIdentifier.label} is “${junkIdentifier.value}” — a column heading, not a number. This leg was most likely parsed out of a spreadsheet's header row.`,
         detailItem: null,
-        rest: needsAttentionGroups,
+        rest: deskGroups,
       }
     }
     /**
@@ -725,7 +826,7 @@ export function ReviewCard({
           question: fromCandidates.question,
           detailText: fromCandidates.detail,
           detailItem: null,
-          rest: needsAttentionGroups,
+          rest: deskGroups,
         }
       }
     }
@@ -740,7 +841,7 @@ export function ReviewCard({
         question: { ...fromTable.question, reject: naPick?.question.reject ?? null },
         detailText: fromTable.detail,
         detailItem: null,
-        rest: needsAttentionGroups,
+        rest: deskGroups,
       }
     }
     if (!naPick) return null
@@ -753,7 +854,7 @@ export function ReviewCard({
   }, [
     contestedFields,
     naPick,
-    needsAttentionGroups,
+    deskGroups,
     junkIdentifier,
     hasCandidateLegs,
     matchAmbiguity,
@@ -1068,12 +1169,16 @@ export function ReviewCard({
    * than the count it replaced, so those fall back to `Apply 1 Change`. The full detail is in the title.
    */
   const applyToken = useMemo(() => {
+    // Only when this ONE field is the whole of what Save will write. changeCount also counts cleared
+    // columns and PO style plans, and naming the field alone read as "Apply 369" on a card that was
+    // also about to rewrite a PO's style list — a label that understated its own reach.
+    if (changeCount !== 1) return null
     const values = Object.values(fieldsToApply)
     if (values.length !== 1) return null
     const raw = String(values[0] ?? '').trim()
     if (!raw || raw.length > 14) return null
     return raw
-  }, [fieldsToApply])
+  }, [fieldsToApply, changeCount])
   /** Nothing is stored on any contested row, so "keep what is there" means leaving it blank — say so.
    *  Reads the LIVE value: a leg storing MACFUN with no critic System candidate was offering to
    *  "Leave Blank" a field that is not blank. */
@@ -1112,8 +1217,8 @@ export function ReviewCard({
     ((conflicts.length > 0 && !allConflictsSelfServe) || poNeedsReview)
   /** Edit mode as the GRID sees it — read-only history never edits, whatever `editing` says. */
   const gridEditing = editing && !readOnly
-  const deskEmpty = needsAttentionGroups.length === 0 && conflicts.length === 0
-  const judgmentOnly = needsAttentionGroups.length > 0 && conflicts.length === 0
+  const deskEmpty = deskGroups.length === 0 && conflicts.length === 0
+  const judgmentOnly = deskGroups.length > 0 && conflicts.length === 0
   // Multi-candidate: require a real target before primary CTAs; use onLink path.
   const multiCandNeedsTarget = hasCandidateLegs && !!onLink
   const canSave =
@@ -1385,7 +1490,7 @@ export function ReviewCard({
                 {desk?.detailItem &&
                   (isExpandableMiss(desk.detailItem) ? (
                     <ul className="mt-1">
-                      <NeedsAttentionMeshMiss item={desk.detailItem} pick={meshPick} picking={pickingParty} />
+                      <NeedsAttentionMeshMiss item={desk.detailItem} />
                     </ul>
                   ) : (
                     <p
@@ -1424,7 +1529,7 @@ export function ReviewCard({
                           <ul className={REVIEW_PANEL_LIST}>
                             {g.items.map((r) =>
                               isExpandableMiss(r) ? (
-                                <NeedsAttentionMeshMiss key={r.key} item={r} pick={meshPick} picking={pickingParty} />
+                                <NeedsAttentionMeshMiss key={r.key} item={r} />
                               ) : (
                                 <li
                                   key={r.key}
@@ -1753,34 +1858,21 @@ export function ReviewCard({
             if (!showPos && !showConflicts) return null
             // Shared thead only when both blocks show (one header, two section groups).
             // Solo PO / solo conflict each render their own thead via child defaults.
-            const sharedThead = showPos && showConflicts
+            /**
+             * NO shared header. A PO row and a field row are not the same row: a PO carries a style
+             * LIST where a field carries a value, and ticking styles composes one write while picking
+             * a radio settles one field. They shared column tracks, so one header was hoisted above
+             * both — and it read "Field / PO#", a slash trying to cover two meanings, sitting above
+             * the PO section it did not describe while that section printed its own header two rows
+             * later. Two header rows in one table is the tell that the sharing never held.
+             *
+             * Each table names its own columns now. The tracks stay shared so the two still line up.
+             */
             return (
               <div
                 className="max-w-full overflow-x-auto rounded-lg border border-border"
                 data-testid="review-decision-grid"
               >
-                {sharedThead && (
-                  <table className={REVIEW_TABLE_CLASS}>
-                    <ReviewColGroup />
-                    <thead>
-                      <tr className="border-b border-border bg-surface-900/50">
-                        <th className={`${REVIEW_COL.label} ${REVIEW_TH}`}>{REVIEW_HEAD.label}</th>
-                        <th className={`${REVIEW_COL.existing} ${REVIEW_TH}`}>
-                          {REVIEW_HEAD.existing}
-                        </th>
-                        <th
-                          className={`${REVIEW_COL.proposed} ${REVIEW_TH}`}
-                          data-testid="proposed-column-header"
-                        >
-                          {proposedColumnLabel}
-                        </th>
-                        <th className={`${REVIEW_COL.reference} ${REVIEW_TH}`}>
-                          {REVIEW_HEAD.reference}
-                        </th>
-                      </tr>
-                    </thead>
-                  </table>
-                )}
                 {showPos && (
                   <ReviewPoStylesSection
                     shipmentId={shipment.id}
@@ -1801,8 +1893,7 @@ export function ReviewCard({
                 {showConflicts && (
                   <table className={REVIEW_TABLE_CLASS}>
                     <ReviewColGroup />
-                    {!sharedThead && (
-                      <thead>
+                    <thead>
                         <tr className="border-b border-border bg-surface-900/50">
                           <th className={`${REVIEW_COL.label} ${REVIEW_TH}`}>{REVIEW_HEAD.label}</th>
                           <th className={`${REVIEW_COL.existing} ${REVIEW_TH}`}>
@@ -1814,9 +1905,13 @@ export function ReviewCard({
                           >
                             {proposedColumnLabel}
                           </th>
+                          {/* Was only ever in the hoisted header, so removing that left this table
+                              one <th> short of its own colgroup. */}
+                          <th className={`${REVIEW_COL.reference} ${REVIEW_TH}`}>
+                            {REVIEW_HEAD.reference}
+                          </th>
                         </tr>
                       </thead>
-                    )}
                     {groupConflictFields(conflicts).map(({ group, conflicts: rows }) => {
                       /**
                        * Count what would actually be WRITTEN, not how many rows are contested.

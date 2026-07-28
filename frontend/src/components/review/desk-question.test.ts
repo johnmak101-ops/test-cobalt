@@ -215,3 +215,24 @@ describe('conflictDeskQuestion — a master-data row does not claim an email sai
     )
   })
 })
+
+describe('conflictDeskQuestion — unlinked is not mismatched', () => {
+  const base = { label: 'Forwarder', candidateCount: 5, fromMasterData: true, currentEmpty: false }
+  const ask = (over = {}) => conflictDeskQuestion([{ ...base, ...over } as never])?.detail ?? ''
+
+  it('does not claim a link that does not exist', () => {
+    // The mismatch copy says the shipment is linked to a DIFFERENT company. An unlinked slot is
+    // linked to none, so that sentence is a contradiction the operator cannot act on.
+    expect(ask({ unlinked: true })).not.toMatch(/linked to a different company/i)
+    expect(ask({ unlinked: true })).toMatch(/not linked to master data/i)
+  })
+
+  it('says how many there are to choose between', () => {
+    expect(ask({ unlinked: true })).toMatch(/5 companies in Mesh/i)
+    expect(ask({ unlinked: true, candidateCount: 1 })).toMatch(/one company written like it/i)
+  })
+
+  it('a real MISMATCH keeps its own wording — the leg is linked, just to someone else', () => {
+    expect(ask({ candidateCount: 1 })).toMatch(/linked to a different company in master data/i)
+  })
+})
