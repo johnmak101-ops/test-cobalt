@@ -123,7 +123,9 @@ export function NewShipmentModal({ onClose }: { onClose: () => void }) {
     const issue = dateIssues.find((i) => i.arrival === f.column)
 
     return (
-      <label key={f.column} className="flex flex-col gap-1">
+      // A long value gets the whole row rather than half of it — the same reason the detail form
+      // lets it wrap: half a two-column grid is not enough to read an address block in.
+      <label key={f.column} className={cn('flex flex-col gap-1', f.multiline && 'sm:col-span-2')}>
         <span className="text-xs text-text-muted">
           {f.label}
           {/* An off-mode field only reaches here because it HOLDS a value (shippingFieldVisible) —
@@ -195,6 +197,7 @@ export function NewShipmentModal({ onClose }: { onClose: () => void }) {
             value={cur}
             onChange={(v) => set(f.column, v)}
             error={err}
+            multiline={f.multiline}
             className={controlClass}
           />
         )}

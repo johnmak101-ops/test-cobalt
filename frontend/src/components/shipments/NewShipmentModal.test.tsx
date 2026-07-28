@@ -200,3 +200,41 @@ describe('NewShipmentModal — a format error belongs on its own field', () => {
     expect(screen.queryByTestId('text-field-error')).not.toBeInTheDocument()
   })
 })
+
+describe('NewShipmentModal — a long value needs more than one line', () => {
+  const ADDRESS = 'Leadway Freight Limited, Suite 2708, 27/F, Skyline Tower, 39 Wang Kwong Road, Kowloon Bay, Kowloon, Hong Kong'
+
+  it('renders Consignee Address as a wrapping textarea, not a one-line input', () => {
+    renderModal()
+    const control = labelFor('Consignee Address').querySelector('textarea')
+    expect(control).toBeInTheDocument()
+    expect(labelFor('Consignee Address').querySelector('input')).toBeNull()
+  })
+
+  it('gives it the full row, so it is not reading an address block in half a column', () => {
+    renderModal()
+    expect(labelFor('Consignee Address').className).toMatch(/sm:col-span-2/)
+  })
+
+  it('holds the whole value and still posts it intact', async () => {
+    const user = userEvent.setup()
+    mutate.mockClear()
+    renderModal()
+    await user.type(inputFor('Booking No.'), 'BK-1')
+    const area = labelFor('Consignee Address').querySelector('textarea')!
+    await user.click(area)
+    await user.paste(ADDRESS)
+    expect(area).toHaveValue(ADDRESS)
+
+    await user.click(screen.getByRole('button', { name: /Create shipment/ }))
+    expect(mutate.mock.calls[0]![0]).toMatchObject({ consigneeAddress: ADDRESS })
+  })
+
+  it('leaves every other text field on one line — only prose gets the textarea', () => {
+    renderModal()
+    for (const label of ['Booking No.', 'Consignee Name', 'Vessel', 'Container No.']) {
+      expect(labelFor(label).querySelector('textarea')).toBeNull()
+      expect(labelFor(label).querySelector('input')).toBeInTheDocument()
+    }
+  })
+})
