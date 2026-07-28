@@ -218,7 +218,6 @@ export function ConflictRow({
   const changed = changesStoredValue(conflict, value, existingOverride)
   // The candidate the controlled value currently equals — chips come from IT, never from a
   // free-typed override (a custom value has no known master).
-  const activeProposed = proposed.find((p) => candidateMatches(p, value)) ?? null
   const label = reviewFieldLabel(conflict.field, conflict.label)
   const column = mapCriticFieldToColumn(conflict.field)
   // POL/POD edit from the seeded ports master (searchable, free-text fallback) instead of a bare input.
@@ -240,6 +239,36 @@ export function ConflictRow({
   // Same accessor the decisions use, so the cell and the buttons can never disagree.
   const existingDisplay = currentValueOf(conflict, existingOverride)
   const existingSourceLabel = useLiveExisting ? '(on shipment)' : '(system)'
+
+  /**
+   * WHAT THE EMAIL SAID — fixed data on the conflict, independent of anything the operator has done.
+   *
+   * This column used to render `value` (the RESOLUTION) and then look up whichever candidate happened
+   * to match it (`activeProposed`), which fused two jobs into one cell: "what the email said" and
+   * "what will be written". Harmless while the resolution is seeded FROM the proposal — the two are
+   * equal, so the fusion is invisible — and the reason the column cannot be re-seeded from the stored
+   * value: doing that made the email's value vanish from the row entirely, because the row was never
+   * rendering the email's value in the first place.
+   *
+   * Reading the candidate directly decouples them. Display now comes from the conflict; the decision
+   * lives in `value` alone, and the two are free to differ.
+   */
+  const emailCandidate = proposed[0] ?? null
+
+  /**
+   * WHAT WILL BE WRITTEN, when that is not one of the offered values — a typed override.
+   *
+   * Only meaningful once display stopped being the resolution: before this, a custom value simply
+   * replaced what the cell showed and there was nothing to distinguish "the email said X" from "a
+   * human typed X". Compared against the stored value too, so choosing to keep what is there is not
+   * reported as an override of it.
+   */
+  const overrideValue =
+    value.trim() !== '' &&
+    !proposed.some((p) => candidateMatches(p, value)) &&
+    value.trim() !== existingDisplay.trim()
+      ? value
+      : null
 
   const copyAllFromExisting = () => {
     if (!canCopyAll) return
@@ -417,7 +446,7 @@ export function ConflictRow({
             </span>
             )
           )
-        ) : value ? (
+        ) : emailCandidate || value ? (
           <span className="inline-flex max-w-full flex-wrap items-center gap-x-1.5">
             {/* Colour alone carries "this differs from stored" — the arrow said the same thing twice.
                 Slate, not amber: openDecisions strips every conflict the commit settled, so a row
@@ -429,20 +458,30 @@ export function ConflictRow({
                 changed ? 'text-review-seen' : 'text-text-primary',
               )}
             >
-              {activeProposed?.master ? <MasterCodeChip code={activeProposed.master.code} /> : null}
+              {emailCandidate?.master ? <MasterCodeChip code={emailCandidate.master.code} /> : null}
               {/* #360: a pick's stored value is the CODE (already on the chip) — show the company name.
                   Numbers group for reading ("1180" → "1,180"); the grouped form is display-only and
                   never seeds the input, since Number() cannot read it back. */}
-              {activeProposed
+              {emailCandidate
                 ? isNumeric
-                  ? formatNumericDisplay(activeProposed.value)
-                  : activeProposed.value
+                  ? formatNumericDisplay(emailCandidate.value)
+                  : emailCandidate.value
                 : isNumeric
                   ? formatNumericDisplay(value)
                   : value}
               <Unit unit={proposedUnit} />
-              {activeProposed?.master === null ? <MeshMissTag /> : null}
+              {emailCandidate?.master === null ? <MeshMissTag /> : null}
             </span>
+            {/* A value nobody offered. It has to be stated separately now that the cell above shows
+                what the EMAIL said — otherwise a typed override would silently masquerade as one. */}
+            {overrideValue && (
+              <span
+                data-testid="conflict-override"
+                className="field-value font-mono text-[11px] leading-snug text-text-secondary"
+              >
+                → will write {isNumeric ? formatNumericDisplay(overrideValue) : overrideValue}
+              </span>
+            )}
           </span>
         ) : (
           <span className="font-mono text-sm text-text-muted">—</span>
