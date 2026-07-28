@@ -10,6 +10,7 @@ import { ContestedLockCard } from '../components/shipments/ContestedLockCard'
 import { PurchaseOrdersCard } from '../components/shipments/PurchaseOrdersCard'
 import { PortPicker } from '../components/shipments/PortPicker'
 import { PartyPicker } from '../components/shipments/PartyPicker'
+import { useParties } from '../hooks/use-parties'
 import {
   FieldHistoryContext,
   FieldHistoryPopover,
@@ -121,13 +122,31 @@ export default function ShipmentDetailPage() {
    * cargo figures the review desk settles qty against, so a field the desk auto-passed cannot show a
    * conflict here. The two surfaces must agree on what is open.
    */
+  /**
+   * The Mesh mirror, flat, so a miss line can tell "not in Mesh" from "in Mesh under a longer name".
+   * The pickers already load and cache all three lists for an hour, so this costs nothing extra.
+   */
+  const { data: customerMasters } = useParties('customer')
+  const { data: vendorMasters } = useParties('vendor')
+  const { data: forwarderMasters } = useParties('forwarder')
+  const masterNames = useMemo(
+    () =>
+      [...(customerMasters ?? []), ...(vendorMasters ?? []), ...(forwarderMasters ?? [])]
+        .map((p) => p.name)
+        .filter(Boolean),
+    [customerMasters, vendorMasters, forwarderMasters],
+  )
   const pendingReview = useMemo(
     () =>
-      pendingReviewAnnotations(shipment, {
-        liveQty: liveQtyFromShipment((shipment ?? {}) as { quantityShipped?: number | null }),
-        poShipmentTotal: poShipmentTotalFromLinked(shipment?.linkedPOs ?? []),
-      }),
-    [shipment],
+      pendingReviewAnnotations(
+        shipment,
+        {
+          liveQty: liveQtyFromShipment((shipment ?? {}) as { quantityShipped?: number | null }),
+          poShipmentTotal: poShipmentTotalFromLinked(shipment?.linkedPOs ?? []),
+        },
+        masterNames,
+      ),
+    [shipment, masterNames],
   )
   const [activeTab, setActiveTab] = useState<'details' | 'history'>('details')
   const update = useUpdateShipment(id!)
