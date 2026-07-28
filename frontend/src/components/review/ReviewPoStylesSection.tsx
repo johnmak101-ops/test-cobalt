@@ -213,7 +213,22 @@ export function ReviewPoStylesSection({
   )
   const plansKey = JSON.stringify(plans)
   const plansRef = useRef(plans)
-  plansRef.current = plans
+  /**
+   * The mirror has to happen in an EFFECT, not in the render body.
+   *
+   * `plansRef.current = plans` sat here as a bare statement, which React's lint rule rejects
+   * outright (react-hooks/refs): a ref written during render is invisible to the renderer, so a
+   * component that reads one can silently fail to update. Harmless in this instance — nothing
+   * RENDERS from this ref, it exists only to keep `plans` out of the emit's dependency list — but
+   * the rule cannot tell those apart, and it is the only lint ERROR in the tree.
+   *
+   * No dependency array on purpose: it must track every render, since `plans` is recomputed each
+   * time. Effects fire in declaration order, so this lands before the emit below and that effect
+   * always reads the current plan.
+   */
+  useEffect(() => {
+    plansRef.current = plans
+  })
   const onPlanChangeRef = useRef(onPlanChange)
   useEffect(() => {
     onPlanChangeRef.current = onPlanChange

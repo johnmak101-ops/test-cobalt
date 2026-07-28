@@ -882,7 +882,8 @@ describe('CommitterService — the party master follows the raw twin (stale-FK, 
    */
   it('amend: never UNLINKS when the new raw matches no master', async () => {
     await seedVendors()
-    const first = await committer.apply(
+    // Applied for the LEG it creates, not for what it returns — the assertions all read `second`.
+    await committer.apply(
       group({ fields: { so_no: 'SO-V3', vendor_code: 'MACFUN' }, matchKeys: { so_no: 'SO-V3' } }),
     )
     const second = await committer.apply(
@@ -943,7 +944,8 @@ describe('CommitterService — the party master follows the raw twin (stale-FK, 
 
   it('a leg that names no vendor leaves the existing link alone', async () => {
     await seedVendors()
-    const first = await committer.apply(
+    // Applied for the LEG it creates, not for what it returns — the assertions all read `second`.
+    await committer.apply(
       group({ fields: { so_no: 'SO-V7', vendor_code: 'MACFUN' }, matchKeys: { so_no: 'SO-V7' } }),
     )
     // a later email about the same shipment that simply does not mention the factory
