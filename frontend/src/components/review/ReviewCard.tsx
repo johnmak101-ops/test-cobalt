@@ -465,8 +465,8 @@ export function ReviewCard({
    * needs-attention line is about the PO LINK itself (w-po-*: matched by PO alone, PO already on
    * another shipment, thin mail matched by PO). Otherwise the POs leave the review desk entirely —
    * not collapsed, not summarised: the leg's POs are the shipment page's job, and this desk shows
-   * only what needs an answer. Edit mode still gets the full grid: managing POs is what Edit is for,
-   * and Open Shipment is one click away for everything else.
+   * only what needs an answer. Edit mode does not reopen them (see `showPos`): Open Shipment is one
+   * click away for everything else.
    */
   const poProposalCount = useMemo(
     () =>
@@ -483,7 +483,7 @@ export function ReviewCard({
    * shipment a PO belongs on, and every row read `—`. That question now has its own answer above
    * (SharedPoPanel), with the other leg named and linked, so the grid has no reason to appear for it.
    *
-   * Edit mode still opens the full grid: managing POs is what Edit is for.
+   * Nor does edit mode open it — this is the ONLY gate, in view and edit alike (see `showPos`).
    */
   const poNeedsReview = poProposalCount > 0
   /**
@@ -1480,7 +1480,20 @@ export function ReviewCard({
              */
             if (cardShape === 'verdict') return null
             const canEditGrid = gridEditing
-            const showPos = canEditGrid || (linkedPOs.length > 0 && poNeedsReview)
+            /**
+             * One gate, view and edit alike: a PO earns a row when the agent proposed something for
+             * it, never merely because the card is open for editing.
+             *
+             * `canEditGrid ||` used to sit in front of this, on the reasoning that "managing POs is
+             * what Edit is for". That holds for a deliberate press of the Edit button; it does not
+             * hold for how edit mode is usually reached. A contested row with candidates carries its
+             * own "Type a different value" link (ConflictRow), which turns on card-wide editing — so
+             * asking to type a custom Consignee Name opened a PO editor with Add PO, unlink and
+             * delete-style controls, on a card whose POs nobody had questioned. Editing one text
+             * field is not a request to restructure the leg's orders; that is the shipment page's
+             * job, and Open Shipment is one click away.
+             */
+            const showPos = linkedPOs.length > 0 && poNeedsReview
             const showConflicts = conflicts.length > 0
             if (!showPos && !showConflicts) return null
             // Shared thead only when both blocks show (one header, two section groups).

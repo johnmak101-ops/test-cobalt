@@ -2161,6 +2161,41 @@ describe('candidate picking happens where the candidates are', () => {
     expect(screen.queryByTestId('candidate-type-custom')).toBeNull()
     expect(screen.getByTestId('multi-candidate-proposed')).toBeInTheDocument()
   })
+
+  /**
+   * "Type a different value" is the escape hatch for ONE contested text field, but it turns on
+   * card-wide edit mode — and the PO strip used to open on `canEditGrid` alone. So asking to type a
+   * custom Consignee Name produced a PO editor (Add PO, unlink, delete style) on a card whose POs
+   * nobody had questioned. The PO gate is now the same in both modes: a proposal, or nothing.
+   */
+  it('the custom-value escape hatch does not drag the PO editor onto a card with no PO question', async () => {
+    const user = userEvent.setup()
+    render(
+      <MemoryRouter>
+        <ReviewCard
+          shipment={
+            baseShipment({
+              reviewReasons: [],
+              linkedPOs: [
+                { id: 'po1', linkId: 'l1', poNumber: '28739', itemStyleNo: 'C198' },
+              ],
+            } as never)
+          }
+          criticReview={baseReview({ conflicts: [vendorConflict], riskFlags: [], reasons: [] })}
+          compact={null}
+          defaultExpanded
+          onSaveAndApprove={vi.fn()}
+        />
+      </MemoryRouter>,
+    )
+    await user.click(screen.getByTestId('candidate-type-custom'))
+    // The card IS in edit mode — the contested row now takes a typed value.
+    expect(screen.getByLabelText(/Proposed value for Vendor/i)).toBeInTheDocument()
+    // …and the POs stayed on the shipment page where they belong.
+    expect(screen.queryByTestId('review-po-styles-section')).toBeNull()
+    expect(screen.queryByTestId('review-po-add')).toBeNull()
+    expect(screen.queryByText('28739')).toBeNull()
+  })
 })
 
 /**
