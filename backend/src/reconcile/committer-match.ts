@@ -176,32 +176,125 @@ function legLayerOnly(keys: Set<string>): Set<string> {
  *
  * Does NOT loosen findExistingLeg / strongKeysConflict itself.
  */
-export function findSupersededByIdentityCorrection<L extends {
+/** A leg the committer may act on automatically — not this one, not already retired, still provisional. */
+type GhostCandidate = {
   id: string
   matchKeys: unknown
   reviewStatus?: string | null
   dismissedAt?: Date | string | null
   linkedShipmentId?: string | null
-}>(legs: L[], newGroupKeys: Set<string>, newLegId: string): L[] {
+  createdManually?: boolean | null
+}
+
+/**
+ * The re-key predicate itself, shared by the two callers below. Whether a matching leg is RETIRED or
+ * merely REPORTED turns on one thing — who made it — and that decision is deliberately outside this
+ * function so the identity reasoning stays in one place.
+ */
+function isIdentityCorrectionGhost(l: GhostCandidate, newGroupKeys: Set<string>, newLegId: string): boolean {
+  if (l.id === newLegId) return false
+  if (l.linkedShipmentId != null) return false
+  if (l.dismissedAt != null) return false
+  // Missing status (index/partial rows) → treat as provisional; present status must be provisional.
+  if (l.reviewStatus != null && l.reviewStatus !== 'provisional') return false
+  const legStrong = strongKeys((l.matchKeys ?? {}) as Record<string, unknown>)
+  // A leg carrying its OWN distinct leg-layer id is a REAL SHIP — a sibling, never a zombie, whatever
+  // the booking layer says. Two ships under one booking may each carry their own SO (BSTI: NL 29954607
+  // / UK 29954612), which a booking-layer-only rule read as a re-key and retired — while
+  // findSiblingBooking simultaneously claimed the same leg as a sibling to attach, so one apply()
+  // would file legNo 2 AND dismiss the other ship. The BEFF01 ghost has NO hbl: nothing marks it as a
+  // separate ship, which is exactly what makes it a re-key of this one.
+  const legHbl = legLayerOnly(legStrong)
+  if (legHbl.size && !keysOverlap(legHbl, legLayerOnly(newGroupKeys))) return false
+  // Retire ONLY on a booking-layer re-key (BEFF01: so_no conflicts, booking_no shared).
+  const gkBooking = bookingLayerOnly(newGroupKeys)
+  const legBooking = bookingLayerOnly(legStrong)
+  return strongKeysConflict(gkBooking, legBooking) && keysOverlap(gkBooking, legBooking)
+}
+
+export function findSupersededByIdentityCorrection<L extends GhostCandidate>(
+  legs: L[],
+  newGroupKeys: Set<string>,
+  newLegId: string,
+): L[] {
+  // 0028: a HAND-TYPED leg is never a re-parse ghost. The predicate below reads "the same shipment,
+  // re-keyed" — true when the agent corrected ITS OWN earlier reading, which is the case it was built
+  // for. A person's leg is a different claim: they typed the number they held, and a conflict with a
+  // later email means the two disagree, not that the human's row was a draft. Retiring it here also
+  // dropped their field LOCKS (locks are per shipment id and nothing carries them to the successor),
+  // so a value the operator deliberately protected quietly stopped being protected. Reported instead —
+  // see findManualIdentityClash.
+  return legs.filter((l) => isIdentityCorrectionGhost(l, newGroupKeys, newLegId) && l.createdManually !== true)
+}
+
+/**
+ * The legs `findSupersededByIdentityCorrection` just DECLINED to retire because a person made them.
+ *
+ * Same predicate, opposite side of the human/agent split. The situation is real either way — two legs
+ * state conflicting booking-layer ids while sharing another — so it has to reach someone; it simply
+ * must not be settled by dismissing the human's row. The committer turns each of these into a review
+ * reason on the new leg, which is where an operator can compare the two and fold one into the other.
+ */
+export function findManualIdentityClash<L extends GhostCandidate>(
+  legs: L[],
+  newGroupKeys: Set<string>,
+  newLegId: string,
+): L[] {
+  return legs.filter((l) => isIdentityCorrectionGhost(l, newGroupKeys, newLegId) && l.createdManually === true)
+}
+
+/**
+ * A leg that shares a PO with this group, states no CONFLICTING identity, and simply carries a
+ * DIFFERENT one — the duplicate `findExistingLeg` cannot rule out and must not silently merge.
+ *
+ * The shared-PO branch of `findExistingLeg` needs one side to have no strong id at all, because a PO
+ * legitimately ships across several shipments: matching on it alone would fuse two real consignments.
+ * That leaves a blind spot exactly where a leg's identity is knowingly PARTIAL — a hand-typed leg. The
+ * operator creates one because the booking email was never ingested, entering the single number they
+ * hold; when the forwarder's later mail cites its HBL and the same PO but not that number, nothing
+ * connects them and a second leg appears beside the first with no hint the two are related.
+ *
+ * Deliberately NOT a match: whether they are one shipment is a judgement about the physical cargo, and
+ * the evidence here (one shared PO, two different ids, no contradiction) genuinely supports both
+ * readings. So this returns candidates to REPORT, and the operator folds them with the review desk's
+ * existing link action if they agree.
+ *
+ * Bounded to human-created legs on one side or the other (`groupIsManual` covers a manual create
+ * landing beside an existing agent leg). Agent-vs-agent pairs sharing a PO are the ordinary case —
+ * flagging those would put most of the queue under a duplicate warning and teach operators to ignore
+ * it. A `strongKeysConflict` pair is excluded too: stating DIFFERENT values for the SAME id type is
+ * positive evidence of two shipments, and the re-key path above already owns that case.
+ */
+export function findPoOnlyDuplicateRisk<
+  L extends {
+    id: string
+    bookingId: string
+    matchKeys: unknown
+    dismissedAt?: Date | string | null
+    linkedShipmentId?: string | null
+    createdManually?: boolean | null
+  },
+>(
+  legs: L[],
+  posByBooking: Map<string, string[]>,
+  gk: Set<string>,
+  groupPos: Set<string>,
+  groupIsManual: boolean,
+  committedLegId: string,
+): L[] {
+  // gk empty → the shared-PO branch already matched (or the group has no identity at all); nothing at risk.
+  if (gk.size === 0 || groupPos.size === 0) return []
   return legs.filter((l) => {
-    if (l.id === newLegId) return false
-    if (l.linkedShipmentId != null) return false
-    if (l.dismissedAt != null) return false
-    // Missing status (index/partial rows) → treat as provisional; present status must be provisional.
-    if (l.reviewStatus != null && l.reviewStatus !== 'provisional') return false
-    const legStrong = strongKeys((l.matchKeys ?? {}) as Record<string, unknown>)
-    // A leg carrying its OWN distinct leg-layer id is a REAL SHIP — a sibling, never a zombie, whatever
-    // the booking layer says. Two ships under one booking may each carry their own SO (BSTI: NL 29954607
-    // / UK 29954612), which a booking-layer-only rule read as a re-key and retired — while
-    // findSiblingBooking simultaneously claimed the same leg as a sibling to attach, so one apply()
-    // would file legNo 2 AND dismiss the other ship. The BEFF01 ghost has NO hbl: nothing marks it as a
-    // separate ship, which is exactly what makes it a re-key of this one.
-    const legHbl = legLayerOnly(legStrong)
-    if (legHbl.size && !keysOverlap(legHbl, legLayerOnly(newGroupKeys))) return false
-    // Retire ONLY on a booking-layer re-key (BEFF01: so_no conflicts, booking_no shared).
-    const gkBooking = bookingLayerOnly(newGroupKeys)
-    const legBooking = bookingLayerOnly(legStrong)
-    return strongKeysConflict(gkBooking, legBooking) && keysOverlap(gkBooking, legBooking)
+    if (l.id === committedLegId) return false // the leg this commit just wrote
+    if (l.linkedShipmentId != null) return false // folded into another shipment
+    if (l.dismissedAt != null) return false // a human already retired it
+    if (!groupIsManual && l.createdManually !== true) return false // agent↔agent PO sharing is normal
+    const legStrong = strongKeys(l.matchKeys as Record<string, unknown>)
+    if (legStrong.size === 0) return false // findExistingLeg's PO branch already reaches it
+    if (keysOverlap(legStrong, gk)) return false // matched on a strong key — not a duplicate risk
+    if (strongKeysConflict(gk, legStrong)) return false // different values, same type → different shipments
+    const bkPos = new Set((posByBooking.get(l.bookingId) ?? []).map((p) => normKey(p)).filter(Boolean))
+    return setsOverlap(groupPos, bkPos)
   })
 }
 

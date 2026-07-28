@@ -3,6 +3,8 @@ import {
   findExistingLeg,
   findAdoptableZeroIdLeg,
   findSupersededByIdentityCorrection,
+  findManualIdentityClash,
+  findPoOnlyDuplicateRisk,
   findSiblingBooking,
 } from './committer-match'
 import { strongKeys, normKey } from './match-keys'
@@ -382,5 +384,85 @@ describe('findExistingLeg — the AWB alias must not read as a strong-key CONFLI
     // shares the MBL, but the HBLs are different real waybills — must NOT be amended
     const found = findExistingLeg(legs, new Map(), gkOf({ hbl_awb_fcr_no: 'GZL26261147', mbl: '999-92908152' }), new Set(), null)
     expect(found).toBeUndefined()
+  })
+})
+
+// ---------------------------------------------------------------------------------------------
+// 0028 — the two rules that must not act automatically on a leg a PERSON typed.
+// ---------------------------------------------------------------------------------------------
+
+describe('findSupersededByIdentityCorrection — a hand-typed leg is never a re-parse ghost', () => {
+  // The BEFF01 shape: booking_no shared, so_no conflicting. For two AGENT legs that reads "the same
+  // shipment, re-keyed by a better parse", and retiring the older one is right. A person's leg makes
+  // the identical shape mean something else — they typed the number they held, and the disagreement
+  // is between a human and an email, not between two readings by the same reader.
+  const ghost = { id: 'GHOST', bookingId: 'B1', matchKeys: { booking_no: 'BK1', so_no: 'SHIPMENT-REF' }, reviewStatus: 'provisional' }
+  const gk = gkOf({ booking_no: 'BK1', so_no: 'ORDER-NO' })
+
+  it('still retires the agent ghost (unchanged)', () => {
+    expect(findSupersededByIdentityCorrection([ghost], gk, 'NEW').map((l) => l.id)).toEqual(['GHOST'])
+  })
+
+  it('does NOT retire the same leg once it is marked hand-typed', () => {
+    const typed = { ...ghost, createdManually: true }
+    expect(findSupersededByIdentityCorrection([typed], gk, 'NEW')).toEqual([])
+  })
+
+  it('reports it instead — the situation still reaches a human, it just is not settled for them', () => {
+    const typed = { ...ghost, createdManually: true }
+    expect(findManualIdentityClash([typed], gk, 'NEW').map((l) => l.id)).toEqual(['GHOST'])
+    // and the agent ghost does NOT double-report: it was already retired
+    expect(findManualIdentityClash([ghost], gk, 'NEW')).toEqual([])
+  })
+})
+
+describe('findPoOnlyDuplicateRisk — the blind spot where a hand-typed leg loses its follow-up email', () => {
+  // The operator creates a leg because the booking mail was never ingested, entering the booking
+  // number from the forwarder's WeChat message. The forwarder's later email cites the HBL and the same
+  // PO — but not that booking number. findExistingLeg cannot match (both sides carry a strong id, so
+  // the shared-PO branch is closed) and the two legs never meet.
+  const typed = { id: 'HUMAN', bookingId: 'B-H', matchKeys: { booking_no: 'BK1' }, createdManually: true }
+  const posByBooking = new Map([['B-H', ['PO-1']]])
+  const gk = gkOf({ hbl_awb_fcr_no: 'HBL-9' })
+
+  it('surfaces the hand-typed leg the email could not reach', () => {
+    expect(findPoOnlyDuplicateRisk([typed], posByBooking, gk, posSet('PO-1'), false, 'NEW').map((l) => l.id)).toEqual(['HUMAN'])
+  })
+
+  it('stays quiet for two AGENT legs — one PO shipping across shipments is the ordinary case', () => {
+    const agentLeg = { ...typed, createdManually: false }
+    expect(findPoOnlyDuplicateRisk([agentLeg], posByBooking, gk, posSet('PO-1'), false, 'NEW')).toEqual([])
+  })
+
+  it('fires in the other direction too: a manual CREATE landing beside an existing agent leg', () => {
+    const agentLeg = { ...typed, createdManually: false }
+    expect(
+      findPoOnlyDuplicateRisk([agentLeg], posByBooking, gk, posSet('PO-1'), true, 'NEW').map((l) => l.id),
+    ).toEqual(['HUMAN'])
+  })
+
+  it('never fires when the two CONFLICT on one id type — that is positive evidence of two shipments', () => {
+    // same type (booking_no), different values → the re-key path owns this, not the duplicate path
+    expect(findPoOnlyDuplicateRisk([typed], posByBooking, gkOf({ booking_no: 'BK2' }), posSet('PO-1'), false, 'NEW')).toEqual([])
+  })
+
+  it('never fires when they already OVERLAP on a strong key — findExistingLeg matched them', () => {
+    expect(findPoOnlyDuplicateRisk([typed], posByBooking, gkOf({ booking_no: 'BK1' }), posSet('PO-1'), false, 'NEW')).toEqual([])
+  })
+
+  it('never fires when the other leg has NO identity — the shared-PO branch already reaches it', () => {
+    const nascent = { ...typed, matchKeys: {} }
+    expect(findPoOnlyDuplicateRisk([nascent], posByBooking, gk, posSet('PO-1'), false, 'NEW')).toEqual([])
+  })
+
+  it('ignores legs a human already retired, and the leg this commit just wrote', () => {
+    const dismissed = { ...typed, dismissedAt: new Date() }
+    const folded = { ...typed, id: 'FOLDED', linkedShipmentId: 'ELSEWHERE' }
+    expect(findPoOnlyDuplicateRisk([dismissed, folded], posByBooking, gk, posSet('PO-1'), false, 'NEW')).toEqual([])
+    expect(findPoOnlyDuplicateRisk([typed], posByBooking, gk, posSet('PO-1'), false, 'HUMAN')).toEqual([])
+  })
+
+  it('no PO in common → nothing to link them by, nothing to say', () => {
+    expect(findPoOnlyDuplicateRisk([typed], posByBooking, gk, posSet('PO-OTHER'), false, 'NEW')).toEqual([])
   })
 })

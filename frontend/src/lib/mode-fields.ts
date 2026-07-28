@@ -27,6 +27,41 @@ export function isOffModeField(column: string, mode: string | null | undefined):
   return false
 }
 
+/**
+ * Should this field appear on a form for a leg of this mode?
+ *
+ * It used to hide on mode alone, in the read view AND the edit form, which orphaned data: a leg
+ * switched to SEA kept its `flightNo`, and no screen could reach it. Not the read view (hidden), not
+ * the edit form (hidden), and not the review desk either — `fieldsToApply` skips empty values, so an
+ * empty resolution there means "no decision", never "clear it". The value stayed in the database, the
+ * API payload and every export, with nothing in the app able to touch it.
+ *
+ * Hiding a populated field does not remove the value. It removes the operator. So the rule is:
+ * off-mode AND empty hides; off-mode AND populated always shows, flagged, with a way to clear it.
+ *
+ * Lived privately inside ShipmentDetailPage until the New Shipment form needed the same answer — the
+ * drift this module's header describes, caught one surface later.
+ */
+export function shippingFieldVisible(
+  dbColumn: string,
+  mode: string | null | undefined,
+  value?: unknown,
+): boolean {
+  if (!isOffModeField(dbColumn, mode)) return true
+  return String(value ?? '').trim() !== ''
+}
+
+/**
+ * The marker an off-mode row wears, so a stale value reads as a problem rather than as data.
+ *
+ * SEA and AIR are written in caps because they are the stored enum, and the Mode row prints them
+ * exactly that way. Lowercasing them made the tag look like loose prose about the sea, rather than a
+ * statement about this leg's Mode value.
+ */
+export function offModeHint(mode: string | null | undefined): string {
+  return isAirMode(mode) ? 'SEA field on an AIR shipment' : 'AIR field on a SEA shipment'
+}
+
 /** The leg as this module reads it — UI keys, because both callers hold the mapped DTO. */
 export type ModeFieldLeg = {
   mode?: string | null

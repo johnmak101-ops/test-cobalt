@@ -175,6 +175,23 @@ const TRANSLATIONS: Translation[] = [
     match: /mode change (\w+) → (\w+)/i,
     text: (m) => `Transport mode changed ${m[1]} → ${m[2]} between documents — confirm which is correct`,
   },
+  // Duplicate risk against a hand-typed leg (backend 0028). Both wordings name the other job number —
+  // keep it in the ops copy: it is the whole actionable content, and it is what the operator types into
+  // search to compare the two before folding one into the other.
+  {
+    match: /^possible duplicate of (\S+) — that shipment was entered by hand/i,
+    text: (m) =>
+      `May be the same shipment as ${m[1]}, which someone entered by hand — the booking/SO numbers disagree, so both were kept. Compare them and merge if they are one shipment.`,
+  },
+  {
+    match: /^possible duplicate of (\S+) — shares PO (\S+)/i,
+    text: (m) =>
+      `May be the same shipment as ${m[1]} — both carry PO ${m[2]} but each states a different booking/SO/HBL, and one was entered by hand. Compare them and merge if they are one shipment.`,
+  },
+  {
+    match: /^possible duplicate of (\S+)/i,
+    text: (m) => `May be the same shipment as ${m[1]} — compare them and merge if they are one shipment`,
+  },
   {
     match: /PO-linked group with an identity supersede/i,
     text: () =>
@@ -482,6 +499,10 @@ const CATEGORY_RULES: Array<{ match: RegExp; category: ReasonCategory }> = [
   { match: /qty conflict .* across legs/i, category: 'conflict' },
   { match: /item(?:_style_no conflict|\/style)/i, category: 'conflict' },
   { match: /item\/style looks copied/i, category: 'extraction' },
+  // "Possible duplicate of JOB-…" is a merge question, not a field disagreement — same chip as the
+  // other two-legs-may-be-one reasons so the desk can triage them together.
+  { match: /^possible duplicate of/i, category: 'multi_id' },
+  { match: /may be the same shipment as/i, category: 'multi_id' },
   { match: /identity supersede/i, category: 'multi_id' },
   { match: /distinct co-current values/i, category: 'multi_id' },
   { match: /matched multiple backend legs/i, category: 'multi_id' },
