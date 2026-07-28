@@ -30,29 +30,6 @@ The other two paths (detail edit, review correct/confirm) DO have tests — see
 `ReviewService.correct — party/port corrections re-resolve the master FK` and
 `ReviewService.confirm — re-links the party master to the raw the leg names`.
 
-### Field conflicts still open pre-applied (2026-07-28) — UNBLOCKED, next up
-
-A card opens reading `Apply 2026-09-09` before the operator has decided anything: `initialResolutions`
-seeds every row from `proposedResolutionOf`. That is the same default `AI Proposed` was, one press
-from overwriting a value the pipeline examined and declined — `openDecisions` strips the conflicts
-the commit settled, so a row that survives to the table is one where the commit did NOT take the
-email's value.
-
-PR #397 removed the structural blocker (the cell rendered the resolution and looked up a matching
-candidate, so re-seeding made the email's value vanish). Measured on the attempt: **32 failures across
-3 files before, 16 after** — and the 16 are all the intended default change asserted the old way.
-
-Remaining work:
-- seed `initialResolutions` from `existingValue` instead of the proposal
-- a **take** affordance on single-candidate rows (tick, same gesture as the PO grid) — without it the
-  email's value is readable and unreachable except by retyping it in Edit
-- **Keep current** as the first radio option on multi-candidate rows — a radio cannot be un-picked,
-  so a chosen candidate currently has no way back
-- 16 tests, each needing a "take the value first" step against its own fixture — not a find-replace
-
-Cost, accepted knowingly when specced: one extra click on every leg where the agent is right. The
-trade is a deliberate act instead of a default.
-
 ### Native date inputs follow the browser, not the app (2026-07-28)
 
 `<input type="date">` renders its format and calendar in the **browser UI language**; `index.html`
@@ -76,14 +53,6 @@ made the evidence panel's list openable, so the 96 work and the rest fail with t
 The remaining 515 are an **ingestion** gap, not a UI one — nothing was captured at match time and the
 Graph re-fetch cannot even be attempted without a `graph_attachment_id`.
 
-### Review grid prints a raw timestamp in Current (2026-07-28)
-
-Date conflicts show `2026-09-05T00:00:00.000Z` on the left and a clean `2026-09-09` on the right.
-`open-decisions.ts` builds `liveValues` with `toISOString()` and `currentValueOf` prints it verbatim;
-nothing day-formats it for display. That file already has `DATE_COLUMNS` and a `day()` helper used by
-`sameStoredValue`, so only the display path is inconsistent. Format at the point of use — formatting
-at the source risks changing comparison semantics for other consumers.
-
 ### Dashboard — two decisions left open (2026-07-28)
 
 - The 2nd KPI card still reads **Warning Alerts**; the mockup called it *At Risk*. Unclear whether
@@ -92,12 +61,31 @@ at the source risks changing comparison semantics for other consumers.
   applied because **Delivered is the largest bar** (10 of 27 on seeded data) — excluding it guts the
   chart. Either drop the column or count it over a trailing window.
 
-### Nothing from 2026-07-28 was verified visually
+### The browser pane still composites no frames (2026-07-28)
 
-The browser pane reported `viewport [0,0]` all session — it composites no frames, so every check was
-structural (DOM assertions, class parity, measured row heights) rather than seen. Unviewed: the
-pipeline chart, the dashboard row alignment, the PO tick boxes, and an attachment click end-to-end.
-Tests and builds are green; that is not the same as looking right.
+`read_page` reports `viewport [0,0]` and screenshots are unavailable, so nothing this session was
+*seen*. The review-desk work below it WAS driven against the running app (vite :5173 + backend :3000,
+both serving `D:\`) via DOM reads and synthetic clicks on a live queue leg — the take-tick, its
+reversal, the `(1 change)` group header, the button-bar swap and the day-formatted Current were all
+confirmed on real data, not only on fixtures. Still unviewed: the pipeline chart, the dashboard row
+alignment, the PO tick boxes, and an attachment click end-to-end.
+
+### Review desk — what the 2026-07-28 conflict-default work did NOT reach
+
+Landed: rows seed from the stored value, a take-tick on single-candidate rows, `Keep current` /
+`Leave blank` as the first radio on multi-candidate rows, and ISO instants day-formed at the point of
+use (`resolutionForm` in `ConflictRow.tsx`).
+
+Not covered by the live check: **no active leg carries a multi-candidate row**, so the `Keep current`
+radio and its un-pick are proven by unit tests only. Worth a look the next time a two-vendor or
+two-B/L leg reaches the queue.
+
+Left alone deliberately — two pieces of UI that cannot currently render. The `Edited` column header
+(`hasTypedOverride`) and the `→ will write X` override span both require `editing === false`, but a
+typed override can only be HELD while editing: `cancelEditing` re-seeds and submit closes the card.
+So the states are unreachable in steady state. The gating predates this work (`hasHumanEdits` had it
+too) and no wrong label is ever shown, so nothing is broken — but two branches of the third column
+are dead until either the override survives leaving edit mode, or they come out.
 
 ## Do not re-open
 
