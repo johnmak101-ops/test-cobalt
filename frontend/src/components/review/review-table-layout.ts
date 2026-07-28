@@ -67,11 +67,11 @@ export const REVIEW_GROUP_HEADER = `px-3 py-2 text-left ${REVIEW_FS.meta} font-s
  *
  *  `proposed` is a track name, not a claim: nothing in that column is awaiting an apply. Conflicts
  *  the commit settled are stripped upstream (openDecisions), so every value that reaches it is one
- *  the committer read and did not write. "Also seen" says that; "AI Proposed" said the opposite. */
+ *  the committer read and did not write. "Also Seen In Email" says that; "AI Proposed" said the opposite. */
 export const REVIEW_HEAD = {
   label: 'Field / PO#',
   existing: 'Current',
-  proposed: 'Also seen',
+  proposed: 'Also Seen In Email',
   reference: 'Reference Email',
 } as const
 
