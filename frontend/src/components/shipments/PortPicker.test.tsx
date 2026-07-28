@@ -21,6 +21,42 @@ function Harness({ initial = '' }: { initial?: string }) {
   return <PortPicker value={v} onChange={setV} ariaLabel="POL" />
 }
 
+/**
+ * Reported from the review desk: "the searching list is broken, cannot see the list."
+ *
+ * It was never broken — it was CLIPPED. `REVIEW_TD` sets `overflow-hidden` and the decision grid's
+ * wrapper sets `overflow-x-auto` (which computes `overflow-y: auto`), so an `absolute` list inside a
+ * table cell got cut at the row boundary: one truncated option on a tall row, a bare sliver on a
+ * short one. z-index cannot fix clipping, so the list is positioned FIXED instead.
+ */
+describe('PortPicker — the list escapes any ancestor that clips', () => {
+  it('positions the listbox fixed, not absolute inside the clipped cell', async () => {
+    const user = userEvent.setup()
+    render(<Harness />)
+    await user.type(screen.getByLabelText('POL'), 'yant')
+    const list = screen.getByRole('listbox')
+    expect(list.style.position).toBe('fixed')
+    // The old geometry came from classes an ancestor could clip; it must not come back.
+    expect(list.className).not.toMatch(/\babsolute\b/)
+    expect(list.className).not.toMatch(/\bw-full\b/)
+    expect(list.className).not.toMatch(/max-h-60/)
+  })
+
+  it('still closes on an outside click — fixed must not break the root containment check', async () => {
+    const user = userEvent.setup()
+    render(
+      <div>
+        <Harness />
+        <button type="button">elsewhere</button>
+      </div>,
+    )
+    await user.type(screen.getByLabelText('POL'), 'yant')
+    expect(screen.getByRole('listbox')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'elsewhere' }))
+    expect(screen.queryByRole('listbox')).toBeNull()
+  })
+})
+
 describe('PortPicker', () => {
   it('searches by name and stores the picked UN/LOCODE', async () => {
     const user = userEvent.setup()

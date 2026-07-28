@@ -1,5 +1,6 @@
 import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { usePorts, type PortMaster } from '../../hooks/use-ports'
+import { ANCHORED_LIST_CLASS, useAnchoredListbox } from './use-anchored-listbox'
 
 interface PortPickerProps {
   /** Current raw value (a UN/LOCODE like "CNYTN", or free text for a port not in the master). */
@@ -28,6 +29,7 @@ export function PortPicker({ value, onChange, id, ariaLabel, placeholder, classN
   const [active, setActive] = useState(0)
   const rootRef = useRef<HTMLDivElement>(null)
   const listboxId = useId()
+  const { anchorRef, listStyle } = useAnchoredListbox(open)
 
   const text = value ?? ''
 
@@ -92,6 +94,7 @@ export function PortPicker({ value, onChange, id, ariaLabel, placeholder, classN
   return (
     <div ref={rootRef} className="relative">
       <input
+        ref={anchorRef}
         id={id}
         type="text"
         value={text}
@@ -120,7 +123,8 @@ export function PortPicker({ value, onChange, id, ariaLabel, placeholder, classN
         <ul
           id={listboxId}
           role="listbox"
-          className="absolute z-30 mt-1 max-h-60 w-full overflow-auto rounded-lg border border-border bg-surface-800 py-1 shadow-lg"
+          style={listStyle}
+          className={ANCHORED_LIST_CLASS}
         >
           {matches.map((p, i) => (
             <li

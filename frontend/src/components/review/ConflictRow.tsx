@@ -18,6 +18,7 @@ import {
   type StyleEntry,
   isDateColumn,
   dateColumnHasTime,
+  fieldOptions,
 } from '../../lib/review-fields'
 import { PortPicker } from '../shipments/PortPicker'
 import { NumberField } from '../shipments/NumberField'
@@ -285,6 +286,8 @@ export function ConflictRow({
   const numErr = isNumeric && column ? numericFieldWarn(column, value) : null
   // Dates get the shared calendar+clock control; they used to fall through to a bare text box.
   const isDate = isDateColumn(column)
+  /** Enum-constrained columns (UOM, Mode) get the same `<select>` the Order Details form renders. */
+  const enumOptions = fieldOptions(column, existingValueOf(conflict) || existingOverride)
   const isStyles = isItemStyleField(conflict.field)
   const multi = proposed.length > 1
   const existingStyles = existing?.value ?? ''
@@ -496,6 +499,24 @@ export function ConflictRow({
               placeholder="—"
               className="h-8 w-full rounded-lg border border-border bg-surface-900 px-2.5 font-mono text-sm text-text-primary placeholder:text-text-muted focus:border-cobalt-primary focus:outline-none"
             />
+          ) : enumOptions ? (
+            /* UOM / Mode are enum-constrained on the leg. This row used to be the ONE surface that
+               let them be free-typed — which is how a UOM of `cartonssdfsdf` becomes reachable. */
+            <select
+              aria-label={`Proposed value for ${label}`}
+              value={value}
+              onChange={(e) => onChange(e.target.value)}
+              className="h-8 w-full rounded-lg border border-border bg-surface-900 px-2 font-mono text-sm text-text-primary focus:border-cobalt-primary focus:outline-none"
+            >
+              {/* Clearing is a legitimate answer, and a select with no empty option cannot express
+                  it — the operator would be forced to pick a unit they may not have. */}
+              <option value="">—</option>
+              {enumOptions.map((o) => (
+                <option key={o} value={o}>
+                  {o}
+                </option>
+              ))}
+            </select>
           ) : isDate ? (
             <DateTimeField
               value={value}
@@ -592,12 +613,20 @@ export function ConflictRow({
                 {/* A value nobody offered. It has to be stated separately now that the cell above
                     shows what the EMAIL said — otherwise a typed override would silently
                     masquerade as one. */}
+                {/*
+                  What will ACTUALLY be written. This shipped at 11px in text-secondary — the
+                  smallest, dimmest thing in the row — while the value above it, which is only what
+                  the email said and is NOT going to be written, was full size. The type scale was
+                  telling the operator the opposite of the truth. It now reads at the row's own value
+                  size, in the same green a taken value gets, because that is what it is: the pending
+                  write. The label stays quiet so the VALUE is what carries.
+                */}
                 {overrideValue && (
-                  <span
-                    data-testid="conflict-override"
-                    className="field-value block font-mono text-[11px] leading-snug text-text-secondary"
-                  >
-                    → will write {printed(overrideValue)}
+                  <span data-testid="conflict-override" className="block leading-snug">
+                    <span className="text-xs text-text-muted">will write </span>
+                    <span className="field-value font-mono text-sm font-medium text-status-success">
+                      {printed(overrideValue)}
+                    </span>
                   </span>
                 )}
               </div>

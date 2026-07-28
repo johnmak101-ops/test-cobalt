@@ -875,6 +875,90 @@ describe('conflict table — read-only by default, Edit to change values', () =>
     expect(screen.queryByRole('button', { name: /^apply/i })).toBeNull()
   })
 
+  /**
+   * Reported from the running desk. A save that 400s used to drop the card back to READ mode still
+   * holding the typed values — rendered as text, no input, no Cancel — so the operator's own edits
+   * sat there armed with no way to get rid of them.
+   */
+  describe('a typed value can always be taken back', () => {
+    const renderTyped = (onSave: ReturnType<typeof vi.fn>) =>
+      render(
+        <MemoryRouter>
+          <ReviewCard
+            shipment={baseShipment()}
+            criticReview={baseReview({ conflicts: [conflictEta] })}
+            compact={compact}
+            defaultExpanded
+            onSaveAndApprove={onSave}
+          />
+        </MemoryRouter>,
+      )
+
+    it('a failed save leaves the card in edit mode, where Cancel still exists', async () => {
+      const user = userEvent.setup()
+      const onSave = vi.fn().mockRejectedValue(new Error('API error 400: bad UOM'))
+      renderTyped(onSave)
+
+      await user.click(screen.getByRole('button', { name: /^edit$/i }))
+      const eta = screen.getByTestId('datetime-date')
+      await user.clear(eta)
+      await user.type(eta, '2026-07-25')
+      await user.type(screen.getByRole('textbox', { name: /note/i }), 'carrier confirmed')
+      await user.click(screen.getByRole('button', { name: /^submit$/i }))
+
+      expect(onSave).toHaveBeenCalledTimes(1)
+      // Still editing — the inputs and the way out are both still on screen.
+      expect(screen.getByTestId('datetime-date')).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /^cancel$/i })).toBeInTheDocument()
+    })
+
+    it('no discard is offered until something is actually pending', () => {
+      renderTyped(vi.fn())
+      expect(screen.queryByTestId('discard-edits')).toBeNull()
+    })
+
+    it('one click puts every row back — after a tick, without touching the leg', async () => {
+      const user = userEvent.setup()
+      const onApprove = vi.fn()
+      render(
+        <MemoryRouter>
+          <ReviewCard
+            shipment={baseShipment()}
+            criticReview={baseReview({ conflicts: [conflictEta] })}
+            compact={compact}
+            defaultExpanded
+            onApprove={onApprove}
+            onSaveAndApprove={vi.fn()}
+          />
+        </MemoryRouter>,
+      )
+      await user.click(screen.getByTestId('conflict-take'))
+      expect(screen.getByRole('button', { name: /^apply 2026-07-23$/i })).toBeInTheDocument()
+
+      await user.click(screen.getByTestId('discard-edits'))
+
+      // Back to the opening state, and the leg is untouched — discard is not a verdict.
+      expect(screen.queryByRole('button', { name: /^apply/i })).toBeNull()
+      expect(screen.getByTestId('conflict-take')).not.toBeChecked()
+      expect(screen.getByTestId('review-decision-grid')).toHaveTextContent(/nothing to apply/i)
+      expect(onApprove).not.toHaveBeenCalled()
+    })
+
+    it('and it clears a typed override too', async () => {
+      const user = userEvent.setup()
+      renderTyped(vi.fn())
+      await user.click(screen.getByRole('button', { name: /^edit$/i }))
+      const eta = screen.getByTestId('datetime-date')
+      await user.clear(eta)
+      await user.type(eta, '2026-07-25')
+      await user.click(screen.getByRole('button', { name: /^cancel$/i }))
+
+      expect(screen.queryByTestId('conflict-override')).toBeNull()
+      expect(screen.queryByTestId('discard-edits')).toBeNull()
+      expect(screen.getByTestId('proposed-column-header')).toHaveTextContent('Also Seen In Email')
+    })
+  })
+
   it('hides bag-level Item / Style No. conflict (styles are per-PO, not Order Details)', () => {
     const conflictStyles: CriticConflict = {
       field: 'item_style_no',

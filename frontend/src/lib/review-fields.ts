@@ -429,6 +429,37 @@ export function partyPickerKind(
 }
 
 /**
+ * The legal values for an enum-constrained column (UOM, Mode), or null when the column is free text.
+ *
+ * The review conflict row had every OTHER edit affordance derived from EDITABLE_FIELDS — port
+ * picker, party picker, date field, numeric field — and no enum branch, so UOM and Mode fell through
+ * to a bare text input while the Order Details form rendered a `<select>` for exactly those two. An
+ * operator could type `cartonssdfsdf` into UOM from the review desk and nowhere else.
+ *
+ * `current` is folded in when it is not already offered. `allValues` exists because Mode's offer
+ * list is deliberately shorter than its legal set (SEA/AIR offered, more stored), and a leg holding
+ * one of the unoffered values must stay selectable rather than being silently rewritten by the act
+ * of opening the dropdown.
+ */
+export function fieldOptions(
+  column: string | null | undefined,
+  current?: string | null,
+): string[] | null {
+  const meta = column ? EDITABLE_FIELDS.find((f) => f.column === column) : null
+  if (!meta?.options) return null
+  const legal = new Set<string>([...(meta.allValues ?? meta.options)])
+  const out = [...meta.options]
+  const c = (current ?? '').trim()
+  if (c !== '' && !out.some((o) => o.toUpperCase() === c.toUpperCase())) {
+    // A stored value outside the offer list is still valid (see allValues) — and even one that is
+    // NOT legal has to be offered, or the dropdown cannot represent what the leg actually holds.
+    out.push(c)
+    if (!legal.has(c)) out.sort()
+  }
+  return out
+}
+
+/**
  * Map a ReviewCard / critic payload field bag to CorrectDto keys (camelCase leg columns).
  * Drops keys that do not map to an editable leg column so we never POST snake_case garbage.
  */
