@@ -7,7 +7,7 @@ import {
   EDITABLE_FIELDS,
   createFieldKey,
   fieldUnit,
-  numericFieldWarn,
+  fieldWarn,
   dateOrderIssues,
   type EditableField,
 } from '../../lib/review-fields'
@@ -15,6 +15,7 @@ import { isAirMode, isOffModeField, offModeHint, shippingFieldVisible } from '..
 import { cn } from '../../lib/utils'
 import { DateTimeField } from './DateTimeField'
 import { NumberField } from './NumberField'
+import { TextField } from './TextField'
 import { PortPicker } from './PortPicker'
 import { PartyPicker } from './PartyPicker'
 
@@ -67,9 +68,10 @@ export function NewShipmentModal({ onClose }: { onClose: () => void }) {
   const mode = form.mode ?? ''
 
   const canSubmit = STRONG_COLUMNS.some((c) => has(c)) || has(PO_KEY)
-  const numericErrors = EDITABLE_FIELDS.some(
-    (f) => f.type === 'number' && numericFieldWarn(f.column, form[f.column]) != null,
-  )
+  // Every gate, every field — not just the numeric ones. Asking only `numericFieldWarn`, and only for
+  // `type === 'number'`, is what let a malformed container number reach the backend and come back as a
+  // footer line naming a field that had scrolled off screen.
+  const fieldErrors = EDITABLE_FIELDS.some((f) => fieldWarn(f.column, form[f.column]) != null)
   // Same cross-field date check the detail page runs, for the same reason: this form can equally
   // produce an ETA before its ETD, and catching it here beats catching it in the review queue.
   const dateIssues = useMemo(
@@ -85,7 +87,7 @@ export function NewShipmentModal({ onClose }: { onClose: () => void }) {
     return s
   }, [dateIssues])
 
-  const blocked = !canSubmit || create.isPending || numericErrors || dateIssues.length > 0
+  const blocked = !canSubmit || create.isPending || fieldErrors || dateIssues.length > 0
 
   const submit = () => {
     if (blocked) return
@@ -106,7 +108,7 @@ export function NewShipmentModal({ onClose }: { onClose: () => void }) {
 
   const renderField = (f: EditableField) => {
     const cur = form[f.column] ?? ''
-    const numErr = f.type === 'number' ? numericFieldWarn(f.column, cur) : null
+    const err = fieldWarn(f.column, cur)
     const offMode = isOffModeField(f.column, mode)
     // Both ends of a date clash are ringed — either could be the wrong value, so ringing one would
     // read as a verdict about which to change. Same rule as the detail page.
@@ -183,14 +185,16 @@ export function NewShipmentModal({ onClose }: { onClose: () => void }) {
             onChange={(v) => set(f.column, v)}
             decimals={f.column !== 'qty'}
             unit={f.column === 'qty' ? form.qtyUnit || null : (f.unit ?? fieldUnit(f.column))}
-            error={numErr}
+            error={err}
             className={controlClass}
           />
         ) : (
-          <input
+          <TextField
             id={id}
+            ariaLabel={f.label}
             value={cur}
-            onChange={(e) => set(f.column, e.target.value)}
+            onChange={(v) => set(f.column, v)}
+            error={err}
             className={controlClass}
           />
         )}
@@ -272,7 +276,9 @@ export function NewShipmentModal({ onClose }: { onClose: () => void }) {
                 ? 'Enter a booking/SO/HBL/MBL/container number or a PO.'
                 : dateIssues.length > 0
                   ? 'Fix the dates flagged above.'
-                  : ''}
+                  : fieldErrors
+                    ? 'Fix the highlighted field above.'
+                    : ''}
           </span>
           <div className="flex items-center gap-2">
             <button type="button" onClick={onClose} className="rounded-lg bg-surface-700 px-3 py-1.5 text-xs font-medium text-text-secondary hover:bg-surface-600 hover:text-text-primary">

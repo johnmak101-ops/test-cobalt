@@ -154,6 +154,50 @@ export function numericFieldWarn(column: string, value: string | undefined): str
 }
 
 /**
+ * Columns whose value has a well-defined SHAPE, and the message when it does not have it.
+ *
+ * 🔴 These mirror `backend/src/shipments/coerce-field.ts` — same patterns, same wording, because the
+ * backend throws a 400 on a mismatch and two different phrasings of one rule is how an operator ends
+ * up distrusting both. `review-fields.format-gate.test.ts` reads that file and fails if either side
+ * moves.
+ *
+ * Without a mirror the rule still HELD — it just arrived from the server, after a round trip, as one
+ * line at the foot of a 31-field scrolling form ("Failed to create — Container No. must be 4 letters
+ * + 7 digits"), with the offending field somewhere off screen. The rule was never the problem; being
+ * told about it three hundred pixels away from the box that was wrong was.
+ *
+ * HTS is deliberately absent, on both sides: its forms vary (6/8/10-digit, dotted like 6110.20.2020),
+ * so there is no shape to gate.
+ */
+const FORMAT_GATES: Record<string, { re: RegExp; message: string }> = {
+  // SCAC = Standard Carrier Alpha Code: 2-4 letters.
+  scacCode: { re: /^[A-Za-z]{2,4}$/, message: 'SCAC Code must be 2–4 letters (e.g. MAEU)' },
+  // ISO 6346: 4 letters (owner + U/J/Z category) + 7 digits (6 serial + 1 check).
+  containerNo: { re: /^[A-Za-z]{4}\d{7}$/, message: 'Container No. must be 4 letters + 7 digits, e.g. MSBU7281200' },
+}
+
+/** Inline hard error for a leg column's FORMAT. Empty is always fine — it clears the field. */
+export function formatFieldWarn(column: string, value: string | undefined): string | null {
+  const gate = FORMAT_GATES[column]
+  if (!gate) return null
+  const v = (value ?? '').trim()
+  if (v === '') return null
+  return gate.re.test(v) ? null : gate.message
+}
+
+/**
+ * EVERY inline hard error for one field — numeric range or format.
+ *
+ * Callers use this rather than the two halves, so a gate added to either kind reaches every form
+ * without each one remembering to ask twice. That is exactly how the format gates were missed: both
+ * forms asked `numericFieldWarn` and only for `type === 'number'`, so a text column with a shape had
+ * no way to be checked at all.
+ */
+export function fieldWarn(column: string, value: string | undefined): string | null {
+  return numericFieldWarn(column, value) ?? formatFieldWarn(column, value)
+}
+
+/**
  * Cross-field date sanity for the human edit form: every departure (ETD/ATD) must be before every
  * arrival (ETA/ATA). Estimate and actual float freely — ETD↔ATD and ETA↔ATA are never compared (an
  * estimate may fall either side of the actual). Returns the first "arrival before departure"
