@@ -1,5 +1,6 @@
 import { mapCriticFieldToColumn, conflictColumns } from './review-fields'
 import { isQtySettled } from './qty-conflict-settle'
+import { isMailboxPartyName } from './party-names'
 
 /**
  * The slice of the shipment detail this derivation reads. Structural on purpose — importing
@@ -254,6 +255,9 @@ export function pendingReviewAnnotations(
         // company — "advise add in Mesh" is unactionable for it, so no icon at all. Twin of
         // isNonPartyName (needs-attention.ts / backend critic-review.types.ts) — keep in step.
         if (name && !/\p{L}/u.test(name)) continue
+        // …and a mailbox is not a company either. Same shared rule the review desk applies, so the
+        // two surfaces name the same parties and count the same number of them.
+        if (name && isMailboxPartyName(name)) continue
         addMiss(
           missColumn(r),
           name
@@ -269,6 +273,7 @@ export function pendingReviewAnnotations(
     }
     for (const m of shipment.criticReview?.masterMisses ?? []) {
       if (!/\p{L}/u.test(m.rawName ?? '')) continue // numeric leak — see the comment above
+      if (isMailboxPartyName(m.rawName)) continue // mailbox, not a company — see the comment above
       addMiss(
         mapCriticFieldToColumn(m.field) ?? missColumn(m.field + ' "x"'),
         `"${m.rawName}" not found in Mesh Database — advise add in Mesh.`,
