@@ -97,7 +97,8 @@ describe('ShipmentReviewFocusPage', () => {
     expect(screen.getByText(/loading review/i)).toBeInTheDocument()
   })
 
-  it('renders the focused review card with the conflict table and an approve action', () => {
+  it('renders the focused review card with the conflict table and an approve action', async () => {
+    const user = userEvent.setup()
     mockUseShipment.mockReturnValue({ data: fixture(), isLoading: false, isError: false })
     renderPage()
 
@@ -113,7 +114,9 @@ describe('ShipmentReviewFocusPage', () => {
     expect(screen.getByRole('table')).toBeInTheDocument()
     expect(screen.getByText('ETA')).toBeInTheDocument()
 
-    // And the commit action is live (not read-only) — it names the value it would write.
+    // And the commit action is live (not read-only) — once the operator takes the email's ETA, it
+    // names the value it would write.
+    await user.click(screen.getByTestId('conflict-take'))
     expect(screen.getByRole('button', { name: /^apply 2026-07-23$/i })).toBeInTheDocument()
     expect(screen.queryByText(/shown read-only/i)).not.toBeInTheDocument()
   })

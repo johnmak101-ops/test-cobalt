@@ -9,6 +9,7 @@ import {
   isNumericColumn,
   numericFieldWarn,
   formatNumericDisplay,
+  normalizeNumericInput,
   parseStyleEntries,
   serializeStyleEntries,
   parseStyleTokens,
@@ -117,7 +118,47 @@ export function existingValueOf(conflict: CriticConflict): string {
 }
 
 /**
- * What the leg stores for this field RIGHT NOW — the value the Current column prints.
+ * A date as this desk reads and edits it: `YYYY-MM-DD`, plus `THH:mm` when a clock time is actually
+ * set (only the cut-off family carries one).
+ *
+ * The leg column holds an instant and `open-decisions.ts` ships it through `toISOString()`, so
+ * Current printed `2026-09-05T00:00:00.000Z` beside the email's clean `2026-09-09` — two renderings
+ * of the same kind of thing, with the tail left for the operator to strip by eye. It is also the form
+ * the row's RESOLUTION must hold, now that the seed IS the stored value: `DateTimeField` reads
+ * exactly `YYYY-MM-DD[THH:mm]`, so an ISO instant would come back out of the calendar as a change
+ * nobody made.
+ *
+ * Done here, at the point of use, rather than in `open-decisions.ts` — that value also feeds
+ * `sameStoredValue`, and reformatting at the source would move the comparison semantics with it.
+ */
+const ISO_DATE =
+  /^(\d{4}-\d{2}-\d{2})(?:[T ](\d{2}:\d{2})(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})?)?$/
+function reviewDateForm(raw: string): string {
+  const m = raw.trim().match(ISO_DATE)
+  if (!m) return raw.trim()
+  return m[2] && m[2] !== '00:00' ? `${m[1]}T${m[2]}` : m[1]!
+}
+
+/**
+ * The form a value takes once it IS this row's resolution — what a decision POSTS, and the only form
+ * the row compares in.
+ *
+ * Numerics lose their thousands separators (a packing list writes "1,240", the leg stores 1240, and
+ * `Number()` cannot read the grouped one back); dates lose their ISO tail. Every path that decides —
+ * the seed, a take, `changesStoredValue`, `candidateMatches` — goes through here, so the same value
+ * written two ways can never be reported as a disagreement.
+ */
+export function resolutionForm(field: string, raw: string | null | undefined): string {
+  const column = mapCriticFieldToColumn(field)
+  const v = String(raw ?? '').trim()
+  if (isNumericColumn(column)) return normalizeNumericInput(v)
+  if (isDateColumn(column)) return reviewDateForm(v)
+  return v
+}
+
+/**
+ * What the leg stores for this field RIGHT NOW — the value the Current column prints, and the value
+ * the row's resolution holds until the operator decides otherwise.
  *
  * `liveValue` is the leg read back after the commit (backend `openDecisions.liveValues`). The critic's
  * `System` candidate is only a pre-commit snapshot, and the queue emits one ONLY for backendMismatches
@@ -134,7 +175,7 @@ export function currentValueOf(
   liveValue?: string | null,
 ): string {
   const live = String(liveValue ?? '').trim()
-  return live !== '' ? live : existingValueOf(conflict)
+  return resolutionForm(conflict.field, live !== '' ? live : existingValueOf(conflict))
 }
 
 /**
@@ -153,25 +194,39 @@ export function resolutionValueOf(candidate: { value: string; master?: { code: s
   return candidate.master?.code?.trim() || candidate.value
 }
 
+/**
+ * What TAKING this candidate posts: its resolution value (#360: the master CODE when it resolved),
+ * in the row's resolution form.
+ *
+ * The two steps have to be one function. `resolutionValueOf` alone hands back whatever the email
+ * wrote — "1,240" off a packing list — and `coerceLegField` turns anything `Number()` cannot read
+ * into NULL, so a take of a grouped quantity would have WIPED it.
+ */
+export function takeValueOf(
+  conflict: CriticConflict,
+  candidate: { value: string; master?: { code: string } | null },
+): string {
+  return resolutionForm(conflict.field, resolutionValueOf(candidate))
+}
+
 /** `v` identifies this candidate — as its resolution value (code) or its raw value. Tolerant on
- *  purpose: reads accept either convention, writes always post resolutionValueOf (#360). */
+ *  purpose: reads accept either convention, writes always post takeValueOf (#360). */
 function candidateMatches(
+  conflict: CriticConflict,
   candidate: { value: string; master?: { code: string } | null },
   v: string,
 ): boolean {
-  return resolutionValueOf(candidate) === v || candidate.value === v
-}
-
-/** What approving as-is posts — the first proposed candidate's resolution value (#360). */
-export function proposedResolutionOf(conflict: CriticConflict): string {
-  const first = splitCandidates(conflict).proposed[0]
-  return first ? resolutionValueOf(first) : ''
+  const t = String(v ?? '').trim()
+  // Blank is "leave this field alone", never a pick — otherwise an empty resolution would match a
+  // candidate the email offered as an empty string and read as chosen.
+  if (t === '') return false
+  return takeValueOf(conflict, candidate) === resolutionForm(conflict.field, t) || candidate.value === t
 }
 
 /** True when `v` IS one of the proposed candidates — a pick, not a custom override (picks never
  *  require an override note). */
 export function isCandidateResolution(conflict: CriticConflict, v: string): boolean {
-  return splitCandidates(conflict).proposed.some((c) => candidateMatches(c, v))
+  return splitCandidates(conflict).proposed.some((c) => candidateMatches(conflict, c, v))
 }
 
 /** True when committing this row would OVERWRITE a stored value — i.e. it is a real change.
@@ -181,7 +236,7 @@ export function changesStoredValue(
   value: string,
   liveValue?: string | null,
 ): boolean {
-  const v = value.trim()
+  const v = resolutionForm(conflict.field, value)
   return v !== '' && v !== currentValueOf(conflict, liveValue)
 }
 
@@ -236,9 +291,17 @@ export function ConflictRow({
   const canCopyAll = canEdit && parseStyleEntries(existingStyles).length > 0
   const useLiveExisting =
     existingOverride != null && existingOverride !== ''
-  // Same accessor the decisions use, so the cell and the buttons can never disagree.
+  // Same accessor the decisions use, so the cell and the buttons can never disagree. It is also the
+  // row's DEFAULT resolution — what the card seeds with and what un-taking returns to.
   const existingDisplay = currentValueOf(conflict, existingOverride)
   const existingSourceLabel = useLiveExisting ? '(on shipment)' : '(system)'
+  /** How a value PRINTS here: numbers grouped for reading, a timed date without its `T` join. */
+  const printed = (raw: string): string =>
+    isNumeric
+      ? formatNumericDisplay(raw)
+      : isDate
+        ? reviewDateForm(raw).replace('T', ' ')
+        : raw
 
   /**
    * WHAT THE EMAIL SAID — fixed data on the conflict, independent of anything the operator has done.
@@ -256,6 +319,32 @@ export function ConflictRow({
   const emailCandidate = proposed[0] ?? null
 
   /**
+   * TAKING the email's value — the whole gesture, one box, same as the PO grid's add-tick.
+   *
+   * The row opens holding what the leg already stores, so without this the email's value is readable
+   * and unreachable: the only way to apply it was to open the multi-field editor and retype it by
+   * hand. Ticking swaps the resolution to the candidate; unticking puts the stored value back, which
+   * is the way out a radio never had.
+   *
+   * Read mode only, and only where the operator may resolve at all — edit mode replaces the cell with
+   * the input, and resolved history decides nothing.
+   */
+  const takeValue = emailCandidate ? takeValueOf(conflict, emailCandidate) : ''
+  /** Nothing to take when the email's value is already the leg's — a box that changes nothing. */
+  const takeable = takeValue !== '' && takeValue !== existingDisplay
+  const taken = takeable && resolutionForm(conflict.field, value) === takeValue
+  const canTake = canEdit && !editing && takeable
+  /**
+   * Does the value this cell PRINTS differ from what the leg holds?
+   *
+   * It used to be `changed`, which asks about the RESOLUTION — the same question only while the
+   * resolution was seeded from the proposal. Now that the row opens on the stored value, `changed`
+   * is false on open, and reading the colour off it would have painted every untaken email value in
+   * the same ink as the Current column beside it, erasing the one thing the column is there to say.
+   */
+  const seenDiffers = emailCandidate ? takeable : changed
+
+  /**
    * WHAT WILL BE WRITTEN, when that is not one of the offered values — a typed override.
    *
    * Only meaningful once display stopped being the resolution: before this, a custom value simply
@@ -265,8 +354,8 @@ export function ConflictRow({
    */
   const overrideValue =
     value.trim() !== '' &&
-    !proposed.some((p) => candidateMatches(p, value)) &&
-    value.trim() !== existingDisplay.trim()
+    !proposed.some((p) => candidateMatches(conflict, p, value)) &&
+    resolutionForm(conflict.field, value) !== existingDisplay
       ? value
       : null
 
@@ -321,7 +410,7 @@ export function ConflictRow({
                 {!useLiveExisting && existing?.master ? (
                   <MasterCodeChip code={existing.master.code} />
                 ) : null}
-                {isNumeric ? formatNumericDisplay(existingDisplay) : existingDisplay}
+                {printed(existingDisplay)}
                 <Unit unit={existingUnit} />
                 {!useLiveExisting && existing?.master === null ? <MeshMissTag /> : null}
               </span>
@@ -377,15 +466,17 @@ export function ConflictRow({
           )
         ) : multi && !isPort ? (
           <MultiCandidateProposed
+            conflict={conflict}
             label={label}
             proposed={proposed}
             value={value}
+            keepValue={existingDisplay}
+            keepLabel={printed(existingDisplay)}
             onChange={onChange}
             editing={editing}
             canEdit={canEdit}
             onRequestEdit={onRequestEdit}
             proposedUnit={proposedUnit}
-            changed={changed}
           />
         ) : editing ? (
           isPort ? (
@@ -447,42 +538,71 @@ export function ConflictRow({
             )
           )
         ) : emailCandidate || value ? (
-          <span className="inline-flex max-w-full flex-wrap items-center gap-x-1.5">
-            {/* Colour alone carries "this differs from stored" — the arrow said the same thing twice.
-                Slate, not amber: openDecisions strips every conflict the commit settled, so a row
-                that differs is one the committer read and did not write. It is worth SEEING, not
-                worth urging. */}
-            <span
-              className={cn(
-                'field-value font-mono text-sm leading-snug',
-                changed ? 'text-review-seen' : 'text-text-primary',
-              )}
-            >
-              {emailCandidate?.master ? <MasterCodeChip code={emailCandidate.master.code} /> : null}
-              {/* #360: a pick's stored value is the CODE (already on the chip) — show the company name.
-                  Numbers group for reading ("1180" → "1,180"); the grouped form is display-only and
-                  never seeds the input, since Number() cannot read it back. */}
-              {emailCandidate
-                ? isNumeric
-                  ? formatNumericDisplay(emailCandidate.value)
-                  : emailCandidate.value
-                : isNumeric
-                  ? formatNumericDisplay(value)
-                  : value}
-              <Unit unit={proposedUnit} />
-              {emailCandidate?.master === null ? <MeshMissTag /> : null}
-            </span>
-            {/* A value nobody offered. It has to be stated separately now that the cell above shows
-                what the EMAIL said — otherwise a typed override would silently masquerade as one. */}
-            {overrideValue && (
+          (() => {
+            /*
+             * Colour carries the row's state, and the arrow that used to say "differs" is gone — it
+             * said the same thing twice. Slate when merely seen: openDecisions strips every conflict
+             * the commit settled, so a row that differs is one the committer read and did not write.
+             * It is worth SEEING, not worth urging. Green once TAKEN — the same promotion the PO
+             * grid's add-tick makes, because at that point it really is going to be written.
+             */
+            const valueText = (
               <span
-                data-testid="conflict-override"
-                className="field-value font-mono text-[11px] leading-snug text-text-secondary"
+                className={cn(
+                  'field-value font-mono text-sm leading-snug',
+                  taken
+                    ? 'font-medium text-status-success'
+                    : seenDiffers
+                      ? 'text-review-seen'
+                      : 'text-text-primary',
+                )}
               >
-                → will write {isNumeric ? formatNumericDisplay(overrideValue) : overrideValue}
+                {emailCandidate?.master ? <MasterCodeChip code={emailCandidate.master.code} /> : null}
+                {/* #360: a pick's stored value is the CODE (already on the chip) — show the company
+                    name. Numbers group for reading ("1180" → "1,180"); the grouped form is
+                    display-only and never seeds the input, since Number() cannot read it back. */}
+                {printed(emailCandidate ? emailCandidate.value : value)}
+                <Unit unit={proposedUnit} />
+                {emailCandidate?.master === null ? <MeshMissTag /> : null}
               </span>
-            )}
-          </span>
+            )
+            return (
+              <div className="min-w-0 space-y-1">
+                {canTake ? (
+                  <label className="flex cursor-pointer items-start gap-2">
+                    <input
+                      type="checkbox"
+                      checked={taken}
+                      onChange={() => onChange(taken ? existingDisplay : takeValue)}
+                      data-testid="conflict-take"
+                      aria-label={
+                        taken
+                          ? `Keep the current ${label} instead of ${emailCandidate!.value}`
+                          : `Apply ${emailCandidate!.value} to ${label}`
+                      }
+                      className="mt-[3px] h-3.5 w-3.5 shrink-0 cursor-pointer rounded border-border accent-status-success"
+                    />
+                    {valueText}
+                  </label>
+                ) : (
+                  <span className="inline-flex max-w-full flex-wrap items-center gap-x-1.5">
+                    {valueText}
+                  </span>
+                )}
+                {/* A value nobody offered. It has to be stated separately now that the cell above
+                    shows what the EMAIL said — otherwise a typed override would silently
+                    masquerade as one. */}
+                {overrideValue && (
+                  <span
+                    data-testid="conflict-override"
+                    className="field-value block font-mono text-[11px] leading-snug text-text-secondary"
+                  >
+                    → will write {printed(overrideValue)}
+                  </span>
+                )}
+              </div>
+            )
+          })()
         ) : (
           <span className="font-mono text-sm text-text-muted">—</span>
         )}
@@ -805,19 +925,26 @@ export function StyleListEditor({
  * link opens.
  */
 function MultiCandidateProposed({
+  conflict,
   label,
   proposed,
   value,
+  keepValue,
+  keepLabel,
   onChange,
   editing,
   canEdit,
   onRequestEdit,
   proposedUnit,
-  changed,
 }: {
+  conflict: CriticConflict
   label: string
   proposed: CriticCandidate[]
   value: string
+  /** The row's default resolution — what the leg stores ('' when it stores nothing). */
+  keepValue: string
+  /** `keepValue` as this row prints it (numbers grouped, dates without their `T`). */
+  keepLabel: string
   onChange: (v: string) => void
   editing: boolean
   /** Operator may resolve this row at all (Active queue). False on Approved/Rejected history. */
@@ -825,9 +952,9 @@ function MultiCandidateProposed({
   /** Opens the multi-field editor — the only way to type a value the agent never proposed. */
   onRequestEdit?: () => void
   proposedUnit?: string | null
-  changed: boolean
 }) {
   const groupName = `candidates-${label.replace(/\s+/g, '-').toLowerCase()}`
+  const keepSelected = resolutionForm(conflict.field, value) === keepValue
 
   return (
     <div className="space-y-1.5" data-testid="multi-candidate-proposed">
@@ -836,9 +963,51 @@ function MultiCandidateProposed({
         aria-label={`AI proposed candidates for ${label}`}
         className="space-y-1"
       >
-        {proposed.map((c, i) => {
+        {/*
+          The way back. A radio cannot be un-picked, so once the operator touched any candidate the
+          row had no route to "actually, leave it alone" short of reloading the card — and the row
+          now OPENS on that answer, so it needs to be an option in the group rather than an implicit
+          state outside it. First, because it is the default; only where a decision can be made.
+        */}
+        {canEdit && (
+          <li>
+            <label
+              className={cn(
+                'flex cursor-pointer items-start gap-2 rounded border px-2 py-1 text-xs transition-colors',
+                keepSelected
+                  ? 'border-cobalt-primary bg-cobalt-primary/10'
+                  : 'border-border bg-surface-900 hover:bg-surface-700',
+              )}
+            >
+              <input
+                type="radio"
+                name={groupName}
+                className="mt-0.5 shrink-0"
+                checked={keepSelected}
+                onChange={() => onChange(keepValue)}
+                data-testid="conflict-keep-current"
+                aria-label={
+                  keepValue === ''
+                    ? `Leave ${label} blank`
+                    : `Keep the current ${label}: ${keepLabel}`
+                }
+              />
+              <span className="min-w-0 text-sm leading-snug text-text-secondary">
+                {keepValue === '' ? (
+                  'Leave blank'
+                ) : (
+                  <>
+                    Keep current —{' '}
+                    <span className="field-value font-mono text-text-primary">{keepLabel}</span>
+                  </>
+                )}
+              </span>
+            </label>
+          </li>
+        )}
+        {proposed.map((c) => {
           // #360: a pick is stored as the candidate's resolution value (master CODE when resolved)
-          const selected = candidateMatches(c, value) || (!value && i === 0)
+          const selected = candidateMatches(conflict, c, value)
           return (
             <li key={`${c.sourceEmailId ?? ''}\0${c.source}\0${c.value}`}>
               {canEdit ? (
@@ -854,8 +1023,8 @@ function MultiCandidateProposed({
                     type="radio"
                     name={groupName}
                     className="mt-0.5 shrink-0"
-                    checked={candidateMatches(c, value)}
-                    onChange={() => onChange(resolutionValueOf(c))}
+                    checked={selected}
+                    onChange={() => onChange(takeValueOf(conflict, c))}
                     aria-label={`Select proposed candidate: ${c.value}`}
                   />
                   <span className="field-value font-mono text-sm leading-snug text-text-primary">
@@ -866,24 +1035,21 @@ function MultiCandidateProposed({
                   </span>
                 </label>
               ) : (
+                /* Inert = resolved history, or a field with no leg column to write. Either way the
+                   resolution is still the STORED value, so "this one is a pending change" cannot be
+                   true here — the seen-differs styling this branch used to carry was unreachable
+                   once the seed stopped being the agent's proposal. Selected means only "this is
+                   the value the leg holds". */
                 <div
                   className={cn(
                     'inline-flex max-w-full rounded border px-2 py-0.5',
-                    selected
-                      ? changed
-                        ? 'border-review-seen/40 bg-review-seen/5'
-                        : 'border-border bg-surface-900/50'
-                      : 'border-transparent',
+                    selected ? 'border-border bg-surface-900/50' : 'border-transparent',
                   )}
                 >
                   <span
                     className={cn(
                       'field-value font-mono text-sm leading-snug',
-                      selected && changed
-                        ? 'text-review-seen'
-                        : selected
-                          ? 'text-text-primary'
-                          : 'text-text-secondary',
+                      selected ? 'text-text-primary' : 'text-text-secondary',
                     )}
                   >
                     {c.master ? <MasterCodeChip code={c.master.code} /> : null}
@@ -903,9 +1069,13 @@ function MultiCandidateProposed({
           <span className="inline-flex w-full items-center">
             <input
               aria-label={`Proposed value for ${label}`}
-              /* #360: blank while a candidate pick is active — pre-filling the company full name
-                 here read as "this is what will be written". Typing switches to a custom value. */
-              value={proposed.some((c) => candidateMatches(c, value)) ? '' : value}
+              /* #360: blank while any radio above is active — pre-filling the company full name here
+                 read as "this is what will be written". Typing switches to a custom value. Keeping
+                 the current value counts: its radio says so, and echoing it in the override box
+                 would show the same answer twice in two different grammars. */
+              value={
+                keepSelected || proposed.some((c) => candidateMatches(conflict, c, value)) ? '' : value
+              }
               onChange={(e) => onChange(e.target.value)}
               placeholder="—"
               className="h-8 w-full rounded-lg border border-border bg-surface-900 px-2.5 font-mono text-sm text-text-primary placeholder:text-text-muted focus:border-cobalt-primary focus:outline-none"

@@ -171,6 +171,112 @@ describe('ConflictRow party master chips', () => {
   })
 })
 
+/**
+ * The row opens holding what the leg stores, so the email's value needs a way in that is not
+ * "retype it in Edit". What the tick POSTS is the whole risk: a grouped "1,240" reaches
+ * `coerceLegField` as NaN and clears the column, and a party name that resolved must post its code.
+ */
+describe('ConflictRow take-tick — what one click actually posts', () => {
+  const renderTake = (conflict: CriticConflict, value: string, onChange: () => void, live?: string) =>
+    render(
+      <table>
+        <tbody>
+          <ConflictRow
+            conflict={conflict}
+            value={value}
+            onChange={onChange}
+            editing={false}
+            canEdit
+            existingOverride={live ?? null}
+          />
+        </tbody>
+      </table>,
+    )
+
+  it('posts the un-grouped number, never the packing list’s "1,240"', async () => {
+    const user = userEvent.setup()
+    const onChange = vi.fn()
+    const qty: CriticConflict = {
+      field: 'qty',
+      label: 'Quantity',
+      rationale: 'Counts differ',
+      candidates: [
+        { value: '1180', source: 'system' },
+        { value: '1,240', source: 'Packing List' },
+      ],
+    }
+    renderTake(qty, '1180', onChange)
+    // It still READS as a grouped number — display groups, the decision does not. Slate while
+    // untaken: seen in the email, not written by the committer.
+    expect(screen.getByText('1,240')).toHaveClass('text-review-seen')
+    await user.click(screen.getByTestId('conflict-take'))
+    expect(onChange).toHaveBeenCalledWith('1240')
+  })
+
+  it('posts the master CODE for a resolved party, and the stored value back when un-ticked', async () => {
+    const user = userEvent.setup()
+    const onChange = vi.fn()
+    const vendor: CriticConflict = {
+      field: 'vendor_code',
+      label: 'Vendor',
+      rationale: 'Booking request names another factory',
+      candidates: [
+        {
+          value: 'MACAU FUNG TAI LIMITED',
+          source: 'Booking Request',
+          master: { code: 'MACFUN', name: 'MACAU FUNG TAI LIMITED' },
+        },
+      ],
+    }
+    const { unmount } = renderTake(vendor, 'SOUOCE', onChange, 'SOUOCE')
+    await user.click(screen.getByTestId('conflict-take'))
+    expect(onChange).toHaveBeenCalledWith('MACFUN')
+    unmount()
+
+    // Ticked state → the box is the way back to what the leg holds.
+    renderTake(vendor, 'MACFUN', onChange, 'SOUOCE')
+    expect(screen.getByTestId('conflict-take')).toBeChecked()
+    await user.click(screen.getByTestId('conflict-take'))
+    expect(onChange).toHaveBeenLastCalledWith('SOUOCE')
+  })
+
+  it('day-forms an ISO instant on both the display and the value it hands back', async () => {
+    const user = userEvent.setup()
+    const onChange = vi.fn()
+    const eta: CriticConflict = {
+      field: 'eta',
+      label: 'ETA',
+      rationale: 'SO states a later arrival',
+      candidates: [{ value: '2026-09-09', source: 'SO' }],
+    }
+    renderTake(eta, '2026-09-05', onChange, '2026-09-05T00:00:00.000Z')
+    expect(screen.getByText('2026-09-05')).toBeInTheDocument()
+    expect(screen.queryByText('2026-09-05T00:00:00.000Z')).toBeNull()
+    await user.click(screen.getByTestId('conflict-take'))
+    expect(onChange).toHaveBeenCalledWith('2026-09-09')
+  })
+
+  it('resolved history has no tick — nothing there is a decision', () => {
+    const eta: CriticConflict = {
+      field: 'eta',
+      label: 'ETA',
+      rationale: 'r',
+      candidates: [
+        { value: '2026-09-05', source: 'system' },
+        { value: '2026-09-09', source: 'SO' },
+      ],
+    }
+    render(
+      <table>
+        <tbody>
+          <ConflictRow conflict={eta} value="2026-09-05" onChange={vi.fn()} editing={false} />
+        </tbody>
+      </table>,
+    )
+    expect(screen.queryByTestId('conflict-take')).toBeNull()
+  })
+})
+
 describe('ConflictRow critical badge', () => {
   it('shows Critical badge when critical is true', () => {
     renderRow({ critical: true })
