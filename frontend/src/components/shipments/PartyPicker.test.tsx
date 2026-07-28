@@ -89,6 +89,43 @@ describe('PartyPicker', () => {
     await user.keyboard('{Escape}')
     expect(screen.getByText('WYSE')).toBeInTheDocument()
   })
+
+  /**
+   * Reported from the edit form: `ROSE KNITTING FACTORY LIMITED` rendered as
+   * `ROSE KNITTING FACTORY LIMITEDNFT` — the value ran under the `ROKNFT` hint, because the hint was
+   * `absolute` and so occupied no space. Short values (WYSE, CNYTN) hid it for months.
+   *
+   * Reserving a gutter inside the field fixed the overlap and bought a worse bug: the value was then
+   * CLIPPED, so the operator could not read what they had typed. One line cannot hold both a company
+   * name and its code, so the hint moved to its own line.
+   */
+  it('renders the hint under the field, not floating over the value', async () => {
+    const user = userEvent.setup()
+    render(<Harness initial="ROSE KNITTING FACTORY LIMITED" kind="vendor" />)
+    const input = screen.getByLabelText('Customer') as HTMLInputElement
+    await user.click(input)
+    await user.keyboard('{Escape}')
+
+    const hint = screen.getByText('ROKNFT')
+    const chrome = hint.closest('span.block') ?? hint.parentElement!
+    // Nothing overlays the input any more, and nothing steals width from it.
+    expect(chrome.className).not.toMatch(/absolute/)
+    expect(input.style.paddingRight).toBe('')
+    // The value is intact — no truncation of what the operator typed.
+    expect(input.value).toBe('ROSE KNITTING FACTORY LIMITED')
+  })
+
+  it('shows no hint line when there is nothing to resolve to', async () => {
+    const user = userEvent.setup()
+    // A forwarder matched by NAME shows no hint — it stores names, so there is no code to nudge
+    // toward, and an empty line under the field would be noise.
+    render(<Harness kind="forwarder" initial="LEADWAY EXPRESS LIMITED" />)
+    const input = screen.getByLabelText('Customer') as HTMLInputElement
+    await user.click(input)
+    await user.keyboard('{Escape}')
+    expect(screen.queryByText('LEADWAY')).toBeNull()
+    expect(input.value).toBe('LEADWAY EXPRESS LIMITED')
+  })
 })
 
 describe('PartyPicker — forwarder searches by code OR name, but stores the name', () => {

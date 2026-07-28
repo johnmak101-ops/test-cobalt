@@ -109,6 +109,21 @@ export function PartyPicker({
     setActive(0)
   }
 
+  /**
+   * Reserve room for the trailing hint. Keyed on the text that is actually RENDERED, which is not
+   * simply `resolved`: a forwarder matched by name shows nothing (it stores names, so there is no
+   * code to nudge toward), and reserving a gutter for an absent hint would indent the value for no
+   * reason.
+   */
+  const hintText =
+    resolved && !open
+      ? resolved.via === 'code'
+        ? resolved.party.name
+        : STORES[kind] === 'code'
+          ? resolved.party.code
+          : ''
+      : ''
+
   // Close on outside click (blur alone races with the option's mousedown).
   useEffect(() => {
     if (!open) return
@@ -168,16 +183,24 @@ export function PartyPicker({
         onFocus={() => setOpen(true)}
         onKeyDown={onKeyDown}
       />
-      {resolved && !open && (
-        <span className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-xs text-text-muted">
-          {resolved.via === 'code' ? (
+      {/*
+        UNDER the input, not floating over it.
+        This hint used to be `absolute right-2`, which occupies no space, so a long value ran straight
+        underneath it — `ROSE KNITTING FACTORY LIMITED` printed as `…LIMITEDNFT`. Reserving a gutter
+        inside the field fixed the overlap and bought a worse bug: the value was then CLIPPED, so the
+        operator could no longer read what they had typed. A single line cannot hold both a full
+        company name and its code; giving each its own line is the only version where neither loses.
+      */}
+      {hintText !== '' && (
+        <span className="mt-0.5 block truncate text-[11px] leading-tight text-text-muted">
+          {resolved!.via === 'code' ? (
             // A code is opaque on its own — say who it is.
-            <span className="truncate">{resolved.party.name}</span>
-          ) : STORES[kind] === 'code' ? (
+            <span className="truncate">{hintText}</span>
+          ) : (
             // A legacy NAME on a code-storing field — show the code it resolves to, so the operator
             // sees what it becomes. Forwarder stores names, so there is nothing to nudge toward.
-            <span className="font-mono text-cobalt-primary-light">{resolved.party.code}</span>
-          ) : null}
+            <span className="font-mono text-cobalt-primary-light">{hintText}</span>
+          )}
         </span>
       )}
       {open && matches.length > 0 && (
