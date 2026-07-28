@@ -112,9 +112,15 @@ function shippingFieldVisible(
   return String(value ?? '').trim() !== ''
 }
 
-/** The marker an off-mode row wears, so a stale value reads as a problem rather than as data. */
+/**
+ * The marker an off-mode row wears, so a stale value reads as a problem rather than as data.
+ *
+ * SEA and AIR are written in caps because they are the stored enum, and the Mode row two lines above
+ * prints them exactly that way. Lowercasing them here made the tag look like loose prose about the
+ * sea, rather than a statement about this leg's Mode value.
+ */
 function offModeHint(mode: string | null | undefined): string {
-  return isAirMode(mode) ? 'sea field on an air shipment' : 'air field on a sea shipment'
+  return isAirMode(mode) ? 'SEA field on an AIR shipment' : 'AIR field on a SEA shipment'
 }
 
 /** House bill label: HAWB on air, HBL/FCR on sea. */
@@ -496,7 +502,7 @@ export default function ShipmentDetailPage() {
                             data-testid={`off-mode-clear-${f.db}`}
                             className="mt-0.5 block text-left text-[11px] font-medium text-status-warning hover:text-status-critical hover:underline"
                           >
-                            {isAirMode(draft.mode || shipment.mode) ? 'sea field' : 'air field'} · clear
+                            {isAirMode(draft.mode || shipment.mode) ? 'SEA field' : 'AIR field'} · clear
                           </button>
                         )}
                       </label>
