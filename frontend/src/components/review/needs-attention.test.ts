@@ -1505,11 +1505,35 @@ describe('a master-miss line dies when its slot already resolved to that company
     expect(items.some((i) => /Ligentia China/i.test(i.text))).toBe(true)
   })
 
-  it('keeps it when the slot is unlinked, or when the line names no slot', () => {
+  it('keeps it when no slot is linked at all', () => {
     expect(build([WHISTLES]).some((i) => /WHISTLES/i.test(i.text))).toBe(true)
     expect(build([WHISTLES], { customer: null }).some((i) => /WHISTLES/i.test(i.text))).toBe(true)
-    // A different slot being linked must not silence this one.
-    expect(build([WHISTLES], { forwarder: 'WHISTLES LIMITED' }).some((i) => /WHISTLES/i.test(i.text))).toBe(true)
+  })
+
+  /**
+   * REVERSED 2026-07-28. This asserted the opposite — "a different slot being linked must not
+   * silence this one" — and leg 202601DD8E showed the cost: `SOUTH OCEAN KNITTERS LIMITED` came back
+   * as a FORWARDER miss while the leg's VENDOR was linked to `SOUTH OCEAN KNITTERS LTD`. Same
+   * company, in Mesh all along, filed against the wrong slot upstream, and the desk told ops to
+   * create it — which would mint a second master for a factory under the forwarder type.
+   *
+   * The trade is accepted knowingly: a genuinely unresolved slot goes quiet when another slot holds
+   * the same company. A false "add it in Mesh" corrupts the master data the advice exists to protect;
+   * a missing line does not.
+   */
+  it('drops it when ANY slot resolved to that company, not just its own', () => {
+    expect(build([WHISTLES], { forwarder: 'WHISTLES LIMITED' }).some((i) => /WHISTLES/i.test(i.text))).toBe(false)
+  })
+
+  it('sees through a substituted legal form — LIMITED vs LTD (leg 202601DD8E)', () => {
+    const SOUTH_OCEAN =
+      'Cannot match "SOUTH OCEAN KNITTERS LIMITED" in the forwarder list. Please add it in Cobalt Fashion Data Mesh System, then rematch.'
+    const items = build([SOUTH_OCEAN], { vendor: 'SOUTH OCEAN KNITTERS LTD' })
+    expect(items.some((i) => /SOUTH OCEAN/i.test(i.text))).toBe(false)
+  })
+
+  it('still keeps a different entity of the same group, whatever slot it sits in', () => {
+    expect(build([LIGENTIA_CHINA], { vendor: 'LIGENTIA ASIA LTD' }).some((i) => /Ligentia China/i.test(i.text))).toBe(true)
   })
 })
 
@@ -1518,6 +1542,11 @@ describe('isSameCompanyName', () => {
     expect(isSameCompanyName('WHISTLES', 'WHISTLES LIMITED')).toBe(true)
     expect(isSameCompanyName("Land's End", 'LANDS END EUROPE LIMITED')).toBe(true)
     expect(isSameCompanyName('LXPantos', 'LX PANTOS LOGISTICS (SHENZHEN) CO. LTD')).toBe(true)
+    // SUBSTITUTED, not dropped — the bare prefix diverges at char 19 and used to say "different".
+    expect(isSameCompanyName('SOUTH OCEAN KNITTERS LIMITED', 'SOUTH OCEAN KNITTERS LTD')).toBe(true)
+    // …but a real difference in the name itself still is one, suffixes stripped or not.
+    expect(isSameCompanyName('LIGENTIA CHINA LTD', 'LIGENTIA ASIA LTD')).toBe(false)
+    expect(isSameCompanyName('SOUTH OCEAN KNITTERS LTD', 'SOUTH PACIFIC KNITTERS LTD')).toBe(false)
   })
 
   it('says no to a different entity, however similar the family', () => {
