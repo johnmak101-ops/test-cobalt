@@ -63,11 +63,15 @@ export const REVIEW_GROUP_HEADER = `px-3 py-2 text-left ${REVIEW_FS.meta} font-s
 
 /** Shared thead labels for the conflict grid. The POs & Styles section keeps these column TRACKS
  *  but names its own first two columns "PO" / "Item/Style" (#358) — the generic wording never fit
- *  its rows. */
+ *  its rows.
+ *
+ *  `proposed` is a track name, not a claim: nothing in that column is awaiting an apply. Conflicts
+ *  the commit settled are stripped upstream (openDecisions), so every value that reaches it is one
+ *  the committer read and did not write. "Also seen" says that; "AI Proposed" said the opposite. */
 export const REVIEW_HEAD = {
   label: 'Field / PO#',
   existing: 'Current',
-  proposed: 'From email / AI',
+  proposed: 'Also seen',
   reference: 'Reference Email',
 } as const
 

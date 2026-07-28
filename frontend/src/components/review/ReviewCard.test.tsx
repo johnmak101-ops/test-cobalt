@@ -137,13 +137,13 @@ describe('ReviewCard', () => {
     expect(within(table).getByText('ETA')).toBeInTheDocument()
     // OUR label, not the payload's bare 'HBL' — reviewFieldLabel prefers EDITABLE_FIELDS.
     expect(within(table).getByText('HBL / HAWB / FCR No.')).toBeInTheDocument()
-    // Multi-candidate HBL: both proposals visible in AI Proposed (not buried in a datalist)
+    // Multi-candidate HBL: every stated value visible in "Also seen" (not buried in a datalist)
     expect(within(table).getByText('SE26061400005')).toBeInTheDocument()
     expect(within(table).getByText('SE26061400006')).toBeInTheDocument()
     expect(within(table).getByTestId('multi-candidate-proposed')).toBeInTheDocument()
     // Column headers — default view shows agent proposals; Resolution/Edited only after Edit / changes.
     expect(within(table).getByText('Current')).toBeInTheDocument()
-    expect(within(table).getByTestId('proposed-column-header')).toHaveTextContent('AI Proposed')
+    expect(within(table).getByTestId('proposed-column-header')).toHaveTextContent('Also seen')
     expect(within(table).queryByText('Resolution')).toBeNull()
     expect(within(table).queryByText('Edited')).toBeNull()
     expect(within(table).queryByText('Recommended')).toBeNull()
@@ -802,7 +802,7 @@ describe('conflict table — read-only by default, Edit to change values', () =>
         />
       </MemoryRouter>,
     )
-    expect(screen.getByTestId('proposed-column-header')).toHaveTextContent('AI Proposed')
+    expect(screen.getByTestId('proposed-column-header')).toHaveTextContent('Also seen')
     await user.click(screen.getByRole('button', { name: /^edit$/i }))
     expect(screen.getByTestId('proposed-column-header')).toHaveTextContent('Resolution')
     expect((screen.getByTestId('datetime-date') as HTMLInputElement).value).toBe('2026-07-23')
@@ -867,7 +867,7 @@ describe('conflict table — read-only by default, Edit to change values', () =>
     expect(screen.getByTestId('proposed-column-header')).toHaveTextContent('Resolution')
     await user.click(screen.getByRole('button', { name: /^cancel$/i }))
     // discarded → back to the agent's proposal, not a lingering "Edited" state
-    expect(screen.getByTestId('proposed-column-header')).toHaveTextContent('AI Proposed')
+    expect(screen.getByTestId('proposed-column-header')).toHaveTextContent('Also seen')
     expect(screen.getByRole('button', { name: /^edit$/i })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /^submit$/i })).toBeNull()
   })
@@ -888,7 +888,7 @@ describe('conflict table — read-only by default, Edit to change values', () =>
     )
     // idle
     expect(screen.getByRole('button', { name: /^edit$/i })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /keep current/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /^keep current$/i })).toBeInTheDocument()
     // The primary now NAMES the value it writes rather than saying "Approve".
     expect(screen.getByRole('button', { name: /^apply 2026-07-23$/i })).toBeInTheDocument()
 
@@ -997,12 +997,12 @@ describe('embedded in the queue table — the row above already states identity'
     expect(screen.getByTestId('why-review')).toBeInTheDocument()
     // Two contested rows → no single value to name, so the count carries it.
     expect(screen.getByRole('button', { name: /^apply 2 changes$/i })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /keep current/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /keep all current/i })).toBeInTheDocument()
     // Not shipment is Documents-only (unlinked docs). Review queue has no dismiss path.
     expect(screen.queryByRole('button', { name: /not shipment/i })).toBeNull()
   })
 
-  it('Keep current confirms without applying AI Proposed field changes', async () => {
+  it('Keep current marks reviewed without writing anything', async () => {
     const user = userEvent.setup()
     const onApprove = vi.fn().mockResolvedValue(undefined)
     const onSave = vi.fn().mockResolvedValue(undefined)
@@ -1304,7 +1304,7 @@ describe('qty live-leg settle on decision table', () => {
     // still spells out what the click does.
     expect(screen.getByRole('button', { name: /^apply 1 change$/i })).toHaveAttribute(
       'title',
-      'Apply 1 change and confirm',
+      'Apply 1 change — the leg leaves the desk',
     )
   })
 
@@ -1431,7 +1431,7 @@ describe('decision desk — ready state (no Critical for sailing band)', () => {
       </MemoryRouter>,
     )
     // Not "Keep Current" — nothing is being kept over an alternative, there is no alternative.
-    expect(screen.getByRole('button', { name: /confirm reviewed/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /mark reviewed — no changes/i })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /keep current/i })).toBeNull()
   })
 
@@ -1595,7 +1595,7 @@ describe('when a pick IS needed, the question and the answer are adjacent', () =
 
   it('the primary will not commit until a target is picked', () => {
     renderPicker()
-    expect(screen.getByRole('button', { name: /link & apply/i })).toBeDisabled()
+    expect(screen.getByRole('button', { name: /^link — /i })).toBeDisabled()
   })
 })
 
@@ -2479,16 +2479,16 @@ describe('Current is one value — the cell and the buttons cannot disagree', ()
     // No "Apply MACFUN" / "Apply 1 Change", and no "Keep Current" either: with no alternative on
     // offer there is nothing to keep it OVER, so the card falls back to a plain confirmation.
     expect(screen.queryByRole('button', { name: /^apply/i })).toBeNull()
-    expect(screen.getByRole('button', { name: /confirm reviewed/i })).toHaveAttribute(
+    expect(screen.getByRole('button', { name: /mark reviewed — no changes/i })).toHaveAttribute(
       'title',
-      expect.stringContaining('nothing to change'),
+      expect.stringContaining('nothing is written'),
     )
   })
 
   it('a genuinely different stored value still reads as a change', () => {
     renderVendorLeg({ vendor_code: 'SOUOCE' })
     expect(screen.getByRole('button', { name: /^apply/i })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /keep current/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /^keep current$/i })).toBeInTheDocument()
   })
 
   /**
@@ -2553,7 +2553,7 @@ describe('the card takes its shape from the leg, not from the reason text', () =
   it('a real-looking leg keeps the grid and the field actions', () => {
     renderShape({}, [thinReason])
     expect(screen.getByTestId('review-decision-grid')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /keep current/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /^keep current$/i })).toBeInTheDocument()
   })
 
   it('a header-row identifier forces the verdict shape whatever else it carries', () => {

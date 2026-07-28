@@ -11,6 +11,23 @@
  */
 import { GROUP_ORDER, type NeedsAttentionGroup, type NeedsAttentionGroupId, type NeedsAttentionItem } from './needs-attention'
 
+/**
+ * The affirmative for a question this module cannot answer in its own words.
+ *
+ * It was `Confirm Reviewed`, which answered nothing: under "Who are these parties?" the operator
+ * could not tell whether the click meant "I added LOGWIN in Mesh", "I looked at it", or "it is fine
+ * unresolved". Ten call sites below fell through to it.
+ *
+ * The wording that replaced it does not attempt an answer either — it states the EFFECT, which is
+ * the one thing that is true of every one of those ten: the leg is marked reviewed and leaves the
+ * desk, and nothing is written. Pairs with the primary button's constant verb in ReviewCard, so a
+ * leg with changes reads `Mark Reviewed — Apply 2 Changes` and a leg without reads this.
+ *
+ * Questions that DO have a real answer keep it — `Track it`, `Not a Shipment`, `Keep Tracking`,
+ * `No — Keep as Separate` are already replies to their headlines and are left alone.
+ */
+export const NO_CHANGE_VERDICT = 'Mark Reviewed — No Changes'
+
 export type DeskQuestion = {
   /** Headline. Replaces BOTH the panel title and the group title above the leading line. */
   question: string
@@ -59,7 +76,7 @@ const QUESTION_BY_LINE: Record<string, DeskQuestion> = {
   },
   'r-no-id': {
     question: 'Which shipment does this email belong to?',
-    affirm: 'Confirm Reviewed',
+    affirm: NO_CHANGE_VERDICT,
     // A leg nobody can place may genuinely not be freight — unlike the other which-shipment lines,
     // where a real shipment exists and the job is to find it.
     reject: 'Not a Shipment',
@@ -72,7 +89,7 @@ const QUESTION_BY_LINE: Record<string, DeskQuestion> = {
   },
   'i-attach': {
     question: 'Is the cargo complete?',
-    affirm: 'Confirm Reviewed',
+    affirm: NO_CHANGE_VERDICT,
     reject: null,
   },
   'o-cancel': {
@@ -91,29 +108,34 @@ const QUESTION_BY_GROUP: Record<NeedsAttentionGroupId, DeskQuestion> = {
   },
   which_shipment: {
     question: 'Is this the right shipment?',
-    affirm: 'Confirm Reviewed',
+    affirm: NO_CHANGE_VERDICT,
     reject: null,
   },
   fields_disagree: {
     question: 'Which values are correct?',
-    affirm: 'Approve',
+    // `Approve` was the eleventh fall-through, not an exception to the ten: it is the same
+    // ceremonial verb as `Confirm Reviewed` wearing a different coat, and it is only ever REACHED
+    // when changeCount is 0 — a leg whose fields all already agree, where "approve" names an act
+    // that does not happen. Caught on UXDEMO-BK-2021, whose one open item is a PO style: the card
+    // read "Which values are correct?" over "No field changes to apply" and offered "Approve".
+    affirm: NO_CHANGE_VERDICT,
     reject: null,
   },
   master_miss: {
     question: 'Who are these parties?',
-    affirm: 'Confirm Reviewed',
+    affirm: NO_CHANGE_VERDICT,
     reject: null,
   },
   incomplete_data: {
     question: 'Does the extracted data look right?',
-    affirm: 'Confirm Reviewed',
+    affirm: NO_CHANGE_VERDICT,
     reject: null,
   },
   // Unmapped / future queue codes: keep the old panel title as the headline rather than inventing a
   // question we cannot stand behind, and offer no Reject for something we do not understand.
   other: {
     question: 'Needs Attention',
-    affirm: 'Confirm Reviewed',
+    affirm: NO_CHANGE_VERDICT,
     reject: null,
   },
 }
@@ -152,7 +174,7 @@ export function conflictDeskQuestion(
 
   if (fields.length > 1) {
     return {
-      question: { question: 'Which values are correct?', affirm: 'Confirm Reviewed', reject: null },
+      question: { question: 'Which values are correct?', affirm: NO_CHANGE_VERDICT, reject: null },
       detail: `${fields.length} fields disagree — settle each row below.`,
     }
   }
@@ -162,9 +184,9 @@ export function conflictDeskQuestion(
   return {
     question: {
       question: `Which ${f.label} is correct?`,
-      // changeCount > 0 replaces this with the value it would write ("Apply FEFALT"); this wording is
-      // only reached when the resolution matches what is already stored.
-      affirm: 'Confirm Reviewed',
+      // changeCount > 0 replaces this with the value it would write ("Mark Reviewed — Apply FEFALT");
+      // this wording is only reached when the resolution matches what is already stored.
+      affirm: NO_CHANGE_VERDICT,
       // A field fight is not answered by throwing the leg away. If the leg ALSO carries a
       // "is this freight?" line, the caller keeps that line's reject wording.
       reject: null,
@@ -225,7 +247,7 @@ export function candidateDeskQuestion(opts: {
       }
     : {
         question: 'Which shipment does this email update?',
-        affirm: 'Confirm Reviewed',
+        affirm: NO_CHANGE_VERDICT,
         // Rejecting is not an answer to "which one" — the leg is real, it just needs placing.
         reject: null,
       }
@@ -284,7 +306,7 @@ const EXISTENCE_QUESTIONS = new Set([
 /** Where a working card lands when the picked question turned out to be an existence question. */
 const VERIFY_QUESTION: DeskQuestion = {
   question: 'Does the extracted data look right?',
-  affirm: 'Confirm Reviewed',
+  affirm: NO_CHANGE_VERDICT,
   reject: null,
 }
 

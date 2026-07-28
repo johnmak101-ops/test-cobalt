@@ -290,8 +290,11 @@ const TRANSLATIONS: Translation[] = [
       `Order total ${m[1]} looks like a shared shipment total (same value on several POs) — not a per-PO quantity`,
   },
   {
-    match: /^PO\s+(\S+):\s*brand conflict\s+(.+?)\s+\(kept\s+(.+?)\)/i,
-    text: (m) => `PO ${m[1]}: brand conflict ${m[2]} (kept ${m[3]}) — verify`,
+    // Reads both wordings: `(system read: X)` is current, `(kept X)` is on every leg committed
+    // before that fix and still in review_reasons. Renders as the current wording either way —
+    // "kept" was false whenever upsertPo declined the write, which is when these lines appear.
+    match: /^PO\s+(\S+):\s*brand conflict\s+(.+?)\s+\((?:system read:\s*|kept\s+)(.+?)\)/i,
+    text: (m) => `PO ${m[1]}: brand conflict ${m[2]} (system read: ${m[3]}) — verify`,
   },
   // PO shipping on >1 leg with diverging qty/unit (cross-mode split) — order total deliberately unset
   {
@@ -307,8 +310,9 @@ const TRANSLATIONS: Translation[] = [
     text: (m) => `PO ${m[1]}: item/style ${m[2]}`,
   },
   {
-    match: /^PO\s+(\S+):\s*item_style_no conflict\s+(.+?)\s+\(kept\s+(.+?)\)/i,
-    text: (m) => `PO ${m[1]}: item/style conflict (kept ${m[3]}) — verify`,
+    // Legacy pre-T2 shape. Same both-wordings rule as brand conflict above.
+    match: /^PO\s+(\S+):\s*item_style_no conflict\s+(.+?)\s+\((?:system read:\s*|kept\s+)(.+?)\)/i,
+    text: (m) => `PO ${m[1]}: item/style conflict (system read: ${m[3]}) — verify`,
   },
   {
     match: /^PO\s+(\S+):\s*item\/style looks copied across all\s+(\d+)\s+POs/i,

@@ -220,7 +220,7 @@ describe('mergeReviewReasonsWithDataIssues (recompute, do not accumulate)', () =
   })
 
   it('replaces old style conflict with a fresh one (does not keep both)', () => {
-    const fresh = 'PO 16068194: item/style "AAA" vs "BBB" (kept AAA) — verify'
+    const fresh = 'PO 16068194: item/style "AAA" vs "BBB" (system read: AAA) — verify'
     const merged = mergeReviewReasonsWithDataIssues([staleStyle, masterMiss], [fresh])
     expect(merged).toEqual([masterMiss, fresh])
     expect(merged.filter((r) => /item(?:_style_no conflict|\/style)/i.test(r))).toHaveLength(1)
@@ -230,7 +230,7 @@ describe('mergeReviewReasonsWithDataIssues (recompute, do not accumulate)', () =
   it('classifies new T2 item/style and T1b copied-style reasons as recomputed', () => {
     expect(
       isRecomputedDataIssueReason(
-        'PO 12204: item/style "B0NNIE" vs "BONNIE" (kept PUH26BHALE) — verify',
+        'PO 12204: item/style "B0NNIE" vs "BONNIE" (system read: PUH26BHALE) — verify',
       ),
     ).toBe(true)
     expect(
@@ -261,7 +261,7 @@ describe('mergeReviewReasonsWithDataIssues (recompute, do not accumulate)', () =
     const r = plan.poFlagReasons.find((x) => /item\/style/i.test(x))
     expect(r).toBeDefined()
     expect(r).toMatch(/PO 12204: item\/style/)
-    expect(r).toMatch(/kept PUH26BHALE/)
+    expect(r).toMatch(/system read: PUH26BHALE/)
     expect(r).not.toMatch(/item_style_no conflict/)
   })
 

@@ -327,9 +327,18 @@ export function resolvePoEnrichment(rows: PoEvidenceInput[]): Map<string, PoEnri
 
 /**
  * T2 conflict copy: show only the symmetric-difference tokens (what actually differs), cap 2 + `+N more`,
- * always name the kept value. Example: `item/style "B0NNIE" vs "BONNIE" (kept PUH26BHALE) — verify`
+ * always name what this thread resolved to.
+ * Example: `item/style "B0NNIE" vs "BONNIE" (system read: PUH26BHALE) — verify`
+ *
+ * The suffix used to read `(kept X)`, which was false wherever it mattered. `read` is
+ * `enr.itemStyleNo` — what the resolver ranked first out of the competing values, computed here in a
+ * pure plan BEFORE anything is written. Whether it lands is `upsertPo`'s call, and that path is
+ * fill-if-null / superset-upgrade only: it never swaps one style list for a disjoint one. So on the
+ * exact legs a human is asked to look at, X was NOT kept — the PO still holds what it held, and the
+ * review desk scrapes this suffix to render the column. Naming it as our READ rather than as a
+ * committed fact keeps the sentence true whichever way the write goes.
  */
-export function summarizeStyleConflict(competing: string[], kept: string | null): string {
+export function summarizeStyleConflict(competing: string[], read: string | null): string {
   const tokens = (v: string): string[] =>
     String(v ?? '')
       .split(',')
@@ -362,8 +371,8 @@ export function summarizeStyleConflict(competing: string[], kept: string | null)
     mid = shown.map((c) => `"${c.length > 40 ? c.slice(0, 37) + '…' : c}"`).join(' vs ')
     if (competing.length > 2) mid += ` +${competing.length - 2} more`
   }
-  const keptPart = kept ? ` (kept ${kept})` : ''
-  return `item/style ${mid}${keptPart} — verify`
+  const readPart = read ? ` (system read: ${read})` : ''
+  return `item/style ${mid}${readPart} — verify`
 }
 
 /**

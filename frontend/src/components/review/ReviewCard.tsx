@@ -43,13 +43,19 @@ import {
 import { CandidateLegsPanel } from './CandidateLegsPanel'
 import { SharedPoPanel } from './SharedPoPanel'
 import { EvidencePanel } from './EvidencePanel'
-import { ReviewPoStylesSection, proposedStyleForPo } from './ReviewPoStylesSection'
+import { ReviewPoStylesSection, alsoSeenStyleForPo } from './ReviewPoStylesSection'
 import type { ReviewShipment } from '../../hooks/use-review-queue'
 import type { LinkedPO, ShipmentDetail } from '../../hooks/use-shipments'
 import { cn, formatDateTime } from '../../lib/utils'
 import { parseSender } from '../../lib/email-sender'
 import { buildNeedsAttentionGroups, isExpandableMiss, portsLinkedFromRoute } from './needs-attention'
-import { candidateDeskQuestion, conflictDeskQuestion, forWorkingCard, pickDeskQuestion } from './desk-question'
+import {
+  NO_CHANGE_VERDICT,
+  candidateDeskQuestion,
+  conflictDeskQuestion,
+  forWorkingCard,
+  pickDeskQuestion,
+} from './desk-question'
 import { NeedsAttentionMeshMiss } from './NeedsAttentionMeshMiss'
 import {
   REVIEW_COL,
@@ -82,6 +88,14 @@ const ACTION_VARIANT = {
   secondary: 'border-cobalt-primary/30 bg-cobalt-primary/15 text-cobalt-primary-light hover:bg-cobalt-primary/25',
   danger: 'border-status-critical/30 bg-status-critical/15 text-status-critical hover:bg-status-critical/25',
   success: 'border-status-success/30 bg-status-success/15 text-status-success hover:bg-status-success/25',
+  /**
+   * The OTHER verdict — closes the leg without writing anything. Real weight (solid fill, primary
+   * text) so it never gets mistaken for the deferral sitting next to it, but no hue of its own so it
+   * never competes with the primary. It used to be `success` green, which made the bar carry two
+   * equally loud verdicts whose labels both talked about field values and neither of which mentioned
+   * that the leg leaves the desk.
+   */
+  neutral: 'border-border-light bg-surface-700 text-text-primary hover:bg-surface-600',
   /** Neither a verdict nor a navigation — deferral. Lowest weight in the bar by design. */
   quiet: 'border-border bg-transparent text-text-secondary hover:bg-surface-700 hover:text-text-primary',
 } as const
@@ -471,7 +485,7 @@ export function ReviewCard({
   const poProposalCount = useMemo(
     () =>
       linkedPOs.filter(
-        (p) => proposedStyleForPo(p.poNumber, reviewReasons, p.itemStyleNo) != null,
+        (p) => alsoSeenStyleForPo(p.poNumber, reviewReasons, p.itemStyleNo) != null,
       ).length,
     [linkedPOs, reviewReasons],
   )
@@ -828,8 +842,19 @@ export function ReviewCard({
       conflicts.some((c) => (resolutions[c.field] ?? '').trim() !== proposedResolutionOf(c).trim()),
     [conflicts, resolutions],
   )
-  // Column 3 label tracks state: agent default → edit mode → human-applied values.
-  const proposedColumnLabel = editing ? 'Resolution' : hasHumanEdits ? 'Edited' : 'AI Proposed'
+  /**
+   * Column 3 label tracks state: what the thread said → edit mode → human-applied values.
+   *
+   * Idle used to read "AI Proposed", which claimed something the pipeline does not do. Conflicts the
+   * commit settled are stripped upstream (openDecisions), so every value reaching this column is one
+   * the committer read and declined to write — nothing there is queued for an apply. REVIEW_HEAD
+   * says "Also seen"; once the operator is editing, the column IS their resolution and says so.
+   */
+  const proposedColumnLabel = editing
+    ? 'Resolution'
+    : hasHumanEdits
+      ? 'Edited'
+      : REVIEW_HEAD.proposed
   /**
    * How many stored values Approve would overwrite. This is the count the primary button NAMES —
    * one informed click beats a row-by-row confirm ritual, but a bare "Approve" would hide what is
@@ -1038,7 +1063,7 @@ export function ReviewCard({
                 type="button"
                 onClick={handleApproveCollapsed}
                 disabled={busy}
-                title="Confirm without applying AI Proposed values"
+                title="Mark reviewed and keep every stored value — writes nothing"
                 className={cn(ACTION_BTN, ACTION_VARIANT.success)}
               >
                 {busy && <Loader2 size={13} className="animate-spin" />}
@@ -1786,21 +1811,27 @@ export function ReviewCard({
                     disabled={busy || (multiCandNeedsTarget && !linkTargetReady)}
                     title={
                       multiCandNeedsTarget
-                        ? 'Link into selected shipment without applying AI field proposals'
+                        ? 'Link into the selected shipment without taking any value from the email'
                         : keepMeansBlank
-                          ? 'Confirm shipment and leave these fields empty — do not apply AI Proposed'
-                          : 'Confirm shipment and keep Existing values — do not apply AI Proposed'
+                          ? 'Mark reviewed and leave these fields empty — writes nothing, the leg leaves the desk'
+                          : 'Mark reviewed and keep every stored value — writes nothing, the leg leaves the desk'
                     }
-                    className={cn(ACTION_BTN, ACTION_VARIANT.success)}
+                    className={cn(ACTION_BTN, ACTION_VARIANT.neutral)}
                   >
                     {busy && <Loader2 size={13} className="animate-spin" />}
                     {multiCandNeedsTarget
                       ? 'Link Without Field Changes'
                       : /* "Keep Current" over an empty Current promises to keep something that is not
-                           there. What the click actually does is decline every candidate. */
+                           there. What the click actually does is decline every candidate — so say
+                           "All" the moment there is more than one, or the label understates its reach
+                           on exactly the legs where reach matters. */
                         keepMeansBlank
-                        ? 'Leave Blank'
-                        : 'Keep Current'}
+                        ? conflicts.length > 1
+                          ? 'Leave All Blank'
+                          : 'Leave Blank'
+                        : conflicts.length > 1
+                          ? 'Keep All Current'
+                          : 'Keep Current'}
                   </button>
                 )}
                 {(onSaveAndApprove || onApprove || multiCandNeedsTarget) && (
@@ -1808,38 +1839,53 @@ export function ReviewCard({
                     type="button"
                     onClick={handleSaveAndApprove}
                     disabled={!canSave}
-                    /* The label is a plain verb, so the COUNT of stored values this overwrites lives
-                       here — it is the whole reason the leg is queued, and it stays assertable. */
                     title={
                       multiCandNeedsTarget
                         ? linkTargetReady
                           ? `Link into ${selectedJobLabel ?? 'selected shipment'} and apply field decisions`
                           : 'Select a shipment above first'
                         : changeCount > 0
-                          ? `Apply ${changeCount} change${changeCount === 1 ? '' : 's'} and confirm`
-                          : 'Confirm this shipment — there is nothing to change'
+                          ? `Apply ${changeCount} change${changeCount === 1 ? '' : 's'} — the leg leaves the desk`
+                          : 'Mark reviewed — nothing is written, the leg leaves the desk'
                     }
                     className={cn(ACTION_BTN, ACTION_VARIANT.primary)}
                   >
                     {busy && <Loader2 size={13} className="animate-spin" />}
+                    {/*
+                      The label names the strongest true thing the click does, and nothing weaker.
+
+                      When there IS something to write, that is the apply: `Apply FEFALT`, `Link —
+                      Apply 2 Changes`. Prefixing those with `Mark Reviewed —` was tried and read as
+                      ceremony in front of the real verb — on a card already stacking three open
+                      questions, the operator has to get past a phrase about bookkeeping to reach the
+                      one word that says what changes. The leg's fate is not lost: it moves to the
+                      title, which is where a consequence belongs when the label is already carrying
+                      an action.
+
+                      When there is NOTHING to write, no action exists to name, and the old
+                      `Confirm Reviewed` / `Approve` filled that void with a word for a thing that
+                      does not happen. That is the one case the explicit verb earns its place.
+
+                      `applyToken` names the value rather than counting it — a bare count made the
+                      operator trust that the highlighted candidate was the one being taken. Capped
+                      at 14 characters upstream, so it never crowds the bar.
+                    */}
                     {editing
                       ? 'Submit'
                       : multiCandNeedsTarget
                         ? changeCount > 0
-                          ? `Link & Apply ${changeCount} Change${changeCount === 1 ? '' : 's'}`
-                          : 'Link & Apply'
+                          ? `Link — Apply ${changeCount} Change${changeCount === 1 ? '' : 's'}`
+                          : /* "Link & Apply" with nothing to apply named an action that does not
+                               happen; linking IS the whole effect here. */
+                            'Link — No Changes'
                         : changeCount > 0
-                          ? /* Name the value, not the ceremony: "Apply FEFALT" over a bare "Approve",
-                               which made the operator trust that the highlighted candidate was the one
-                               being taken. Plural falls back to the count. */
-                            applyToken
+                          ? applyToken
                             ? `Apply ${applyToken}`
                             : `Apply ${changeCount} Change${changeCount === 1 ? '' : 's'}`
-                          : /* Nothing to apply, so the label answers the headline instead ("Yes — Track
-                               It" under "Is this a real shipment?"). Falls back to Confirm Reviewed when
-                               the leg asks nothing nameable. Never "Keep Current": nothing is being kept
-                               over an alternative, because there is no alternative. */
-                            (desk?.question.affirm ?? 'Confirm Reviewed')}
+                          : /* A question with a real answer keeps it ("Track it" under "Is this a
+                               real shipment?"); the eleven generic fall-throughs now say what the
+                               click does instead of naming a ceremony. */
+                            (desk?.question.affirm ?? NO_CHANGE_VERDICT)}
                   </button>
                 )}
                 {/* F11: multi-candidate escape hatch — genuinely new shipment (e.g. 拼櫃) without linking */}
