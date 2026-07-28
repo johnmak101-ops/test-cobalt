@@ -5,6 +5,7 @@ import { useMarkAlertRead, useMarkAlertUnread } from '../../hooks/use-alerts'
 import { MailOpen } from 'lucide-react'
 import { cn } from '../../lib/utils'
 import { interactiveProps } from '../../lib/interactive'
+import { DESK_ROW_BODY, DESK_ROW_HEAD, DESK_ROW_META, DESK_ROW_TIME } from '../dashboard/desk-row'
 
 interface AlertCardProps {
   alert: {
@@ -73,7 +74,10 @@ export function AlertCard({ alert, compact }: AlertCardProps) {
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
-          <div className="flex min-w-0 flex-wrap items-center gap-2">
+          {/* Compact = the dashboard band, where this row is read across against a Review Queue row,
+              so its height is reserved rather than earned (desk-row.ts). Full size keeps its natural
+              flow: on the Alerts page a clamped message would hide the point of the alert. */}
+          <div className={compact ? DESK_ROW_HEAD : 'flex min-w-0 flex-wrap items-center gap-2'}>
             {!isRead && (
               <span
                 className="h-2 w-2 shrink-0 rounded-full bg-cobalt-primary"
@@ -93,19 +97,25 @@ export function AlertCard({ alert, compact }: AlertCardProps) {
               </span>
             )}
           </div>
-          {consignee && (
-            <p className="mt-0.5 truncate text-xs text-text-muted">{consignee}</p>
+          {/* Compact always renders this line, empty or not — an alert without a consignee must not
+              come out a line shorter than the review row it sits beside. */}
+          {compact ? (
+            <p className={DESK_ROW_META}>{consignee ?? ''}</p>
+          ) : (
+            consignee && <p className="mt-0.5 truncate text-xs text-text-muted">{consignee}</p>
           )}
           <p
             className={cn(
-              'mt-1.5 text-sm',
+              compact ? DESK_ROW_BODY : 'mt-1.5 text-sm',
               isRead ? 'text-text-muted' : 'text-text-secondary',
             )}
           >
             {/* Backend builds a live message from rule thresholds + leg facts (not a static seed blurb). */}
             {alert.message}
           </p>
-          <p className="mt-1 text-xs text-text-muted">{formatRelativeTime(alert.triggeredAt)}</p>
+          <p className={compact ? DESK_ROW_TIME : 'mt-1 text-xs text-text-muted'}>
+            {formatRelativeTime(alert.triggeredAt)}
+          </p>
         </div>
 
         {/* Explicit mark-as-unread only (read happens on open, like email). */}
