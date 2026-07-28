@@ -757,10 +757,10 @@ export default function ShipmentDetailPage() {
 
       {activeTab === 'details' ? (
         <>
-          {/* Active Alerts */}
+          {/* Alerts — the nav, /alerts and the dashboard panel all use this one word. */}
           {shipment.alerts && shipment.alerts.some((a) => a.status === 'ACTIVE') && (
             <div className="space-y-2">
-              <h4 className="text-base font-semibold text-text-primary">Active Alerts</h4>
+              <h4 className="text-base font-semibold text-text-primary">Alerts</h4>
               {shipment.alerts.flatMap((alert) =>
                 alert.status !== 'ACTIVE'
                   ? []
