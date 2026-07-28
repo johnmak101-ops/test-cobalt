@@ -788,6 +788,10 @@ export function ReviewCard({
           // Synthesised party-mismatch row: nothing here came off an email, so the copy must not
           // claim one proposed it.
           fromMasterData: proposed.length > 0 && proposed.every((p) => isMasterDataSource(p.source)),
+          // A row this card synthesised for an UNLINKED party (unlinkedPartyConflicts) — the leg has
+          // no master on that slot at all, which is the opposite of the party-mismatch case that
+          // shares this master-data branch.
+          unlinked: unlinkedPartyConflicts.some((u) => u.field === c.field),
         }
       }),
     [conflicts, existingValue],
