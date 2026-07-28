@@ -1,5 +1,7 @@
 import { useState } from 'react'
 import { ChevronDown, ChevronRight } from 'lucide-react'
+import { PartyPicker } from '../shipments/PartyPicker'
+import type { PartyKind } from '../../hooks/use-parties'
 import type { NeedsAttentionItem } from './needs-attention'
 import { isExpandableMiss, isMeshPortCollapsed } from './needs-attention'
 import { cn } from '../../lib/utils'
@@ -13,7 +15,7 @@ export function NeedsAttentionMeshMiss({
   item,
   className,
   listClassName,
-  onPick,
+  pick,
   picking,
 }: {
   item: NeedsAttentionItem
@@ -21,11 +23,18 @@ export function NeedsAttentionMeshMiss({
   /** Class for expanded name rows (detail page uses list-disc; review uses panel item). */
   listClassName?: string
   /**
-   * Link a raw party name to one of the Mesh masters it appears to name. Omitted on surfaces with
-   * no write path (the shipment detail page reads the same items), which simply list the candidates.
+   * How to link a raw party to a Mesh master, when this surface can write.
+   *
+   * `kindFor` returns null for a name whose column cannot be identified on this leg — then the row
+   * lists the candidates read-only rather than offering a control that would write nowhere.
+   * Omitted entirely on read-only surfaces (the shipment detail page renders the same items).
    */
-  onPick?: (partyName: string, masterName: string) => void
-  /** The party name currently being written, so its buttons can disable without freezing the list. */
+  pick?: {
+    kindFor: (partyName: string) => PartyKind | null
+    isMasterValue: (kind: PartyKind, value: string) => boolean
+    onPick: (partyName: string, storedValue: string) => void
+  }
+  /** The party name currently being written, so its control can disable without freezing the list. */
   picking?: string | null
 }) {
   const [open, setOpen] = useState(false)
@@ -113,30 +122,12 @@ export function NeedsAttentionMeshMiss({
                             ? ' — in Mesh, not linked:'
                             : ` — ${candidates.length} in Mesh, none named exactly this:`}
                         </span>
-                        <span className="mt-1 flex flex-wrap gap-1.5">
-                          {candidates.map((master) =>
-                            onPick ? (
-                              <button
-                                key={master}
-                                type="button"
-                                disabled={picking === name}
-                                onClick={() => onPick(name, master)}
-                                data-testid="mesh-candidate-pick"
-                                className="rounded border border-border bg-surface-700 px-1.5 py-0.5 text-left font-mono text-xs text-text-primary hover:border-cobalt-primary hover:text-cobalt-primary-light disabled:opacity-40"
-                              >
-                                {master}
-                              </button>
-                            ) : (
-                              <span
-                                key={master}
-                                data-testid="mesh-candidate-name"
-                                className="rounded border border-border px-1.5 py-0.5 font-mono text-xs text-text-secondary"
-                              >
-                                {master}
-                              </span>
-                            ),
-                          )}
-                        </span>
+                        <MeshCandidateControl
+                          name={name}
+                          candidates={candidates}
+                          pick={pick}
+                          busy={picking === name}
+                        />
                       </>
                     )}
                   </li>
@@ -147,5 +138,75 @@ export function NeedsAttentionMeshMiss({
         </div>
       </div>
     </li>
+  )
+}
+
+/**
+ * The control for "which Mesh master is this party?" — the SAME PartyPicker the shipment detail
+ * form, the create form and the review conflict rows use for Customer Code, Vendor Code and
+ * Forwarder.
+ *
+ * It was a row of bespoke buttons first. That put two different controls on one decision: picking a
+ * vendor was a searchable master dropdown everywhere in the app, and picking a forwarder here was
+ * something else — so the two read as different kinds of action when they are the same action.
+ *
+ * Seeded with the raw name, which is what makes it no worse than the buttons: PartyPicker filters on
+ * its own text, so a field holding "LOGWIN" opens already narrowed to the five LOGWIN companies.
+ * Nobody is sent to search for something the app has just finished telling them it knows.
+ *
+ * The write fires when the value becomes a real master identifier — the code for Customer/Vendor,
+ * the name for Forwarder, exactly what PartyPicker hands back on a pick. Free text that resolves to
+ * nothing is left alone: this control links a party to an existing master and nothing else, and the
+ * ordinary edit form is still where a genuinely-new name gets typed.
+ */
+function MeshCandidateControl({
+  name,
+  candidates,
+  pick,
+  busy,
+}: {
+  name: string
+  candidates: string[]
+  pick?: {
+    kindFor: (partyName: string) => PartyKind | null
+    isMasterValue: (kind: PartyKind, value: string) => boolean
+    onPick: (partyName: string, storedValue: string) => void
+  }
+  busy: boolean
+}) {
+  const kind = pick?.kindFor(name) ?? null
+  const [draft, setDraft] = useState(name)
+
+  // No write path (read-only surface) or no column to write to — list them, do not offer a control.
+  if (!pick || !kind) {
+    return (
+      <span className="mt-1 flex flex-wrap gap-1.5">
+        {candidates.map((master) => (
+          <span
+            key={master}
+            data-testid="mesh-candidate-name"
+            className="rounded border border-border px-1.5 py-0.5 font-mono text-xs text-text-secondary"
+          >
+            {master}
+          </span>
+        ))}
+      </span>
+    )
+  }
+
+  return (
+    <span className="mt-1 block max-w-md" data-testid="mesh-candidate-picker">
+      <PartyPicker
+        kind={kind}
+        value={draft}
+        ariaLabel={`Link ${name} to a Mesh ${kind}`}
+        placeholder={`Search ${kind}s — code or name`}
+        className="h-8 w-full rounded-md border border-border bg-surface-700 px-2 text-sm text-text-primary placeholder:text-text-muted/70 focus:border-cobalt-primary focus:outline-none disabled:opacity-40"
+        onChange={(v) => {
+          setDraft(v)
+          if (!busy && pick.isMasterValue(kind, v)) pick.onPick(name, v)
+        }}
+      />
+    </span>
   )
 }
