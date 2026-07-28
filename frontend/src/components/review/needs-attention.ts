@@ -9,6 +9,7 @@ import {
   type ReasonCategory,
 } from '../../lib/review-reasons'
 import { AI_CONFIDENCE_LOW_REASON } from '../../lib/decision-phrase'
+import { isMailboxPartyName } from '../../lib/party-names'
 
 /** Queue risk flags → ReasonCategory (also used for category suppress). */
 export const RISK_CODE_CATEGORY: Record<string, ReasonCategory> = {
@@ -571,17 +572,11 @@ function meshPartyMissText(name: string): string {
 }
 
 /**
- * A "party" that is really a mail header rather than a company:
- *   Maersk Global Service Center (Chengdu) <noreply-gca@lns.maersk.com>
- * or a bare address. Sibling of isNonPartyName, which catches the same class of leak in numeric form.
- *
- * Master miss tells ops to "add in Mesh", and creating a master named after a no-reply mailbox would
- * pollute the very data the advice exists to fix. Seen on live leg A84B3B1A, where the desk asked ops
- * to add a Maersk service-centre mailbox to the forwarder list.
+ * Re-exported, not redefined: the shipment detail page applies the same rule, and when this lived
+ * here it reached only this surface. Sibling of isNonPartyName, which catches the same class of leak
+ * in numeric form. See lib/party-names.
  */
-export function isMailboxPartyName(raw: string | null | undefined): boolean {
-  return /[^\s@]+@[^\s@]+\.[^\s@]{2,}/.test(String(raw ?? ''))
-}
+export { isMailboxPartyName }
 
 /**
  * ONE place that turns a quoted party name into a master-miss line, so every branch below treats a
