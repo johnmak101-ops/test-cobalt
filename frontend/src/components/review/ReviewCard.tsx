@@ -8,7 +8,6 @@ import {
   changesStoredValue,
   currentValueOf,
   isCandidateResolution,
-  proposedResolutionOf,
   proposedValueOf,
   splitCandidates,
 } from './ConflictRow'
@@ -18,8 +17,6 @@ import {
   isPortColumn,
   mapCriticFieldToColumn,
   reviewFieldLabel,
-  isNumericColumn,
-  normalizeNumericInput,
   parseStyleEntries,
   serializeStyleEntries,
   dateOrderWarn,
@@ -207,20 +204,28 @@ function identityOf(s: ReviewShipment | ShipmentDetail) {
   }
 }
 
-function initialResolutions(conflicts: CriticConflict[]): Record<string, string> {
+/**
+ * What every contested row holds before the operator has decided anything: the value the leg ALREADY
+ * stores.
+ *
+ * It used to be the agent's proposal, so a card opened reading `Apply 2026-09-09` — one press from
+ * overwriting a value the pipeline had examined and declined. That is not a display quirk: the rows
+ * that reach this table are exactly the ones the commit did NOT settle (`openDecisions` strips the
+ * rest), so the email's value is one the committer read and refused to write. Seeding the refusal as
+ * the default made the desk's safest answer the one requiring the most clicks.
+ *
+ * The cost, accepted knowingly: one extra click on every leg where the agent is right — the take-tick
+ * on the row (see ConflictRow). The trade is a deliberate act instead of a default.
+ *
+ * `keepValue` is the card's `existingValue`, threaded in rather than re-derived: it reads the LIVE
+ * leg (openDecisions.liveValues), which this module cannot see from a bare conflict.
+ */
+function initialResolutions(
+  conflicts: CriticConflict[],
+  keepValue: (c: CriticConflict) => string,
+): Record<string, string> {
   const out: Record<string, string> = {}
-  // Seeded with the agent's proposal: the table reads as a diff, and approving accepts it. A queued
-  // conflict still has no safe AUTO-pick, so the primary button NAMES the number of stored values it
-  // would overwrite ("Approve 3 changes") — pre-filled must not read as pre-approved.
-  // #360: the seed is the RESOLUTION value — the master CODE for resolved party candidates.
-  // Numeric columns are normalised first: an agent value off a packing list arrives grouped
-  // ("1,240"), and a number <input> renders a grouped string as BLANK — which would look like the
-  // agent proposed nothing. Strip the separators so the seed survives; display re-groups it.
-  for (const c of conflicts) {
-    const raw = proposedResolutionOf(c)
-    const column = mapCriticFieldToColumn(c.field)
-    out[c.field] = isNumericColumn(column) ? normalizeNumericInput(raw) : raw
-  }
+  for (const c of conflicts) out[c.field] = keepValue(c)
   return out
 }
 
@@ -698,20 +703,33 @@ export function ReviewCard({
   }, [emails])
 
   const [resolutions, setResolutions] = useState<Record<string, string>>(() =>
-    initialResolutions(conflicts),
+    initialResolutions(conflicts, existingValue),
   )
   /** Card-level edit mode. The table reads as a clean diff until the operator asks to change it. */
   const [editing, setEditing] = useState(false)
 
-  // Re-seed when the conflict set identity changes (new payload / leg).
+  /**
+   * Re-seed when the conflict set changes (new payload / leg) OR when the STORED value behind any
+   * contested row moves.
+   *
+   * The stored value has to be in the key now that it is the seed. Keyed on the field names alone,
+   * a refetch — react-query refetches on window focus — would move `liveValues` while `resolutions`
+   * kept the value the leg held when the card opened, and the card would offer to `Apply SOUOCE`
+   * over a leg someone else had since corrected to ROKNFT. Nobody chose that; it is the same
+   * pre-approval this seed exists to prevent, arriving through a stale copy instead of a proposal.
+   *
+   * It costs an in-progress tick whenever the leg genuinely changes underneath. That is the right
+   * way round: a decision made against a value that has since moved is a decision worth re-making.
+   * Ticking does NOT re-seed — the key reads `existingValue`, never `resolutions`.
+   */
   const conflictKey = useMemo(
-    () => conflicts.map((c) => c.field).join('|'),
-    [conflicts],
+    () => conflicts.map((c) => `${c.field}\0${existingValue(c)}`).join('|'),
+    [conflicts, existingValue],
   )
   const [seededKey, setSeededKey] = useState(conflictKey)
   if (seededKey !== conflictKey) {
     setSeededKey(conflictKey)
-    setResolutions(initialResolutions(conflicts))
+    setResolutions(initialResolutions(conflicts, existingValue))
     setEditing(false)
   }
 
@@ -721,10 +739,10 @@ export function ReviewCard({
 
   const startEditing = () => setEditing(true)
 
-  /** Cancel = leave edit mode AND drop the edits, back to the agent's proposal. Leaving them applied
+  /** Cancel = leave edit mode AND drop the edits, back to the stored values. Leaving them applied
    *  after "Cancel" would silently arm Submit with values the operator just backed out of. */
   const cancelEditing = () => {
-    setResolutions(initialResolutions(conflicts))
+    setResolutions(initialResolutions(conflicts, existingValue))
     setEditing(false)
   }
 
@@ -777,10 +795,13 @@ export function ReviewCard({
         fields[col] = normalized
         continue
       }
-      if (v !== existing) fields[col] = v
+      // Through changesStoredValue, not a bare `!==`: the row's resolution form is what decides
+      // (a grouped "1,240" and a stored 1240 are one value), and the count on the button, the
+      // group headers and this bag must all be answering the same question.
+      if (changesStoredValue(c, v, liveValueFor(c))) fields[col] = v
     }
     return fields
-  }, [conflicts, resolutions, existingValue])
+  }, [conflicts, resolutions, existingValue, liveValueFor])
 
   /**
    * The learning signal (ADR-0002). `aiProposed` is what the agent suggested, `humanFinal` is what
@@ -814,9 +835,9 @@ export function ReviewCard({
       conflicts.filter((c) => {
         const v = (resolutions[c.field] ?? '').trim()
         // #360: ANY candidate pick is not an override — only a free-typed custom value needs a note.
-        return v !== '' && v !== existingValue(c) && !isCandidateResolution(c, v)
+        return changesStoredValue(c, v, liveValueFor(c)) && !isCandidateResolution(c, v)
       }),
-    [conflicts, resolutions, existingValue],
+    [conflicts, resolutions, liveValueFor],
   )
   const noteRequired = overrides.length > 0 && !note.trim()
   /**
@@ -846,12 +867,15 @@ export function ReviewCard({
     }
     return dateOrderWarn({ etd: pick('etd'), atd: pick('atd'), eta: pick('eta'), ata: pick('ata') })
   }, [conflicts, resolutions, shipment])
-  /** Any cell diverged from the agent's proposal (operator applied a different value). */
-  const hasHumanEdits = useMemo(
-    () =>
-      conflicts.some((c) => (resolutions[c.field] ?? '').trim() !== proposedResolutionOf(c).trim()),
-    [conflicts, resolutions],
-  )
+  /**
+   * A cell holds a value NOBODY offered — the operator typed it.
+   *
+   * Deliberately not "anything diverged from the default": taking the email's value or picking one of
+   * its candidates leaves the column showing exactly what the email said, which is what the idle
+   * header claims. Only a typed value makes that header false, and only then does it say "Edited".
+   * (Same reason a PO tick does not rename the column either — see ReviewPoStylesSection.)
+   */
+  const hasTypedOverride = overrides.length > 0
   /**
    * Column 3 label tracks state: what the thread said → edit mode → human-applied values.
    *
@@ -862,7 +886,7 @@ export function ReviewCard({
    */
   const proposedColumnLabel = editing
     ? 'Resolution'
-    : hasHumanEdits
+    : hasTypedOverride
       ? 'Edited'
       : REVIEW_HEAD.proposed
   /**

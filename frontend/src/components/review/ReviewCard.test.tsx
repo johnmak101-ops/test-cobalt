@@ -470,8 +470,9 @@ describe('ReviewCard', () => {
 
     await user.click(screen.getByRole('button', { name: /^edit$/i }))
     const resolution = screen.getByTestId('datetime-date') as HTMLInputElement
-    // Pre-filled with the agent's proposal — the operator accepts or edits it.
-    expect(resolution.value).toBe('2026-07-23')
+    // Pre-filled with what the leg already STORES, not with the email's value: the rows that reach
+    // this table are the ones the commit declined to take, so the default is to keep what is there.
+    expect(resolution.value).toBe('2026-07-20')
 
     // in edit mode the primary button is Submit
     const saveBtn = screen.getByRole('button', { name: /^submit$/i })
@@ -789,7 +790,7 @@ describe('conflict table — read-only by default, Edit to change values', () =>
     expect(screen.queryByLabelText(/confirm eta/i)).toBeNull()
   })
 
-  it('Edit reveals inputs pre-filled with the agent proposal; multi-candidate keeps every option', async () => {
+  it('Edit reveals inputs pre-filled with the stored value; multi-candidate keeps every option, none pre-picked', async () => {
     const user = userEvent.setup()
     render(
       <MemoryRouter>
@@ -805,16 +806,73 @@ describe('conflict table — read-only by default, Edit to change values', () =>
     expect(screen.getByTestId('proposed-column-header')).toHaveTextContent('Also Seen In Email')
     await user.click(screen.getByRole('button', { name: /^edit$/i }))
     expect(screen.getByTestId('proposed-column-header')).toHaveTextContent('Resolution')
-    expect((screen.getByTestId('datetime-date') as HTMLInputElement).value).toBe('2026-07-23')
-    // hbl has NO system candidate and two proposals → the FIRST is the pick (radio below), both visible.
-    // #360: the free-typing input stays blank while a pick is active — the pick lives in the radio,
+    expect((screen.getByTestId('datetime-date') as HTMLInputElement).value).toBe('2026-07-20')
+    // hbl has NO system candidate and two proposals — both visible, NEITHER picked. Seeding the
+    // first would arm Submit with a value the committer had already declined to write.
+    // #360: the free-typing input stays blank while a radio is active — the pick lives in the radio,
     // and pre-filling it read as "this text will be written".
     expect((screen.getByLabelText(/proposed value for hbl/i) as HTMLInputElement).value).toBe('')
     const multi = screen.getByTestId('multi-candidate-proposed')
     expect(within(multi).getByText('SE26061400005')).toBeInTheDocument()
     expect(within(multi).getByText('SE26061400006')).toBeInTheDocument()
-    expect(screen.getByRole('radio', { name: /SE26061400005/i })).toBeChecked()
+    expect(screen.getByRole('radio', { name: /SE26061400005/i })).not.toBeChecked()
     expect(screen.getByRole('radio', { name: /SE26061400006/i })).not.toBeChecked()
+    // Nothing is stored for the HBL, so the group's default reads "Leave blank" — and it is a real
+    // option in the group, which is how a picked radio gets a way back.
+    expect(screen.getByTestId('conflict-keep-current')).toBeChecked()
+    expect(screen.getByLabelText(/leave HBL .* blank/i)).toBeInTheDocument()
+  })
+
+  it('the take-tick is a READ-mode gesture — Edit replaces the cell with the input', async () => {
+    const user = userEvent.setup()
+    render(
+      <MemoryRouter>
+        <ReviewCard
+          shipment={baseShipment()}
+          criticReview={baseReview({ conflicts: [conflictEta] })}
+          compact={compact}
+          defaultExpanded
+          onSaveAndApprove={vi.fn().mockResolvedValue(undefined)}
+        />
+      </MemoryRouter>,
+    )
+    expect(screen.getByTestId('conflict-take')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /^edit$/i }))
+    // Two controls for one decision would let the box and the calendar disagree.
+    expect(screen.queryByTestId('conflict-take')).toBeNull()
+    expect(screen.getByTestId('datetime-date')).toBeInTheDocument()
+  })
+
+  /** The other half of the keep option: a multi-candidate row whose leg DOES hold a value. */
+  it('names the value Keep current would keep, when the leg holds one', async () => {
+    const user = userEvent.setup()
+    render(
+      <MemoryRouter>
+        <ReviewCard
+          shipment={
+            {
+              ...baseShipment(),
+              openDecisions: {
+                settledFields: [],
+                resolvedParties: [],
+                liveValues: { hbl_awb_fcr_no: 'SE26061400001' },
+              },
+            } as unknown as ReviewShipment
+          }
+          criticReview={baseReview({ conflicts: [conflictHbl] })}
+          compact={compact}
+          defaultExpanded
+          onSaveAndApprove={vi.fn().mockResolvedValue(undefined)}
+        />
+      </MemoryRouter>,
+    )
+    const keep = screen.getByLabelText(/Keep the current HBL .*: SE26061400001/i)
+    expect(keep).toBeChecked()
+    // Picking arms an apply; the keep option takes it back off.
+    await user.click(screen.getByRole('radio', { name: /SE26061400006/i }))
+    expect(screen.getByRole('button', { name: /^apply SE26061400006$/i })).toBeInTheDocument()
+    await user.click(keep)
+    expect(screen.queryByRole('button', { name: /^apply/i })).toBeNull()
   })
 
   it('hides bag-level Item / Style No. conflict (styles are per-PO, not Order Details)', () => {
@@ -886,6 +944,10 @@ describe('conflict table — read-only by default, Edit to change values', () =>
         />
       </MemoryRouter>,
     )
+    // Take the email's ETA first — until something is taken there is nothing to apply, and the bar
+    // carries only the plain confirmation.
+    await user.click(screen.getByTestId('conflict-take'))
+
     // idle
     expect(screen.getByRole('button', { name: /^edit$/i })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /^keep current$/i })).toBeInTheDocument()
@@ -916,6 +978,9 @@ describe('conflict table — read-only by default, Edit to change values', () =>
         />
       </MemoryRouter>,
     )
+    // The row opens on "keep" — one tick takes the email's value, and only then is there an apply.
+    expect(screen.queryByRole('button', { name: /^apply/i })).toBeNull()
+    await user.click(screen.getByTestId('conflict-take'))
     // One click, but a click that states what it accepts — not a bare "Approve".
     const approve = screen.getByRole('button', { name: /^apply 2026-07-23$/i })
     expect(approve).not.toBeDisabled()
@@ -973,7 +1038,8 @@ describe('conflict table — read-only by default, Edit to change values', () =>
 })
 
 describe('embedded in the queue table — the row above already states identity', () => {
-  it('renders no identity header, no second chevron, and no duplicate row actions', () => {
+  it('renders no identity header, no second chevron, and no duplicate row actions', async () => {
+    const user = userEvent.setup()
     render(
       <MemoryRouter>
         <ReviewCard
@@ -995,6 +1061,9 @@ describe('embedded in the queue table — the row above already states identity'
     // ...but the detail the row cannot show is still here
     expect(screen.getByRole('table')).toBeInTheDocument()
     expect(screen.getByTestId('why-review')).toBeInTheDocument()
+    // Settle both rows the way an operator would — tick the single-candidate ETA, pick an HBL.
+    await user.click(screen.getByTestId('conflict-take'))
+    await user.click(screen.getByRole('radio', { name: /SE26061400005/i }))
     // Two contested rows → no single value to name, so the count carries it.
     expect(screen.getByRole('button', { name: /^apply 2 changes$/i })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /keep all current/i })).toBeInTheDocument()
@@ -1019,7 +1088,9 @@ describe('embedded in the queue table — the row above already states identity'
         />
       </MemoryRouter>,
     )
-    await user.click(screen.getByRole('button', { name: /keep current/i }))
+    // Keep current only exists once there is something to keep the stored value OVER.
+    await user.click(screen.getByTestId('conflict-take'))
+    await user.click(screen.getByRole('button', { name: /^keep current$/i }))
     expect(onApprove).toHaveBeenCalledTimes(1)
     expect(onSave).not.toHaveBeenCalled()
   })
@@ -1240,7 +1311,8 @@ describe('source emails — identify WHICH email, and which is newer', () => {
 })
 
 describe('qty live-leg settle on decision table', () => {
-  it('hides qty conflict when live leg already matches AI proposed (GZL-class)', () => {
+  it('hides qty conflict when live leg already matches AI proposed (GZL-class)', async () => {
+    const user = userEvent.setup()
     const shipment = baseShipment({
       quantityShipped: 16,
       quantityUnit: 'cartons',
@@ -1298,6 +1370,8 @@ describe('qty live-leg settle on decision table', () => {
     expect(within(grid).queryByText('Total Quantity')).toBeNull()
     // Row label follows EDITABLE_FIELDS, which names the party fields by what they store (a code).
     expect(within(grid).getByText('Vendor Code')).toBeInTheDocument()
+    // Only the Vendor row is left to answer — take it, so there IS a change to count.
+    await user.click(screen.getByTestId('conflict-take'))
     // Qty settled — Approve must not double-count it as a second change. The label is now a plain
     // verb, so the count lives in the tooltip; assert there rather than losing the guard.
     // 'MACAU FUNG TAI LIMITED' is too long to print in a button, so the count carries it; the title
@@ -2099,9 +2173,22 @@ describe('candidate picking happens where the candidates are', () => {
 
   it('candidates are radios without entering Edit, and the copy no longer sends you there', () => {
     renderVendor()
-    expect(screen.getAllByRole('radio')).toHaveLength(3)
+    // Three candidates plus the way back. A radio cannot be un-picked, so "keep what is there" has
+    // to BE one of the options — and it is the one the row opens on.
+    expect(screen.getAllByRole('radio')).toHaveLength(4)
+    expect(screen.getByTestId('conflict-keep-current')).toBeChecked()
     expect(screen.queryByText(/pick one in Edit/i)).toBeNull()
     expect(screen.getByTestId('candidate-type-custom')).toBeInTheDocument()
+  })
+
+  it('a picked candidate can be un-picked — Keep current is a real option, not an implied one', async () => {
+    const user = userEvent.setup()
+    renderVendor()
+    await user.click(screen.getByRole('radio', { name: /FENIX/i }))
+    expect(screen.getByRole('button', { name: /^apply FEFALT$/i })).toBeInTheDocument()
+    await user.click(screen.getByTestId('conflict-keep-current'))
+    expect(screen.queryByRole('button', { name: /^apply/i })).toBeNull()
+    expect(screen.getByRole('radio', { name: /FENIX/i })).not.toBeChecked()
   })
 
   it('Edit disappears — every contested row is now operable in place', () => {
@@ -2120,14 +2207,18 @@ describe('candidate picking happens where the candidates are', () => {
   it('the primary names the master code it writes, and picking another changes it', async () => {
     const user = userEvent.setup()
     renderVendor()
-    // Seeded with the agent's first candidate.
+    // Nothing is armed until the operator picks — three co-current vendors have no safe default.
+    expect(screen.queryByRole('button', { name: /^apply/i })).toBeNull()
+    await user.click(screen.getByRole('radio', { name: /FENIX/i }))
     expect(screen.getByRole('button', { name: /^apply FEFALT$/i })).toBeInTheDocument()
     await user.click(screen.getByRole('radio', { name: /JINGQINGRONG/i }))
     expect(screen.getByRole('button', { name: /^apply JINGQI$/i })).toBeInTheDocument()
   })
 
-  it('nothing stored → the decline button says Leave Blank, not Keep Current', () => {
+  it('nothing stored → the decline button says Leave Blank, not Keep Current', async () => {
+    const user = userEvent.setup()
     renderVendor()
+    await user.click(screen.getByRole('radio', { name: /FENIX/i }))
     expect(screen.getByRole('button', { name: /^leave blank$/i })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /keep current/i })).toBeNull()
   })
@@ -2485,10 +2576,30 @@ describe('Current is one value — the cell and the buttons cannot disagree', ()
     )
   })
 
-  it('a genuinely different stored value still reads as a change', () => {
+  it('a genuinely different stored value still reads as a change — once it is taken', async () => {
+    const user = userEvent.setup()
     renderVendorLeg({ vendor_code: 'SOUOCE' })
+    // Opens on the stored value: the committer read MACFUN off the email and kept SOUOCE.
+    expect(screen.queryByRole('button', { name: /^apply/i })).toBeNull()
+    await user.click(screen.getByTestId('conflict-take'))
     expect(screen.getByRole('button', { name: /^apply/i })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /^keep current$/i })).toBeInTheDocument()
+  })
+
+  it('the take-tick goes back — unticking returns the row to the stored value', async () => {
+    const user = userEvent.setup()
+    renderVendorLeg({ vendor_code: 'SOUOCE' })
+    await user.click(screen.getByTestId('conflict-take'))
+    expect(screen.getByTestId('conflict-take')).toBeChecked()
+    await user.click(screen.getByTestId('conflict-take'))
+    expect(screen.getByTestId('conflict-take')).not.toBeChecked()
+    expect(screen.queryByRole('button', { name: /^apply/i })).toBeNull()
+  })
+
+  /** Nothing left to take: the email named the value the leg already holds. */
+  it('offers no tick when the email agrees with the leg', () => {
+    renderVendorLeg({ vendor_code: 'MACFUN' })
+    expect(screen.queryByTestId('conflict-take')).toBeNull()
   })
 
   /**
@@ -2503,14 +2614,129 @@ describe('Current is one value — the cell and the buttons cannot disagree', ()
     expect(grid).not.toHaveTextContent(/1 change/i)
   })
 
-  it('and says "1 change" once a pick would actually write something', () => {
+  it('and says "1 change" once a pick would actually write something', async () => {
+    const user = userEvent.setup()
     renderVendorLeg({ vendor_code: 'SOUOCE' })
+    expect(screen.getByTestId('review-decision-grid')).toHaveTextContent(/nothing to apply/i)
+    await user.click(screen.getByTestId('conflict-take'))
     expect(screen.getByTestId('review-decision-grid')).toHaveTextContent(/Shipping\s*\(1 change\)/i)
   })
 
-  it('nothing stored anywhere still means Leave Blank', () => {
+  /**
+   * Regression, found by adversarial review of this change. Seeding from the stored value made the
+   * seed something that can MOVE — react-query refetches on window focus — where the agent's
+   * proposal never could. Keyed on field names alone, a leg corrected by someone else while the
+   * card sat open left the old value armed in `resolutions`, and the card offered to apply it.
+   */
+  it('a leg corrected underneath the open card does not leave the old value armed', () => {
+    const { rerender } = renderVendorLeg({ vendor_code: 'SOUOCE' })
+    expect(screen.queryByRole('button', { name: /^apply/i })).toBeNull()
+
+    const withNewValue = (
+      <MemoryRouter>
+        <QueryClientProvider client={new QueryClient()}>
+          <ReviewCard
+            shipment={
+              {
+                ...baseShipment({ reviewReasons: [] }),
+                openDecisions: {
+                  settledFields: [],
+                  resolvedParties: [],
+                  liveValues: { vendor_code: 'ROKNFT' },
+                },
+              } as unknown as ReviewShipment
+            }
+            criticReview={baseReview({ conflicts: [vendorNoSystemCandidate] })}
+            defaultExpanded
+            embedded
+            onApprove={vi.fn()}
+            onSaveAndApprove={vi.fn()}
+          />
+        </QueryClientProvider>
+      </MemoryRouter>
+    )
+    rerender(withNewValue)
+
+    // Current followed the leg, and the resolution followed Current — no "Apply SOUOCE".
+    expect(screen.getByTestId('review-decision-grid')).toHaveTextContent('ROKNFT')
+    expect(screen.queryByRole('button', { name: /^apply/i })).toBeNull()
+    expect(screen.getByTestId('review-decision-grid')).toHaveTextContent(/nothing to apply/i)
+  })
+
+  it('nothing stored anywhere still means Leave Blank', async () => {
+    const user = userEvent.setup()
     renderVendorLeg({})
+    await user.click(screen.getByTestId('conflict-take'))
     expect(screen.getByRole('button', { name: /leave blank/i })).toBeInTheDocument()
+  })
+})
+
+/**
+ * `open-decisions.ts` builds liveValues with `toISOString()`, so Current printed
+ * `2026-09-05T00:00:00.000Z` next to the email's clean `2026-09-09` — two renderings of the same kind
+ * of thing, with the tail left for the operator to strip by eye. It stopped being cosmetic when the
+ * seed became the stored value: `DateTimeField` reads `YYYY-MM-DD[THH:mm]`, so an ISO instant would
+ * come back out of the calendar as a change nobody made.
+ */
+describe('a stored date reads like a date — the grid never prints an ISO instant', () => {
+  const etaVsEmail: CriticConflict = {
+    field: 'eta',
+    label: 'ETA',
+    candidates: [{ value: '2026-09-09', source: 'SO' }],
+    rationale: 'The SO states a later arrival.',
+  }
+  const cutoff: CriticConflict = {
+    field: 'cfs_cutoff',
+    label: 'CFS Cut-off',
+    candidates: [{ value: '2026-08-09T18:00', source: 'Booking Confirmation' }],
+    rationale: 'Cut-off moved.',
+  }
+
+  function renderDates(liveValues: Record<string, string>, conflicts: CriticConflict[]) {
+    return render(
+      <MemoryRouter>
+        <QueryClientProvider client={new QueryClient()}>
+          <ReviewCard
+            shipment={
+              {
+                ...baseShipment({ reviewReasons: [] }),
+                openDecisions: { settledFields: [], resolvedParties: [], liveValues },
+              } as unknown as ReviewShipment
+            }
+            criticReview={baseReview({ conflicts, riskFlags: [], reasons: [] })}
+            defaultExpanded
+            embedded
+            onApprove={vi.fn()}
+            onSaveAndApprove={vi.fn()}
+          />
+        </QueryClientProvider>
+      </MemoryRouter>,
+    )
+  }
+
+  it('day-formats what the leg stores instead of printing toISOString()', () => {
+    renderDates({ eta: '2026-09-05T00:00:00.000Z' }, [etaVsEmail])
+    const grid = screen.getByTestId('review-decision-grid')
+    expect(within(grid).getByText('2026-09-05')).toBeInTheDocument()
+    expect(grid).not.toHaveTextContent('2026-09-05T00:00:00.000Z')
+  })
+
+  it("keeps a cut-off's clock time — only the ISO tail goes", () => {
+    renderDates({ cfs_cutoff: '2026-08-07T15:00:00.000Z' }, [cutoff])
+    expect(screen.getByTestId('review-decision-grid')).toHaveTextContent('2026-08-07 15:00')
+  })
+
+  it('the calendar opens on the stored day, not on an instant it cannot read', async () => {
+    const user = userEvent.setup()
+    renderDates({ eta: '2026-09-05T00:00:00.000Z' }, [etaVsEmail])
+    await user.click(screen.getByRole('button', { name: /^edit$/i }))
+    expect((screen.getByTestId('datetime-date') as HTMLInputElement).value).toBe('2026-09-05')
+  })
+
+  it('the ISO tail is not a change — an untouched date row applies nothing', () => {
+    renderDates({ eta: '2026-09-05T00:00:00.000Z' }, [etaVsEmail])
+    expect(screen.queryByRole('button', { name: /^apply/i })).toBeNull()
+    expect(screen.getByTestId('review-decision-grid')).toHaveTextContent(/nothing to apply/i)
   })
 })
 
@@ -2550,9 +2776,12 @@ describe('the card takes its shape from the leg, not from the reason text', () =
     expect(screen.queryByTestId('review-reject')).toBeNull()
   })
 
-  it('a real-looking leg keeps the grid and the field actions', () => {
+  it('a real-looking leg keeps the grid and the field actions', async () => {
+    const user = userEvent.setup()
     renderShape({}, [thinReason])
     expect(screen.getByTestId('review-decision-grid')).toBeInTheDocument()
+    // The take-tick is the field action a working card opens with; Keep current follows it.
+    await user.click(screen.getByTestId('conflict-take'))
     expect(screen.getByRole('button', { name: /^keep current$/i })).toBeInTheDocument()
   })
 
