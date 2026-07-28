@@ -541,8 +541,16 @@ describe('pendingReviewAnnotations — "in Mesh five times" is not "not in Mesh"
     expect(msg).toMatch(/\+2 more/)
   })
 
-  it('keeps the icon — the leg still has no forwarder linked, and that is a real gap', () => {
-    expect(pendingReviewAnnotations(leg, undefined, LOGWIN_MASTERS).get('forwarderRaw')?.level).toBe('miss')
+  it('keeps the icon, but as a review QUESTION — not a master miss', () => {
+    // 'miss' is "this company is absent from Mesh, go add it" — red icon, "Master Miss" heading.
+    // Mesh has it five times; what is open is which one, which is an ordinary review question.
+    expect(pendingReviewAnnotations(leg, undefined, LOGWIN_MASTERS).get('forwarderRaw')?.level).toBe('warn')
+    // and a genuinely absent company IS still a miss
+    const absent = {
+      reviewStatus: 'provisional',
+      reviewReasons: ['forwarder_name "KUEHNE NAGEL" did not exact-match a master (LLM matcher owns fuzzy; left unlinked)'],
+    }
+    expect(pendingReviewAnnotations(absent, undefined, LOGWIN_MASTERS).get('forwarderRaw')?.level).toBe('miss')
   })
 
   it('a single near-match reads as "pick it", not as a count', () => {

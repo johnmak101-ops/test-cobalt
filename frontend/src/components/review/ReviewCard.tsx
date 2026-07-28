@@ -413,12 +413,15 @@ export function ReviewCard({
         candidates: picks.map((m) => ({
           value: m.name,
           source: 'Master data',
-          // `resolutionValueOf` posts `master.code` when it is set, so the code is supplied ONLY for
-          // the slots that store one. Forwarder stores the NAME (its codes are ERP sequence numbers)
-          // — leaving the code here would have written "369" into forwarder_raw and shown the
-          // operator `Apply 369`, which is what the branch was parked over. Same code/name split
-          // PartyPicker makes, for the same reason.
-          master: slot.field === 'forwarder_name' ? null : { code: m.code ?? '', name: m.name },
+          // `resolutionValueOf` posts `master.code` when it is set and falls back to `value`, so an
+          // EMPTY code is what makes a forwarder post its NAME — its codes are ERP sequence numbers,
+          // the same code/name split PartyPicker makes. Emptying the code rather than nulling
+          // `master`: ConflictRow renders "not in Mesh" on `master === null`, so nulling it stamped
+          // that tag on all five Mesh masters — the exact falsehood this row exists to end.
+          master: {
+            code: slot.field === 'forwarder_name' ? '' : (m.code ?? ''),
+            name: m.name,
+          },
         })),
         rationale:
           picks.length === 1

@@ -64,6 +64,10 @@ function Unit({ unit }: { unit?: string | null }) {
 /** Mesh master code beside the party name (variant A) — the code is a chip, never part of the
  *  committed value string. */
 function MasterCodeChip({ code }: { code: string }) {
+  // A master with no code to show is not a master with an empty chip. Forwarders store their NAME
+  // (their codes are ERP sequence numbers), so their candidates carry `code: ''` deliberately — and
+  // an empty chip rendered as a stray blue dash in front of every option.
+  if (!code.trim()) return null
   return (
     <span
       data-testid="master-code-chip"

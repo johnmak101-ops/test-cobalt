@@ -258,9 +258,14 @@ export function pendingReviewAnnotations(
         if (hits.length) {
           const shown = hits.slice(0, 3).join(', ')
           const more = hits.length > 3 ? `, +${hits.length - 3} more` : ''
+          // 'warn', not 'miss'. A master MISS means the company is absent from Mesh and someone must
+          // add it — the red icon and the "Master Miss" heading both say so. Here Mesh has the
+          // company, five times over; what is unresolved is WHICH, and that is an open review
+          // question like any other. Filing it as a miss put the same falsehood in the heading that
+          // the body text was written to remove.
           add(
             col,
-            'miss',
+            'warn',
             hits.length === 1
               ? `"${name}" is in Mesh as ${hits[0]} — not linked yet. Edit the field and pick it.`
               : `"${name}" matches ${hits.length} companies in Mesh but names none of them exactly — pick the right one (${shown}${more}).`,
