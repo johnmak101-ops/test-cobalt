@@ -721,6 +721,42 @@ export function ReviewCard({
   const [editing, setEditing] = useState(false)
 
   /**
+   * Taking a different Mode from the email reclassifies the leg, which strands the OLD mode's
+   * transport fields. Those are computed against the mode the operator is about to take, not the one
+   * stored — that is the whole question.
+   *
+   * Empty on a queue-list row: the list DTO carries no transport columns, so nothing is claimed there.
+   * Same safe direction `openDecisions` takes when it is absent.
+   */
+  const modeConflict = useMemo(
+    () => conflicts.find((c) => mapCriticFieldToColumn(c.field) === 'mode') ?? null,
+    [conflicts],
+  )
+  const modeCarryOver = useMemo(() => {
+    if (!modeConflict) return []
+    const taken = (resolutions[modeConflict.field] ?? '').trim()
+    if (taken === '' || !changesStoredValue(modeConflict, taken, liveValueFor(modeConflict))) return []
+    return offModeFieldsOn({ ...(shipment as ModeFieldLeg), mode: taken })
+  }, [modeConflict, resolutions, liveValueFor, shipment])
+  /** Exceptions only — absent means "clear it", the default the operator asked for. */
+  const [keepOnModeSwitch, setKeepOnModeSwitch] = useState<Record<string, boolean>>({})
+  const willClearOnSwitch = useCallback(
+    (column: string) => keepOnModeSwitch[column] !== true,
+    [keepOnModeSwitch],
+  )
+  /**
+   * Columns this Apply will EMPTY.
+   *
+   * The desk could not clear a field at all before this: `fieldsToApply` skips an empty resolution,
+   * because empty there means "no decision" rather than "clear it". So the clears travel separately
+   * and are merged in — an explicit signal, never an absence.
+   */
+  const clearedColumns = useMemo(
+    () => modeCarryOver.filter((f) => willClearOnSwitch(f.column)).map((f) => f.column),
+    [modeCarryOver, willClearOnSwitch],
+  )
+
+  /**
    * Re-seed when the conflict set changes (new payload / leg) OR when the STORED value behind any
    * contested row moves.
    *
@@ -812,8 +848,14 @@ export function ReviewCard({
       // group headers and this bag must all be answering the same question.
       if (changesStoredValue(c, v, liveValueFor(c))) fields[col] = v
     }
+    /**
+     * The mode change's consequence rides on the SAME apply, so the reclassification lands as one act
+     * rather than as a mode edit now and an orphaned field forever. `''` is the clear: `coerceLegField`
+     * maps empty to null for every column, which is why this can be an ordinary field write.
+     */
+    for (const col of clearedColumns) fields[col] = ''
     return fields
-  }, [conflicts, resolutions, existingValue, liveValueFor])
+  }, [conflicts, resolutions, existingValue, liveValueFor, clearedColumns])
 
   /**
    * The learning signal (ADR-0002). `aiProposed` is what the agent suggested, `humanFinal` is what
@@ -912,11 +954,14 @@ export function ReviewCard({
         ? 0 // nothing is being applied from a verdict card, so nothing is being counted
         : conflicts.filter((c) => changesStoredValue(c, resolutions[c.field] ?? '', liveValueFor(c)))
             .length +
+          /* A clear IS a write, so the button must count it — otherwise "Apply 1 Change" would be
+             taking a mode AND emptying two fields, and the label would understate its own reach. */
+          clearedColumns.length +
           /* A PO's style list is ONE field and one write, however many boxes moved to compose it —
              counting ticks would say "4 changes" for two rows of work and would not match the field
              grid, where one contested field is one change. */
           poPlans.length,
-    [conflicts, resolutions, liveValueFor, cardShape, poPlans],
+    [conflicts, resolutions, liveValueFor, cardShape, poPlans, clearedColumns],
   )
   /**
    * What the primary button will WRITE, when that is one nameable thing. A bare "Approve" made the
@@ -1770,6 +1815,60 @@ export function ReviewCard({
                 · back to {keepMeansBlank ? 'blank' : 'the stored values'}
               </span>
             </button>
+          )}
+
+          {/*
+            The consequence of taking a different Mode, stated next to the grid that offers it and
+            committed by the same button. Ticked by default — clearing is filing, not deletion: every
+            write goes through the shipment history, and a sea leg still reporting a flight number is
+            wrong in every downstream consumer.
+
+            Below the grid rather than nested inside the Mode row: the row's cell is the decision, and
+            burying a second set of ticks inside it would put two different kinds of choice in one
+            box. The count on Apply already carries these, so nothing here is silent.
+          */}
+          {!readOnly && modeCarryOver.length > 0 && (
+            <div
+              data-testid="mode-carry-over"
+              className="rounded-lg border border-status-warning/35 bg-status-warning/[0.06] px-3 py-2.5"
+            >
+              <p className={`${REVIEW_FS.body} font-semibold text-text-primary`}>
+                Taking Mode{' '}
+                <span className="field-value font-mono">{resolutions[modeConflict!.field]}</span> also
+                clears {modeCarryOver.length}{' '}
+                {modeCarryOver.length === 1 ? 'field' : 'fields'} from the old mode
+              </p>
+              <div className="mt-2 grid gap-1.5">
+                {modeCarryOver.map((cf) => (
+                  <label key={cf.column} className="flex cursor-pointer items-start gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={willClearOnSwitch(cf.column)}
+                      onChange={() =>
+                        setKeepOnModeSwitch((k) => ({ ...k, [cf.column]: willClearOnSwitch(cf.column) }))
+                      }
+                      data-testid={`mode-carry-over-${cf.column}`}
+                      aria-label={`Clear ${cf.label} when taking this mode`}
+                      className="mt-[3px] h-3.5 w-3.5 shrink-0 cursor-pointer rounded border-border accent-status-critical"
+                    />
+                    <span className="min-w-0 text-text-secondary">
+                      Clear <span className="font-medium text-text-primary">{cf.label}</span>{' '}
+                      <span
+                        className={cn(
+                          'field-value font-mono',
+                          willClearOnSwitch(cf.column) ? 'text-text-muted line-through' : 'text-text-primary',
+                        )}
+                      >
+                        {cf.value}
+                      </span>
+                    </span>
+                  </label>
+                ))}
+              </div>
+              <p className="mt-2 text-[11px] text-text-muted">
+                Cleared values stay in the shipment history — open the leg to see them.
+              </p>
+            </div>
           )}
 
           {/* Directly under the grid whose ✉ opened it, so the row and its evidence read together. */}

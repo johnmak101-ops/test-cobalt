@@ -1059,6 +1059,93 @@ describe('conflict table — read-only by default, Edit to change values', () =>
     })
   })
 
+  /**
+   * Piece 3a. Taking a different Mode reclassifies the leg, which strands the old mode's transport
+   * fields. The desk could not clear a field at all before this — `fieldsToApply` skips an empty
+   * resolution, because empty means "no decision" there. So the clears are an explicit signal.
+   */
+  describe('taking a Mode carries its consequence into the same apply', () => {
+    const modeConflict: CriticConflict = {
+      field: 'mode',
+      label: 'Mode',
+      candidates: [
+        { value: 'AIR', source: 'System' },
+        { value: 'SEA', source: 'Booking Confirmation' },
+      ],
+      rationale: 'The booking confirmation says ocean.',
+    }
+    const airLeg = () =>
+      baseShipment({ mode: 'AIR', flightNo: 'CX252', mawb: '160-88112233', reviewReasons: [] } as never)
+
+    const renderMode = (onSave = vi.fn().mockResolvedValue(undefined)) => {
+      render(
+        <MemoryRouter>
+          <ReviewCard
+            shipment={airLeg()}
+            criticReview={baseReview({ conflicts: [modeConflict], riskFlags: [], reasons: [] })}
+            compact={null}
+            defaultExpanded
+            onSaveAndApprove={onSave}
+          />
+        </MemoryRouter>,
+      )
+      return onSave
+    }
+
+    it('says nothing until the operator actually takes the new mode', () => {
+      renderMode()
+      expect(screen.queryByTestId('mode-carry-over')).toBeNull()
+    })
+
+    it('lists what the switch strands, ticked to clear', async () => {
+      const user = userEvent.setup()
+      renderMode()
+      await user.click(screen.getByTestId('conflict-take'))
+      const panel = screen.getByTestId('mode-carry-over')
+      expect(panel).toHaveTextContent(/Taking Mode\s*SEA also clears 2 fields/i)
+      expect(screen.getByTestId('mode-carry-over-flightNo')).toBeChecked()
+      expect(screen.getByTestId('mode-carry-over-mawb')).toBeChecked()
+    })
+
+    it('counts the clears — the button cannot understate its own reach', async () => {
+      const user = userEvent.setup()
+      renderMode()
+      await user.click(screen.getByTestId('conflict-take'))
+      // 1 mode write + 2 clears
+      expect(screen.getByRole('button', { name: /^apply 3 changes$/i })).toBeInTheDocument()
+    })
+
+    it('posts an empty string per cleared column — coerceLegField maps that to null', async () => {
+      const user = userEvent.setup()
+      const onSave = renderMode()
+      await user.click(screen.getByTestId('conflict-take'))
+      await user.click(screen.getByRole('button', { name: /^apply 3 changes$/i }))
+      expect(onSave).toHaveBeenCalledTimes(1)
+      expect(onSave.mock.calls[0][0].fields).toEqual({ mode: 'SEA', flightNo: '', mawb: '' })
+    })
+
+    it('un-ticking keeps that field and drops it from the count', async () => {
+      const user = userEvent.setup()
+      const onSave = renderMode()
+      await user.click(screen.getByTestId('conflict-take'))
+      await user.click(screen.getByTestId('mode-carry-over-mawb'))
+      expect(screen.getByTestId('mode-carry-over-mawb')).not.toBeChecked()
+      expect(screen.getByRole('button', { name: /^apply 2 changes$/i })).toBeInTheDocument()
+      await user.click(screen.getByRole('button', { name: /^apply 2 changes$/i }))
+      expect(onSave.mock.calls[0][0].fields).toEqual({ mode: 'SEA', flightNo: '' })
+    })
+
+    it('un-taking the mode takes the whole consequence back with it', async () => {
+      const user = userEvent.setup()
+      renderMode()
+      await user.click(screen.getByTestId('conflict-take'))
+      expect(screen.getByTestId('mode-carry-over')).toBeInTheDocument()
+      await user.click(screen.getByTestId('conflict-take'))
+      expect(screen.queryByTestId('mode-carry-over')).toBeNull()
+      expect(screen.queryByRole('button', { name: /^apply/i })).toBeNull()
+    })
+  })
+
   it('hides bag-level Item / Style No. conflict (styles are per-PO, not Order Details)', () => {
     const conflictStyles: CriticConflict = {
       field: 'item_style_no',
