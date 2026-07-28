@@ -188,13 +188,29 @@ commonest row on the desk. Left alone rather than guessed at.
 email — it wins and flags CONTESTED. So the observable effect is more contested flags, and
 nobody has counted how many. 85 locks exist on the dev DB today for comparison.
 
-### 3. Prod migration 0028 — local only
+### 3. Prod migrations — DONE, Fabric is at 0028 (2026-07-29)
 
-`shipments.created_manually` is applied to local `cobalt` + `cobalt_test` only.
-Fabric `ShipTrackDB` needs it, and per the earlier note was still missing 0021 and
-0022 — so a run there applies 0021→0028 at once, with the SOUOCE fact INSERT
-hanging off 0022. No Fabric connection string exists on the dev box. Until it runs,
-`createManual` fails on the unknown column. Start with a read-only ledger query.
+The "no Fabric connection string on the dev box" note was wrong: the string is
+assemblable from `backend/.env` — the Entra SP is the SAME app registration as the
+Mesh web API, so `MESH_CLIENT_ID` / `MESH_CLIENT_SECRET` / `MESH_TENANT_ID` are the
+credentials, and `parseMssqlConnectionString` switches to Entra mode on
+`Authentication=Active Directory Service Principal` (it also requires `Tenant Id`).
+Endpoint + DB id are in the `cobalt-prod-access-topology` memory.
+
+Ledger read FIRST, as this section always said to: prod was at **0022**, not 0020 —
+0021/0022 landed 2026-07-23. Six were missing and all six applied clean:
+0023→0028.
+
+Only 0023 touches DATA (`SEA_FCL`/`SEA_LCL` → `SEA`, then narrows the CHECK) and its
+`down` cannot restore the granularity, so the blast radius was measured before
+running: **5 legs total on prod**, one of them `SEA_LCL`. After: 3 AIR + 2 SEA, the
+CHECK reads `mode IS NULL OR mode IN ('AIR','SEA')`, and all nine new columns are
+present. The other five migrations are additive nullable columns.
+
+`createManual` no longer fails on an unknown column.
+
+    -- the read-only check to run before ANY future prod migration
+    SELECT name, timestamp FROM kysely_migration ORDER BY name;
 
 ### 4. The suite does not reach this surface
 
