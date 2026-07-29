@@ -199,6 +199,7 @@ export class DecisionsService {
     const group: ReconGroup = {
       fields: dto.fields ?? {},
       pos: dto.pos ?? [],
+      posStated: dto.posStated ?? [],
       poQty: dto.poQty,
       matchKeys: dto.matchKey ?? {},
       emailTypes: dto.emailTypes ?? [],

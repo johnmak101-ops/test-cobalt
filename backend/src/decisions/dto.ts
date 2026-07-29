@@ -15,6 +15,13 @@ export class CreateDecisionDto {
 
   @IsOptional() @IsArray() @IsString({ each: true }) pos?: string[]
 
+  /** POs the agent's B/L-anchored records STATE without committing them as contents (queue: `posStated`,
+   *  from `matchKeys.po_list_stated`). MATCHING ONLY — it widens candidate lookup and findExistingLeg so an
+   *  AWB reaches the sibling legs holding its other POs; it is NEVER written to shipment_pos. Omitted by
+   *  legacy callers → matching behaves exactly as before. Must be declared here or the whitelist
+   *  ValidationPipe (main.ts) strips it off the wire. */
+  @IsOptional() @IsArray() @IsString({ each: true }) posStated?: string[]
+
   /** Per-PO unambiguous shipped qty, keyed by normalized po_no. Present only when a real qty can be attributed
    *  to an individual PO; absent (or a PO omitted) when the qty is a broadcast total. Omitted by legacy callers. */
   @IsOptional()

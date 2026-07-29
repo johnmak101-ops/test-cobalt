@@ -30,6 +30,7 @@ import {
   findSupersededByIdentityCorrection,
   findManualIdentityClash,
   findPoOnlyDuplicateRisk,
+  findUnabsorbedStatedSiblings,
   findSiblingBooking,
   strongKeysConflict,
 } from './committer-match'
@@ -71,6 +72,12 @@ function matchCandidateCount(criticReview: unknown): number | null {
 export interface ReconGroup {
   fields: Record<string, unknown>
   pos: string[]
+  /** POs the agent STATED on a B/L-anchored record without committing them as this shipment's contents
+   *  (queue's `posStated`). Used ONLY to widen candidate lookup + findExistingLeg, so an AWB email reaches
+   *  the sibling legs holding its other POs instead of minting a booking each. Never written to
+   *  shipment_pos, never counted as this leg's cargo — see `matchPos` below and statedPosOf in the queue.
+   *  Empty/undefined on the legacy path → matching is byte-identical to before. */
+  posStated?: string[]
   /** Per-PO unambiguous shipped qty, keyed by normalized po_no (normKey). Present only when the Matcher can
    *  attribute a real qty to an individual PO; absent (or a PO omitted) when the qty is a broadcast total. */
   poQty?: Record<string, number>
@@ -288,6 +295,13 @@ export class CommitterService {
     //    duplicate on the next email. It deliberately does NOT match by PO when BOTH carry DIFFERENT strong
     //    ids — that is a PO reassignment the gate reviews, never a silent merge here.
     const groupPos = new Set(g.pos.map((p) => normKey(p)).filter(Boolean))
+    // MATCHING set = the POs we commit ∪ the POs a B/L-anchored record merely STATED (g.posStated). The two
+    // are deliberately different sets: `groupPos` is this leg's CARGO and drives shipment_pos, poQty and the
+    // duplicate-risk checks below; `matchPos` only answers "which existing leg is this email about".
+    // Without the widening, an AWB email that states POs 28739/28747/28740 but anchors on 28739 cannot see
+    // the legs holding the other two, so each mints its own booking (prod: JOB-2026-0009/0010). The queue
+    // only fills posStated for records carrying an hbl/mbl, so this can never glue PO-to-PO on subject text.
+    const matchPos = new Set([...groupPos, ...(g.posStated ?? []).map((p) => normKey(p)).filter(Boolean)])
     // Candidate SUPERSET instead of an allLegs() full-scan: the strong-key index (shipment_match_keys, 0003)
     // ∪ the shared-PO index (purchase_orders.po_number_norm, 0004). Same normalization + source as
     // findExistingLeg, so it provably contains every leg the strong-overlap / shared-PO branches could match.
@@ -295,13 +309,13 @@ export class CommitterService {
     // fires when the group has NO strong key AND NO PO; in that rare orphan-thread case we keep the full scan.
     const strongPairs = [...gk].map((k) => ({ type: k.slice(0, k.indexOf(':')), value: k.slice(k.indexOf(':') + 1) }))
     const legs =
-      gk.size > 0 || groupPos.size > 0
-        ? await this.shipments.candidateLegs(strongPairs, [...groupPos])
+      gk.size > 0 || matchPos.size > 0
+        ? await this.shipments.candidateLegs(strongPairs, [...matchPos])
         : await this.shipments.allLegs()
     // ONE bulk load of the candidate bookings' PO numbers (bookingId -> [poNumber]) — the PO data findExistingLeg
     // sees is byte-identical to the old per-leg poNumbersFor; the matching itself is the pure, unit-tested fn.
     const posByBooking = await this.bookings.poNumbersByBooking(legs.map((l) => l.bookingId))
-    let existing = findExistingLeg(legs, posByBooking, gk, groupPos, g.conversationId)
+    let existing = findExistingLeg(legs, posByBooking, gk, matchPos, g.conversationId)
 
     // #173 C1.5: dual-auto pin — honor target after verify (never silent first-match when pin present)
     if (g.dualAutoTarget?.shipmentId) {
@@ -530,6 +544,23 @@ export class CommitterService {
         (l) => ({ leg: l, kind: 'shared_po' as const }),
       ),
     ]
+    // Same REPORT-don't-settle contract, third case: this email's B/L states POs that are sitting on OTHER
+    // nascent legs. findExistingLeg joined one of them; the rest are very likely the same consignment, but
+    // consolidating is a cargo judgement, so name them and let the desk fold.
+    const statedResidual = new Set((g.posStated ?? []).map((p) => normKey(p)).filter(Boolean))
+    for (const l of findUnabsorbedStatedSiblings(legs, posByBooking, statedResidual, shipmentId)) {
+      if (seenRisk.has(l.id)) continue
+      seenRisk.add(l.id)
+      const bk = await this.bookings.findById(l.bookingId)
+      const shared = (posByBooking.get(l.bookingId) ?? []).find((p) => statedResidual.has(normKey(p)))
+      const bl = str(f.hbl_awb_fcr_no) ?? str(f.mbl) ?? 'this bill of lading'
+      duplicateRiskReasons.push(
+        `likely the same shipment as ${bk?.jobNo ?? l.id} — ${bl} also states PO ${
+          shared ?? '(unknown)'
+        }, which has no identity of its own yet; kept both`,
+      )
+    }
+
     for (const { leg: l, kind } of riskLegs) {
       if (seenRisk.has(l.id)) continue
       seenRisk.add(l.id)
