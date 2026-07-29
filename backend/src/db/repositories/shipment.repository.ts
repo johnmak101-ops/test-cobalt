@@ -534,8 +534,15 @@ export class ShipmentRepository {
         'purchaseOrders.itemStyleNo as itemStyleNo', 'purchaseOrders.brand as brand',
         'vendors.name as vendorName',
         'shipmentPos.id as linkId', 'shipmentPos.quantity as legQty', 'shipmentPos.quantityUnit as legQtyUnit',
+        'shipmentPos.inferred as inferred',
       ])
       .execute()
+  }
+
+  /** Drop a PO link by its shipment_pos id — the displacement half of the claim-strength rule (0029).
+   *  Only ever called for a link stored `inferred = 1`; a stated link is never removed automatically. */
+  async unlinkPoById(linkId: string) {
+    await this.db.deleteFrom('shipmentPos').where('id', '=', linkId).execute()
   }
 
   /**
@@ -569,6 +576,7 @@ export class ShipmentRepository {
         'shipmentPos.id as linkId',
         'shipmentPos.quantity as legQty',
         'shipmentPos.quantityUnit as legQtyUnit',
+        'shipmentPos.inferred as inferred',
       ])
       .execute()
     for (const r of rows) {
@@ -674,18 +682,36 @@ export class ShipmentRepository {
   // --- shipment_pos ---
 
   /** Idempotently link a shipment to a PO (the `uq_shipment_pos` unique absorbs replays). */
-  async linkPo(shipmentId: string, poId: string, quantity: number | null, unit: string | null) {
+  /** `inferred` (0029): the group SWEPT this PO up rather than stating it — a weaker claim that a
+   *  later stated one may displace. Defaults false, so every existing caller keeps writing a strong link. */
+  async linkPo(
+    shipmentId: string,
+    poId: string,
+    quantity: number | null,
+    unit: string | null,
+    inferred = false,
+  ) {
     const existing = await this.db
       .selectFrom('shipmentPos')
       .where('shipmentId', '=', shipmentId)
       .where('poId', '=', poId)
-      .select('id')
+      .select(['id', 'inferred'])
       .executeTakeFirst()
-    if (existing) return null
+    if (existing) {
+      // 0029: claim strength is relative to the B/L that OWNS the leg now, so a re-link restates it.
+      // A nascent leg's links are written by the pre-B/L booking request, which states the whole
+      // programme — Set 5's 2026-01-16 email states all nine POs before any AWB exists. When an AWB
+      // later ADOPTS that leg, its own view is the one that counts: the POs it merely swept off an
+      // attachment become inferred, and a later email that names them can take them back.
+      if (existing.inferred !== inferred) {
+        await this.db.updateTable('shipmentPos').set({ inferred }).where('id', '=', existing.id).execute()
+      }
+      return null
+    }
     try {
       const row = await this.db
         .insertInto('shipmentPos')
-        .values({ shipmentId, poId, quantity, quantityUnit: unit })
+        .values({ shipmentId, poId, quantity, quantityUnit: unit, inferred })
         .outputAll('inserted')
         .executeTakeFirst()
       return row ?? null

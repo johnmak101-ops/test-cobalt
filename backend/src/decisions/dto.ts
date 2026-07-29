@@ -22,6 +22,11 @@ export class CreateDecisionDto {
    *  ValidationPipe (main.ts) strips it off the wire. */
   @IsOptional() @IsArray() @IsString({ each: true }) posStated?: string[]
 
+  /** The subset of `pos` the agent swept up rather than stated (queue `posInferred`). Persisted per link
+   *  (0029) as claim STRENGTH, so a later email that names the PO displaces this weak claim instead of
+   *  losing the cross-HAWB guard on arrival order. Omitted by legacy callers → all claims stated. */
+  @IsOptional() @IsArray() @IsString({ each: true }) posInferred?: string[]
+
   /** Per-PO unambiguous shipped qty, keyed by normalized po_no. Present only when a real qty can be attributed
    *  to an individual PO; absent (or a PO omitted) when the qty is a broadcast total. Omitted by legacy callers. */
   @IsOptional()

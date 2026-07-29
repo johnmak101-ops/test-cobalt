@@ -9,6 +9,7 @@ import type {
   ParsedRecord as GenParsedRecord,
   Customers as GenCustomers,
   Vendors as GenVendors,
+  ShipmentPos as GenShipmentPos,
   Generated,
 } from './db.generated'
 import type {
@@ -162,6 +163,12 @@ export interface Vendors extends GenVendors {
   nameCh: string | null
 }
 
+/** 0029 — was this PO STATED by the email that linked it, or merely swept up with the group? Lets a
+ *  stated claim displace an inferred one on the cross-HAWB guard instead of losing to arrival order. */
+export interface ShipmentPos extends GenShipmentPos {
+  inferred: Generated<boolean>
+}
+
 export interface DB
   extends Omit<
     GeneratedDB,
@@ -178,7 +185,10 @@ export interface DB
     // 0022 name_ch columns (codegen not rerun) — omit then re-add below
     | 'customers'
     | 'vendors'
+    // 0029 inferred column (codegen not rerun) — omit then re-add below
+    | 'shipmentPos'
   > {
+  shipmentPos: ShipmentPos
   shipments: Shipments
   bookings: Bookings
   shipmentMilestones: ShipmentMilestones

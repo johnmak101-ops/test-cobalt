@@ -19,14 +19,29 @@ export interface PoReconcilePlan {
   links: PoLinkPlan[]
   poQtyIssues: string[]
   poFlagReasons: string[]
+  /** Sibling INFERRED links this commit's STATED claim takes over — the caller unlinks each (0029).
+   *  Always empty unless the queue reported `posInferred` and a sibling holds the PO weakly. */
+  displaced: PoDisplacement[]
 }
 
 /**
  * Build the per-PO link plan + review-flag reasons for one commit group.
  * Semantics match the previous inline loop in CommitterService.apply (byte-stable reason strings).
  */
-/** Other legs' PO↔HAWB claims used as defense-in-depth against cross-HAWB PO linking. */
-export type SiblingPoHbl = { po: string; hbl: string; mode?: string | null }
+/** Other legs' PO↔HAWB claims used as defense-in-depth against cross-HAWB PO linking.
+ *  `inferred` (0029) is how STRONGLY that leg claims the PO: true when its group swept the PO up without
+ *  stating it. `linkId` lets the caller drop the row when a stated claim displaces it. */
+export type SiblingPoHbl = {
+  po: string
+  hbl: string
+  mode?: string | null
+  inferred?: boolean
+  linkId?: string
+  shipmentId?: string
+}
+
+/** A sibling's INFERRED link that a STATED claim on this commit takes over. The caller unlinks it. */
+export type PoDisplacement = { po: string; fromHbl: string; linkId: string; shipmentId: string }
 
 /** Collapse to the transport family: only SEA vs AIR is a legitimate PO split.
  *  `normMode` now stores nothing finer than SEA/AIR, so this is a no-op for new rows — kept as
@@ -50,13 +65,19 @@ export function planPoReconcile(args: {
    * skip linking that PO and flag for review.
    */
   siblingPoHbls?: SiblingPoHbl[]
+  /** The subset of `pos` the group swept up without stating (queue `posInferred`). Omitted → all stated. */
+  posInferred?: string[]
 }): PoReconcilePlan {
   const { fields, poQty, poEnrichment, unattributed, gk } = args
   const poQtyIssues: string[] = []
   const poFlagReasons: string[] = []
   const links: PoLinkPlan[] = []
+  const displaced: PoDisplacement[] = []
   const myHbl = normKey(fields.hbl_awb_fcr_no)
   const siblings = args.siblingPoHbls ?? []
+  // POs this group SWEPT UP rather than stated (queue's `posInferred`). Absent → every PO is a stated
+  // claim, which is the pre-0029 behaviour for callers that do not report strength.
+  const inferredPos = new Set((args.posInferred ?? []).map((p) => normKey(p)).filter(Boolean))
 
   // Defense-in-depth: packing-line / LC / invoice tokens must not mint PO masters (DEMO Set6 ASNE/31900/DF).
   const { keep: pos, demoted } = demotePackingLinePos(args.pos)
@@ -76,12 +97,30 @@ export function planPoReconcile(args: {
     if (claim) {
       const sibMode = modeFamily(claim.mode)
       if (!myMode || !sibMode || myMode === sibMode) {
-        poFlagReasons.push(`PO ${poNo}: exclusive to sibling HAWB — not linked`)
-        continue
+        // CLAIM STRENGTH (0029). First-come-wins is not evidence. When the sibling merely SWEPT this PO
+        // up (inferred — e.g. a programme-wide attachment row that inherited that email's AWB) and THIS
+        // group STATES it, the stated claim takes over: the sibling link is dropped and the PO links
+        // here. Set 5: GZL26258522 swept 28739/28740 off an attachment on 01-20; GZL26261147 names them
+        // in its own subject on 01-31 and, under the old rule, committed with no cargo at all.
+        //
+        // Strictly one-directional. An inferred claim never displaces a stated one, and two stated
+        // claims still flag rather than fight — the guard's original purpose (one PO must not ride two
+        // same-mode HAWBs) is intact; only the tie-break changed from timing to evidence.
+        const iStated = !inferredPos.has(normKey(poNo))
+        if (claim.inferred === true && iStated && claim.linkId && claim.shipmentId) {
+          displaced.push({ po: poNo, fromHbl: claim.hbl, linkId: claim.linkId, shipmentId: claim.shipmentId })
+          poFlagReasons.push(
+            `PO ${poNo}: moved from sibling HAWB ${claim.hbl}, which swept it up without stating it — this B/L names it`,
+          )
+        } else {
+          poFlagReasons.push(`PO ${poNo}: exclusive to sibling HAWB — not linked`)
+          continue
+        }
+      } else {
+        poFlagReasons.push(
+          `PO ${poNo}: also on sibling HAWB ${claim.hbl} (cross-mode split) — linked, verify qty split`,
+        )
       }
-      poFlagReasons.push(
-        `PO ${poNo}: also on sibling HAWB ${claim.hbl} (cross-mode split) — linked, verify qty split`,
-      )
     }
     const mapped = num(poQty?.[normKey(poNo)])
     const perPoQty = mapped ?? (pos.length === 1 ? num(fields.qty) : null)
@@ -141,7 +180,7 @@ export function planPoReconcile(args: {
     poFlagReasons.push(`shipment-level ${u.field} "${u.value}" not attributed to any PO — verify per-PO ${u.field}`)
   }
 
-  return { links, poQtyIssues, poFlagReasons }
+  return { links, poQtyIssues, poFlagReasons, displaced }
 }
 
 /**

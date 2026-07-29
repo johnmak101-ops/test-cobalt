@@ -43,12 +43,15 @@ const earlyRequest = (): ReconGroup =>
     evidenceIds: ['ev-early'],
   })
 
-/** 2026-01-20 — first AWB. Same thread; claims the nine plus 28770, states 28639. */
+/** 2026-01-20 — first AWB. Same thread; claims the nine plus 28770, states 28639.
+ *  Its subject states only 28642/28630/28639/28747 — the rest were SWEPT off a programme-wide
+ *  attachment whose rows inherited this AWB. Measured: `posInferred` = those seven. */
 const awb1 = (): ReconGroup =>
   g({
     fields: { customer_po: '28642', hbl_awb_fcr_no: 'GZL26258522' },
     pos: [...NINE, '28770'],
     posStated: ['28639'],
+    posInferred: ['28631', '28643', '28710', '28735', '28739', '28740', '28770'],
     matchKeys: { customer_po: '28642', hbl_awb_fcr_no: 'GZL26258522', conversation_id: 'WYSE MACFUN 30-Jan' },
     conversationId: 'WYSE MACFUN 30-Jan',
     events: [{ emailType: 'Booking Request', receivedAt: '2026-01-20T08:09:00Z' }],
@@ -115,19 +118,46 @@ describe('Set 5 committed incrementally (the production arrival order)', () => {
     expect(two.shipmentId).toBe(legs.find((l) => l.hblAwbFcrNo === 'GZL26261147')!.id)
   })
 
-  it('KNOWN GAP: every PO sticks to leg 1; the second AWB commits with NO cargo', async () => {
+  it('CURED (0029): the stated claim takes its POs back off the sweep', async () => {
     await committer.apply(earlyRequest())
     const one = await committer.apply(awb1())
     const two = await committer.apply(awb2())
 
-    // The booking request named all nine POs, and AWB-1 adopted that leg while still naming all nine —
-    // both BEFORE AWB-2 existed to claim its three. By the time AWB-2 arrives the POs are spoken for,
-    // and it commits as a leg with nothing on it. Gold wants 28739/28747/28740 HERE, not on leg 1.
-    expect(await posOfLeg(two.shipmentId)).toEqual([])
-    const s1 = await posOfLeg(one.shipmentId)
-    for (const po of ['28739', '28740', '28747']) expect(s1).toContain(po)
+    // 28739/28740 rode leg 1 only because a programme-wide attachment row inherited its AWB
+    // (posInferred). AWB-2 NAMES them in its own subject, so the stated claim displaces the sweep.
+    expect(await posOfLeg(two.shipmentId)).toEqual(['28739', '28740'])
 
-    // Pinning the whole allocation so a fix to the retraction path shows up as a diff here.
-    expect(s1).toEqual([...NINE, '28770'].sort())
+    const s1 = await posOfLeg(one.shipmentId)
+    for (const po of ['28739', '28740']) expect(s1).not.toContain(po)
+
+    // 28747 is the one PO BOTH AWB subjects name — `…PO28747等` on 01-20 and `PO28739_PO28747_PO28740`
+    // on 01-31. Two STATED claims, so the rule deliberately does not fight: leg 1 keeps it and the
+    // collision is flagged for a human. Gold puts 28747 on S2, so this is 2 of its 3 POs, by design.
+    expect(s1).toContain('28747')
+  })
+
+  it('the losing leg records the move — a PO leaving a shipment is never silent', async () => {
+    await committer.apply(earlyRequest())
+    const one = await committer.apply(awb1())
+    await committer.apply(awb2())
+
+    const rows = await db
+      .selectFrom('changeLog')
+      .where('entityId', '=', one.shipmentId)
+      .where('field', '=', 'shipment_pos')
+      .selectAll()
+      .execute()
+    expect(rows.map((r) => r.oldValue).sort()).toEqual(['28739', '28740'])
+    expect(rows.every((r) => /swept it up without stating it/.test(r.note ?? ''))).toBe(true)
+  })
+
+  it('an INFERRED claim never displaces a STATED one (one-directional)', async () => {
+    // AWB-2 first and stating its POs; AWB-1's sweep must NOT take them back.
+    const two = await committer.apply(awb2())
+    const one = await committer.apply(awb1())
+
+    expect(await posOfLeg(two.shipmentId)).toEqual(['28739', '28740', '28747'])
+    const s1 = await posOfLeg(one.shipmentId)
+    for (const po of ['28739', '28740']) expect(s1).not.toContain(po)
   })
 })

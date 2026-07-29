@@ -200,6 +200,7 @@ export class DecisionsService {
       fields: dto.fields ?? {},
       pos: dto.pos ?? [],
       posStated: dto.posStated ?? [],
+      posInferred: dto.posInferred ?? [],
       poQty: dto.poQty,
       matchKeys: dto.matchKey ?? {},
       emailTypes: dto.emailTypes ?? [],

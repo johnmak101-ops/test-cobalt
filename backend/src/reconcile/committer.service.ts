@@ -78,6 +78,11 @@ export interface ReconGroup {
    *  shipment_pos, never counted as this leg's cargo — see `matchPos` below and statedPosOf in the queue.
    *  Empty/undefined on the legacy path → matching is byte-identical to before. */
   posStated?: string[]
+  /** The subset of `pos` the agent SWEPT UP rather than stated (queue `posInferred`) — typically rows
+   *  from a programme-wide attachment that inherited the email's B/L. Stored on each link (0029) so a
+   *  later email that NAMES the PO can displace this weak claim instead of losing to arrival order.
+   *  Omitted → every PO is a stated claim, and the cross-HAWB guard behaves exactly as before. */
+  posInferred?: string[]
   /** Per-PO unambiguous shipped qty, keyed by normalized po_no (normKey). Present only when the Matcher can
    *  attribute a real qty to an individual PO; absent (or a PO omitted) when the qty is a broadcast total. */
   poQty?: Record<string, number>
@@ -614,7 +619,16 @@ export class CommitterService {
           if (!hbl) continue
           const legMode = str((leg as { mode?: unknown }).mode) ?? str(mk.mode)
           for (const p of posByShipment.get(leg.id) ?? []) {
-            if (p.poNumber) siblingPoHbls.push({ po: p.poNumber, hbl, mode: legMode })
+            if (!p.poNumber) continue
+            siblingPoHbls.push({
+              po: p.poNumber,
+              hbl,
+              mode: legMode,
+              // 0029: how strongly that leg claims it, + the row to drop if a stated claim takes over
+              inferred: p.inferred === true,
+              linkId: p.linkId,
+              shipmentId: leg.id,
+            })
           }
         }
       }
@@ -622,8 +636,9 @@ export class CommitterService {
 
     // PoQtyReconciler: pure plan (qty/unit/enrichment flags) then side-effect links. Reasons stay byte-stable
     // with the pre-extract loop (see committer-po-reconciler.spec).
-    const { links, poQtyIssues, poFlagReasons } = planPoReconcile({
+    const { links, poQtyIssues, poFlagReasons, displaced } = planPoReconcile({
       pos: g.pos,
+      posInferred: g.posInferred,
       // f (=g.fields) is the Matcher's consolidated field bag — it does NOT carry mode; mode is a
       // separate top-level decision field (dto.mode / g.mode), applied to this leg's own shipment row
       // via normMode() above (legValues.mode). Mirror that same normalization here so the cross-mode
@@ -635,10 +650,33 @@ export class CommitterService {
       gk,
       siblingPoHbls,
     })
+    // 0029 displacement: a sibling held this PO only because its group SWEPT it up; this email STATES it.
+    // Drop the weak link FIRST so the insert below does not collide with the cross-HAWB invariant, and
+    // audit it on the losing leg — a PO leaving a shipment must never be silent, even when it is right.
+    for (const d of displaced) {
+      await this.shipments.unlinkPoById(d.linkId)
+      await this.audit.write({
+        entityType: 'shipment',
+        entityId: d.shipmentId,
+        field: 'shipment_pos',
+        oldValue: d.po,
+        newValue: null,
+        changeType: 'delete',
+        sourceType: 'system',
+        actorUserId: null,
+        note: `PO ${d.po} moved to ${str(f.hbl_awb_fcr_no) ?? str(f.mbl) ?? 'another B/L'} — ${d.fromHbl} swept it up without stating it (0029)`,
+      })
+    }
     for (const link of links) {
       const poId = await this.purchaseOrders.upsertPo(link.poNo, customerId, effVendorId, link.enr ?? undefined)
       await this.bookings.linkPo(bookingId, poId)
-      await this.shipments.linkPo(shipmentId, poId, link.perPoQty, link.perPoUnit)
+      await this.shipments.linkPo(
+        shipmentId,
+        poId,
+        link.perPoQty,
+        link.perPoUnit,
+        (g.posInferred ?? []).some((p) => normKey(p) === normKey(link.poNo)),
+      )
     }
     // Data-completeness escalations route the shipment to human review.
     // Recomputed each commit (not accumulated): brand/style conflicts, PO qty issues, cargo-missing.
