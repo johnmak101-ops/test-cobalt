@@ -11,9 +11,10 @@ import {
   proposedValueOf,
   splitCandidates,
 } from './ConflictRow'
+import { ModeClearRow } from './ModeClearRow'
 import {
   fieldUnit,
-  groupConflictFields,
+  groupReviewRows,
   isPortColumn,
   mapCriticFieldToColumn,
   reviewFieldLabel,
@@ -950,12 +951,25 @@ export function ReviewCard({
     () => conflicts.find((c) => mapCriticFieldToColumn(c.field) === 'mode') ?? null,
     [conflicts],
   )
-  const modeCarryOver = useMemo(() => {
-    if (!modeConflict) return []
+  /**
+   * The Mode the operator has actually TAKEN — '' while the row is untouched, or while the pick
+   * matches what the leg already stores. Hoisted out of `modeCarryOver` because the clear rows name
+   * it ("MAWB is not applicable for SEA mode") and must say the mode being taken, never the stored
+   * one: on those rows the two are always different, and printing the wrong one inverts the sentence.
+   */
+  const takenMode = useMemo(() => {
+    if (!modeConflict) return ''
     const taken = (resolutions[modeConflict.field] ?? '').trim()
-    if (taken === '' || !changesStoredValue(modeConflict, taken, liveValueFor(modeConflict))) return []
-    return offModeFieldsOn({ ...(shipment as ModeFieldLeg), mode: taken })
-  }, [modeConflict, resolutions, liveValueFor, shipment])
+    if (taken === '' || !changesStoredValue(modeConflict, taken, liveValueFor(modeConflict))) return ''
+    return taken
+  }, [modeConflict, resolutions, liveValueFor])
+  const modeCarryOver = useMemo(
+    () =>
+      takenMode === ''
+        ? []
+        : offModeFieldsOn({ ...(shipment as ModeFieldLeg), mode: takenMode }),
+    [takenMode, shipment],
+  )
   /** Exceptions only — absent means "clear it", the default the operator asked for. */
   const [keepOnModeSwitch, setKeepOnModeSwitch] = useState<Record<string, boolean>>({})
   const willClearOnSwitch = useCallback(
@@ -1994,7 +2008,7 @@ export function ReviewCard({
                           </th>
                         </tr>
                       </thead>
-                    {groupConflictFields(conflicts).map(({ group, conflicts: rows }) => {
+                    {groupReviewRows(conflicts, readOnly ? [] : modeCarryOver).map(({ group, conflicts: rows, clears }) => {
                       /**
                        * Count what would actually be WRITTEN, not how many rows are contested.
                        * `rows.length` called every contested row a "change", so a leg whose one
@@ -2005,6 +2019,22 @@ export function ReviewCard({
                       const groupChanges = rows.filter((c) =>
                         changesStoredValue(c, resolutions[c.field] ?? '', liveValueFor(c)),
                       ).length
+                      /**
+                       * Counted apart, and named apart. A clear IS a write, so folding it into
+                       * "2 changes" would be arithmetically fine and read as a lie — the group that
+                       * most often carries clears carries NOTHING else (taking Mode under Shipping
+                       * empties MAWB under Cargo & Logistics), so that band would announce "1 change"
+                       * over a single struck-through row that is being deleted.
+                       */
+                      const groupClears = clears.filter((cf) => willClearOnSwitch(cf.column)).length
+                      const groupSummary =
+                        [
+                          groupChanges > 0 &&
+                            `${groupChanges} ${groupChanges === 1 ? 'change' : 'changes'}`,
+                          groupClears > 0 && `${groupClears} deleted`,
+                        ]
+                          .filter(Boolean)
+                          .join(' · ') || 'nothing to apply'
                       return (
                       <tbody key={group}>
                         <tr className="border-b border-border">
@@ -2013,9 +2043,7 @@ export function ReviewCard({
                           <td colSpan={4} className={REVIEW_GROUP_HEADER}>
                             {group}
                             <span className="ml-2 font-normal text-text-muted">
-                              ({groupChanges > 0
-                                ? `${groupChanges} ${groupChanges === 1 ? 'change' : 'changes'}`
-                                : 'nothing to apply'})
+                              ({groupSummary})
                             </span>
                           </td>
                         </tr>
@@ -2051,6 +2079,24 @@ export function ReviewCard({
                             />
                           )
                         })}
+                        {/* After the contested rows: a clear is a CONSEQUENCE of a decision taken
+                            above, not a decision competing with them. */}
+                        {clears.map((cf) => (
+                          <ModeClearRow
+                            key={cf.column}
+                            column={cf.column}
+                            label={cf.label}
+                            value={cf.value}
+                            takingMode={takenMode}
+                            clearing={willClearOnSwitch(cf.column)}
+                            onToggle={() =>
+                              setKeepOnModeSwitch((k) => ({
+                                ...k,
+                                [cf.column]: willClearOnSwitch(cf.column),
+                              }))
+                            }
+                          />
+                        ))}
                       </tbody>
                     )})}
                   </table>
@@ -2101,57 +2147,15 @@ export function ReviewCard({
           )}
 
           {/*
-            The consequence of taking a different Mode, stated next to the grid that offers it and
-            committed by the same button. Ticked by default — clearing is filing, not deletion: every
-            write goes through the shipment history, and a sea leg still reporting a flight number is
-            wrong in every downstream consumer.
-
-            Below the grid rather than nested inside the Mode row: the row's cell is the decision, and
-            burying a second set of ticks inside it would put two different kinds of choice in one
-            box. The count on Apply already carries these, so nothing here is silent.
+            The mode-change clears used to live here, in their own amber panel below the grid. They
+            are rows IN the grid now (ModeClearRow) — see that file for why. What the panel carried
+            and the rows do not is the reassurance that a clear is recoverable, so it stays, once,
+            under the table that performs them.
           */}
           {!readOnly && modeCarryOver.length > 0 && (
-            <div
-              data-testid="mode-carry-over"
-              className="rounded-lg border border-status-warning/35 bg-status-warning/[0.06] px-3 py-2.5"
-            >
-              <p className={`${REVIEW_FS.body} font-semibold text-text-primary`}>
-                Taking Mode{' '}
-                <span className="field-value font-mono">{resolutions[modeConflict!.field]}</span> also
-                clears {modeCarryOver.length}{' '}
-                {modeCarryOver.length === 1 ? 'field' : 'fields'} from the old mode
-              </p>
-              <div className="mt-2 grid gap-1.5">
-                {modeCarryOver.map((cf) => (
-                  <label key={cf.column} className="flex cursor-pointer items-start gap-2 text-sm">
-                    <input
-                      type="checkbox"
-                      checked={willClearOnSwitch(cf.column)}
-                      onChange={() =>
-                        setKeepOnModeSwitch((k) => ({ ...k, [cf.column]: willClearOnSwitch(cf.column) }))
-                      }
-                      data-testid={`mode-carry-over-${cf.column}`}
-                      aria-label={`Clear ${cf.label} when taking this mode`}
-                      className="mt-[3px] h-3.5 w-3.5 shrink-0 cursor-pointer rounded border-border accent-status-critical"
-                    />
-                    <span className="min-w-0 text-text-secondary">
-                      Clear <span className="font-medium text-text-primary">{cf.label}</span>{' '}
-                      <span
-                        className={cn(
-                          'field-value font-mono',
-                          willClearOnSwitch(cf.column) ? 'text-text-muted line-through' : 'text-text-primary',
-                        )}
-                      >
-                        {cf.value}
-                      </span>
-                    </span>
-                  </label>
-                ))}
-              </div>
-              <p className="mt-2 text-[11px] text-text-muted">
-                Cleared values stay in the shipment history — open the leg to see them.
-              </p>
-            </div>
+            <p className="text-[11px] text-text-muted" data-testid="mode-carry-over-note">
+              Deleted values stay in the shipment history — open the leg to see them.
+            </p>
           )}
 
           {/* Directly under the grid whose ✉ opened it, so the row and its evidence read together. */}

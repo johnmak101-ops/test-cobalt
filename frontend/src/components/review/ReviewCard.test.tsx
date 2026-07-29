@@ -1094,17 +1094,107 @@ describe('conflict table — read-only by default, Edit to change values', () =>
 
     it('says nothing until the operator actually takes the new mode', () => {
       renderMode()
-      expect(screen.queryByTestId('mode-carry-over')).toBeNull()
+      expect(screen.queryByTestId('mode-clear-row-mawb')).toBeNull()
+      expect(screen.queryByTestId('mode-clear-row-flightNo')).toBeNull()
     })
 
     it('lists what the switch strands, ticked to clear', async () => {
       const user = userEvent.setup()
       renderMode()
       await user.click(screen.getByTestId('conflict-take'))
-      const panel = screen.getByTestId('mode-carry-over')
-      expect(panel).toHaveTextContent(/Taking Mode\s*SEA also clears 2 fields/i)
       expect(screen.getByTestId('mode-carry-over-flightNo')).toBeChecked()
       expect(screen.getByTestId('mode-carry-over-mawb')).toBeChecked()
+      // The value is struck through, not removed — nothing vanishes before the operator saves.
+      expect(screen.getByTestId('mode-clear-row-mawb')).toHaveTextContent('160-88112233')
+    })
+
+    /**
+     * The clears are ROWS in the decision grid, not a panel beside it. The grid is the list of
+     * writes the button performs; a deletion kept outside it let the operator read the table,
+     * believe they had seen the change set, and press a button that also emptied two fields.
+     */
+    it('renders each clear as a row in the grid, under the section that owns the field', async () => {
+      const user = userEvent.setup()
+      renderMode()
+      await user.click(screen.getByTestId('conflict-take'))
+      const table = screen.getByTestId('mode-clear-row-mawb').closest('table')
+      expect(table).not.toBeNull()
+      // Mode lives under Shipping; MAWB under Cargo & Logistics — so the clear appears in the
+      // section band for its OWN field, which is a band the conflicts alone would never open.
+      const mawbBody = screen.getByTestId('mode-clear-row-mawb').closest('tbody')
+      expect(mawbBody).toHaveTextContent('Cargo & Logistics')
+      expect(mawbBody).toHaveTextContent('1 deleted')
+      expect(screen.getByTestId('mode-clear-row-flightNo').closest('tbody')).toHaveTextContent(
+        'Shipping',
+      )
+    })
+
+    /** The rule, stated so it still reads correctly out of context (history, audit, export). */
+    it('names the field and the mode being taken, not the one stored', async () => {
+      const user = userEvent.setup()
+      renderMode()
+      await user.click(screen.getByTestId('conflict-take'))
+      expect(screen.getByTestId('mode-clear-row-mawb')).toHaveTextContent(
+        'MAWB is not applicable for SEA mode',
+      )
+      expect(screen.getByTestId('mode-clear-row-flightNo')).toHaveTextContent(
+        'Flight No. is not applicable for SEA mode',
+      )
+    })
+
+    /**
+     * The other direction. `offModeFieldsOn` is symmetric, but nothing pinned it from this side —
+     * and sea carries THREE fields air does not, so the vice-versa case is the bigger clear.
+     */
+    it('works the other way round — taking AIR clears the sea fields', async () => {
+      const user = userEvent.setup()
+      const onSave = vi.fn().mockResolvedValue(undefined)
+      render(
+        <MemoryRouter>
+          <ReviewCard
+            shipment={
+              baseShipment({
+                mode: 'SEA',
+                mblNumber: '999-92908152',
+                vesselName: 'MARIBO MAERSK',
+                voyageNumber: '514W',
+                reviewReasons: [],
+              } as never)
+            }
+            criticReview={baseReview({
+              conflicts: [
+                {
+                  ...modeConflict,
+                  candidates: [
+                    { value: 'SEA', source: 'System' },
+                    { value: 'AIR', source: 'Booking Confirmation' },
+                  ],
+                },
+              ],
+              riskFlags: [],
+              reasons: [],
+            })}
+            compact={null}
+            defaultExpanded
+            onSaveAndApprove={onSave}
+          />
+        </MemoryRouter>,
+      )
+      await user.click(screen.getByTestId('conflict-take'))
+      expect(screen.getByTestId('mode-carry-over-mbl')).toBeChecked()
+      expect(screen.getByTestId('mode-carry-over-vesselName')).toBeChecked()
+      expect(screen.getByTestId('mode-carry-over-voyageNo')).toBeChecked()
+      expect(screen.getByTestId('mode-clear-row-mbl')).toHaveTextContent(
+        'MBL is not applicable for AIR mode',
+      )
+      // 1 mode write + 3 clears
+      await user.click(screen.getByRole('button', { name: /^apply 4 changes$/i }))
+      expect(onSave.mock.calls[0][0].fields).toEqual({
+        mode: 'AIR',
+        mbl: '',
+        vesselName: '',
+        voyageNo: '',
+      })
     })
 
     it('counts the clears — the button cannot understate its own reach', async () => {
@@ -1139,9 +1229,10 @@ describe('conflict table — read-only by default, Edit to change values', () =>
       const user = userEvent.setup()
       renderMode()
       await user.click(screen.getByTestId('conflict-take'))
-      expect(screen.getByTestId('mode-carry-over')).toBeInTheDocument()
+      expect(screen.getByTestId('mode-clear-row-mawb')).toBeInTheDocument()
       await user.click(screen.getByTestId('conflict-take'))
-      expect(screen.queryByTestId('mode-carry-over')).toBeNull()
+      expect(screen.queryByTestId('mode-clear-row-mawb')).toBeNull()
+      expect(screen.queryByTestId('mode-clear-row-flightNo')).toBeNull()
       expect(screen.queryByRole('button', { name: /^apply/i })).toBeNull()
     })
   })

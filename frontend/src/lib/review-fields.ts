@@ -689,16 +689,43 @@ export function keptSuffix(keep: string[] | undefined): string {
 export function groupConflictFields<T extends { field: string }>(
   conflicts: T[],
 ): { group: ReviewGroup; conflicts: T[] }[] {
-  const byGroup = new Map<ReviewGroup, T[]>()
-  for (const c of conflicts) {
-    const g = reviewGroupOf(c.field)
-    const bucket = byGroup.get(g)
-    if (bucket) bucket.push(c)
-    else byGroup.set(g, [c])
+  return groupReviewRows(conflicts, []).map(({ group, conflicts: rows }) => ({
+    group,
+    conflicts: rows,
+  }))
+}
+
+/**
+ * The same bucketing, for a table that carries CLEARS as well as contested fields.
+ *
+ * A mode change strands the old mode's transport fields, and those clears are rows in the grid —
+ * ticked, struck through, committed by the same button. They are keyed by leg COLUMN rather than by
+ * critic field, and `reviewGroupOf` reads both (every carry-over column — mawb, mbl, vesselName,
+ * voyageNo, flightNo — resolves through the same `mapCriticFieldToColumn` path).
+ *
+ * The reason this exists rather than a second pass over `groupConflictFields`: a clear routinely
+ * lands in a section that has NO contested row. Taking Mode (Shipping) clears MAWB (Cargo &
+ * Logistics), and a filter keyed on conflicts alone would drop that group — the deletion would
+ * vanish from the table while still being posted by Apply, which is the one outcome this whole
+ * feature exists to prevent.
+ */
+export function groupReviewRows<C extends { field: string }, K extends { column: string }>(
+  conflicts: C[],
+  clears: K[],
+): { group: ReviewGroup; conflicts: C[]; clears: K[] }[] {
+  const byGroup = new Map<ReviewGroup, { conflicts: C[]; clears: K[] }>()
+  const bucketFor = (g: ReviewGroup) => {
+    const found = byGroup.get(g)
+    if (found) return found
+    const made = { conflicts: [] as C[], clears: [] as K[] }
+    byGroup.set(g, made)
+    return made
   }
+  for (const c of conflicts) bucketFor(reviewGroupOf(c.field)).conflicts.push(c)
+  for (const k of clears) bucketFor(reviewGroupOf(k.column)).clears.push(k)
   return REVIEW_GROUP_ORDER.filter((g) => byGroup.has(g)).map((group) => ({
     group,
-    conflicts: byGroup.get(group)!,
+    ...byGroup.get(group)!,
   }))
 }
 
