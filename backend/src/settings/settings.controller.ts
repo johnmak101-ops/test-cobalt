@@ -49,14 +49,15 @@ export class SettingsController {
   }
 
   /** No-arrival-data Delivered fallback: departure + these day allowances ⇒ Delivered.
-   *  ADMIN+ read AND write — the Settings tab itself is admin-only (SUPERADMIN passes via guard). */
-  @Roles('ADMIN')
+   *  SUPERADMIN read AND write — the Settings → Lifecycle tab is superadmin-only, so ADMIN
+   *  no longer reaches these (narrowed from ADMIN+; the UI gate alone is not authoritative). */
+  @Roles('SUPERADMIN')
   @Get('etd-fallback')
   async getEtdFallback() {
     return this.settings.etdFallback()
   }
 
-  @Roles('ADMIN')
+  @Roles('SUPERADMIN')
   @Put('etd-fallback')
   async setEtdFallback(@Body() dto: EtdFallbackDto, @CurrentUser() actor: AuthUser) {
     await this.settings.setEtdFallback({ airDays: dto.airDays, seaDays: dto.seaDays }, actor.id)
