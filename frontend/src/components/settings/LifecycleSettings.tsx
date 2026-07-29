@@ -11,11 +11,11 @@ type EtdFallback = { airDays: number; seaDays: number }
 /**
  * Lifecycle tunables — the no-arrival-data Delivered fallback (ops 2026-07-24): a leg with no
  * ETA/ATA/In-DC turns Delivered once its departure is older than these mode-aware allowances.
- * Editors see the values; the backend accepts changes from ADMIN+ (mirrored here on Save).
+ * SUPERADMIN only, tab and endpoint alike (mirrored here on Save).
  */
 export function LifecycleSettings() {
   const { user } = useAuth()
-  const canEdit = user?.role === 'ADMIN' || user?.role === 'SUPERADMIN'
+  const canEdit = user?.role === 'SUPERADMIN'
   const qc = useQueryClient()
   const { data } = useQuery<EtdFallback>({
     queryKey: ['settings', 'etd-fallback'],
@@ -74,7 +74,7 @@ export function LifecycleSettings() {
           {save.isPending ? 'Saving…' : 'Save'}
         </button>
       </div>
-      {!canEdit && <p className="mt-2 text-xs text-text-muted">Admins can change these allowances.</p>}
+      {!canEdit && <p className="mt-2 text-xs text-text-muted">Superadmins can change these allowances.</p>}
     </Card>
   )
 }

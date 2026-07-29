@@ -20,18 +20,25 @@ describe('SettingsPage nav (access-aware)', () => {
     render(<MemoryRouter initialEntries={['/settings/alerts']}><SettingsPage /></MemoryRouter>)
     expect(screen.getByRole('link', { name: /alert rules/i })).toBeInTheDocument()
     expect(screen.queryByRole('link', { name: /resolution rules/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: /lifecycle/i })).not.toBeInTheDocument()
     expect(screen.queryByRole('link', { name: /^users$/i })).not.toBeInTheDocument()
     expect(screen.queryByRole('link', { name: /access control/i })).not.toBeInTheDocument()
     expect(screen.queryByRole('link', { name: /mesh misses/i })).not.toBeInTheDocument()
     expect(screen.queryByRole('link', { name: /^vendors$/i })).not.toBeInTheDocument()
     expect(screen.queryByRole('link', { name: /review policy/i })).not.toBeInTheDocument()
   })
-  it('Lifecycle is its own ADMIN-visible tab and renders alone on its route', () => {
-    mockUser.role = 'ADMIN'
+  it('Lifecycle is its own SUPERADMIN-only tab and renders alone on its route', () => {
+    mockUser.role = 'SUPERADMIN'
     render(<MemoryRouter initialEntries={['/settings/lifecycle']}><SettingsPage /></MemoryRouter>)
     expect(screen.getByRole('link', { name: /lifecycle/i })).toBeInTheDocument()
     expect(screen.getByText('lifecycle')).toBeInTheDocument()
     expect(screen.queryByText('alerts')).not.toBeInTheDocument()
+  })
+  it('an ADMIN on the lifecycle route gets neither the tab nor the card', () => {
+    mockUser.role = 'ADMIN'
+    render(<MemoryRouter initialEntries={['/settings/lifecycle']}><SettingsPage /></MemoryRouter>)
+    expect(screen.queryByRole('link', { name: /lifecycle/i })).not.toBeInTheDocument()
+    expect(screen.queryByText('lifecycle')).not.toBeInTheDocument()
   })
   it('an EDITOR neither sees the Lifecycle tab nor its card on the alerts tab', () => {
     mockUser.role = 'EDITOR'

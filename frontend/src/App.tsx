@@ -55,17 +55,7 @@ function RequireAuth({ children }: { children: ReactNode }) {
   return <>{children}</>
 }
 
-/** SUPERADMIN only — Users, Access Control, Mesh misses. Everyone else lands on dashboard. */
-/** ADMIN or SUPERADMIN — the governance tier below superadmin-only (Lifecycle tunables). */
-function AdminRoute({ children }: { children: ReactNode }) {
-  const { user, loading } = useAuth()
-  if (loading) return <FullScreenSpinner />
-  if (user && user.role !== 'ADMIN' && user.role !== 'SUPERADMIN') {
-    return <Navigate to="/" replace />
-  }
-  return <>{children}</>
-}
-
+/** SUPERADMIN only — Lifecycle, Users, Access Control, Mesh misses. Everyone else lands on dashboard. */
 function SuperadminRoute({ children }: { children: ReactNode }) {
   const { user, loading } = useAuth()
   if (loading) return <FullScreenSpinner />
@@ -144,7 +134,7 @@ function AppRoutes() {
         {/* Alert Rules access (view + save) is governed by the Access Control matrix ('alert_rules');
             the backend @PageRead/@PageWrite guard is authoritative, this gates the UI + editability. */}
         <Route path="/settings/alerts" element={<PageAccessRoute page="alert_rules"><SettingsPage /></PageAccessRoute>} />
-        <Route path="/settings/lifecycle" element={<AdminRoute><SettingsPage /></AdminRoute>} />
+        <Route path="/settings/lifecycle" element={<SuperadminRoute><SettingsPage /></SuperadminRoute>} />
         {/* Vendors settings removed (#127) — Mesh mirror only; redirect bookmarks. */}
         <Route path="/settings/vendors" element={<Navigate to="/settings" replace />} />
         <Route path="/settings/users" element={<SuperadminRoute><SettingsPage /></SuperadminRoute>} />
