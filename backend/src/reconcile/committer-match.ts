@@ -299,13 +299,18 @@ export function findPoOnlyDuplicateRisk<
 }
 
 /**
- * The stated siblings this commit could NOT absorb.
+ * The nascent siblings this commit could NOT absorb.
  *
- * `findExistingLeg` returns the FIRST match and stops — one commit joins one leg. So when a B/L states three
- * POs that are already sitting on three separate nascent legs (the prod WYSE MACFUN shape: JOB-2026-0008 /
- * 0009 / 0010), matching cures the split going forward but leaves the earlier legs standing. Consolidating
- * them is a judgement about physical cargo — the same reason findPoOnlyDuplicateRisk REPORTS rather than
- * settles — and the desk already has the link action. So name them instead of folding them silently.
+ * `findExistingLeg` returns the FIRST match and stops — one commit joins one leg. So when a B/L covers three
+ * POs already sitting on three separate identity-less legs (Set 5's AWB GZL26261147 over POs 28739 / 28747 /
+ * 28740, which prod committed as JOB-2026-0008 / 0010 / 0009), matching absorbs one and leaves the other two
+ * standing with nobody told. Consolidating them is a judgement about physical cargo — the same reason
+ * findPoOnlyDuplicateRisk REPORTS rather than settles — and the desk already has the link action. So name
+ * them instead of folding them silently.
+ *
+ * `matchPos` is the caller's FULL matching set (`pos` ∪ `posStated`), not the stated remainder: a healthy
+ * parse puts every PO the B/L names into `pos` and leaves `posStated` empty, so keying on the remainder
+ * disables this in precisely the case it exists for. The caller gates on the group carrying a B/L.
  *
  * Only strictly nascent legs qualify (no strong id of their own): a leg that carries its own B/L is a
  * different shipment that happens to share a PO, which is routine and must not raise a warning.
@@ -318,15 +323,15 @@ export function findUnabsorbedStatedSiblings<
     dismissedAt?: Date | string | null
     linkedShipmentId?: string | null
   },
->(legs: L[], posByBooking: Map<string, string[]>, statedPos: Set<string>, committedLegId: string): L[] {
-  if (statedPos.size === 0) return []
+>(legs: L[], posByBooking: Map<string, string[]>, matchPos: Set<string>, committedLegId: string): L[] {
+  if (matchPos.size === 0) return []
   return legs.filter((l) => {
     if (l.id === committedLegId) return false // the leg this commit just joined
     if (l.linkedShipmentId != null) return false // already folded into another shipment
     if (l.dismissedAt != null) return false // a human already retired it
     if (strongKeys(l.matchKeys as Record<string, unknown>).size > 0) return false // has its own identity
     const bkPos = new Set((posByBooking.get(l.bookingId) ?? []).map((p) => normKey(p)).filter(Boolean))
-    return setsOverlap(statedPos, bkPos)
+    return setsOverlap(matchPos, bkPos)
   })
 }
 

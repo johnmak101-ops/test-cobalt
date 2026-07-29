@@ -544,21 +544,30 @@ export class CommitterService {
         (l) => ({ leg: l, kind: 'shared_po' as const }),
       ),
     ]
-    // Same REPORT-don't-settle contract, third case: this email's B/L states POs that are sitting on OTHER
-    // nascent legs. findExistingLeg joined one of them; the rest are very likely the same consignment, but
-    // consolidating is a cargo judgement, so name them and let the desk fold.
-    const statedResidual = new Set((g.posStated ?? []).map((p) => normKey(p)).filter(Boolean))
-    for (const l of findUnabsorbedStatedSiblings(legs, posByBooking, statedResidual, shipmentId)) {
-      if (seenRisk.has(l.id)) continue
-      seenRisk.add(l.id)
-      const bk = await this.bookings.findById(l.bookingId)
-      const shared = (posByBooking.get(l.bookingId) ?? []).find((p) => statedResidual.has(normKey(p)))
-      const bl = str(f.hbl_awb_fcr_no) ?? str(f.mbl) ?? 'this bill of lading'
-      duplicateRiskReasons.push(
-        `likely the same shipment as ${bk?.jobNo ?? l.id} — ${bl} also states PO ${
-          shared ?? '(unknown)'
-        }, which has no identity of its own yet; kept both`,
-      )
+    // Same REPORT-don't-settle contract, third case: this B/L names POs that are sitting on OTHER nascent
+    // legs. findExistingLeg joined ONE of them and stopped, so the rest go unmentioned unless we say so.
+    //
+    // Keyed on matchPos, NOT posStated. A healthy parse puts every PO the B/L names into `pos` — Set 5's
+    // AWB email yields pos=[28739,28740,28747] with posStated EMPTY — so keying on posStated silently
+    // disabled this flag in exactly the case it exists for (three nascent legs, one absorbed, two orphaned
+    // with nobody told). posStated only fills in when a parse degrades and drops the sibling records.
+    //
+    // Gated on the group carrying a B/L: posStated implied one (statedPosOf requires hbl/mbl), matchPos
+    // does not, and without that gate every PO-only email would flag every nascent leg sharing a PO —
+    // which is the ordinary early-thread shape, not a duplicate.
+    const groupBl = str(f.hbl_awb_fcr_no) ?? str(f.mbl)
+    if (groupBl) {
+      for (const l of findUnabsorbedStatedSiblings(legs, posByBooking, matchPos, shipmentId)) {
+        if (seenRisk.has(l.id)) continue
+        seenRisk.add(l.id)
+        const bk = await this.bookings.findById(l.bookingId)
+        const shared = (posByBooking.get(l.bookingId) ?? []).find((p) => matchPos.has(normKey(p)))
+        duplicateRiskReasons.push(
+          `likely the same shipment as ${bk?.jobNo ?? l.id} — ${groupBl} also covers PO ${
+            shared ?? '(unknown)'
+          }, which has no identity of its own yet; kept both`,
+        )
+      }
     }
 
     for (const { leg: l, kind } of riskLegs) {

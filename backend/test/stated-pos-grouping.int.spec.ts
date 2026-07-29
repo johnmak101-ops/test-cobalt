@@ -116,7 +116,34 @@ describe('posStated — an AWB reaches the sibling legs holding its other POs', 
     const leg = await db.selectFrom('shipments').where('id', '=', awb.shipmentId).selectAll().executeTakeFirstOrThrow()
     const reasons = (leg.reviewReasons ?? []) as string[]
     expect(reasons.some((r) => /likely the same shipment as JOB-/.test(r))).toBe(true)
-    expect(reasons.some((r) => /GZL26261147 also states PO/.test(r))).toBe(true)
+    expect(reasons.some((r) => /GZL26261147 also covers PO/.test(r))).toBe(true)
+  })
+
+  it('HEALTHY PARSE (posStated empty): still flags every nascent leg the B/L covers but did not absorb', async () => {
+    // What a good parse of Set 5 actually produces — verified against the local corpus:
+    //   --only=20260131_1052 → pos=[28739,28740,28747], posStated=[]
+    // The earlier keying used posStated, so this — the common case — raised no flag at all.
+    await committer.apply(poOnlyLeg('28747'))
+    await committer.apply(poOnlyLeg('28740'))
+    const awb = await committer.apply(
+      awbGroup({ pos: ['28739', '28740', '28747'], posStated: undefined }),
+    )
+
+    const leg = await db.selectFrom('shipments').where('id', '=', awb.shipmentId).selectAll().executeTakeFirstOrThrow()
+    const reasons = (leg.reviewReasons ?? []) as string[]
+    // one absorbed, ONE residual named
+    expect(reasons.filter((r) => /likely the same shipment as JOB-/.test(r))).toHaveLength(1)
+    expect(reasons.some((r) => /GZL26261147 also covers PO/.test(r))).toBe(true)
+  })
+
+  it('a PO-only group never flags nascent siblings — no B/L means nothing vouches for the link', async () => {
+    await committer.apply(poOnlyLeg('28747'))
+    // second PO-only email in the same thread: shares no PO, has no B/L → must stay silent
+    const second = await committer.apply(poOnlyLeg('28740'))
+
+    const leg = await db.selectFrom('shipments').where('id', '=', second.shipmentId).selectAll().executeTakeFirstOrThrow()
+    const reasons = (leg.reviewReasons ?? []) as string[]
+    expect(reasons.some((r) => /likely the same shipment/.test(r))).toBe(false)
   })
 
   it('never bridges a leg that already carries a DIFFERENT strong id (the other AWB stays separate)', async () => {
