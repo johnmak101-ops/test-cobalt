@@ -1214,10 +1214,8 @@ export function ReviewCard({
   /**
    * Column 3 label tracks state: what the thread said → edit mode → human-applied values.
    *
-   * Idle used to read "AI Proposed", which claimed something the pipeline does not do. Conflicts the
-   * commit settled are stripped upstream (openDecisions), so every value reaching this column is one
-   * the committer read and declined to write — nothing there is queued for an apply. REVIEW_HEAD
-   * says "Also Seen In Email"; once the operator is editing, the column IS their resolution and says so.
+   * Idle wording lives in REVIEW_HEAD (see the note there on what it does and does not claim). Once
+   * the operator is editing, the column IS their resolution and says so.
    */
   const proposedColumnLabel = editing
     ? 'Resolution'

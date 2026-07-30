@@ -49,6 +49,20 @@ const FIELD_TO_COLUMN: Record<string, string> = {
   mawb: 'mawb',
 }
 
+/**
+ * Conflict fields the desk never renders as a row: bag-level figures pulled from Order Details
+ * (gross weight, measurement, HTS) and per-PO styles, which live on the PO card instead.
+ *
+ * Kept in step with ReviewCard's `deskConflicts` filter. A field the table refuses to show must not
+ * be counted as an open decision anywhere else, or a summary surface promises a row that is not there.
+ */
+const DESK_HIDDEN_FIELDS = new Set([
+  'item_style_no', 'itemStyleNo',
+  'gross_weight', 'grossWeight',
+  'measurement',
+  'hts_code', 'htsCode',
+])
+
 const DATE_COLUMNS = new Set([
   'cargoReadyDate', 'cfsCutoff', 'etd', 'atd', 'eta', 'ata',
   'warehouseStartDate', 'warehouseEndDate', 'inDcDate',
@@ -118,6 +132,16 @@ function conflictIsSettled(
 export type OpenDecisions = {
   /** Conflict fields the leg already satisfies — the desk shows these as settled, not as a diff. */
   settledFields: string[]
+  /**
+   * The contested fields still OPEN: every conflict the desk renders as a row, minus the settled ones
+   * and minus the fields no row exists for (DESK_HIDDEN_FIELDS).
+   *
+   * Named here so a SUMMARY surface can say what a leg is asking without going back to the queue's
+   * reason strings. Those count conflicts as they stood before the committer wrote anything — the
+   * dashboard's review card was printing "9 field(s) received different values" off one while the desk
+   * beside it showed two rows, because 7 of the 9 had already been settled by the commit.
+   */
+  openFields: string[]
   /** Party slots linked to a master, with that master's name — a miss line naming one is stale. */
   resolvedParties: { slot: 'customer' | 'vendor' | 'forwarder'; name: string }[]
   /**
@@ -144,6 +168,10 @@ export function openDecisions(
     candidates?: { value?: string; source?: string; master?: { code?: string } | null }[]
   }[]
   const settledFields = conflicts.filter((c) => conflictIsSettled(c, leg)).map((c) => c.field)
+  const settled = new Set(settledFields)
+  const openFields = conflicts
+    .map((c) => c.field)
+    .filter((f) => !settled.has(f) && !DESK_HIDDEN_FIELDS.has(f))
 
   const resolvedParties: OpenDecisions['resolvedParties'] = []
   for (const slot of ['customer', 'vendor', 'forwarder'] as const) {
@@ -160,5 +188,5 @@ export function openDecisions(
     liveValues[c.field] = v instanceof Date ? v.toISOString() : String(v)
   }
 
-  return { settledFields, resolvedParties, liveValues }
+  return { settledFields, openFields, resolvedParties, liveValues }
 }

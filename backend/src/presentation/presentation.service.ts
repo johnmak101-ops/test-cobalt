@@ -819,9 +819,15 @@ export class PresentationService {
          */
         openDecisions: openDecisions(
           { ...r, bookingNo: r.legBookingNo, soNo: r.legSoNo } as Record<string, unknown>,
-          r.criticReview as CriticReview | null | undefined,
+          // Party-mismatch rows included, for the same reason autoClears above uses this payload: they
+          // are rows the desk WILL render, so a leg whose only open question is a stale master link
+          // must not report an empty open set to whoever summarises this row.
+          queueCriticReview(r),
           {
             customer: r.customerId ? r.customerName : null,
+            // Vendor was missing while the detail path passed all three, so a vendor-slot resolution
+            // could not silence the stale "add it in Mesh" line on this surface (see PartiesLinked).
+            vendor: r.vendorId ? r.vendorName : null,
             forwarder: r.forwarderId ? r.forwarderName : null,
           },
         ),

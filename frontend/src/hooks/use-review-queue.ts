@@ -34,6 +34,8 @@ export interface ReviewShipment {
    */
   openDecisions?: {
     settledFields: string[]
+    /** The conflicts still OPEN — the rows the grid will show. Named on the dashboard row. */
+    openFields?: string[]
     resolvedParties: { slot: string; name: string }[]
     /** What the leg ACTUALLY stores per contested field — the grid's Current column reads this. */
     liveValues?: Record<string, string>
