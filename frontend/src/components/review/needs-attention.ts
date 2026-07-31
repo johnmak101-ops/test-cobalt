@@ -5,6 +5,9 @@
 import {
   categorizeReason,
   humanizeReasons,
+  meshMissCountText,
+  meshMissText,
+  PARTY_LIST_FIELD,
   prettifyVisibleFields,
   type ReasonCategory,
 } from '../../lib/review-reasons'
@@ -306,10 +309,21 @@ export function isExpandableMiss(item: NeedsAttentionItem): boolean {
 /** Solo / combined PO match copy — avoid two near-duplicate "which shipment?" lines. */
 export const PO_ONLY_TEXT =
   'Linked by PO only — add booking/SO/B/L or confirm this shipment is correct'
+/**
+ * Both shared-PO lines are worded as the QUESTION, not as a menu of verbs.
+ *
+ * They used to read "move it here, leave it, or split" and "confirm move, split, or wrong shipment"
+ * — three imperatives naming operations, none of which had a control anywhere on the card. The desk
+ * that has to act on them is not a technical one, and "PO-only match" is not a phrase it uses. The
+ * answers now live in SharedPoPanel below, so the line's whole job is to say what is unusual.
+ *
+ * Deliberately still standalone: a queue ROW carries no `sharedPos`, so the panel does not render
+ * there, and a line ending "answer below" would point at nothing.
+ */
 export const PO_REASSIGN_TEXT =
-  'This PO is already on another shipment — move it here, leave it, or split'
+  'This PO is on another shipment too — is the order split, or is it on the wrong shipment?'
 export const PO_ONLY_AND_REASSIGN_TEXT =
-  'PO-only match, and that PO is already on another shipment — confirm move, split, or wrong shipment'
+  'Only the PO number links this email to this shipment, and that PO is on another shipment too — is the order split, or is this the wrong shipment?'
 export const PO_COMBINED_LINE_ID = 'w-po-combined'
 /** Thin mail + PO-only — one decision (belongs in tracking? right shipment?). */
 export const THIN_MAIL_TEXT =
@@ -585,8 +599,13 @@ function preferMeshDisplayName(a: string, b: string): string {
   return a.length >= b.length ? a : b
 }
 
-function meshPartyMissText(name: string): string {
-  return `"${name}" not found in Mesh Database — advise add in Mesh.`
+/**
+ * @param slot the field the name came from (`forwarder_name`), when the reason states it — the desk
+ *   asked for "Forwarder \"TCI\" has no near match", and a bare quoted name makes the operator go
+ *   looking for which of the four party slots it was.
+ */
+function meshPartyMissText(name: string, slot?: string | null): string {
+  return meshMissText(name, slot)
 }
 
 /**
@@ -605,7 +624,7 @@ export { isMailboxPartyName }
  * an extraction gap (all the email gave us was a sender), not missing master data, so nobody should be
  * asked to create it.
  */
-function meshPartyHit(name: string): LineHit {
+function meshPartyHit(name: string, slot?: string | null): LineHit {
   const clean = name.trim()
   if (isMailboxPartyName(clean)) {
     const shown = clean.length > 60 ? `${clean.slice(0, 57)}…` : clean
@@ -615,7 +634,11 @@ function meshPartyHit(name: string): LineHit {
       category: 'master_miss',
     }
   }
-  return { lineId: meshPartyLineId(clean), text: meshPartyMissText(clean), category: 'master_miss' }
+  return {
+    lineId: meshPartyLineId(clean),
+    text: meshPartyMissText(clean, slot),
+    category: 'master_miss',
+  }
 }
 
 function extractMeshDisplayName(item: NeedsAttentionItem): string | null {
@@ -1016,7 +1039,7 @@ function lineFromReason(raw: string, humanized: string): LineHit | null {
   {
     const party = raw.match(/^(\w+)\s+"([^"]+)"\s+did not exact-match a master/i)
     if (party) {
-      return meshPartyHit(party[2]!)
+      return meshPartyHit(party[2]!, party[1])
     }
   }
   if (/did not exact(?:\/curated)?-match a port master/i.test(raw)) {
@@ -1031,7 +1054,7 @@ function lineFromReason(raw: string, humanized: string): LineHit | null {
     if (quoted) return meshPartyHit(quoted)
     return {
       lineId: 'm-party',
-      text: 'Party not found in Mesh Database — advise add in Mesh.',
+      text: meshMissText(),
       category: 'master_miss',
     }
   }
@@ -1041,7 +1064,7 @@ function lineFromReason(raw: string, humanized: string): LineHit | null {
       /Cannot match "([^"]+)" in the (forwarder|customer|vendor|consignee) list/i,
     )
     if (listHit) {
-      return meshPartyHit(listHit[1]!)
+      return meshPartyHit(listHit[1]!, PARTY_LIST_FIELD[listHit[2]!.toLowerCase()])
     }
   }
   if (
@@ -1181,7 +1204,7 @@ function lineFromReason(raw: string, humanized: string): LineHit | null {
     }
     return {
       lineId: 'm-mesh',
-      text: 'Party not found in Mesh Database — advise add in Mesh.',
+      text: meshMissText(),
       category: 'master_miss',
     }
   }
@@ -1413,7 +1436,7 @@ function collapseMeshParties(byLine: Map<string, NeedsAttentionItem>): void {
   const uniqEvidence = [...new Set(evidence.filter(Boolean))]
 
   // Summary stays short; full list lives in `details` for expand/collapse UI.
-  const text = `${names.length} parties not found in Mesh Database — advise add in Mesh.`
+  const text = meshMissCountText(names.length)
 
   byLine.set(MESH_PARTY_COLLAPSED_LINE_ID, {
     key: 'm-party-collapsed',

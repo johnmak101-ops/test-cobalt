@@ -124,7 +124,7 @@ describe('Master miss — a guard note is not a party', () => {
     } as never)
     const master = items.filter((i) => i.groupId === 'master_miss')
     expect(master).toHaveLength(1)
-    expect(master[0]!.text).toMatch(/2 parties not found/)
+    expect(master[0]!.text).toMatch(/2 parties have no near match/)
     expect(master[0]!.details).toEqual(
       expect.arrayContaining(['吉安宏伟针织服装有限公司', 'LOGIMARK']),
     )
@@ -170,7 +170,7 @@ describe('Master miss — numeric party names are filtered out', () => {
     expect(master).toHaveLength(1)
     expect(master[0]!.text).toContain('Rose Knit')
     expect(master[0]!.text).not.toContain('4483262')
-    // one real name left → stays a single line, never "2 parties not found"
+    // one real name left → stays a single line, never "2 parties have no near match"
     expect(master[0]!.text).not.toMatch(/\d+ parties not found/)
   })
 
@@ -182,7 +182,7 @@ describe('Master miss — numeric party names are filtered out', () => {
     })
     const master = items.filter((i) => i.groupId === 'master_miss')
     expect(master).toHaveLength(1)
-    expect(master[0]!.text).toBe('2 parties not found in Mesh Database — advise add in Mesh.')
+    expect(master[0]!.text).toBe('2 parties have no near match in database.')
     expect(master[0]!.details).toEqual(['Expeditors', 'Rose Knit'])
   })
 })
@@ -321,8 +321,8 @@ describe('buildNeedsAttention / groups', () => {
       items.some(
         (i) =>
           /Maersk \(China\) Shipping Co\., Ltd\./i.test(i.text) &&
-          /not found in Mesh Database/i.test(i.text) &&
-          /advise add in Mesh/i.test(i.text),
+          /has no near match in database/i.test(i.text) &&
+          /no near match in database/i.test(i.text),
       ),
     ).toBe(true)
     expect(items.some((i) => /Vendor|factory/i.test(i.text))).toBe(true)
@@ -338,7 +338,7 @@ describe('buildNeedsAttention / groups', () => {
     })
     expect(items).toHaveLength(1)
     expect(items[0]!.text).toBe(
-      '"DP WORLD CHINA CO., LTD. GUANGZHOU BRANCH" not found in Mesh Database — advise add in Mesh.',
+      'Forwarder "DP WORLD CHINA CO., LTD. GUANGZHOU BRANCH" has no near match in database.',
     )
   })
 
@@ -568,13 +568,14 @@ describe('buildNeedsAttention / groups', () => {
     expect(poLines).toHaveLength(1)
     expect(poLines[0]!.lineId).toBe('w-po-combined')
     expect(poLines[0]!.text).toBe(
-      'PO-only match, and that PO is already on another shipment — confirm move, split, or wrong shipment',
+      'Only the PO number links this email to this shipment, and that PO is on another shipment too — is the order split, or is this the wrong shipment?',
     )
     expect(poLines[0]!.severity).toBe('high')
     expect(items.some((i) => /already on another job/i.test(i.text))).toBe(false)
   })
 
-  it('PO reassign alone uses move/leave/split copy', () => {
+  /** Worded as the question the panel below answers — not as a menu of verbs with no controls. */
+  it('PO reassign alone asks split-or-wrong-shipment', () => {
     const items = buildNeedsAttention({
       conflictsCount: 0,
       riskFlags: [
@@ -588,7 +589,7 @@ describe('buildNeedsAttention / groups', () => {
     })
     expect(items).toHaveLength(1)
     expect(items[0]!.text).toBe(
-      'This PO is already on another shipment — move it here, leave it, or split',
+      'This PO is on another shipment too — is the order split, or is it on the wrong shipment?',
     )
   })
 
@@ -764,8 +765,8 @@ describe('Mesh party collapse', () => {
     const mesh = items.filter((i) => i.lineId.startsWith('m-party') || i.lineId === 'm-mesh')
     expect(mesh.length).toBe(1)
     expect(mesh[0]!.lineId).toBe('m-party:collapsed')
-    expect(mesh[0]!.text).toMatch(/parties not found in Mesh Database/i)
-    expect(mesh[0]!.text).toMatch(/advise add in Mesh/i)
+    expect(mesh[0]!.text).toMatch(/parties have no near match in database/i)
+    expect(mesh[0]!.text).toMatch(/no near match in database/i)
     // Expandable list of unique parties (case-merged)
     expect(mesh[0]!.details?.length).toBeGreaterThanOrEqual(4)
     expect(mesh[0]!.details?.length).toBeLessThanOrEqual(6)
@@ -1409,7 +1410,7 @@ describe('guard notes and mailbox "parties" are never advertised as Mesh additio
       reviewReasons: [OWN_IDENTITY],
     })
     for (const items of [fromFlag, fromReason]) {
-      expect(items.some((i) => /advise add in Mesh/i.test(i.text))).toBe(false)
+      expect(items.some((i) => /no near match in database/i.test(i.text))).toBe(false)
       expect(items.some((i) => /Cobalt Knitwear/i.test(i.text))).toBe(false)
       expect(items.some((i) => i.lineId.startsWith('m-party:'))).toBe(false)
     }
@@ -1426,7 +1427,7 @@ describe('guard notes and mailbox "parties" are never advertised as Mesh additio
     expect(hit!.lineId.startsWith('m-note:')).toBe(true)
     // Not counted as an addable party, and never carries the add-in-Mesh instruction.
     expect(items.some((i) => i.lineId.startsWith('m-party:'))).toBe(false)
-    expect(items.some((i) => /advise add in Mesh/i.test(i.text))).toBe(false)
+    expect(items.some((i) => /no near match in database/i.test(i.text))).toBe(false)
   })
 
   it('mailbox misses stay off the decision desk — ops cannot fix an extraction gap in Mesh', () => {
@@ -1456,7 +1457,7 @@ describe('guard notes and mailbox "parties" are never advertised as Mesh additio
       ],
     })
     expect(items.some((i) => i.lineId.startsWith('m-party:'))).toBe(true)
-    expect(items.some((i) => /advise add in Mesh/i.test(i.text))).toBe(true)
+    expect(items.some((i) => /no near match in database/i.test(i.text))).toBe(true)
   })
 
   it('isMailboxPartyName spots addresses, plain or embedded, and leaves names alone', () => {
@@ -1486,7 +1487,7 @@ describe('a master-miss line dies when its slot already resolved to that company
   it('drops it: the customer is linked to WHISTLES LIMITED', () => {
     const items = build([WHISTLES], { customer: 'WHISTLES LIMITED' })
     expect(items.some((i) => /WHISTLES/i.test(i.text))).toBe(false)
-    expect(items.some((i) => /advise add in Mesh/i.test(i.text))).toBe(false)
+    expect(items.some((i) => /no near match in database/i.test(i.text))).toBe(false)
   })
 
   it('arrives as a riskFlag too, and dies there as well', () => {
@@ -1496,7 +1497,7 @@ describe('a master-miss line dies when its slot already resolved to that company
       riskFlags: [{ code: 'PARTY_OPS', severity: 'low', message: WHISTLES }],
       partiesLinked: { customer: 'WHISTLES LIMITED' },
     })
-    expect(items.some((i) => /advise add in Mesh/i.test(i.text))).toBe(false)
+    expect(items.some((i) => /no near match in database/i.test(i.text))).toBe(false)
   })
 
   /** The whole reason the rule compares NAMES rather than just checking "is the slot filled". */
@@ -1590,7 +1591,7 @@ describe('needs attention — a company Mesh holds five of is not a company Mesh
     items.find((i) => i.lineId.startsWith('m-party:'))!
 
   it('stops advertising a company already in Mesh as addable', () => {
-    expect(partyItem(build(LOGWIN)).text).not.toMatch(/advise add in Mesh/i)
+    expect(partyItem(build(LOGWIN)).text).not.toMatch(/no near match in database/i)
   })
 
   it('carries the candidate masters so the desk can offer them', () => {
@@ -1606,12 +1607,12 @@ describe('needs attention — a company Mesh holds five of is not a company Mesh
       masterNames: LOGWIN,
     })
     const it0 = partyItem(items)
-    expect(it0.text).toMatch(/advise add in Mesh/i)
+    expect(it0.text).toMatch(/no near match in database/i)
     expect(it0.meshCandidates).toBeUndefined()
   })
 
   it('without a master list, behaviour is exactly what it was', () => {
-    expect(partyItem(build()).text).toMatch(/advise add in Mesh/i)
+    expect(partyItem(build()).text).toMatch(/no near match in database/i)
     expect(partyItem(build()).meshCandidates).toBeUndefined()
   })
 })

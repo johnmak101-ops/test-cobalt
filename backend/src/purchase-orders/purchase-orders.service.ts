@@ -135,6 +135,51 @@ export class PurchaseOrdersService {
     return row ?? { alreadyLinked: true }
   }
 
+  /**
+   * Correct the quantity / unit a shipment carries of a PO, in place.
+   *
+   * Only the two fields the link owns. The PO NUMBER is not settable here on purpose: renaming the
+   * order is `update()` and moving the line to a different order is unlink-then-link, and folding
+   * either into a quantity patch would let one endpoint mean three different things.
+   *
+   * An omitted key is left alone; an explicit `null` clears. That distinction is load-bearing — the
+   * review desk sends only what the operator touched, so a patch of `{quantityUnit: 'cartons'}` must
+   * not blank the quantity beside it.
+   */
+  async updateLink(
+    poId: string,
+    linkId: string,
+    body: { quantity?: number | null; quantityUnit?: string | null },
+    actorId: string,
+  ) {
+    const patch: { quantity?: number | null; quantityUnit?: string | null } = {}
+    if ('quantity' in body) {
+      const q = body.quantity
+      if (q != null && (typeof q !== 'number' || !Number.isFinite(q) || q < 0))
+        throw new BadRequestException('quantity must be a non-negative number')
+      patch.quantity = q ?? null
+    }
+    if ('quantityUnit' in body) {
+      const u = String(body.quantityUnit ?? '').trim()
+      patch.quantityUnit = u === '' ? null : u
+    }
+    if (Object.keys(patch).length === 0) throw new BadRequestException('nothing to update')
+
+    const row = await this.pos.updateShipmentPo(poId, linkId, patch)
+    if (!row) throw new NotFoundException('link not found')
+    await this.audit.write({
+      entityType: 'shipment_po',
+      entityId: linkId,
+      changeType: 'update',
+      sourceType: 'manual',
+      actorUserId: actorId,
+      note: `shipment PO line set to ${patch.quantity ?? row.quantity ?? '—'} ${
+        patch.quantityUnit ?? row.quantityUnit ?? ''
+      }`.trim(),
+    })
+    return row
+  }
+
   async unlink(poId: string, linkId: string, actorId: string) {
     const row = await this.pos.unlinkShipmentPo(poId, linkId)
     if (!row) throw new NotFoundException('link not found')

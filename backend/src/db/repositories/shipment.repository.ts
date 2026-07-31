@@ -603,6 +603,52 @@ export class ShipmentRepository {
    * "7 POs are also on other shipments" where all seven pointed at the SAME rejected header-row leg
    * (`PO # :`), i.e. seven alarms about a row someone had already thrown away.
    */
+  /**
+   * The same rows for a WHOLE PAGE of the queue, in one round trip.
+   *
+   * The review queue renders the full card per row, so it needs the shared-PO block too — without it
+   * the card asked "is the order split, or is this the wrong shipment?", flagged itself `needs
+   * answer`, and offered no control, because the evidence and the answers only existed on the detail
+   * payload. Calling `poSiblingLegs` per row would have put an N+1 back into a service that had all
+   * of them removed, so the page's ids go in together and the caller groups the result.
+   */
+  poSiblingLegsFor(shipmentIds: string[]) {
+    if (shipmentIds.length === 0) return Promise.resolve([])
+    return this.db
+      .selectFrom('shipmentPos as mine')
+      .innerJoin('shipmentPos as theirs', (join) =>
+        join.onRef('theirs.poId', '=', 'mine.poId').onRef('theirs.shipmentId', '!=', 'mine.shipmentId'),
+      )
+      .innerJoin('purchaseOrders', 'purchaseOrders.id', 'mine.poId')
+      .innerJoin('shipments', 'shipments.id', 'theirs.shipmentId')
+      .where('mine.shipmentId', 'in', shipmentIds)
+      .where('shipments.kind', '=', 'SHIPMENT')
+      .where('shipments.dismissedAt', 'is', null)
+      .select([
+        // Which of the requested legs this sibling belongs to — the grouping key.
+        'mine.shipmentId as ownerShipmentId',
+        'purchaseOrders.poNumber as poNumber',
+        'shipments.id as shipmentId',
+        'shipments.bookingNo as bookingNo',
+        'shipments.soNo as soNo',
+        'shipments.hblAwbFcrNo as hblAwbFcrNo',
+        'shipments.mode as mode',
+        'shipments.etd as etd',
+        'shipments.atd as atd',
+        'shipments.state as state',
+        'shipments.legNo as legNo',
+        'shipments.dismissedAt as dismissedAt',
+        'shipments.reviewStatus as reviewStatus',
+        'shipments.qty as legQty',
+        'shipments.qtyUnit as legQtyUnit',
+        'shipments.createdAt as shipmentCreatedAt',
+        sql<Date | null>`(select min(se.received_at) from shipment_emails se where se.shipment_id = shipments.id)`.as(
+          'firstEmailAt',
+        ),
+      ])
+      .execute()
+  }
+
   poSiblingLegs(shipmentId: string) {
     return this.db
       .selectFrom('shipmentPos as mine')

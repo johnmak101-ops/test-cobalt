@@ -769,6 +769,24 @@ export class PresentationService {
     )
     const visible = view !== 'pending' ? bandVisible : bandVisible.filter((r) => !autoClears(r).clear)
     const clearedIds = new Set(extra.map((r) => r.id))
+
+    /**
+     * The shared-PO evidence for every row on this page, in one query.
+     *
+     * The queue renders the whole card, so it needs this: without it the card asked "is the order
+     * split, or is this the wrong shipment?", marked itself `needs answer`, and offered nothing to
+     * press — the answers live in SharedPoPanel and the panel needs these rows. Batched rather than
+     * per-row so it does not reintroduce an N+1.
+     */
+    const siblingRows = await this.shipmentRepo.poSiblingLegsFor(visible.map((r) => r.id))
+    const siblingsByLeg = new Map<string, typeof siblingRows>()
+    for (const row of siblingRows) {
+      const owner = String(row.ownerShipmentId)
+      const list = siblingsByLeg.get(owner)
+      if (list) list.push(row)
+      else siblingsByLeg.set(owner, [row])
+    }
+
     return {
       shipments: visible.map((r) => ({
         id: r.id,
@@ -804,6 +822,12 @@ export class PresentationService {
         createdAt: isoOrNull(r.createdAt),
         updatedAt: isoOrNull(r.updatedAt),
         poCount: r.poCount ?? 0,
+        /** Same shape the detail payload carries, so the card behaves identically on both surfaces. */
+        sharedPos: sharedPos(siblingsByLeg.get(r.id) ?? [], {
+          mode: r.mode,
+          qty: (r as { qty?: number | null }).qty,
+          qtyUnit: (r as { qtyUnit?: string | null }).qtyUnit,
+        }),
         dismissedAt: isoOrNull(r.dismissedAt),
         // Waiting tab reads both: the stamp orders the list, the reason says who we are waiting on.
         waitingAt: isoOrNull(r.waitingAt),

@@ -264,6 +264,22 @@ export class PurchaseOrderRepository {
     const row = await this.db.insertInto('shipmentPos').values({ poId, shipmentId, quantity, quantityUnit }).outputAll('inserted').executeTakeFirst()
     return row ?? null
   }
+  /** Correct the quantity / unit on an existing shipment↔PO line. `poId` is in the predicate so a
+   *  link id from one PO can never patch another's row. */
+  async updateShipmentPo(
+    poId: string,
+    linkId: string,
+    patch: { quantity?: number | null; quantityUnit?: string | null },
+  ) {
+    const row = await this.db
+      .updateTable('shipmentPos')
+      .set(patch)
+      .where('id', '=', linkId)
+      .where('poId', '=', poId)
+      .outputAll('inserted')
+      .executeTakeFirst()
+    return row ?? null
+  }
   async unlinkShipmentPo(poId: string, linkId: string) {
     const row = await this.db.deleteFrom('shipmentPos').where('id', '=', linkId).where('poId', '=', poId).outputAll('deleted').executeTakeFirst()
     return row ?? null

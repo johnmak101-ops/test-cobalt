@@ -150,7 +150,7 @@ describe('ShipmentDetailPage — pending-review word highlight', () => {
     const cards = screen.getAllByTestId('pending-annotation-popover')
     expect(
       cards.some((c) =>
-        (c.textContent ?? '').includes('"SOUOCE" not found in Mesh Database — advise add in Mesh.'),
+        (c.textContent ?? '').includes('"SOUOCE" has no near match in database.'),
       ),
     ).toBe(true)
     expect(cards.some((c) => (c.textContent ?? '').includes('Master Miss'))).toBe(true)

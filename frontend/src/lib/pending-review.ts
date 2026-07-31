@@ -1,6 +1,7 @@
 import { mapCriticFieldToColumn, conflictColumns } from './review-fields'
 import { isQtySettled } from './qty-conflict-settle'
 import { isMailboxPartyName, isSameCompanyName, mastersNaming } from './party-names'
+import { meshMissText } from './review-reasons'
 
 /**
  * The slice of the shipment detail this derivation reads. Structural on purpose — importing
@@ -324,8 +325,8 @@ export function pendingReviewAnnotations(
         addMiss(
           missColumn(r),
           name
-            ? `"${name}" not found in Mesh Database — advise add in Mesh.`
-            : 'Not found in Mesh Database — advise add in Mesh.',
+            ? meshMissText(name)
+            : meshMissText(),
           name,
         )
       }
@@ -340,7 +341,7 @@ export function pendingReviewAnnotations(
       if (isMailboxPartyName(m.rawName)) continue // mailbox, not a company — see the comment above
       addMiss(
         mapCriticFieldToColumn(m.field) ?? missColumn(m.field + ' "x"'),
-        `"${m.rawName}" not found in Mesh Database — advise add in Mesh.`,
+        meshMissText(m.rawName),
         m.rawName,
       )
     }
