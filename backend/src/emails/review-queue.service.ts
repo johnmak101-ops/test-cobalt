@@ -62,8 +62,9 @@ export class ReviewQueueService {
     if (dto.action === 'correct') {
       const corrected = dto.corrections?.extractedData ?? row.extractedData ?? {}
       // apply-back: the correction must reach tracking, not just the review row. Re-apply the corrected
-      // fields to the linked shipment via the human-wins edit path (write + field-lock + audit-with-note),
-      // so the agent can never re-clobber the human's value and the note feeds soul iteration. Only when the
+      // fields to the linked shipment via the human edit path (write + field-lock + audit-with-note), so a
+      // later agent re-clobber surfaces as CONTESTED rather than silently, and the note feeds soul
+      // iteration. Only when the
       // email is matched to a shipment (an unmatched email has nothing to apply onto).
       if (row.shipmentId) await this.shipments.applyExtractionCorrection(row.shipmentId, corrected, actorId, dto.notes)
       // matcher Phase 3 (design decision D): a human raw-name→code correction becomes a prior_correction

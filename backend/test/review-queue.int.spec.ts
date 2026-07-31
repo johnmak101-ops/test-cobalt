@@ -45,7 +45,7 @@ async function seedLegWithReviewEmail() {
 }
 
 describe('ReviewQueueService.review — a correct verdict applies back to the shipment', () => {
-  it('re-applies the corrected fields to the linked shipment (write + human-wins lock + audit + review row)', async () => {
+  it('re-applies the corrected fields to the linked shipment (write + lock + audit + review row)', async () => {
     const { leg, re } = await seedLegWithReviewEmail()
     await review.review(
       re.id,
@@ -58,7 +58,8 @@ describe('ReviewQueueService.review — a correct verdict applies back to the sh
     expect(updated.bookingNo).toBe('FIXED-BK')
     expect(updated.soNo).toBe('FIXED-SO')
 
-    // human-wins: locked so the agent can never re-clobber the human's value
+    // a lock row per corrected field — the reviewer's value on record, so a later agent write that
+    // disagrees reads as contested (the lock does NOT block that write; latest-email-wins, PR #232)
     const locks = await db.selectFrom('fieldLocks').where('entityId', '=', leg.id).selectAll().execute()
     expect(locks.map((l) => l.field).sort()).toEqual(['bookingNo', 'soNo'])
 
@@ -80,7 +81,7 @@ describe('ReviewQueueService.review — a correct verdict applies back to the sh
       .executeTakeFirstOrThrow()
     const res = await review.review(re.id, { action: 'correct', corrections: { extractedData: { booking_no: 'X2' } } }, actorId)
     expect(res?.reviewStatus).toBe('REVIEWED_CORRECTED')
-    // nothing to apply onto → no human-wins edit happened anywhere
+    // nothing to apply onto → no human edit happened anywhere
     const manualAudit = await db.selectFrom('changeLog').where('sourceType', '=', 'manual').selectAll().execute()
     expect(manualAudit).toHaveLength(0)
   })

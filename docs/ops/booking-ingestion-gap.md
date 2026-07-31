@@ -28,7 +28,8 @@ Two safety nets so this is caught, plus a way to recover:
    attachment was likely never captured."*
 3. **Manual "New shipment"** (Shipment Tracker → New shipment) — a human can create the shipment the
    pipeline missed. It's minted through the committer, so a later email upserts into it (no duplicate) and
-   the entered fields are locked (the agent fills gaps but never overwrites).
+   the entered fields are locked — which records what the human typed, not a block on the agent: a later
+   email that disagrees overwrites the column and the field surfaces as contested for someone to resolve.
 
 ## The actual fix — mail-flow (best-first; code alone can't recover an undelivered message)
 1. **Process (do this first):** have factories/forwarders always **Cc `CobaltStatusTrack@cobaltknitwear.com`**

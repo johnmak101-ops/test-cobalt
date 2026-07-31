@@ -81,7 +81,7 @@ export const REVIEW_EMAIL_STATUS = [
   'NEEDS_REVIEW', 'AUTO_ACCEPTED', 'REVIEWED_OK', 'REVIEWED_CORRECTED', 'REJECTED',
 ] as const
 
-// ---- Field-locks (human-wins) ----
+// ---- Field-locks (a record of the human's value, NOT a write barrier — see FieldLockRepository) ----
 export const FIELD_LOCK_ENTITY = ['booking', 'shipment'] as const
 
 // ---- Audit ----

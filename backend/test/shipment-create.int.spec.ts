@@ -43,7 +43,7 @@ describe('ShipmentsService.createManual — human-created shipments (integration
     expect(leg.reviewStatus).toBe('provisional') // human-created → lands in the Review queue
     expect(leg.bookingNo).toBe('MAN-1')
     expect(leg.qty).toBe(286)
-    // human-entered fields are locked (human-wins)
+    // human-entered fields get a lock row (their value on record — not a barrier against the agent)
     const locks = await db.selectFrom('fieldLocks').where('entityId', '=', res.id).selectAll().execute()
     const locked = new Set(locks.map((l) => l.field))
     expect(locked.has('bookingNo')).toBe(true)

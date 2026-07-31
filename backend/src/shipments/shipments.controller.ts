@@ -70,7 +70,8 @@ export class ShipmentsController {
 
   /**
    * PATCH /api/shipments/:id — human edit of shipment fields from the detail page. No @Roles: every
-   * authenticated user may fill gaps the parser missed. Each edit locks the field (human-wins) + audits.
+   * authenticated user may fill gaps the parser missed. Each edit records a field lock (the human's value,
+   * kept for contested-detection — not a barrier against the agent) + audits.
    */
   @Patch(':id') edit(
     @Param('id') id: string,

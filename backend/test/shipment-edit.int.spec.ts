@@ -125,7 +125,7 @@ describe('ShipmentsService — contested locks (a newer email overrode a human e
 })
 
 describe('ShipmentsService.applyExtractionCorrection — review-queue apply-back', () => {
-  it('maps parser fields → leg columns, writes + locks (human-wins) + audits with the note', async () => {
+  it('maps parser fields → leg columns, writes + records a lock + audits with the note', async () => {
     const leg = await seedLeg()
     const res = await service.applyExtractionCorrection(
       leg.id,
