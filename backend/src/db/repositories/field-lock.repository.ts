@@ -3,7 +3,17 @@ import { type Kysely } from 'kysely'
 import type { DB } from '../kysely/db'
 import { KYSELY } from '../kysely.provider'
 
-/** Kysely/SQL Server port of FieldLockRepository. Human-wins field locks.
+/** Kysely/SQL Server port of FieldLockRepository.
+ *
+ *  🔴 A LOCK IS NOT A WRITE BARRIER. Since PR #232 the committer is latest-email-wins *including over a
+ *  lock* (`CommitterService.applyFields`) — it writes the column and leaves this row alone. What the lock
+ *  row buys you is the human's value, kept verbatim and indefinitely, so `column !== lockedValue` can be
+ *  computed later: that comparison IS the contested-field signal (`ShipmentsService.contestedLocks`), which
+ *  the detail page renders as your-value/new-value and the operator resolves with `keepNewLockValue` (relock
+ *  to the newer value) or `restoreLockValue` (write the human value back).
+ *
+ *  So: never delete a lock row to "let the agent through" — the agent is already through, and deleting the
+ *  row only destroys the evidence that there was ever a disagreement.
  *
  *  Postgres → MSSQL notes:
  *  - `onConflictDoUpdate` on (entity_type, entity_id, field) → check-then-update-or-insert inside a tx
@@ -19,7 +29,9 @@ export class FieldLockRepository {
     return this.db.selectFrom('fieldLocks').where('entityId', '=', entityId).selectAll().execute()
   }
 
-  /** Lock a field to a human-set value (idempotent on entity+field). The agent may never overwrite it. */
+  /** Record a human-set value for a field (idempotent on entity+field). This does NOT stop the agent from
+   *  overwriting the column — see the class note. It preserves what the human chose so a later divergence
+   *  surfaces as contested rather than vanishing. */
   async lock(
     entityType: 'booking' | 'shipment',
     entityId: string,

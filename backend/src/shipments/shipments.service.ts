@@ -122,8 +122,9 @@ export class ShipmentsService {
    * Create a shipment a human entered by hand (the pipeline never saw it — e.g. the original booking email
    * / attachment was never ingested). It is minted THROUGH the deterministic committer so it gains match-keys
    * (a later agent email upserts into it by booking/SO/HBL/… instead of spawning a duplicate), audit, and the
-   * same shape as pipeline legs. Every field the human actually supplied is then LOCKED (human-wins), so the
-   * agent later FILLS gaps but never overwrites a human value. Lands `provisional` → the Review queue.
+   * same shape as pipeline legs. Every field the human actually supplied is then LOCKED — which RECORDS the
+   * entered value, it does not fence the agent off it (latest-email-wins since PR #232): a later email that
+   * disagrees writes the column and the field surfaces as CONTESTED. Lands `provisional` → the Review queue.
    */
   async createManual(input: ManualShipmentInput, actorId: string | null) {
     const d = input as Record<string, unknown>
@@ -169,7 +170,8 @@ export class ShipmentsService {
     }
     const res = await this.committer.apply(group)
 
-    // human-wins: lock each field the human actually supplied (agent may fill NULLs later, never overwrite)
+    // Record each field the human actually supplied. NOT a write barrier — a later email may overwrite the
+    // column, and this surviving row is exactly what makes that divergence visible as contested.
     const leg = (await this.shipments.findById(res.shipmentId)) as Record<string, unknown> | null
     for (const m of CREATE_FIELD_MAP) {
       if (m.leg && val(m.dto) != null && leg && leg[m.leg] != null) {
@@ -185,8 +187,9 @@ export class ShipmentsService {
   }
 
   /**
-   * Human edit of shipment fields from the detail page. Each edited field is written, LOCKED (human-wins,
-   * so the parser/committer can never overwrite it), and audited to Change History — the same guarantees the
+   * Human edit of shipment fields from the detail page. Each edited field is written, LOCKED (the lock keeps
+   * the human's value on record; the parser/committer may still overwrite the COLUMN, which is what makes the
+   * field contested — see FieldLockRepository), and audited to Change History — the same guarantees the
    * review flow gives, but for any shipment and without changing its review status. Unknown/non-editable
    * fields are ignored (whitelist). `actorId` is the acting user for the lock + audit trail.
    */
@@ -353,7 +356,8 @@ export class ShipmentsService {
    * Apply a reviewer's CORRECTED email extraction back onto its shipment. The review queue stored the
    * correction but never reached tracking — this closes that loop. Parser-vocabulary fields (`booking_no`)
    * are mapped to leg columns (`bookingNo`) and routed through editFields, so the correction is written,
-   * LOCKED (human-wins — the agent can fill gaps later but never overwrites it), and audited with the
+   * LOCKED (the reviewer's value is kept on record; a later email may still overwrite the column and the
+   * field then reads as contested), and audited with the
    * reviewer's note (the agent-soul iteration signal). Master-resolved fields (customer/forwarder/ports) are
    * skipped — they need resolution, not a direct write. Returns the edited leg columns.
    */

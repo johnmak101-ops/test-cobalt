@@ -197,7 +197,7 @@ describe('ReviewService.confirm — reviewer note lands in the audit trail', () 
   })
 })
 
-describe('ReviewService.correct — coercion + human-wins locks', () => {
+describe('ReviewService.correct — coercion + field locks', () => {
   it('coerces grossWeight and measurement to numbers', async () => {
     const { svc, shipments } = makeService()
     await svc.correct('leg-1', { fields: { grossWeight: '7.5', measurement: '0.04' } }, 'user-1')

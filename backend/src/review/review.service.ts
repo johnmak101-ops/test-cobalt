@@ -86,8 +86,10 @@ function confirmValue(isDate: boolean, value: unknown): string | null {
 
 /**
  * The human review workflow over the commit-first model: provisional shipments are listed here,
- * and a reviewer either confirms them as-is or corrects fields. A correction LOCKS each edited field
- * (human-wins) so the agent can never overwrite it, records the reason, and audits every change.
+ * and a reviewer either confirms them as-is or corrects fields. A correction LOCKS each edited field —
+ * which keeps the reviewer's value on record rather than blocking the agent (latest-email-wins since
+ * PR #232; a later disagreeing email overwrites the column and the field reads CONTESTED) — records the
+ * reason, and audits every change.
  */
 @Injectable()
 export class ReviewService {
@@ -243,7 +245,8 @@ export class ReviewService {
     }
   }
 
-  /** One human field write with the full review guarantees: column + human-wins lock + audit + learning feed. */
+  /** One human field write with the full review guarantees: column + lock (the value on record, contested
+   *  if a later email disagrees) + audit + learning feed. */
   private async applyHumanFieldWrite(
     shipmentId: string,
     current: Record<string, unknown>,

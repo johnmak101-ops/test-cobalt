@@ -92,7 +92,7 @@ describe('ReviewService (integration)', () => {
     expect(audit.some((a) => a.sourceType === 'review' && a.actorUserId === reviewerId)).toBe(true)
   })
 
-  it('correct updates a field, locks it (human-wins), audits the reason, and confirms', async () => {
+  it('correct updates a field, records a lock on it, audits the reason, and confirms', async () => {
     const { leg } = await seedProvisional('JOB-R-1', 30)
     const res = await review.correct(
       leg.id,
