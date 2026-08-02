@@ -64,6 +64,21 @@ export function strongKeys(mk: Record<string, unknown> | null | undefined): Set<
     const v = normForKey(k, mk[k])
     if (v) s.add(`${k}:${v}`)
   }
+  // Ported from the queue's strongKeys (2026-08-02 audit): `_identityAliases` carries identities a
+  // record is KNOWN BY without occupying a slot - an identity-dispose demote keeps its prior type:norm
+  // there so committed legs still strong-overlap, and a journey leg's transport document is registered
+  // there so an operator's number still finds the shipment. Without this union, findExistingLeg's
+  // upsert-by-strong-key cannot join on an alias the queue-side grouping DID join on, and a re-ingest
+  // can mint a duplicate leg for what the queue considers one shipment. `warehouse_so:` aliases are
+  // excluded exactly as on the queue side - a warehouse intake number must never re-enter as a hard key.
+  const aliases = (mk as { _identityAliases?: unknown })._identityAliases
+  if (Array.isArray(aliases)) {
+    for (const a of aliases) {
+      const t = String(a ?? '').trim()
+      if (t.startsWith('warehouse_so:')) continue
+      if (t.includes(':') && t.length > 2) s.add(t)
+    }
+  }
   return s
 }
 
