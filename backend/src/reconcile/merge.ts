@@ -53,6 +53,19 @@ export const FIELD_CLASS: Record<string, FieldClass> = {
   vessel_name: 'text', voyage_no: 'text', flight_no: 'text', mawb: 'text', scac_code: 'text', brand: 'text',
   qty_unit: 'text', gross_weight: 'text', measurement: 'text',
   item_style_no: 'list', hts_code: 'list',
+  // The MANUFACTURER, split out of `vendor_code` on the queue side by validate.ts. Cobalt Mesh has always
+  // separated the two vendor populations it syncs (563 factory / 465 gmtsupplier / 440 both) in
+  // `master_entity.vendor_type`; flattening them into one field is what let a customs declaration's
+  // 生产销售单位 contest the booking vendor for a single slot.
+  //
+  // 🔴 `list`, NOT `entity`. An LCL consol carries one factory PER SHIPPER, so `entity`'s single
+  // DOC_RANK winner would discard the rest — the same loss this change exists to stop.
+  //
+  // Listed here for CONTRACT PARITY: the queue's critic/merge.ts is the source of truth and
+  // merge-policy.fixture.json pins the two tables EQUAL, so the key must exist on both sides. It is not
+  // mapped in committer-leg-mapping.ts and no column stores it — the frontend does not need the factory.
+  // It merges and stops, exactly as it does on the queue side.
+  factory_code: 'list',
 }
 
 export const DOC_RANK: Record<string, number> = {

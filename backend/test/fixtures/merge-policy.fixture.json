@@ -35,7 +35,8 @@
     "qty_unit": "text",
     "gross_weight": "text",
     "measurement": "text",
-    "hts_code": "list"
+    "hts_code": "list",
+    "factory_code": "list"
   },
   "DOC_RANK": {
     "Final B/L": 5,
