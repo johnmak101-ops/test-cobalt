@@ -7,7 +7,7 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, it, expect } from 'vitest'
-import { DOC_RANK, FIELD_CLASS } from '../src/reconcile/merge'
+import { DOC_FIELD_MASK, DOC_RANK, FIELD_CLASS } from '../src/reconcile/merge'
 
 const FIXTURE_PATH = join(__dirname, 'fixtures', 'merge-policy.fixture.json')
 
@@ -19,5 +19,15 @@ describe('merge-policy cross-repo contract', () => {
     }
     expect(FIELD_CLASS).toEqual(fixture.FIELD_CLASS)
     expect(DOC_RANK).toEqual(fixture.DOC_RANK)
+  })
+
+  it('live DOC_FIELD_MASK deep-equals the committed fixture (Sets as sorted arrays)', () => {
+    const fixture = JSON.parse(readFileSync(FIXTURE_PATH, 'utf8')) as {
+      DOC_FIELD_MASK: Record<string, string[]>
+    }
+    const live = Object.fromEntries(
+      Object.entries(DOC_FIELD_MASK).map(([docType, fields]) => [docType, [...fields].sort()]),
+    )
+    expect(live).toEqual(fixture.DOC_FIELD_MASK)
   })
 })

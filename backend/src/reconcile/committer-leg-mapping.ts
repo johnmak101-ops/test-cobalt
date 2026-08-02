@@ -54,6 +54,10 @@ export function mapFieldsToLegColumns(f: Record<string, unknown>): Record<string
     cargoDescription: str(f.cargo_description),
     measurement: num(f.measurement),
     htsCode: dedupeCsv(str(f.hts_code)),
+    // The MANUFACTURER (list class - an LCL consol carries one factory per shipper). BACKEND DATA ONLY
+    // by decision 2026-08-03: stored for queries/audit, not shown by the frontend. Never a fallback for
+    // vendorRaw - the labelling ground truth makes a factory a legitimate vendor_code in its own right.
+    factoryCode: dedupeCsv(str(f.factory_code)),
     itemStyleNo: dedupeCsv(str(f.item_style_no)),
     consigneeName: str(f.consignee_name),
     consigneeAddress: str(f.consignee_address),

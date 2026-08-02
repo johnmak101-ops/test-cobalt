@@ -80,6 +80,11 @@ export interface Shipments
    *  as `cartons`. Two committer rules read it so they surface rather than act: see
    *  `findPoOnlyDuplicateRisk` and `findManualIdentityClash`. */
   createdManually: Generated<boolean>
+  /** Migration 0030 — the MANUFACTURER (comma-joined list, like item_style_no). BACKEND DATA ONLY by
+   *  decision 2026-08-03: the frontend does not display it, and it is never a fallback for the vendor —
+   *  the labelling ground truth makes a factory a legitimate `vendor_code` in its own right. Same
+   *  codegen caveat as `cartons`. */
+  factoryCode: string | null
   reviewReasons: Json<string[] | null>
   matchKeys: Json<Record<string, unknown> | null>
   criticReview: Json<CriticReview | null>
