@@ -85,6 +85,10 @@ export interface Shipments
    *  the labelling ground truth makes a factory a legitimate `vendor_code` in its own right. Same
    *  codegen caveat as `cartons`. */
   factoryCode: string | null
+  /** Migration 0031 — the journey chain as JSON (`[{seq,mode,pol,pod,doc},…]`), written by the
+   *  committer from the decision's `journey` (queue groupJourney, latest-carrying-wins). Read by
+   *  journeyRoute() to render `PVG→DEL→LHR`. Same codegen caveat as `cartons`. */
+  journey: string | null
   reviewReasons: Json<string[] | null>
   matchKeys: Json<Record<string, unknown> | null>
   criticReview: Json<CriticReview | null>

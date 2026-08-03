@@ -327,6 +327,7 @@ export class ShipmentRepository {
       'vendors.code as vendorCode', 'vendors.nameCh as vendorNameCh',
       'forwarders.id as forwarderId', 'forwarders.name as forwarderName',
       'shipments.forwarderRaw as forwarderRaw', 'shipments.mode as mode', 'pol.unlocode as polCode', 'pod.unlocode as podCode',
+        'shipments.journey as journey',
       'pol.iata as polIata', 'pod.iata as podIata', 'shipments.polRaw as polRaw', 'shipments.podRaw as podRaw',
       sql<number>`(select count(*) from booking_pos bp where bp.booking_id = ${sql.ref('shipments.bookingId')})`.as('poCount'),
       // #350: beginning email — anchors the derived Shipment ID the queue's first column shows
