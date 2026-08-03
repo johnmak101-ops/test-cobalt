@@ -55,6 +55,28 @@ describe('deriveMilestoneRows — email-mapped + field-derived milestones (pure)
     // state not SAILED → no etd fallback
     expect(deriveMilestoneRows('s1', [], { etd: '2026-02-10' }, 'BOOKED').some((r) => (r.milestoneType as string) === 'SAILED')).toBe(false)
   })
+
+  it('🔴 the etd-backfill also fires when deriveState OVERSHOT to RELEASED/DELIVERED (transit-allowance fallback)', () => {
+    // Measured: an AIR leg judged DELIVERED by the no-arrival-data fallback showed a six-stage story
+    // with NO departure row, the ETD sitting right on the leg — the old `state === 'SAILED'` guard
+    // never held because the state never rested on SAILED.
+    for (const state of ['RELEASED', 'DELIVERED']) {
+      const rows = deriveMilestoneRows('s1', [], { etd: '2026-07-18' }, state, new Date('2026-08-03'))
+      const s = rows.find((r) => (r.milestoneType as string) === 'SAILED')!
+      expect(s.occurredAt).toEqual(new Date('2026-07-18'))
+      expect(s.notes).toBe('derived from etd')
+    }
+  })
+
+  it('🔴 a FUTURE etd never mints a departure — the stamp is an assumption the clock must back', () => {
+    // A rescheduled ETD (pushed to next week) with a state some other signal already advanced must not
+    // write "sailed next Tuesday" into the timeline.
+    const rows = deriveMilestoneRows('s1', [], { etd: '2026-08-20' }, 'DELIVERED', new Date('2026-08-03'))
+    expect(rows.some((r) => (r.milestoneType as string) === 'SAILED')).toBe(false)
+    // and the atd-derived SAILED is untouched by the clock guard — a stated atd is a FACT, not a guess
+    const fact = deriveMilestoneRows('s1', [], { atd: '2026-08-20' }, 'DELIVERED', new Date('2026-08-03'))
+    expect(fact.filter((r) => (r.milestoneType as string) === 'SAILED')).toHaveLength(1)
+  })
 })
 
 describe('deriveEmailRows — related emails deduped by graph id (pure)', () => {
