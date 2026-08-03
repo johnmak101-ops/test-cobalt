@@ -47,6 +47,15 @@ export class ReconcileService {
         })),
         // every source email sent by the notification platform → a vendor/PO notification, not a shipment (rule c)
         fromPlatform: grp.length > 0 && grp.every((r) => isNotificationPlatformSender(r.sender)),
+        // journey chain: latest evidence record CARRYING one wins — the same lift the queue's
+        // groupJourney performs, recomputed here so a rebuild does not lose the routing.
+        journey: (() => {
+          const carrying = grp
+            .filter((r) => Array.isArray((r.fields as Record<string, unknown> | null)?.legs) && ((r.fields as Record<string, unknown>).legs as unknown[]).length >= 2)
+            .sort((a, b) => iso(a.receivedAt).localeCompare(iso(b.receivedAt)))
+          const latest = carrying[carrying.length - 1]
+          return latest ? ((latest.fields as Record<string, unknown>).legs as { seq: number; mode: string; pol: string; pod: string; doc: string | null }[]) : null
+        })(),
         mode: grp.map((r) => r.mode).find((m): m is string => !!m) ?? null,
         conversationId: grp[0].conversationId,
         evidenceIds: grp.map((r) => r.graphMessageId).filter((x): x is string => !!x),

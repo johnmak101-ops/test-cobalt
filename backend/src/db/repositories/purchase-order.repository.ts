@@ -107,6 +107,7 @@ export class PurchaseOrderRepository {
         'shipments.bookingNo as bookingNo', 'shipments.hblAwbFcrNo as hbl', 'shipments.soNo as so',
         'shipments.etd as etd', 'shipments.eta as eta', 'shipments.mode as mode',
         'pol.unlocode as polCode', 'pod.unlocode as podCode', 'pol.iata as polIata', 'pod.iata as podIata',
+        'shipments.journey as journey',
         'shipmentPos.createdAt as linkedAt', 'shipments.containerNo as containerNo', 'shipments.mbl as mbl',
         'shipments.scacCode as scacCode', 'shipments.vesselName as vesselName',
         // #350/#354: anchor fields for the derived Shipment ID on the detail's Linked Shipments rows
@@ -132,6 +133,7 @@ export class PurchaseOrderRepository {
         'shipments.hblAwbFcrNo as hbl', 'shipments.mbl as mbl', 'shipments.scacCode as scacCode',
         'shipments.vesselName as vesselName', 'shipments.mode as mode',
         'pol.unlocode as polCode', 'pod.unlocode as podCode', 'pol.iata as polIata', 'pod.iata as podIata',
+        'shipments.journey as journey',
       ])
       .execute()
   }

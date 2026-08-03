@@ -98,6 +98,11 @@ export interface ReconGroup {
   /** The booking was cancelled — the committed leg's leg_status becomes 'CANCELLED' instead of 'ACTIVE'.
    *  Undefined/false on the legacy path → leg stays 'ACTIVE' (unchanged). */
   cancelled?: boolean
+  /** The journey chain (queue groupJourney, latest-carrying-wins). Stored as JSON on
+   *  `shipments.journey`; the route string renders it as `PVG->DEL->LHR`. Null/absent = no statement —
+   *  applyFields skips nulls, so a later decision without a chain never erases an earlier one, which
+   *  matches the queue's latest-CARRYING-wins lift exactly. */
+  journey?: { seq: number; mode: string; pol: string; pod: string; doc: string | null }[] | null
   /** True when EVERY source email was sent by the CVP/TradeLinkOne notification platform — the leg is a
    *  vendor/PO notification, not a booked move (drives classifyKind rule (c)). Set on the rebuild path
    *  (senders known); undefined on the agent path, where the committer resolves it from the source emails. */
@@ -291,6 +296,9 @@ export class CommitterService {
       originCountry,
       // persist the conversationId so a zero-identity (keyless, PO-less) leg has a cross-run handle (A2).
       matchKeys: g.conversationId ? { ...g.matchKeys, conversation_id: g.conversationId } : g.matchKeys,
+      // the journey chain, as JSON (migration 0031). One site covers both create paths and the
+      // applyFields update path, exactly like every other legValues column.
+      journey: g.journey?.length ? JSON.stringify(g.journey).slice(0, 2000) : null,
     }
 
     // matching / idempotency. A leg matches when:

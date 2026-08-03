@@ -37,7 +37,7 @@ import { toUiAlertRule } from './mappers/alert-rule.mapper'
 import { SaveAlertRulesDto } from './alert-rules.dto'
 import { ALERT_COUNTRY_CODES } from '../alerts/alert-rule-defaults'
 import { toUiHistoryEntry } from './mappers/history.mapper'
-import { deriveRoute, portLabel, poNumbersJson, isoOrNull } from './adapters/derive'
+import { deriveRoute, journeyRoute, portLabel, poNumbersJson, isoOrNull } from './adapters/derive'
 import { computeFieldConflicts } from './field-conflicts'
 import { openDecisions } from './open-decisions'
 import { sharedPos } from './po-shared-legs'
@@ -131,7 +131,7 @@ export function buildShipmentSummary(
   return {
     id: leg.id,
     poNumbers: poNumbersJson(poNumbers),
-    route: deriveRoute(portLabel(leg.mode, pol?.unlocode, pol?.iata), portLabel(leg.mode, pod?.unlocode, pod?.iata)),
+    route: journeyRoute((leg as { journey?: string | null }).journey) ?? deriveRoute(portLabel(leg.mode, pol?.unlocode, pol?.iata), portLabel(leg.mode, pod?.unlocode, pod?.iata)),
     customer: customer ? { name: customer.name } : null,
     consigneeName: consignee || null,
     // #350: the alert card derives the Shipment ID from these (firstEmailAt ?? createdAt + uuid head).
@@ -395,7 +395,9 @@ export class PresentationService {
         bookingNo: leg.bookingNo ?? null,
         soNumber: leg.soNo ?? null,
         customerName: customer?.name ?? (leg as { customerRaw?: string | null }).customerRaw ?? null,
-        route: deriveRoute(
+        // each leg shows ITS OWN chain — a PO split across an air A→B→C and a sea A→D renders as
+        // two rows, `A→B→C` and `A→D`, never one blended route.
+        route: journeyRoute((leg as { journey?: string | null }).journey) ?? deriveRoute(
           portLabel(leg.mode, pol?.unlocode, pol?.iata) ?? leg.polRaw,
           portLabel(leg.mode, pod?.unlocode, pod?.iata) ?? leg.podRaw,
         ),
@@ -795,7 +797,7 @@ export class PresentationService {
         // strings (not objects) — the review-queue table renders these directly; an object here crashes React
         customer: r.customerName ?? null,
         forwarder: r.forwarderName ?? r.forwarderRaw ?? null,
-        route: deriveRoute(
+        route: journeyRoute((r as { journey?: string | null }).journey) ?? deriveRoute(
           portLabel(r.mode, r.polCode, r.polIata) ?? r.polRaw,
           portLabel(r.mode, r.podCode, r.podIata) ?? r.podRaw,
         ),

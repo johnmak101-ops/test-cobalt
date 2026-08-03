@@ -6,7 +6,7 @@
 import type { Band, CriticReview } from '../../decisions/critic-review.types'
 import { isNonPartyName } from '../../decisions/critic-review.types'
 import { stateToUiStatus } from '../adapters/enums'
-import { deriveRoute, portLabel, deriveOriginCountry, poNumbersJson, isoOrNull } from '../adapters/derive'
+import { deriveRoute, journeyRoute, portLabel, deriveOriginCountry, poNumbersJson, isoOrNull } from '../adapters/derive'
 import { normalizeEntityName } from '../hydrate-critic-entity-labels'
 import { filterPortMissReasons } from './port-miss-reasons'
 import { openDecisions } from '../open-decisions'
@@ -266,7 +266,8 @@ export function toUiShipment(
     vendorId: booking?.vendorId ?? null,
     forwarderId: leg.forwarderId ?? null,
     mode: leg.mode ?? null,
-    route: deriveRoute(
+    // A stored journey chain wins the route string (`PVG→DEL→LHR`); endpoints-only is the fallback.
+    route: journeyRoute((leg as { journey?: string | null }).journey) ?? deriveRoute(
       portLabel(leg.mode, input.polPort?.unlocode, input.polPort?.iata) ?? leg.polRaw,
       portLabel(leg.mode, input.podPort?.unlocode, input.podPort?.iata) ?? leg.podRaw,
     ),

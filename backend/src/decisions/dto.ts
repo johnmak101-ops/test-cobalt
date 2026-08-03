@@ -85,6 +85,16 @@ export class CreateDecisionDto {
    *  active Booking Request. Omitted by legacy callers → treated as not cancelled (unchanged). */
   @IsOptional() @IsBoolean() cancelled?: boolean
 
+  /** The journey CHAIN of the latest queue record that states one (queue `fields.legs`, MERGE_EXEMPT,
+   *  lifted by groupJourney). Every stop has survived the queue's two validate guards: air legs end at
+   *  air gateways, and every endpoint is VISIBLE in the email that stated it — so this is extraction,
+   *  never lane-knowledge invention. Rendered into the route string (`PVG->DEL->LHR`); stored on
+   *  `shipments.journey` as JSON. Omitted by legacy callers -> no journey (unchanged). */
+  @IsOptional()
+  @IsArray()
+  @Type(() => Object)
+  journey?: { seq: number; mode: string; pol: string; pod: string; doc: string | null }[]
+
   /** The Critic's per-shipment confidence, 0-100. Routes to confirmed/provisional vs the threshold. */
   @IsInt() @Min(0) @Max(100) confidence!: number
 

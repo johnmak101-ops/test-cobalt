@@ -10,6 +10,25 @@
  * renders its own "—" dash). NB: consumers that split this back into cells must treat "-" as empty — see
  * splitRoute in PurchaseOrdersPage.
  */
+/**
+ * The multi-stop route string from a stored journey chain (`shipments.journey`, JSON) — `PVG→DEL→LHR`
+ * instead of the endpoints-only `PVG→LHR`. Null unless the JSON parses to 2+ chained legs, so every
+ * caller can fall back to deriveRoute() and a malformed or absent journey changes nothing. Stops are
+ * displayed AS EXTRACTED: every one of them survived the queue's visibility guard (it appears in the
+ * email that stated it), which is precisely why they are trustworthy enough to show.
+ */
+export function journeyRoute(journeyJson: string | null | undefined): string | null {
+  if (!journeyJson) return null
+  try {
+    const legs = JSON.parse(journeyJson) as { pol?: unknown; pod?: unknown }[]
+    if (!Array.isArray(legs) || legs.length < 2) return null
+    const stops = [String(legs[0]?.pol ?? ''), ...legs.map((l) => String(l?.pod ?? ''))].filter(Boolean)
+    return stops.length >= 3 ? stops.join('→') : null
+  } catch {
+    return null
+  }
+}
+
 export function deriveRoute(
   pol: string | null | undefined,
   pod: string | null | undefined,
