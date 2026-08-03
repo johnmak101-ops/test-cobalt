@@ -26,6 +26,7 @@ import type { CriticReview } from '../decisions/critic-review.types'
 import { mapFieldsToLegColumns, scheduleRetractionColumns } from './committer-leg-mapping'
 import {
   findExistingLeg,
+  findPoOnlyAmbiguity,
   findAdoptableZeroIdLeg,
   findSupersededByIdentityCorrection,
   findManualIdentityClash,
@@ -311,6 +312,8 @@ export class CommitterService {
     //    first id, or a PO-only follow-up/re-POST. This stops Option A's strong-id-less legs from spawning a
     //    duplicate on the next email. It deliberately does NOT match by PO when BOTH carry DIFFERENT strong
     //    ids — that is a PO reassignment the gate reviews, never a silent merge here.
+    // RANK lives in findExistingLeg: identity beats shared-PO, live beats dismissed, and a PO-only group
+    // facing ≥2 live legs matches nothing (split-PO ambiguity → the (iv) reason below names them).
     const groupPos = new Set(g.pos.map((p) => normKey(p)).filter(Boolean))
     // MATCHING set = the POs we commit ∪ the POs a B/L-anchored record merely STATED (g.posStated). The two
     // are deliberately different sets: `groupPos` is this leg's CARGO and drives shipment_pos, poQty and the
@@ -600,6 +603,23 @@ export class CommitterService {
         const shared = (posByBooking.get(l.bookingId) ?? []).find((p) => groupPos.has(normKey(p)))
         duplicateRiskReasons.push(
           `possible duplicate of ${other} — shares PO ${shared ?? '(unknown)'} but states a different booking/SO/HBL; one of the two was entered by hand`,
+        )
+      }
+    }
+
+    // (iv) PO-ONLY AMBIGUITY — the split-PO shape. This decision carried no identity, only PO(s) that
+    // sit on ≥2 live shipments, so findExistingLeg deliberately matched NONE (any pick is a coin flip
+    // on candidate order — probe-measured) and this commit minted a fresh provisional leg instead.
+    // Name the candidates; the desk's link action settles it. Recomputed each commit like the other
+    // duplicate risks, so the warning clears once the operator folds the leg.
+    if (gk.size === 0) {
+      for (const l of findPoOnlyAmbiguity(legs, posByBooking, gk, matchPos, g.conversationId ?? null)) {
+        if (l.id === shipmentId || seenRisk.has(l.id)) continue
+        seenRisk.add(l.id)
+        const bk = await this.bookings.findById(l.bookingId)
+        const shared = (posByBooking.get(l.bookingId) ?? []).find((p) => matchPos.has(normKey(p)))
+        duplicateRiskReasons.push(
+          `PO ${shared ?? '(unknown)'} also ships on ${bk?.jobNo ?? l.id} — this email named no booking/SO/HBL, so it could belong to either shipment; link it to the right leg`,
         )
       }
     }
