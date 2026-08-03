@@ -102,6 +102,67 @@ describe('CommitterService (integration, real SQL Server)', () => {
     expect(row?.note).toContain('改到伦敦')
   })
 
+  it('🔴 operator lifecycle: dismiss the thin leg, hand-type the real one — the next email finds the REAL one', async () => {
+    // Measured before the rank fix: the keyed email landed on whichever row the unordered SQL returned
+    // first — half the time the dismissed husk, absorbing the data invisibly.
+    const thin = await committer.apply(group({
+      pos: ['PO-77'], matchKeys: {}, fields: {}, conversationId: 'conv-thin', evidenceIds: ['ev-thin'],
+    }))
+    await db.updateTable('shipments').set({ dismissedAt: new Date() }).where('id', '=', thin.shipmentId).execute()
+
+    const manual = await committer.apply(group({
+      pos: ['PO-77'],
+      matchKeys: { booking_no: 'BK-M', so_no: 'SO-M' },
+      fields: { booking_no: 'BK-M', so_no: 'SO-M', pol: 'SZX', pod: 'LHR' },
+      conversationId: null, createdManually: true, reviewStatus: 'provisional', evidenceIds: [],
+    }))
+    expect(manual.shipmentId).not.toBe(thin.shipmentId)
+
+    // the forwarder's next email names the manual leg's exact booking + SO
+    const keyed = await committer.apply(group({
+      pos: ['PO-77'],
+      matchKeys: { booking_no: 'BK-M', so_no: 'SO-M' },
+      fields: { booking_no: 'BK-M', etd: '2026-06-20' },
+      conversationId: 'conv-fwd', evidenceIds: ['ev-fwd'],
+    }))
+    expect(keyed.shipmentId).toBe(manual.shipmentId)
+
+    // and a PO-only follow-up prefers the LIVE manual leg over the dismissed husk
+    const poOnly = await committer.apply(group({
+      pos: ['PO-77'], matchKeys: {}, fields: {}, conversationId: 'conv-follow', evidenceIds: ['ev-follow'],
+    }))
+    expect(poOnly.shipmentId).toBe(manual.shipmentId)
+  })
+
+  it('🔴 split PO on two live shipments: a PO-only email matches NEITHER — it lands provisional, naming both', async () => {
+    const ac = await committer.apply(group({
+      pos: ['PO-88'], matchKeys: { booking_no: 'BK-C' }, fields: { booking_no: 'BK-C', pod: 'C' },
+      conversationId: 'conv-c', evidenceIds: ['ev-c'],
+    }))
+    const ab = await committer.apply(group({
+      pos: ['PO-88'], matchKeys: { booking_no: 'BK-B' }, fields: { booking_no: 'BK-B', pod: 'B' },
+      conversationId: 'conv-b', evidenceIds: ['ev-b'],
+    }))
+    expect(ab.shipmentId).not.toBe(ac.shipmentId)
+
+    const poOnly = await committer.apply(group({
+      pos: ['PO-88'], matchKeys: {}, fields: {}, conversationId: 'conv-p', evidenceIds: ['ev-p'],
+    }))
+    expect([ac.shipmentId, ab.shipmentId]).not.toContain(poOnly.shipmentId)
+    const leg = await db.selectFrom('shipments').where('id', '=', poOnly.shipmentId).selectAll().executeTakeFirstOrThrow()
+    expect(leg.reviewStatus).toBe('provisional')
+    // the desk sees BOTH candidates by job number, and the phrase tells it what to do
+    expect(String(leg.reviewReasons)).toContain('could belong to either shipment')
+    expect(String(leg.reviewReasons)).toContain('PO-88')
+
+    // idempotency: a re-POST (or rebuild replay) of the same decision lands back on its own leg
+    const again = await committer.apply(group({
+      pos: ['PO-88'], matchKeys: {}, fields: {}, conversationId: 'conv-p', evidenceIds: ['ev-p'],
+    }))
+    expect(again.shipmentId).toBe(poOnly.shipmentId)
+    expect(await db.selectFrom('shipments').selectAll().execute()).toHaveLength(3)
+  })
+
   it('a thin decision WITHOUT a division never strips cargo — absence alone is not evidence', async () => {
     const osaka = group({
       pos: ['PO-C', 'PO-D'],
