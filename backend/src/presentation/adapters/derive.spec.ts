@@ -104,6 +104,15 @@ describe('journeyRoute — the chain wins the route string', () => {
     expect(journeyRoute(relay)).toBe('PNH→VUT→TPP→LGP')
   })
 
+  it('🔴 accepts the ALREADY-PARSED array the kysely JSON plugin actually hands back', () => {
+    // The integration test read null from a real row while the string-in unit case was green: the
+    // column is nvarchar JSON but arrives pre-parsed. Fourth sighting of the wire-type trap.
+    expect(journeyRoute([
+      { seq: 1, mode: 'Air', pol: 'PVG', pod: 'DEL', doc: null },
+      { seq: 2, mode: 'Air', pol: 'DEL', pod: 'LHR', doc: null },
+    ])).toBe('PVG→DEL→LHR')
+  })
+
   it('null on absent, malformed, or sub-chain input — every caller falls back to deriveRoute', () => {
     expect(journeyRoute(null)).toBeNull()
     expect(journeyRoute(undefined)).toBeNull()

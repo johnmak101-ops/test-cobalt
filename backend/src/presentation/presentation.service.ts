@@ -131,7 +131,7 @@ export function buildShipmentSummary(
   return {
     id: leg.id,
     poNumbers: poNumbersJson(poNumbers),
-    route: journeyRoute((leg as { journey?: string | null }).journey) ?? deriveRoute(portLabel(leg.mode, pol?.unlocode, pol?.iata), portLabel(leg.mode, pod?.unlocode, pod?.iata)),
+    route: journeyRoute((leg as { journey?: unknown }).journey) ?? deriveRoute(portLabel(leg.mode, pol?.unlocode, pol?.iata), portLabel(leg.mode, pod?.unlocode, pod?.iata)),
     customer: customer ? { name: customer.name } : null,
     consigneeName: consignee || null,
     // #350: the alert card derives the Shipment ID from these (firstEmailAt ?? createdAt + uuid head).
@@ -397,7 +397,7 @@ export class PresentationService {
         customerName: customer?.name ?? (leg as { customerRaw?: string | null }).customerRaw ?? null,
         // each leg shows ITS OWN chain — a PO split across an air A→B→C and a sea A→D renders as
         // two rows, `A→B→C` and `A→D`, never one blended route.
-        route: journeyRoute((leg as { journey?: string | null }).journey) ?? deriveRoute(
+        route: journeyRoute((leg as { journey?: unknown }).journey) ?? deriveRoute(
           portLabel(leg.mode, pol?.unlocode, pol?.iata) ?? leg.polRaw,
           portLabel(leg.mode, pod?.unlocode, pod?.iata) ?? leg.podRaw,
         ),
@@ -797,7 +797,7 @@ export class PresentationService {
         // strings (not objects) — the review-queue table renders these directly; an object here crashes React
         customer: r.customerName ?? null,
         forwarder: r.forwarderName ?? r.forwarderRaw ?? null,
-        route: journeyRoute((r as { journey?: string | null }).journey) ?? deriveRoute(
+        route: journeyRoute((r as { journey?: unknown }).journey) ?? deriveRoute(
           portLabel(r.mode, r.polCode, r.polIata) ?? r.polRaw,
           portLabel(r.mode, r.podCode, r.podIata) ?? r.podRaw,
         ),
