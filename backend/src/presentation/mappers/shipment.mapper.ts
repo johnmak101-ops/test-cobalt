@@ -267,7 +267,7 @@ export function toUiShipment(
     forwarderId: leg.forwarderId ?? null,
     mode: leg.mode ?? null,
     // A stored journey chain wins the route string (`PVG→DEL→LHR`); endpoints-only is the fallback.
-    route: journeyRoute((leg as { journey?: string | null }).journey) ?? deriveRoute(
+    route: journeyRoute((leg as { journey?: unknown }).journey) ?? deriveRoute(
       portLabel(leg.mode, input.polPort?.unlocode, input.polPort?.iata) ?? leg.polRaw,
       portLabel(leg.mode, input.podPort?.unlocode, input.podPort?.iata) ?? leg.podRaw,
     ),

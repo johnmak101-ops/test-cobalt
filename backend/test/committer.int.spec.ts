@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest'
 import { getTestDb, resetDb, closeTestDb, repos, type TestDB } from './setup-db'
 import { CommitterService, type ReconGroup } from '../src/reconcile/committer.service'
+import { journeyRoute } from '../src/presentation/adapters/derive'
 
 let db: TestDB
 let committer: CommitterService
@@ -28,6 +29,48 @@ afterAll(closeTestDb)
 beforeEach(() => resetDb(db))
 
 describe('CommitterService (integration, real SQL Server)', () => {
+  it('🔴 a PO split keeps its shipments on DIFFERENT IDs, each with its OWN journey', async () => {
+    // John's scenario, pinned end-to-end (2026-08-03): one PO, two movements —
+    //   ① A→B→C on one air waybill (a transit chain)   ② A→D by sea on its own bill (direct)
+    // The two groups share ONLY the PO; their strong keys are their own documents. They must land on
+    // two distinct shipment ids, and the air chain must never bleed onto the sea leg's route.
+    const air = await committer.apply(group({
+      pos: ['PO-5000'],
+      matchKeys: { hbl_awb_fcr_no: 'AWB-777' },
+      mode: 'Air',
+      emailTypes: ['SO'],
+      fields: { hbl_awb_fcr_no: 'AWB-777', pol: 'A', pod: 'C' },
+      journey: [
+        { seq: 1, mode: 'Air', pol: 'A', pod: 'B', doc: 'AWB-777' },
+        { seq: 2, mode: 'Air', pol: 'B', pod: 'C', doc: null },
+      ],
+      conversationId: 'conv-air',
+      evidenceIds: ['ev-air'],
+    }))
+    const sea = await committer.apply(group({
+      pos: ['PO-5000'],
+      matchKeys: { mbl: 'MBL-888' },
+      mode: 'Sea-FCL',
+      emailTypes: ['SO'],
+      fields: { mbl: 'MBL-888', pol: 'A', pod: 'D' },
+      // a direct A→D is ONE movement — the queue's normalizeLegs nulls a single-leg array upstream,
+      // so no journey rides this decision at all
+      conversationId: 'conv-sea',
+      evidenceIds: ['ev-sea'],
+    }))
+
+    expect(sea.shipmentId).not.toBe(air.shipmentId)
+
+    const legAir = await db.selectFrom('shipments').where('id', '=', air.shipmentId).selectAll().executeTakeFirstOrThrow()
+    const legSea = await db.selectFrom('shipments').where('id', '=', sea.shipmentId).selectAll().executeTakeFirstOrThrow()
+    // the chain lives on the AIR leg only, and renders as the multi-stop route
+    expect(journeyRoute((legAir as { journey?: unknown }).journey)).toBe('A→B→C')
+    // the SEA leg has no journey — its route falls back to plain pol→pod (A→D)
+    expect((legSea as { journey?: string | null }).journey ?? null).toBeNull()
+    expect(legSea.mbl).toBe('MBL-888')
+    expect(legAir.hblAwbFcrNo).toBe('AWB-777')
+  })
+
   it('creates a booking + leg from a group, mapping fields and deriving state', async () => {
     const res = await committer.apply(group({ fields: { so_no: 'SO-1', hbl_awb_fcr_no: 'H-1' }, emailTypes: ['SO'] }))
     expect(res.action).toBe('create_booking')

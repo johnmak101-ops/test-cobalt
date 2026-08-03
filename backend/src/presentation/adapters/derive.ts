@@ -17,16 +17,26 @@
  * displayed AS EXTRACTED: every one of them survived the queue's visibility guard (it appears in the
  * email that stated it), which is precisely why they are trustworthy enough to show.
  */
-export function journeyRoute(journeyJson: string | null | undefined): string | null {
-  if (!journeyJson) return null
-  try {
-    const legs = JSON.parse(journeyJson) as { pol?: unknown; pod?: unknown }[]
-    if (!Array.isArray(legs) || legs.length < 2) return null
-    const stops = [String(legs[0]?.pol ?? ''), ...legs.map((l) => String(l?.pod ?? ''))].filter(Boolean)
-    return stops.length >= 3 ? stops.join('→') : null
-  } catch {
-    return null
+export function journeyRoute(journey: unknown): string | null {
+  if (!journey) return null
+  // 🔴 NEVER assume the wire type. The column is nvarchar JSON, but the kysely layer's JSON-parsing
+  // plugin hands it back ALREADY PARSED as an array — the unit spec (string in) was green while the
+  // integration test read null from a real row. Fourth sighting of this exact trap; accept both shapes.
+  let legs: { pol?: unknown; pod?: unknown }[]
+  if (Array.isArray(journey)) {
+    legs = journey as { pol?: unknown; pod?: unknown }[]
+  } else {
+    try {
+      const parsed = JSON.parse(String(journey)) as unknown
+      if (!Array.isArray(parsed)) return null
+      legs = parsed as { pol?: unknown; pod?: unknown }[]
+    } catch {
+      return null
+    }
   }
+  if (legs.length < 2) return null
+  const stops = [String(legs[0]?.pol ?? ''), ...legs.map((l) => String(l?.pod ?? ''))].filter(Boolean)
+  return stops.length >= 3 ? stops.join('→') : null
 }
 
 export function deriveRoute(
