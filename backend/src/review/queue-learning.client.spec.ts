@@ -148,3 +148,99 @@ describe('QueueLearningClient.postCorrection — auth + loud failure (#116)', ()
     expect(f.mock.calls.filter((c) => String(c[0]).includes('/review/correction')).length).toBe(2)
   })
 })
+
+/**
+ * Deploy-order safety: this backend starts BEFORE the queue API. A probe against the dead queue must
+ * not poison the client for the rest of the process — the moment the queue comes up, the very next
+ * review action must flow. (The old code latched authRequired=true forever; only a restart cured it.)
+ */
+describe('QueueLearningClient — ShipTrack-first deploy order (probe failures never latch)', () => {
+  const OLD_BASE = process.env.QUEUE_API_BASE
+  const OLD_PW = process.env.QUEUE_API_PASSWORD
+
+  beforeEach(() => {
+    process.env.QUEUE_API_BASE = 'http://queue:3100/api'
+    delete process.env.QUEUE_API_PASSWORD
+    delete process.env.QUEUE_VIEWER_PASSWORD
+  })
+  afterEach(() => {
+    if (OLD_BASE == null) delete process.env.QUEUE_API_BASE
+    else process.env.QUEUE_API_BASE = OLD_BASE
+    if (OLD_PW == null) delete process.env.QUEUE_API_PASSWORD
+    else process.env.QUEUE_API_PASSWORD = OLD_PW
+  })
+
+  it('queue dead at first post, then up OPEN: the SAME client posts bare on the next correction', async () => {
+    let queueUp = false
+    const f = vi.fn(async (url: string) => {
+      const u = String(url)
+      if (!queueUp) throw new Error('ECONNREFUSED') // queue not deployed yet
+      if (u.endsWith('/auth')) return { ok: true, status: 200, json: async () => ({ required: false }) }
+      if (u.includes('/review/correction')) return { ok: true, status: 200, text: async () => '' }
+      throw new Error(`unexpected ${u}`)
+    })
+    const client = makeClient()
+    client.fetchImpl = f as never
+
+    await expect(client.postCorrection(payload)).resolves.toBeUndefined() // dropped, loudly — queue is down
+    expect(f.mock.calls.every((c) => !String(c[0]).includes('/review/correction'))).toBe(true)
+
+    queueUp = true // ← the queue deploys
+    await client.postCorrection(payload)
+    const posts = f.mock.calls.filter((c) => String(c[0]).includes('/review/correction'))
+    expect(posts.length).toBe(1) // re-probed, saw required:false, posted bare — NO restart needed
+  })
+
+  it('queue dead at first post, then up LOCKED: the SAME client logs in and posts', async () => {
+    process.env.QUEUE_API_PASSWORD = 'viewer-secret'
+    let queueUp = false
+    const f = vi.fn(async (url: string) => {
+      const u = String(url)
+      if (!queueUp) throw new Error('ECONNREFUSED')
+      if (u.endsWith('/auth')) return { ok: true, status: 200, json: async () => ({ required: true }) }
+      if (u.endsWith('/login')) return { ok: true, status: 200, json: async () => ({ token: 'jwt-late' }) }
+      if (u.includes('/review/correction')) return { ok: true, status: 200, text: async () => '' }
+      throw new Error(`unexpected ${u}`)
+    })
+    const client = makeClient()
+    client.fetchImpl = f as never
+
+    await client.postCorrection(payload) // dropped — queue down
+    queueUp = true
+    await client.postCorrection(payload)
+    const post = f.mock.calls.find((c) => String(c[0]).includes('/review/correction')) as
+      | [string, { headers: Record<string, string> }]
+      | undefined
+    expect(post).toBeTruthy()
+    expect(post![1].headers.authorization).toBe('Bearer jwt-late')
+  })
+
+  it('a transient non-ok probe (502 from a booting proxy) does not latch either', async () => {
+    let healthy = false
+    const f = vi.fn(async (url: string) => {
+      const u = String(url)
+      if (u.endsWith('/auth')) {
+        if (!healthy) return { ok: false, status: 502, json: async () => ({}) }
+        return { ok: true, status: 200, json: async () => ({ required: false }) }
+      }
+      if (u.includes('/review/correction')) return { ok: true, status: 200, text: async () => '' }
+      throw new Error(`unexpected ${u}`)
+    })
+    const client = makeClient()
+    client.fetchImpl = f as never
+    await client.postCorrection(payload) // 502 probe → treated locked this attempt → login fails (no pw) → dropped
+    healthy = true
+    await client.postCorrection(payload)
+    expect(f.mock.calls.filter((c) => String(c[0]).includes('/review/correction')).length).toBe(1)
+  })
+
+  it('unset QUEUE_API_BASE warns LOUDLY exactly once (standalone is legitimate, silence is not)', async () => {
+    delete process.env.QUEUE_API_BASE
+    const client = makeClient()
+    const warn = vi.spyOn((client as unknown as { log: { warn: (m: string) => void } }).log, 'warn')
+    await client.postCorrection(payload)
+    await client.postCorrection(payload)
+    expect(warn).toHaveBeenCalledTimes(1)
+    expect(String(warn.mock.calls[0]![0])).toContain('QUEUE_API_BASE')
+  })
+})
