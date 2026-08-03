@@ -37,8 +37,8 @@ describe('ReconcileService.run — replay mode (decision log non-empty)', () => 
   }
 
   it('replays every logged group through the committer IN ORDER, fields intact — including the three the legacy derive dropped', async () => {
-    const g1 = { matchKey: { booking_no: 'SZX111' }, fields: fragileFields, pos: ['28739'] }
-    const g2 = { matchKey: { booking_no: 'SZX222' }, fields: { booking_no: 'SZX222' }, pos: [] }
+    const g1 = { matchKeys: { booking_no: 'SZX111' }, fields: fragileFields, pos: ['28739'] }
+    const g2 = { matchKeys: { booking_no: 'SZX222' }, fields: { booking_no: 'SZX222' }, pos: [] }
     const { svc, applied } = makeService([JSON.stringify(g1), JSON.stringify(g2)])
     const res = await svc.run()
     expect(res.mode).toBe('replay')
@@ -48,11 +48,11 @@ describe('ReconcileService.run — replay mode (decision log non-empty)', () => 
     // cargo_description / cfs_cutoff ride through because the committer's own mask (not merge.ts
     // FIELD_CLASS) is the vocabulary on this path.
     expect(applied[0]!.fields).toEqual(fragileFields)
-    expect((applied[1]!.matchKey as Record<string, unknown>).booking_no).toBe('SZX222')
+    expect((applied[1]!.matchKeys as Record<string, unknown>).booking_no).toBe('SZX222')
   })
 
   it('accepts payloads the JSON plugin already parsed (object) AND raw strings — both shapes replay identically', async () => {
-    const g = { matchKey: {}, fields: fragileFields, pos: [] }
+    const g = { matchKeys: {}, fields: fragileFields, pos: [] }
     const { svc: svcObj, applied: appliedObj } = makeService([g])
     const { svc: svcStr, applied: appliedStr } = makeService([JSON.stringify(g)])
     await svcObj.run()
@@ -64,7 +64,7 @@ describe('ReconcileService.run — replay mode (decision log non-empty)', () => 
     // The queue masks Customs-doc atd BEFORE the wire, so logged groups carry none. The only way a
     // rebuild could resurrect it is by re-deriving from raw evidence — pinned here as impossible.
     const { svc, applied, evidence } = makeService([
-      JSON.stringify({ matchKey: {}, fields: { booking_no: 'SZX111' }, pos: [] }),
+      JSON.stringify({ matchKeys: {}, fields: { booking_no: 'SZX111' }, pos: [] }),
     ])
     await svc.run()
     expect(evidence.allWithMessage).not.toHaveBeenCalled()

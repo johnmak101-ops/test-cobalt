@@ -112,6 +112,8 @@ export interface ShipmentLegRow {
   vendorRaw: string | null
   grossWeight: number | null
   netWeight?: number | null
+  /** Migration 0026 — same codegen caveat as the db.ts hand-typed override. */
+  cartons?: number | null
   cargoDescription?: string | null
   measurement: number | null
   htsCode: string | null
