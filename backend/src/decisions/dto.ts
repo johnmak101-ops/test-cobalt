@@ -46,8 +46,9 @@ export class CreateDecisionDto {
   /** Human-readable disagreement notes the Matcher surfaced (GENUINE conflicts only). */
   @IsOptional() @IsArray() @IsString({ each: true }) conflicts?: string[]
 
-  /** Lifecycle identity supersedes (Draft → Final B/L etc.) — recorded for history, not penalized. */
-  @IsOptional() @IsArray() @IsString({ each: true }) supersedes?: string[]
+  // `supersedes` was declared here for years and consumed by NOTHING — a dead contract prop that only
+  // misled readers. It stays QUEUE-INTERNAL (their risk pass reads it off the draft); the queue stopped
+  // sending it the same day this line was removed. Re-declare ONLY together with a real consumer.
 
   /** Every value each identity field ever held (current + alternates) — persisted as searchable history. */
   @IsOptional()
