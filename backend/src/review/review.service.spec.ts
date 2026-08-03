@@ -425,14 +425,26 @@ describe('ReviewService — skip queue learning when sourceGraphIdFor is null (#
 
 describe('ReviewService — "looks right" confirm-sentinels feed the queue eval', () => {
   it('confirm() emits a confirm-sentinel for each non-null parse field (agentSaid == humanCorrected == frozen value)', async () => {
-    const { svc, queueLearning } = makeService({ soNo: 'COSU123', grossWeight: 5 })
+    const { svc, queueLearning } = makeService({ soNo: 'COSU123', containerNo: 'MSCU1234567' })
     await svc.confirm('leg-1', 'user-1')
     expect(queueLearning.postCorrection).toHaveBeenCalledWith(expect.objectContaining({
       messageId: 'graph-1', field: 'so_no', agentSaid: 'COSU123', humanCorrected: 'COSU123', kind: 'confirm',
     }))
     expect(queueLearning.postCorrection).toHaveBeenCalledWith(expect.objectContaining({
-      field: 'gross_weight', agentSaid: '5', humanCorrected: '5', kind: 'confirm',
+      field: 'container_no', agentSaid: 'MSCU1234567', humanCorrected: 'MSCU1234567', kind: 'confirm',
     }))
+  })
+
+  it('confirm() NEVER emits the four desk-hidden columns — no blind endorsements of values the operator cannot see', async () => {
+    const { svc, queueLearning } = makeService({
+      soNo: 'COSU123', itemStyleNo: 'STYLE-1', grossWeight: 5, measurement: 12.5, htsCode: '6110.20',
+    })
+    await svc.confirm('leg-1', 'user-1')
+    const calls = queueLearning.postCorrection.mock.calls.map((c) => c[0])
+    expect(calls).toContainEqual(expect.objectContaining({ field: 'so_no', kind: 'confirm' }))
+    for (const hidden of ['item_style_no', 'gross_weight', 'measurement', 'hts_code']) {
+      expect(calls).not.toContainEqual(expect.objectContaining({ field: hidden, kind: 'confirm' }))
+    }
   })
 
   it('confirm() freezes a date field as YYYY-MM-DD (the parser format), not a full ISO timestamp', async () => {

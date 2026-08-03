@@ -96,6 +96,7 @@ export interface Shipment {
   quantityUnit: string | null
   grossWeight: number | null
   // optional like the other late-added leg columns: fixtures and older payloads predate them
+  cartons?: number | null
   netWeight?: number | null
   cargoDescription?: string | null
   measurement: number | null

@@ -74,11 +74,16 @@ const toQueueField = (col: string): string =>
  *  `cfsCutoff` is deliberately NOT confirmable: the parser structurally cannot emit it (absent from the
  *  soul and the queue's field registry), so its values are always human-entered. A confirm would freeze a
  *  value the re-parse can never reproduce — a PERMANENT phantom "regression" that trips the queue's
- *  confirm-regression scan (threshold 2) every night, forever. It stays correctable/editable. */
+ *  confirm-regression scan (threshold 2) every night, forever. It stays correctable/editable.
+ *
+ *  The four DESK-HIDDEN columns (`itemStyleNo`, `grossWeight`, `measurement`, `htsCode` — suppressed by
+ *  DESK_HIDDEN_FIELDS on the queue card and HIDDEN_FIELD_LABELS on the detail page) are NOT confirmable
+ *  either: a one-click confirm was emitting "this is right" labels for values the operator never saw —
+ *  blind endorsements feeding the learning eval. Rule: never confirm what the desk does not show.
+ *  All four stay correctable (they are edited on other surfaces). */
 const CONFIRMABLE_FIELDS: { column: string; isDate: boolean }[] = [
-  { column: 'bookingNo', isDate: false }, { column: 'soNo', isDate: false }, { column: 'itemStyleNo', isDate: false },
-  { column: 'qty', isDate: false }, { column: 'qtyUnit', isDate: false }, { column: 'grossWeight', isDate: false },
-  { column: 'measurement', isDate: false }, { column: 'htsCode', isDate: false }, { column: 'hblAwbFcrNo', isDate: false },
+  { column: 'bookingNo', isDate: false }, { column: 'soNo', isDate: false },
+  { column: 'qty', isDate: false }, { column: 'qtyUnit', isDate: false }, { column: 'hblAwbFcrNo', isDate: false },
   { column: 'mbl', isDate: false }, { column: 'containerNo', isDate: false }, { column: 'scacCode', isDate: false },
   { column: 'vesselName', isDate: false }, { column: 'voyageNo', isDate: false }, { column: 'consigneeName', isDate: false },
   { column: 'consigneeAddress', isDate: false }, { column: 'cargoReadyDate', isDate: true },

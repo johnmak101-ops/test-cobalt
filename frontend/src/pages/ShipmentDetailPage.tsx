@@ -835,6 +835,17 @@ export default function ShipmentDetailPage() {
                 offMode={isOffModeField('mawb', shipment.mode) ? offModeHint(shipment.mode) : undefined} />
             )}
             <DetailRow historyKey="scacCode" label={fieldLabel('scacCode')} value={shipment.scacCode} />
+            {/* Read-only cargo facts the committer writes but the page never showed: cartons never even
+                left the DB before, net weight / cargo description reached the payload and stopped. */}
+            <DetailRow
+              label="Cartons"
+              value={shipment.cartons != null ? formatNumericDisplay(String(shipment.cartons)) : null}
+            />
+            <DetailRow
+              label="Net Weight"
+              value={shipment.netWeight != null ? formatNumericDisplay(String(shipment.netWeight)) : null}
+            />
+            <DetailRow label="Cargo Description" value={shipment.cargoDescription ?? null} />
           </DetailSection>
 
           {/* Section 3: Shipping */}

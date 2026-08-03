@@ -219,6 +219,36 @@ describe('PresentationService.shipments — list', () => {
   })
 })
 
+describe('PresentationService.reviewQueue projection', () => {
+  it('emits hblAwbFcrNo — the booking-label fallback chain (bookingNo ?? soNo ?? hblAwbFcrNo) must work for HBL-only legs', async () => {
+    const row = {
+      id: 'leg-hbl', bookingNo: null, soNo: null, hblAwbFcrNo: 'SEKO-HBL-777',
+      legBookingNo: null, legSoNo: null,
+      state: 'BOOKED', legStatus: 'ACTIVE', reviewReasons: [], confidence: 40,
+      createdAt: D('2026-02-01T00:00:00.000Z'), updatedAt: D('2026-02-01T00:00:00.000Z'),
+      dismissedAt: D('2026-02-02T00:00:00.000Z'), waitingAt: null, waitingReason: null,
+      criticReview: null, customerName: null, forwarderName: null, forwarderRaw: null,
+      mode: 'Sea', polCode: null, podCode: null, polIata: null, podIata: null, polRaw: null, podRaw: null,
+      journey: null, committerAction: null, committerCandidatesConsidered: null, poCount: 0,
+      firstEmailAt: null,
+    }
+    const svc = new PresentationService(
+      { reviewQueue: async () => [row], poSiblingLegsFor: async () => [] } as any,
+      {} as any,
+      {} as any,
+      { list: async () => [], listForShipment: async () => [], allRules: async () => [] } as any,
+      { listForEntity: async () => [] } as any,
+      { unreadCount: async () => 0, ingestionStatus: async () => ({ count: 0, lastAt: null }), ingestState: async () => null, emailsForShipment: async () => [] } as any,
+      { forMessages: async () => [], allWithMessage: async () => [] } as any,
+      { lookupByMatchKey: async () => ({ query: {}, candidates: [] }) } as any,
+      { evaluate: async () => ({ evaluated: 0, fired: 0, resolved: 0 }) } as any,
+    )
+    const res = await svc.reviewQueue('dismissed')
+    expect(res.shipments).toHaveLength(1)
+    expect(res.shipments[0]).toMatchObject({ id: 'leg-hbl', bookingNo: null, soNo: null, hblAwbFcrNo: 'SEKO-HBL-777' })
+  })
+})
+
 describe('PresentationService.searchShipments', () => {
   const searchBuild = () => {
     const searchLegs = [
