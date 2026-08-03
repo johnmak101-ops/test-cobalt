@@ -794,6 +794,10 @@ export class PresentationService {
         id: r.id,
         bookingNo: r.bookingNo ?? null,
         soNo: r.soNo ?? null,
+        // The frontend's booking-label fallback chain is bookingNo ?? soNo ?? hblAwbFcrNo — the type
+        // declared it but this projection never sent it, so an HBL-only leg rendered '—' on the queue,
+        // the panel and the TopBar all at once.
+        hblAwbFcrNo: r.hblAwbFcrNo ?? null,
         // strings (not objects) — the review-queue table renders these directly; an object here crashes React
         customer: r.customerName ?? null,
         forwarder: r.forwarderName ?? r.forwarderRaw ?? null,

@@ -216,6 +216,8 @@ export interface UiShipment {
   warehouseAddress: string | null
   quantityShipped: number | null
   quantityUnit: string | null
+  /** Carton count (table-extract writes it) — was committed to the leg but never left the DB. */
+  cartons: number | null
   grossWeight: number | null
   netWeight: number | null
   cargoDescription: string | null
@@ -320,6 +322,7 @@ export function toUiShipment(
     warehouseAddress: null, // Phase 3 column
     quantityShipped: leg.qty ?? null,
     quantityUnit: leg.qtyUnit ?? null,
+    cartons: leg.cartons ?? null,
     grossWeight: leg.grossWeight ?? null,
     netWeight: leg.netWeight ?? null,
     cargoDescription: leg.cargoDescription ?? null,
