@@ -32,8 +32,10 @@ type FetchLike = (url: string, init?: RequestInit) => Promise<Response>
 export class QueueLearningClient {
   private readonly log = new Logger(QueueLearningClient.name)
   private token: string | null = null
-  /** null = not probed yet; true/false = last /auth probe */
+  /** null = no SUCCESSFUL probe yet; true/false = the queue's actual answer. Failures never latch. */
   private authRequired: boolean | null = null
+  /** One-time loud note that the learning feed is off — silence here cost weeks of dead TRAIN signal. */
+  private warnedNoBase = false
   /**
    * HTTP transport — defaults to global fetch. Tests assign a stub; do NOT inject via Nest constructor
    * (Nest would try to resolve `FetchLike` as a DI token and AppModule boot fails).
@@ -55,22 +57,27 @@ export class QueueLearningClient {
     ).trim()
   }
 
-  /** Probe GET /auth → { required }. Cached for process lifetime (restart after password policy change). */
+  /**
+   * Probe GET /auth → { required }. A REAL answer is cached for process lifetime (restart after a
+   * password policy change). A FAILED probe is NOT cached: it answers `true` for this attempt only
+   * (never post bare to an unknown queue) and the next correction re-probes.
+   *
+   * Why the distinction is load-bearing: this backend deploys BEFORE the queue API. The old code
+   * latched the first (dead-queue) probe as authRequired=true for the whole process lifetime, so once
+   * the queue came up open, every POST kept failing on a password requirement that did not exist —
+   * the entire TRAIN feed stayed dead until someone restarted ShipTrack.
+   */
   private async probeAuthRequired(base: string): Promise<boolean> {
     if (this.authRequired != null) return this.authRequired
     try {
       const res = await this.fetchImpl(`${base}/auth`)
-      if (!res.ok) {
-        // Assume locked if probe fails — safer than posting bare
-        this.authRequired = true
-        return true
-      }
+      if (!res.ok) return true // transient (queue booting / proxy 502): do NOT latch
       const j = (await res.json().catch(() => ({}))) as { required?: boolean }
       this.authRequired = !!j.required
+      return this.authRequired
     } catch {
-      this.authRequired = true
+      return true // queue unreachable: assume locked for THIS attempt only, re-probe next time
     }
-    return this.authRequired
   }
 
   private async login(base: string): Promise<string> {
@@ -108,7 +115,17 @@ export class QueueLearningClient {
 
   async postCorrection(payload: CorrectionPayload): Promise<void> {
     const base = this.base()
-    if (!base) return // tracking system runs standalone → nothing to push to
+    if (!base) {
+      // standalone mode is legitimate, but it must never be SILENT: with the iterator running on
+      // labels, an unset QUEUE_API_BASE means zero fuel and no error anywhere else in the system.
+      if (!this.warnedNoBase) {
+        this.warnedNoBase = true
+        this.log.warn(
+          'QUEUE_API_BASE is unset — queue learning feed DISABLED (review labels will NOT reach the iterator). Set QUEUE_API_BASE to enable.',
+        )
+      }
+      return
+    }
     try {
       let headers = await this.authHeaders(base)
       let res = await this.fetchImpl(`${base}/review/correction`, {
