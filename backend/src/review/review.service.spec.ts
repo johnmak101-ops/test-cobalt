@@ -233,6 +233,25 @@ describe('ReviewService.correct — coercion + field locks', () => {
       field: 'so_no', agentSaid: 'OLD-SO', humanCorrected: 'COSU123', kind: 'correction',
     }))
   })
+
+  it('posts the five *Raw party/port columns under the PARSER names (pol, not pol_raw)', async () => {
+    // A plain camel→snake gave pol_raw / forwarder_raw / … — field names the parser never emits, so the
+    // queue's re-parse could never reproduce them: fuel that could not burn. The alias map speaks parser.
+    const cases: [string, string][] = [
+      ['polRaw', 'pol'],
+      ['podRaw', 'pod'],
+      ['forwarderRaw', 'forwarder_name'],
+      ['customerRaw', 'customer_code'],
+      ['vendorRaw', 'vendor_code'],
+    ]
+    for (const [column, queueField] of cases) {
+      const { svc, queueLearning } = makeService({ [column]: 'OLD' })
+      await svc.correct('leg-1', { fields: { [column]: 'NEW' }, reason: 'fix party' }, 'user-1')
+      expect(queueLearning.postCorrection).toHaveBeenCalledWith(expect.objectContaining({
+        field: queueField, humanCorrected: 'NEW', kind: 'correction',
+      }))
+    }
+  })
 })
 
 describe('ReviewService.correct — party/port corrections re-resolve the master FK (display follows)', () => {
@@ -440,6 +459,14 @@ describe('ReviewService — "looks right" confirm-sentinels feed the queue eval'
     expect(calls).not.toContainEqual(expect.objectContaining({ field: 'gross_weight', kind: 'confirm' }))
     // soNo was left untouched → implicitly confirmed.
     expect(calls).toContainEqual(expect.objectContaining({ field: 'so_no', kind: 'confirm' }))
+  })
+
+  it('confirm() NEVER emits cfs_cutoff — the parser cannot reproduce it, a confirm would be a permanent phantom regression', async () => {
+    const { svc, queueLearning } = makeService({ cfsCutoff: new Date('2026-02-10T00:00:00.000Z'), etd: new Date('2026-02-16T00:00:00.000Z') })
+    await svc.confirm('leg-1', 'user-1')
+    const calls = queueLearning.postCorrection.mock.calls.map((c) => c[0])
+    expect(calls).toContainEqual(expect.objectContaining({ field: 'etd', kind: 'confirm' })) // the click still labels real parse fields
+    expect(calls).not.toContainEqual(expect.objectContaining({ field: 'cfs_cutoff' }))
   })
 })
 
