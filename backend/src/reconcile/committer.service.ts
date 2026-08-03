@@ -103,6 +103,10 @@ export interface ReconGroup {
    *  applyFields skips nulls, so a later decision without a chain never erases an earlier one, which
    *  matches the queue's latest-CARRYING-wins lift exactly. */
   journey?: { seq: number; mode: string; pol: string; pod: string; doc: string | null }[] | null
+  /** DIVISION statements riding the decision (queue `groupDivisions` — dedup'd events, verbatim quotes).
+   *  Evidence for the stated-link removal in `apply`: a PO named here AND absent from `pos` leaves the
+   *  matched leg's shipment_pos, audited with the statement's own words. Never merged as a field. */
+  divisions?: { pos: string[]; direction?: string; target?: string; quote?: string; statedAt?: string }[]
   /** True when EVERY source email was sent by the CVP/TradeLinkOne notification platform — the leg is a
    *  vendor/PO notification, not a booked move (drives classifyKind rule (c)). Set on the rebuild path
    *  (senders known); undefined on the agent path, where the committer resolves it from the source emails. */
@@ -674,6 +678,38 @@ export class CommitterService {
         actorUserId: null,
         note: `PO ${d.po} moved to ${str(f.hbl_awb_fcr_no) ?? str(f.mbl) ?? 'another B/L'} — ${d.fromHbl} swept it up without stating it (0029)`,
       })
+    }
+    // DIVISION removal — the one evidence-backed way a STATED link leaves a leg. Two conditions, BOTH
+    // required: a division statement on this decision names the PO as moved (the factory's own words,
+    // audited below), AND the decision's PO list no longer carries it. Each protects against the other's
+    // failure mode: absence alone never removes (a thin reparse must not strip cargo), and a statement
+    // alone never removes (the queue keeps a PARTIAL division's PO in `pos` — a 3-carton urgent split
+    // keeps its trunk link). Only the amend path — a fresh leg has no stale links — and never on a
+    // hand-typed leg, like every automatic rule.
+    if (existing && g.divisions?.length && !(existing as { manualEntry?: unknown }).manualEntry) {
+      const movedAway = new Map<string, { quote?: string; target?: string }>()
+      for (const d of g.divisions) {
+        for (const p of d.pos ?? []) {
+          const n = normKey(p)
+          if (n && !groupPos.has(n)) movedAway.set(n, { quote: d.quote, target: d.target })
+        }
+      }
+      for (const linked of movedAway.size ? await this.shipments.linkedPosForShipment(shipmentId) : []) {
+        const div = movedAway.get(normKey(linked.poNumber))
+        if (!div) continue
+        await this.shipments.unlinkPoByShipmentAndPo(shipmentId, linked.id)
+        await this.audit.write({
+          entityType: 'shipment',
+          entityId: shipmentId,
+          field: 'shipment_pos',
+          oldValue: linked.poNumber,
+          newValue: null,
+          changeType: 'delete',
+          sourceType: 'system',
+          actorUserId: null,
+          note: `PO ${linked.poNumber} moved off this booking by a stated division${div.target ? ` (→ ${div.target})` : ''}${div.quote ? ` — "${div.quote}"` : ''}`.slice(0, 400),
+        })
+      }
     }
     for (const link of links) {
       const poId = await this.purchaseOrders.upsertPo(link.poNo, customerId, effVendorId, link.enr ?? undefined)

@@ -541,9 +541,22 @@ export class ShipmentRepository {
   }
 
   /** Drop a PO link by its shipment_pos id — the displacement half of the claim-strength rule (0029).
-   *  Only ever called for a link stored `inferred = 1`; a stated link is never removed automatically. */
+   *  Only ever called for a link stored `inferred = 1`; a stated link's one removal path is the
+   *  division rule below. */
   async unlinkPoById(linkId: string) {
     await this.db.deleteFrom('shipmentPos').where('id', '=', linkId).execute()
+  }
+
+  /** Division removal: drop THIS leg's link to a PO a stated division moved off it — the one path that
+   *  removes a STATED link, and only with the statement as evidence (the caller audits its quote).
+   *  By (shipmentId, poId) because the caller reads links via linkedPosForShipment, whose `id` is the
+   *  purchase order's, not the link row's. */
+  async unlinkPoByShipmentAndPo(shipmentId: string, poId: string) {
+    await this.db
+      .deleteFrom('shipmentPos')
+      .where('shipmentId', '=', shipmentId)
+      .where('poId', '=', poId)
+      .execute()
   }
 
   /**

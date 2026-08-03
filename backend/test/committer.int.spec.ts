@@ -71,6 +71,53 @@ describe('CommitterService (integration, real SQL Server)', () => {
     expect(legAir.hblAwbFcrNo).toBe('AWB-777')
   })
 
+  it('🔴 a stated division removes the moved PO from the leg it left — audited, never silent', async () => {
+    // Day-10 of the regroup lifecycle: C,D booked on Osaka; a later email states D moved to the London
+    // booking. The queue's decision for the Osaka leg now carries pos=[C] AND the division naming D —
+    // the two together are the committer's licence to drop D's stated link. Absence alone must not.
+    const osaka = group({
+      pos: ['PO-C', 'PO-D'],
+      matchKeys: { booking_no: 'BK-OSA' },
+      fields: { booking_no: 'BK-OSA', pod: 'Osaka' },
+      conversationId: 'conv-osa',
+    })
+    const a = await committer.apply(osaka)
+    const linked = (id: string) => db.selectFrom('shipmentPos')
+      .innerJoin('purchaseOrders', 'shipmentPos.poId', 'purchaseOrders.id')
+      .where('shipmentPos.shipmentId', '=', id)
+      .select('purchaseOrders.poNumber as poNumber').execute()
+    expect((await linked(a.shipmentId)).map((r) => r.poNumber).sort()).toEqual(['PO-C', 'PO-D'])
+
+    const b = await committer.apply(group({
+      ...osaka,
+      pos: ['PO-C'],
+      divisions: [{ pos: ['PO-D'], direction: 'to', target: 'BK-LON', quote: 'PO D 改到伦敦 booking' }],
+      events: [{ emailType: 'Booking Request', receivedAt: '2026-01-10T00:00:00Z' }],
+    }))
+    expect(b.shipmentId).toBe(a.shipmentId) // same leg amended, not a new one
+    expect((await linked(a.shipmentId)).map((r) => r.poNumber)).toEqual(['PO-C'])
+    // the removal is audited with the statement's own words — a PO leaving a leg is never silent
+    const audit = await db.selectFrom('changeLog').selectAll().execute()
+    const row = audit.find((x) => x.field === 'shipment_pos' && x.changeType === 'delete' && x.oldValue === 'PO-D')
+    expect(row?.note).toContain('改到伦敦')
+  })
+
+  it('a thin decision WITHOUT a division never strips cargo — absence alone is not evidence', async () => {
+    const osaka = group({
+      pos: ['PO-C', 'PO-D'],
+      matchKeys: { booking_no: 'BK-OSA2' },
+      fields: { booking_no: 'BK-OSA2' },
+      conversationId: 'conv-osa2',
+    })
+    const a = await committer.apply(osaka)
+    await committer.apply(group({ ...osaka, pos: ['PO-C'] })) // e.g. a partial reparse — no statement
+    const pos = await db.selectFrom('shipmentPos')
+      .innerJoin('purchaseOrders', 'shipmentPos.poId', 'purchaseOrders.id')
+      .where('shipmentPos.shipmentId', '=', a.shipmentId)
+      .select('purchaseOrders.poNumber as poNumber').execute()
+    expect(pos.map((r) => r.poNumber).sort()).toEqual(['PO-C', 'PO-D'])
+  })
+
   it('creates a booking + leg from a group, mapping fields and deriving state', async () => {
     const res = await committer.apply(group({ fields: { so_no: 'SO-1', hbl_awb_fcr_no: 'H-1' }, emailTypes: ['SO'] }))
     expect(res.action).toBe('create_booking')

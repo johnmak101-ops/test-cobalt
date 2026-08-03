@@ -95,6 +95,16 @@ export class CreateDecisionDto {
   @Type(() => Object)
   journey?: { seq: number; mode: string; pol: string; pod: string; doc: string | null }[]
 
+  /** DIVISION statements the queue's matcher acted on (`注：PO28739;PO28740 改为 07-Feb 入仓` — cargo
+   *  stated as moved off a booking). The committer's evidence for removing a stated shipment_pos link:
+   *  a PO both named here AND absent from `pos` left this leg, audited with the quote. A PARTIAL
+   *  division (counted cartons) keeps its PO in `pos` queue-side, so it never qualifies. Omitted by
+   *  legacy callers → no links removed (unchanged). */
+  @IsOptional()
+  @IsArray()
+  @Type(() => Object)
+  divisions?: { pos: string[]; direction?: string; target?: string; quote?: string; statedAt?: string }[]
+
   /** The Critic's per-shipment confidence, 0-100. Routes to confirmed/provisional vs the threshold. */
   @IsInt() @Min(0) @Max(100) confidence!: number
 

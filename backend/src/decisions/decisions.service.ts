@@ -209,6 +209,7 @@ export class DecisionsService {
       conversationId: dto.conversationId ?? null,
       cancelled: dto.cancelled ?? false,
       journey: Array.isArray(dto.journey) && dto.journey.length >= 2 ? dto.journey : null,
+      divisions: Array.isArray(dto.divisions) && dto.divisions.length ? dto.divisions : undefined,
       fromPlatform: dto.fromPlatform, // undefined → committer resolves from source-email senders
 
       conflicts: dto.conflicts ?? [],
