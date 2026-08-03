@@ -3,6 +3,7 @@ import { CommitterService, type ReconGroup, type CommitResult } from '../reconci
 import { SettingsService } from '../settings/settings.service'
 import { IngestRepository } from '../db/repositories/ingest.repository'
 import { RoutingShadowRepository } from '../db/repositories/routing-shadow.repository'
+import { DecisionLogRepository } from '../db/repositories/decision-log.repository'
 import type { CreateDecisionDto } from './dto'
 import { resolveEmailDisposition } from './email-disposition'
 import { assembleIngestReviewReasons } from './review-reasons-assemble'
@@ -45,6 +46,7 @@ export class DecisionsService {
     private readonly settings: SettingsService,
     private readonly ingestRepo: IngestRepository,
     private readonly routingShadow: RoutingShadowRepository,
+    private readonly decisionLog: DecisionLogRepository,
   ) {}
 
   async ingest(dto: CreateDecisionDto): Promise<DecisionResult> {
@@ -224,6 +226,12 @@ export class DecisionsService {
       dualAutoTarget: dto.dualAutoTarget ?? null,
     }
 
+    // Log-then-apply (0032): every group the committer sees is in the replay log, so a rebuild can
+    // reproduce this exact path. Deliberately a hard write — an applied-but-unlogged decision would
+    // silently vanish from every future rebuild; failing the POST lets the queue retry, and a
+    // duplicate row from that retry replays harmlessly (the committer is idempotent). Skips never
+    // reach here, so the log holds only what actually touched shipments.
+    await this.decisionLog.append(group as unknown as Record<string, unknown>)
     const result = await this.committer.apply(group)
 
     // Shadow write after commit so shipmentId is available; only when critic present.

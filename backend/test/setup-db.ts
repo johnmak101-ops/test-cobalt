@@ -15,6 +15,7 @@ import { UsersRepository } from '../src/db/repositories/users.repository'
 import { SettingsRepository } from '../src/db/repositories/settings.repository'
 import { IngestRepository } from '../src/db/repositories/ingest.repository'
 import { RoutingShadowRepository } from '../src/db/repositories/routing-shadow.repository'
+import { DecisionLogRepository } from '../src/db/repositories/decision-log.repository'
 import { CriticCalibrationRepository } from '../src/db/repositories/critic-calibration.repository'
 
 const TEST_URL =
@@ -79,6 +80,7 @@ export function repos(db: TestDB) {
     settings: new SettingsRepository(db),
     ingest: new IngestRepository(db),
     routingShadow: new RoutingShadowRepository(db),
+    decisionLog: new DecisionLogRepository(db),
     criticCalibration: new CriticCalibrationRepository(db),
   }
 }

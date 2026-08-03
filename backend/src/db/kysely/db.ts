@@ -141,6 +141,15 @@ export interface RoutingShadow {
   reasonsJson: Json<string[] | null>
 }
 
+/** 0032 — append-only log of every applied decision (the ReconGroup, verbatim). THE rebuild source:
+ *  replaying these in id order through the committer reproduces the agent path by construction.
+ *  Not in codegen until regenerating after 0032. */
+export interface DecisionLog {
+  id: Generated<number>
+  ingestedAt: Generated<Date>
+  payload: Json<Record<string, unknown>>
+}
+
 export type CalibrationOutcome = 'approved' | 'corrected' | 'dismissed'
 
 /** Append-only critic band vs human outcome (Phase 3 calibration). Not in codegen until regenerating after 0014. */
@@ -205,6 +214,7 @@ export interface DB
   reviewEmail: ReviewEmail
   parsedRecord: ParsedRecord
   routingShadow: RoutingShadow
+  decisionLog: DecisionLog
   criticCalibration: CriticCalibration
   meshMissAck: MeshMissAck
   customers: Customers
