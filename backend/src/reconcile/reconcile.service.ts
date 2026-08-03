@@ -1,9 +1,10 @@
-import { Injectable } from '@nestjs/common'
+import { ConflictException, Injectable } from '@nestjs/common'
 import { mergeShipment } from './merge'
 import { scoreReconGroup } from './score'
 import { strongKeys, mergeKeys, normKey } from './match-keys'
 import { CommitterService, type ReconGroup, type CommitResult } from './committer.service'
 import { EvidenceRepository, type EvidenceRow } from '../db/repositories/evidence.repository'
+import { DecisionLogRepository } from '../db/repositories/decision-log.repository'
 import { SettingsService } from '../settings/settings.service'
 import { isNotificationPlatformSender } from './vendor-forwarder-guard'
 
@@ -13,12 +14,46 @@ export class ReconcileService {
     private readonly evidence: EvidenceRepository,
     private readonly committer: CommitterService,
     private readonly settings: SettingsService,
+    private readonly decisionLog: DecisionLogRepository,
   ) {}
 
-  /** Read all evidence, group into shipments, merge, score, and commit to tracking. Idempotent.
-   *  Scores via the same gate as the agent path, so a manual rebuild no longer emits blanket-confirmed legs. */
-  async run(): Promise<{ evidence: number; groups: number; results: CommitResult[] }> {
+  /**
+   * Rebuild tracking from what the pipeline already decided. Idempotent.
+   *
+   * REPLAY FIRST (0032): when the decision log has rows, re-apply them through the committer in
+   * arrival order. There is no second grouper or merge in that path — a rebuild reproduces the agent
+   * path by construction, divisions included (candrholdings#51's cure).
+   *
+   * The legacy re-derive below survives ONLY as the fallback for data predating the log — and it is
+   * division-blind by design of its era: it unions evidence by shared PO, so a PO that legitimately
+   * moved bookings would re-fuse the two shipments it crossed, and its merge twin would resurrect the
+   * moved record's stale pod. The guard refuses that combination loudly instead of rebuilding wrong.
+   */
+  async run(): Promise<{ evidence: number; groups: number; results: CommitResult[]; mode: 'replay' | 'derive' }> {
+    const logged = await this.decisionLog.allInOrder()
+    if (logged.length) {
+      const results: CommitResult[] = []
+      for (const row of logged) {
+        // ParseJSONResultsPlugin may hand the payload back already parsed — accept both shapes.
+        const p = row.payload as unknown
+        const group = (typeof p === 'string' ? JSON.parse(p) : p) as ReconGroup
+        results.push(await this.committer.apply(group))
+      }
+      return { evidence: logged.length, groups: logged.length, results, mode: 'replay' }
+    }
+
     const rows = await this.evidence.allWithMessage()
+    // 🔴 THE FUSE. Pre-log evidence carrying a division statement means cargo moved bookings — the one
+    // shape this grouper is guaranteed to rebuild wrong. Refusing is strictly better than fusing.
+    const divided = rows.filter((r) => (r.fields as { division?: unknown } | null)?.division)
+    if (divided.length) {
+      throw new ConflictException(
+        `reconcile refused: ${divided.length} evidence record(s) carry a division statement (cargo moved ` +
+          `between bookings) and the decision log is empty. The legacy re-derive would re-fuse the moved ` +
+          `PO's old and new shipments. These shipments were already committed correctly by the agent path; ` +
+          `future decisions land in decision_log (0032), which rebuilds by replay instead.`,
+      )
+    }
     const groups = this.group(rows)
     const threshold = await this.settings.confidenceThreshold()
     const results: CommitResult[] = []
@@ -64,7 +99,7 @@ export class ReconcileService {
       }
       results.push(await this.committer.apply(g))
     }
-    return { evidence: rows.length, groups: groups.length, results }
+    return { evidence: rows.length, groups: groups.length, results, mode: 'derive' }
   }
 
   /** Connected components over shared conversationId, strong match-key, OR PO. */
