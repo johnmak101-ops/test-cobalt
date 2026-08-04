@@ -238,3 +238,66 @@ describe('NewShipmentModal — a long value needs more than one line', () => {
     }
   })
 })
+
+/**
+ * A part-filled form must not vanish. Three separate paths were discarding it with no warning, all
+ * reported as "the popup auto-escapes before I finish filling it in".
+ */
+describe('NewShipmentModal — dismissal must never silently discard typed input', () => {
+  function renderWithClose() {
+    const onClose = vi.fn()
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <MemoryRouter>
+          <NewShipmentModal onClose={onClose} />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    )
+    return { onClose }
+  }
+
+  it('Escape from inside a <select> closes the DROPDOWN, not the form', async () => {
+    // The browser already consumed Escape to dismiss the dropdown; the keydown then bubbled to window
+    // and tore the modal down, so picking a UOM/Mode and changing your mind wiped everything.
+    const { onClose } = renderWithClose()
+    const select = document.querySelector('select')!
+    select.focus()
+    select.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    expect(onClose).not.toHaveBeenCalled()
+  })
+
+  it('Escape on an EMPTY form still closes it (no pointless prompt)', async () => {
+    const { onClose } = renderWithClose()
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    expect(onClose).toHaveBeenCalled()
+  })
+
+  it('Escape on a DIRTY form asks first, and honours "cancel"', async () => {
+    const { onClose } = renderWithClose()
+    await userEvent.type(inputFor('Total Quantity'), '4284')
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    expect(confirm).toHaveBeenCalled()
+    expect(onClose).not.toHaveBeenCalled()
+    confirm.mockRestore()
+  })
+
+  it('a drag that STARTS in a field and ENDS on the backdrop does not close the form', async () => {
+    // A click fires on mouse-UP at the common ancestor, so selecting text and releasing past the panel
+    // edge (or dragging the panel scrollbar) delivered the click to the backdrop.
+    const { onClose } = renderWithClose()
+    const field = inputFor('Total Quantity')
+    const backdrop = document.querySelector('.fixed.inset-0')! as HTMLElement
+    field.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
+    backdrop.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    expect(onClose).not.toHaveBeenCalled()
+  })
+
+  it('a genuine press-and-release on the backdrop still closes an empty form', async () => {
+    const { onClose } = renderWithClose()
+    const backdrop = document.querySelector('.fixed.inset-0')! as HTMLElement
+    backdrop.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
+    backdrop.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    expect(onClose).toHaveBeenCalled()
+  })
+})

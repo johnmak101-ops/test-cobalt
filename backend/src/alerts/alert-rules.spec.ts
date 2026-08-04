@@ -501,3 +501,29 @@ describe('document chases must be about a document that exists and an action sti
     ).toBe(true)
   })
 })
+
+describe('a DISABLED rule must not fire — including the built-in A7', () => {
+  // A1-A6 go through isFiring(), which returns false on `!rule.enabled`. A7 is evaluated by its own
+  // bespoke path that never read the flag, so an A7 switched OFF in settings kept raising WARNINGs and
+  // its existing alerts never resolved. These pin the contract the UI implies: off means off.
+  it('isFiring() refuses a disabled rule regardless of the facts', () => {
+    const facts = {
+      state: 'AT_WAREHOUSE',
+      originCountry: 'KH',
+      etd: new Date('2026-07-16T00:00:00Z'),
+      has: { so: false, draftBl: false, finalBl: false, telex: false, invoice: false, sailed: false, delivered: false },
+    } as unknown as Parameters<typeof isFiring>[1]
+    const base = {
+      id: 'A1',
+      watchFor: 'draft_bl',
+      triggerReference: 'etd',
+      thresholdHours: 24,
+      countryThresholds: null,
+      severity: 'WARNING',
+      state: null,
+    }
+    const now = new Date('2026-07-30T00:00:00Z')
+    expect(isFiring({ ...base, enabled: true } as Parameters<typeof isFiring>[0], facts, now)).toBe(true)
+    expect(isFiring({ ...base, enabled: false } as Parameters<typeof isFiring>[0], facts, now)).toBe(false)
+  })
+})
