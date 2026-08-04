@@ -19,6 +19,7 @@ import { ReviewModule } from './review/review.module'
 import { SettingsModule } from './settings/settings.module'
 import { AlertsModule } from './alerts/alerts.module'
 import { EmailsModule } from './emails/emails.module'
+import { ErpExportModule } from './erp-export/erp-export.module'
 import { RepositoriesModule } from './db/repositories.module'
 import { PresentationModule } from './presentation/presentation.module'
 import { AuthModule } from './auth/auth.module'
@@ -57,6 +58,7 @@ import { AdminModule } from './admin/admin.module'
     SettingsModule,
     AlertsModule,
     EmailsModule,
+    ErpExportModule,
   ],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
 })

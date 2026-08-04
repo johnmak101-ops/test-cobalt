@@ -7,11 +7,12 @@ import { isStyleTokenSuperset, isEntirelyPoShapedStyle } from '../../lib/style-t
 export type PoEnrichInput = Partial<{ brand: string | null; itemStyleNo: string | null; totalQuantity: number | null; quantityUnit: string | null; qtyConflict: string[] | null }>
 
 /** Normalized PO key for the queryable `po_number_norm` index (0004). A FROZEN parity copy of match-keys.ts
- *  `normKey` (strip non-alphanumerics + upper-case) — kept LOCAL to avoid a db→reconcile layer import. The
- *  committer's PO-candidate query compares this against `normKey`-computed groupPos, so it MUST stay
- *  byte-identical to `normKey`; the committer-candidate-query int specs seed raw + query normalized, guarding
- *  the parity end-to-end. */
-const poNumberNorm = (v: unknown): string => String(v ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '')
+ *  `normKey` (strip non-alphanumerics + upper-case) — kept in the db layer to avoid a db→reconcile import
+ *  (exported for downward imports, e.g. the ERP export's tolerant poNumber lookup). The committer's
+ *  PO-candidate query compares this against `normKey`-computed groupPos, so it MUST stay byte-identical to
+ *  `normKey`; the committer-candidate-query int specs seed raw + query normalized, guarding the parity
+ *  end-to-end. */
+export const poNumberNorm = (v: unknown): string => String(v ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '')
 
 /** Kysely/SQL Server port of PurchaseOrderRepository. PO master reads + CRUD + PO↔shipment links. */
 @Injectable()
