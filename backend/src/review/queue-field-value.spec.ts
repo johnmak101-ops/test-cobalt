@@ -1,6 +1,15 @@
 import { describe, it, expect } from 'vitest'
 import { queueLearningValue } from './queue-field-value'
 
+/**
+ * Same rule as leg-day.spec: the offset-sensitive cases only mean something at a positive UTC offset,
+ * which is the deployed reality (docker-compose pins `TZ: ${TZ:-Asia/Hong_Kong}`). At UTC+0 the bug
+ * cannot reproduce, so they are skipped rather than asserted into a false pass. Everything else is
+ * written with LOCAL Date constructors, which behave identically in every zone.
+ */
+const aheadOfUtc = -new Date('2026-05-08T00:00:00').getTimezoneOffset() > 0
+const maybe = aheadOfUtc ? it : it.skip
+
 describe('queueLearningValue — what the queue learning feed receives', () => {
   it('formats a leg date as the parser does (YYYY-MM-DD), not as an ISO instant', () => {
     // The regression: toStr gave 2026-05-08T00:00:00.000Z, which no re-parse can ever produce, so the
@@ -10,11 +19,11 @@ describe('queueLearningValue — what the queue learning feed receives', () => {
     expect(queueLearningValue('cargoReadyDate', d)).toBe('2026-05-08')
   })
 
-  it('uses the LOCAL day, so an east-of-Greenwich instant does not slide to the previous date', () => {
-    // Leg dates are naive local wall-clock stored as UTC; slicing the ISO string returns the day before.
-    const d = new Date(2026, 4, 8, 0, 30, 0)
-    expect(queueLearningValue('etd', d)).toBe('2026-05-08')
-    expect(d.toISOString().slice(0, 10) === '2026-05-08').toBe(process.env.TZ === 'UTC')
+  maybe('uses the LOCAL day exactly where a UTC slice would slide back one', () => {
+    // Leg dates are naive local wall-clock stored as UTC, so the ISO slice returns the PREVIOUS day.
+    const legDate = new Date(2026, 4, 8, 0, 0)
+    expect(legDate.toISOString().slice(0, 10)).toBe('2026-05-07')
+    expect(queueLearningValue('etd', legDate)).toBe('2026-05-08')
   })
 
   it('keeps day granularity for the timed columns — the parser has no finer form to compare against', () => {
@@ -23,7 +32,8 @@ describe('queueLearningValue — what the queue learning feed receives', () => {
   })
 
   it('accepts an ISO string on a date column (the DTO may not be coerced yet)', () => {
-    expect(queueLearningValue('atd', '2026-05-08T00:00:00.000+08:00')).toBe('2026-05-08')
+    // No zone suffix → parsed as LOCAL wall-clock, which is what the UI sends and what the column holds.
+    expect(queueLearningValue('atd', '2026-05-08T00:00:00')).toBe('2026-05-08')
   })
 
   it('passes non-date columns through as text', () => {
