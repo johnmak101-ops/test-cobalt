@@ -2,6 +2,7 @@ import { Injectable, Logger, NotFoundException } from '@nestjs/common'
 import { ReviewEmailRepository } from '../db/repositories/review-email.repository'
 import { MastersRepository } from '../db/repositories/masters.repository'
 import { ShipmentsService } from '../shipments/shipments.service'
+import { PriorCorrectionService } from '../review/prior-correction.service'
 import { stateToUiStatus } from '../presentation/adapters/enums'
 import type { ReviewEmailDto } from './review-queue.dto'
 
@@ -19,6 +20,7 @@ export class ReviewQueueService {
     private readonly reviewEmails: ReviewEmailRepository,
     private readonly shipments: ShipmentsService,
     private readonly masters: MastersRepository,
+    private readonly priorCorrections: PriorCorrectionService,
   ) {}
 
   /** Emails in one review state (default: the pending NEEDS_REVIEW tab). The repo returns the linked
@@ -69,7 +71,7 @@ export class ReviewQueueService {
       if (row.shipmentId) await this.shipments.applyExtractionCorrection(row.shipmentId, corrected, actorId, dto.notes)
       // matcher Phase 3 (design decision D): a human raw-name→code correction becomes a prior_correction
       // RETRIEVAL fact — it boosts that code as a candidate next time; the LLM still decides every time.
-      await this.recordPriorCorrections(row.extractedData ?? {}, corrected, actorId)
+      await this.priorCorrections.recordFromExtraction(row.extractedData ?? {}, corrected, actorId)
       return this.reviewEmails.update(id, {
         ...base,
         reviewStatus: 'REVIEWED_CORRECTED',
@@ -90,42 +92,8 @@ export class ReviewQueueService {
     return this.reviewEmails.update(id, { ...base, reviewStatus: 'REVIEWED_OK' })
   }
 
-  /** When a reviewer replaces a RAW party name with a real master code, persist it as a
-   *  `prior_correction` fact (lhs = the raw string, rhs = the code). Supersedes any active fact for the
-   *  same raw name (latest human word wins). Never throws — a facts hiccup must not sink the verdict. */
-  private async recordPriorCorrections(
-    original: Record<string, unknown>,
-    corrected: Record<string, unknown>,
-    actorId: string,
-  ): Promise<void> {
-    const fields: Array<[string, (code: string) => Promise<unknown>]> = [
-      ['customer_code', (c) => this.masters.customerByCode(c)],
-      ['vendor_code', (c) => this.masters.vendorIdByCode(c)],
-      // all-AI spec (v2): forwarder + port corrections must feed the retrieval boost too,
-      // else the learning loop stays open for the two new kinds.
-      ['forwarder_name', (c) => this.masters.forwarderIdByCode(c)],
-      ['pol', (c) => this.masters.portIdByUnlocode(c)],
-      ['pod', (c) => this.masters.portIdByUnlocode(c)],
-    ]
-    for (const [field, lookup] of fields) {
-      const oldVal = String(original[field] ?? '').trim()
-      const newVal = String(corrected[field] ?? '').trim()
-      if (!oldVal || !newVal || oldVal.toUpperCase() === newVal.toUpperCase()) continue
-      try {
-        // only a raw→code replacement qualifies: the OLD value must NOT be a master code, the NEW must be
-        const [oldIsCode, newIsCode] = await Promise.all([lookup(oldVal), lookup(newVal)])
-        if (oldIsCode || !newIsCode) continue
-        await this.masters.deactivateActiveFor('prior_correction', oldVal)
-        await this.masters.insertOpsFact({
-          kind: 'prior_correction',
-          lhs: oldVal,
-          rhs: newVal.toUpperCase(),
-          reason: `review correction (${field})`,
-          createdBy: actorId,
-        })
-      } catch (e) {
-        this.log.warn(`prior_correction write skipped for ${field} "${oldVal}": ${(e as Error).message}`)
-      }
-    }
-  }
+  // The raw-name→code fact write moved to PriorCorrectionService: an operator can fix a mis-resolved
+  // party from three surfaces (this verdict, a review field edit, an Order Details save) and only this
+  // one recorded anything — while Order Details is the screen they actually use. One implementation,
+  // three call sites; a second copy is how the merge-policy fixtures drifted apart.
 }

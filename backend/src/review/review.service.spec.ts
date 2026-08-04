@@ -9,6 +9,7 @@ import type { CriticCalibrationRepository } from '../db/repositories/critic-cali
 import type { MastersRepository } from '../db/repositories/masters.repository'
 import type { QueueLearningClient, CorrectionPayload } from './queue-learning.client'
 import { normBookingKey } from '../reconcile/match-keys'
+import type { PriorCorrectionService } from './prior-correction.service'
 
 const UPDATED_AT = new Date('2026-07-01T12:00:00.000Z')
 const leg = { id: 'leg-1', reviewStatus: 'provisional', grossWeight: 5, etd: null, updatedAt: UPDATED_AT }
@@ -38,6 +39,9 @@ function makeService(legOverride: Record<string, unknown> | null = {}) {
   const calibration = {
     insert: vi.fn(async () => undefined),
   }
+  // The prior_correction writer is injected so a unit test never reaches master_resolution. Tests that
+  // assert ON it pass their own spy; the rest inject silence.
+  const priorCorrections = { recordFromLegEdit: vi.fn(async () => 'skipped' as const), recordFromExtraction: vi.fn(async () => undefined) }
   const masters = {
     portIdByUnlocode: vi.fn(async (): Promise<string | null> => null),
     vendorIdExact: vi.fn(async (): Promise<string | null> => null),
@@ -52,6 +56,7 @@ function makeService(legOverride: Record<string, unknown> | null = {}) {
     queueLearning as unknown as QueueLearningClient,
     calibration as unknown as CriticCalibrationRepository,
     masters as unknown as MastersRepository,
+    priorCorrections as unknown as PriorCorrectionService,
   )
   return { svc, shipments, bookings, locks, audit, queueLearning, calibration, masters }
 }

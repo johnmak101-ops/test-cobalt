@@ -8,6 +8,7 @@ import { MastersRepository } from '../db/repositories/masters.repository'
 import type { CalibrationOutcome } from '../db/kysely/db'
 import type { CriticReview } from '../decisions/critic-review.types'
 import { QueueLearningClient } from './queue-learning.client'
+import { PriorCorrectionService } from './prior-correction.service'
 import { syncIdentityMatchKeys } from '../shipments/identity-keys'
 import { coerceLegField } from '../shipments/coerce-field'
 import { keysOverlap, normBookingKey, normKey, strongKeys } from '../reconcile/match-keys'
@@ -106,6 +107,7 @@ export class ReviewService {
     private readonly queueLearning: QueueLearningClient,
     private readonly calibration: CriticCalibrationRepository,
     private readonly masters: MastersRepository,
+    private readonly priorCorrections: PriorCorrectionService,
   ) {}
 
   private bandFromLeg(leg: { criticReview?: CriticReview | null | unknown }): 'low' | 'medium' | 'high' | null {
@@ -289,6 +291,11 @@ export class ReviewService {
         [field === 'vendorRaw' ? 'vendorId' : 'customerId']: masterId,
       })
     }
+    // Same as the Order Details path: a party/port fix is the operator answering "this raw name is
+    // actually that master", so it becomes a `prior_correction` RETRIEVAL BOOST. No-op for every
+    // other column. (Recorded here, not only on the review-queue verdict, so which screen the operator
+    // happened to use stops deciding whether the system learns anything.)
+    await this.priorCorrections.recordFromLegEdit(field, current[field], value, actorId)
     await this.fieldLocks.lock('shipment', shipmentId, field, toStr(value), actorId)
     await this.audit.write({
       entityType: 'shipment', entityId: shipmentId, field,
