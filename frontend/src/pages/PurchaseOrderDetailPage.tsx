@@ -156,9 +156,13 @@ export default function PurchaseOrderDetailPage() {
       {(po.linkedShipments?.some((s) => s.reviewStatus === 'provisional') ?? false) && (
         <div className="flex items-center gap-3 rounded-xl border border-status-warning/40 bg-status-warning/10 px-4 py-3">
           <AlertTriangle size={16} className="shrink-0 text-status-warning" />
+          {/* Just the fact. The old trailing clause ("figures on this PO may still change") read as a
+              warning about THIS PO's own numbers being unreliable, when all it meant was that a linked
+              shipment has not been reviewed yet. The count and the words "awaiting review" already say
+              that, and the linked-shipments list below shows which one. */}
           <p className="text-sm text-status-warning">
             {po.linkedShipments!.filter((s) => s.reviewStatus === 'provisional').length} linked shipment(s)
-            awaiting review — figures on this PO may still change.
+            awaiting review
           </p>
         </div>
       )}

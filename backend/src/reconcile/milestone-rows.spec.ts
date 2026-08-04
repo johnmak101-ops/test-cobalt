@@ -96,3 +96,42 @@ describe('deriveEmailRows — related emails deduped by graph id (pure)', () => 
     expect(deriveEmailRows('s1', [ev('SO', '2026-02-01', null)])).toEqual([])
   })
 })
+
+describe('a source event with no receivedAt must not mint a 1970 milestone', () => {
+  // `new Date(null)` is EPOCH ZERO, not an error. On a real commit run 9 of 38 milestones landed on
+  // 1970-01-01 — all email-derived, because this loop lacked the null guard the field-derived loop has.
+  //
+  // The consequence was not cosmetic: a phantom DRAFT_BL_RECEIVED@1970 on a leg with NO hbl/mbl made the
+  // alert evaluator's `has.draftBl` true, so it judged the draft-B/L watch satisfied and suppressed the
+  // "No Draft B/L" alert on a shipment that had never received one.
+  const emailType = Object.keys(MILESTONE_OF)[0]!
+
+  it('skips the milestone when receivedAt is null', () => {
+    const rows = deriveMilestoneRows('s1', [{ emailType, receivedAt: null as unknown as string }], {}, 'BOOKED')
+    expect(rows.filter((r) => r.milestoneType === MILESTONE_OF[emailType])).toHaveLength(0)
+  })
+
+  it('skips the milestone when receivedAt is an unparseable string', () => {
+    const rows = deriveMilestoneRows('s1', [ev(emailType, 'not-a-date')], {}, 'BOOKED')
+    expect(rows.filter((r) => r.milestoneType === MILESTONE_OF[emailType])).toHaveLength(0)
+  })
+
+  it('NO emitted milestone is ever dated at or before the unix epoch', () => {
+    const rows = deriveMilestoneRows(
+      's1',
+      [{ emailType, receivedAt: null as unknown as string }, ev(Object.keys(MILESTONE_OF)[1] ?? emailType, '2026-07-16T00:00:00Z')],
+      { warehouse_start_date: '2026-07-16', atd: '2026-07-20' },
+      'SAILED',
+    )
+    for (const r of rows) {
+      expect(new Date(r.occurredAt as Date).getTime()).toBeGreaterThan(0)
+    }
+  })
+
+  it('still emits normally when receivedAt is a real date', () => {
+    const rows = deriveMilestoneRows('s1', [ev(emailType, '2026-07-16T09:30:00Z')], {}, 'BOOKED')
+    const hit = rows.find((r) => r.milestoneType === MILESTONE_OF[emailType])
+    expect(hit).toBeDefined()
+    expect((hit!.occurredAt as Date).toISOString()).toBe('2026-07-16T09:30:00.000Z')
+  })
+})

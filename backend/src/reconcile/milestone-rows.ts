@@ -30,14 +30,29 @@ export function deriveMilestoneRows(
 ): MilestoneRow[] {
   const seen = new Set<string>()
   const rows: MilestoneRow[] = []
-  for (const ev of [...events].sort((a, b) => a.receivedAt.localeCompare(b.receivedAt))) {
+  for (const ev of [...events].sort((a, b) => String(a.receivedAt ?? '').localeCompare(String(b.receivedAt ?? '')))) {
     const mt = MILESTONE_OF[ev.emailType]
     if (!mt || seen.has(mt)) continue
+    // 🔴 `new Date(null)` is EPOCH ZERO, not an error — so a source event with no receivedAt used to
+    // write a milestone dated 1970-01-01. Measured on a real commit run: 9 of 38 milestones landed on
+    // 1970-01-01, all of them email-derived (BOOKING_SENT / SO_RECEIVED / DRAFT_BL_RECEIVED /
+    // FINAL_BL_RECEIVED). The field-derived loop below never had this bug because `date()` returns null
+    // and it does `if (!occurredAt) continue` — this loop simply lacked the same guard.
+    //
+    // It is not cosmetic. A phantom `DRAFT_BL_RECEIVED@1970` on a leg carrying NO hbl/mbl made
+    // `has.draftBl = !!draftBlAt` true, so the alert evaluator judged the draft-B/L watch SATISFIED and
+    // suppressed the "No Draft B/L" warning on a shipment that had never received one. A fabricated
+    // timeline entry silenced a real chase.
+    //
+    // Skip rather than substitute: an absent milestone is honest, and every consumer already treats a
+    // missing milestone as "not yet". Inventing `now` would be a second fabricated date.
+    const occurredAt = ev.receivedAt ? new Date(ev.receivedAt) : null
+    if (!occurredAt || Number.isNaN(occurredAt.getTime())) continue
     seen.add(mt)
     rows.push({
       shipmentId,
       milestoneType: mt as MilestoneRow['milestoneType'],
-      occurredAt: new Date(ev.receivedAt),
+      occurredAt,
       senderType: 'forwarder',
       emailMessageId: ev.graphId ?? null, // graph id → "view original" re-fetch
     })
