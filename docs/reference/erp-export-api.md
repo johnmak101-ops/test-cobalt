@@ -113,9 +113,32 @@ A PO split across two shipments — the nested array carries each split honestly
 3. Party `*_code` fields are resolved against the Mesh masters mirror, so they are the ERP's own keys. When a `*_code` is null and only `*_raw` is present, ShipTrack could not resolve the name — do not guess the code ERP-side; fix the master or the raw name in ShipTrack.
 4. Dates are stored on the Hong Kong wall-clock convention; confirm expected serialization with the ERP importer before mapping.
 
+## Live verification (2026-08-04, local dev stack)
+
+Verified end-to-end against the running backend (`start:prod` dist + mssql-2022, 104 POs / 76 legs of pipeline-ingested demo data):
+
+| Check | Result |
+|-------|--------|
+| Unauthenticated | `401` |
+| `fields=eta,banana` | `400` — "unknown fields: banana — see GET /api/erp-export/fields" |
+| `state=JUNK` | `400` with the valid state list |
+| Catalog | 75 fields / 12 groups; identity fields always-on |
+| Tolerant lookup | ` 024-238 ` → matched `024238` |
+| `since` in the future | `total: 0` (filter discriminates) |
+| Full catalog, all 104 POs, one page | **~0.25 s** / 283 KB |
+| Narrow fields (`state,status_label,etd,eta,quantity_shipped`) | ~0.21 s / 29 KB |
+| Single-PO lookup | ~0.21 s |
+| `/fields` | ~8 ms |
+
+Two operational notes from the run:
+
+- **A default query returning `total: 0` can be the confirmed-only gate, not an outage.** The local dev DB is 100% pipeline-ingested and unreviewed, so every leg is `provisional` and the default (confirmed-only) output is legitimately empty; `includeProvisional=true` revealed all 104 POs. In production, human-reviewed/auto-accepted rows export by default. Check `review_status` distribution before diagnosing an empty feed.
+- **Single-PO lookups cost the same as the full list** (~0.2 s floor): filtering happens in-process after loading active legs + links. Irrelevant at hundreds of legs; if volume reaches tens of thousands, push `poNumber`/`since` into the SQL (tracked below).
+
 ## Deliberately deferred (next phases)
 
 - **Sent-state ledger** (`erp_export_batch`/`erp_export_item`) — "what did the ERP already receive" diffs, idempotent re-sends, audit.
 - **Push transport** — the Mesh API is masters-read-only today; an import endpoint must be requested from C&R before ShipTrack can push. Until then the consumer pulls.
 - **xlsx output** in Mesh's import format.
 - **Dedicated service account / read-only role** for the IT and chatbot consumers.
+- **SQL-side filter pushdown** (`poNumber`/`since` into the query) — only if leg volume grows to tens of thousands; measured unnecessary at current scale.
