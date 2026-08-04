@@ -605,6 +605,58 @@ export class ShipmentRepository {
     return map
   }
 
+  /** Common PO-master select for the ERP export (PO fields + resolved customer/vendor codes).
+   *  Kept separate from linkedPosForShipments so the hot UI list query keeps its narrower select. */
+  private static exportPoColumns() {
+    return [
+      'purchaseOrders.id as poId',
+      'purchaseOrders.poNumber as poNumber',
+      'purchaseOrders.poNumberNorm as poNumberNorm',
+      'purchaseOrders.brand as brand',
+      'purchaseOrders.itemStyleNo as itemStyleNo',
+      'purchaseOrders.totalQuantity as totalQuantity',
+      'purchaseOrders.quantityUnit as quantityUnit',
+      'purchaseOrders.crd as crd',
+      'customers.code as customerCode',
+      'customers.name as customerName',
+      'vendors.code as vendorCode',
+      'vendors.name as vendorName',
+    ] as const
+  }
+
+  /** ERP export: shipment_pos links + PO master + party codes for many legs in ONE query. */
+  async exportPoLinksForShipments(shipmentIds: string[]) {
+    if (!shipmentIds.length) return []
+    return this.db
+      .selectFrom('shipmentPos')
+      .innerJoin('purchaseOrders', 'shipmentPos.poId', 'purchaseOrders.id')
+      .leftJoin('customers', 'purchaseOrders.customerId', 'customers.id')
+      .leftJoin('vendors', 'purchaseOrders.vendorId', 'vendors.id')
+      .where('shipmentPos.shipmentId', 'in', shipmentIds)
+      .select([
+        'shipmentPos.shipmentId as shipmentId',
+        'shipmentPos.quantity as legQty',
+        'shipmentPos.quantityUnit as legQtyUnit',
+        'shipmentPos.inferred as inferred',
+        ...ShipmentRepository.exportPoColumns(),
+      ])
+      .execute()
+  }
+
+  /** ERP export fallback for legacy legs with no shipment_pos rows: booking-level PO links
+   *  (booking_pos), same PO columns, no per-leg quantity/inferred. */
+  async exportPoLinksForBookings(bookingIds: string[]) {
+    if (!bookingIds.length) return []
+    return this.db
+      .selectFrom('bookingPos')
+      .innerJoin('purchaseOrders', 'bookingPos.poId', 'purchaseOrders.id')
+      .leftJoin('customers', 'purchaseOrders.customerId', 'customers.id')
+      .leftJoin('vendors', 'purchaseOrders.vendorId', 'vendors.id')
+      .where('bookingPos.bookingId', 'in', bookingIds)
+      .select(['bookingPos.bookingId as bookingId', ...ShipmentRepository.exportPoColumns()])
+      .execute()
+  }
+
   /**
    * The OTHER legs that carry any of this leg's POs — the reference behind "this PO is already on
    * another shipment".
