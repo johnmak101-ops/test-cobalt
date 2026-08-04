@@ -4,6 +4,7 @@ import { createKysely, parseMssqlConnectionString } from '../src/db/kysely/mssql
 import { runMigrations } from '../src/db/kysely/migrate'
 import type { DB } from '../src/db/kysely/db'
 import { MastersRepository } from '../src/db/repositories/masters.repository'
+import { PriorCorrectionService } from '../src/review/prior-correction.service'
 import { BookingRepository } from '../src/db/repositories/booking.repository'
 import { PurchaseOrderRepository } from '../src/db/repositories/purchase-order.repository'
 import { ShipmentRepository } from '../src/db/repositories/shipment.repository'
@@ -85,5 +86,9 @@ export function repos(db: TestDB) {
     routingShadow: new RoutingShadowRepository(db),
     decisionLog: new DecisionLogRepository(db),
     criticCalibration: new CriticCalibrationRepository(db),
+    // Not a repository: the raw-name->code fact writer every edit path now calls. Built here so the
+    // specs that construct these services share ONE wiring, and so an integration spec exercises the
+    // real write against the TEST db instead of stubbing the new path out of existence.
+    priorCorrections: new PriorCorrectionService(new MastersRepository(db)),
   }
 }

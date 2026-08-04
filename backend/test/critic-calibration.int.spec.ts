@@ -46,6 +46,8 @@ beforeAll(async () => {
     r.audit,
     new QueueLearningClient({ get: (k: string) => process.env[k] } as any),
     r.criticCalibration,
+    r.masters,
+    r.priorCorrections,
   )
   calibration = r.criticCalibration
 })

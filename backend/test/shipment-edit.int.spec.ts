@@ -11,7 +11,7 @@ beforeAll(async () => {
   db = t.db
   const r = repos(db)
   const queueLearning = { postCorrection: async () => undefined } as never
-  service = new ShipmentsService(r.shipment, r.booking, r.fieldLock, r.audit, null as never, queueLearning, r.masters)
+  service = new ShipmentsService(r.shipment, r.booking, r.fieldLock, r.audit, null as never, queueLearning, r.masters, r.priorCorrections)
 })
 afterAll(closeTestDb)
 beforeEach(async () => {
