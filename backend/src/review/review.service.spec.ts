@@ -220,7 +220,11 @@ describe('ReviewService.correct — coercion + field locks', () => {
     const { svc, queueLearning } = makeService()
     await svc.correct('leg-1', { fields: { etd: '2026-07-12' }, reason: 'ETD was the CFS date' }, 'user-1')
     expect(queueLearning.postCorrection).toHaveBeenCalledWith(expect.objectContaining({
-      messageId: 'graph-1', field: 'etd', agentSaid: null, humanCorrected: '2026-07-12T00:00:00.000Z', note: 'ETD was the CFS date',
+      // A DATE goes out in the parser's own format. This assertion used to demand
+      // '2026-07-12T00:00:00.000Z' — the ISO instant toStr produced — which pinned the defect in place:
+      // the queue scores by comparing this string against a re-parse, and no parse ever emits an ISO
+      // instant, so every date correction was fuel that could not burn (see queue-field-value.ts).
+      messageId: 'graph-1', field: 'etd', agentSaid: null, humanCorrected: '2026-07-12', note: 'ETD was the CFS date',
       kind: 'correction',
     }))
   })

@@ -13,7 +13,7 @@ import { coerceLegField } from '../shipments/coerce-field'
 import { keysOverlap, normBookingKey, normKey, strongKeys } from '../reconcile/match-keys'
 import type { CorrectDto, IdentifyDto, LinkDto } from './dto'
 import { logAmbiguityPickFromLink } from './ambiguity-pick-log'
-import { legDay } from '../common/leg-day'
+import { queueLearningValue } from './queue-field-value'
 
 /** IdentifyDto snake_case strong-key field → camelCase shipment column. */
 const KEY_TO_LEG_COLUMN: Record<IdentifyDto['field'], string> = {
@@ -81,28 +81,11 @@ const toQueueField = (col: string): string =>
  *  either: a one-click confirm was emitting "this is right" labels for values the operator never saw —
  *  blind endorsements feeding the learning eval. Rule: never confirm what the desk does not show.
  *  All four stay correctable (they are edited on other surfaces). */
-const CONFIRMABLE_FIELDS: { column: string; isDate: boolean }[] = [
-  { column: 'bookingNo', isDate: false }, { column: 'soNo', isDate: false },
-  { column: 'qty', isDate: false }, { column: 'qtyUnit', isDate: false }, { column: 'hblAwbFcrNo', isDate: false },
-  { column: 'mbl', isDate: false }, { column: 'containerNo', isDate: false }, { column: 'scacCode', isDate: false },
-  { column: 'vesselName', isDate: false }, { column: 'voyageNo', isDate: false }, { column: 'consigneeName', isDate: false },
-  { column: 'consigneeAddress', isDate: false }, { column: 'cargoReadyDate', isDate: true },
-  { column: 'etd', isDate: true }, { column: 'atd', isDate: true }, { column: 'eta', isDate: true }, { column: 'ata', isDate: true },
-  { column: 'warehouseStartDate', isDate: true }, { column: 'warehouseEndDate', isDate: true },
+const CONFIRMABLE_FIELDS: string[] = [
+  'bookingNo', 'soNo', 'qty', 'qtyUnit', 'hblAwbFcrNo', 'mbl', 'containerNo', 'scacCode',
+  'vesselName', 'voyageNo', 'consigneeName', 'consigneeAddress', 'cargoReadyDate',
+  'etd', 'atd', 'eta', 'ata', 'warehouseStartDate', 'warehouseEndDate',
 ]
-
-/** The value a confirm freezes: what the reviewer SAW, in the parser's own format (dates → YYYY-MM-DD so a
- *  later soul re-parse compares equal). Null/blank → not confirmable. */
-function confirmValue(isDate: boolean, value: unknown): string | null {
-  if (value == null || value === '') return null
-  if (isDate) {
-    const d = value instanceof Date ? value : new Date(String(value))
-    // Local day: a UTC slice froze the PREVIOUS day, so the later soul re-parse compared against
-    // a date the reviewer never saw and could never match (see legDay).
-    return Number.isNaN(d.getTime()) ? null : legDay(d)
-  }
-  return String(value)
-}
 
 /**
  * The human review workflow over the commit-first model: provisional shipments are listed here,
@@ -255,9 +238,9 @@ export class ReviewService {
    *  Skips entirely when messageId is null (no resolvable source graph id — do not poison the queue). */
   private async emitConfirms(leg: Record<string, unknown>, edited: Set<string>, messageId: string | null, forwarder: string | null) {
     if (messageId == null) return
-    for (const { column, isDate } of CONFIRMABLE_FIELDS) {
+    for (const column of CONFIRMABLE_FIELDS) {
       if (edited.has(column)) continue
-      const frozen = confirmValue(isDate, leg[column])
+      const frozen = queueLearningValue(column, leg[column])
       if (frozen == null) continue
       await this.queueLearning.postCorrection({
         messageId, field: toQueueField(column), agentSaid: frozen, humanCorrected: frozen, forwarder, note: null, kind: 'confirm',
@@ -318,7 +301,11 @@ export class ReviewService {
     // (#236 P2) — shipment UUID is not a valid messageId for the queue.
     if (messageId != null) {
       await this.queueLearning.postCorrection({
-        messageId, field: toQueueField(field), agentSaid: toStr(current[field]), humanCorrected: toStr(value),
+        // queueLearningValue, not toStr: a leg date is a Date, and toStr's ISO string is a format the
+        // parser never emits — every date correction was a guaranteed holdout miss. Same reason the
+        // field NAME is aliased above; this is the same fix one layer down, on the VALUE.
+        messageId, field: toQueueField(field),
+        agentSaid: queueLearningValue(field, current[field]), humanCorrected: queueLearningValue(field, value),
         forwarder, note: learningNote, kind: 'correction',
       })
     }
