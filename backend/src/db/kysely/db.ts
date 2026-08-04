@@ -89,6 +89,10 @@ export interface Shipments
    *  committer from the decision's `journey` (queue groupJourney, latest-carrying-wins). Read by
    *  journeyRoute() to render `PVG→DEL→LHR`. Same codegen caveat as `cartons`. */
   journey: string | null
+  /** Migration 0033 — COMPUTED column (`JSON_VALUE(match_keys, '$.conversation_id')` capped at
+   *  nvarchar(450), indexed) so `legsByConversationId` seeks instead of scanning. SQL Server rejects
+   *  writes to a computed column — hence insert/update `never`. Same codegen caveat as `cartons`. */
+  conversationKey: ColumnType<string | null, never, never>
   reviewReasons: Json<string[] | null>
   matchKeys: Json<Record<string, unknown> | null>
   criticReview: Json<CriticReview | null>
