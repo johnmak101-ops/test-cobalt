@@ -273,6 +273,27 @@ describe('ShipmentRepository (SQL Server)', () => {
     const g = await repo.sourceGraphIdFor(s.id)
     expect(g).toBe('g2') // newest received_at
     expect(await repo.sourceGraphIdFor(randomUUID())).toBeNull()
+    // in-payload duplicate gmid → deduped to ONE row (uq_shipment_emails), no throw
+    await repo.replaceEmails(s.id, [
+      { shipmentId: s.id, graphMessageId: 'g3', emailType: 'SO', receivedAt: new Date('2026-07-06') },
+      { shipmentId: s.id, graphMessageId: 'g3', emailType: 'SO', receivedAt: new Date('2026-07-06') },
+      { shipmentId: s.id, graphMessageId: null, emailType: 'SO', receivedAt: null }, // gmid-less rows are skipped
+    ])
+    const rows = await db.selectFrom('shipmentEmails').where('shipmentId', '=', s.id).selectAll().execute()
+    expect(rows).toHaveLength(1)
+    expect(rows[0].graphMessageId).toBe('g3')
+  })
+
+  it('legsByConversationId matches via the computed conversation_key (0033)', async () => {
+    const b = await seedBooking()
+    const withConv = await repo.insertLeg({
+      bookingId: b, legNo: 901, matchKeys: { conversation_id: 'conv-seek-1', customer_po: '28631' },
+    })
+    await repo.insertLeg({ bookingId: b, legNo: 902, matchKeys: { conversation_id: 'conv-other' } })
+    await repo.insertLeg({ bookingId: b, legNo: 903, matchKeys: { customer_po: '28631' } }) // no conversation_id
+    const legs = await repo.legsByConversationId('conv-seek-1')
+    expect(legs.map((l) => l.id)).toEqual([withConv.id])
+    expect(await repo.legsByConversationId('conv-missing')).toEqual([])
   })
 
   it('activeLegs / findByIds expose firstEmailAt = earliest source-email received_at (#350)', async () => {

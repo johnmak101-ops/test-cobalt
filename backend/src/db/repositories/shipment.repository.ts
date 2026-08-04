@@ -133,11 +133,14 @@ export class ShipmentRepository {
   }
 
   /** Live legs of one email thread — the adoption candidate set (A2's index can't cover this:
-   *  a zero-identity leg has no strong keys, so it only exists in match_keys JSON). */
+   *  a zero-identity leg has no strong keys, so it only exists in match_keys JSON).
+   *  Seeks `ix_shipments_conversation_key` (computed column, 0033); the JSON_VALUE residual re-checks
+   *  full equality because the indexed key is capped at nvarchar(450). */
   legsByConversationId(conversationId: string) {
     return this.db
       .selectFrom('shipments')
       .selectAll()
+      .where('conversationKey', '=', conversationId.slice(0, 450))
       .where(sql<boolean>`JSON_VALUE(match_keys, '$.conversation_id') = ${conversationId}`)
       .execute()
   }
@@ -845,20 +848,23 @@ export class ShipmentRepository {
   async replaceEmails(shipmentId: string, rows: Record<string, unknown>[]) {
     if (!rows.length) return
     await this.db.deleteFrom('shipmentEmails').where('shipmentId', '=', shipmentId).execute()
-    // insert idempotently on (shipment_id, graph_message_id) — check-then-insert per row
-    for (const r of rows) {
+    // the delete cleared the set, so only in-payload duplicates can collide — dedupe here, insert batched
+    const seen = new Set<string>()
+    const unique = rows.filter((r) => {
       const graphMessageId = r.graphMessageId as string | null
-      if (!graphMessageId) continue
-      const existing = await this.db
-        .selectFrom('shipmentEmails')
-        .where('shipmentId', '=', shipmentId)
-        .where('graphMessageId', '=', graphMessageId)
-        .select('id')
-        .executeTakeFirst()
-      if (existing) continue
+      if (!graphMessageId || seen.has(graphMessageId)) return false
+      seen.add(graphMessageId)
+      return true
+    })
+    // 300 rows × ~6 columns stays under the 2100-parameter cap
+    for (let i = 0; i < unique.length; i += 300) {
       try {
-        await this.db.insertInto('shipmentEmails').values(r as never).execute()
+        await this.db
+          .insertInto('shipmentEmails')
+          .values(unique.slice(i, i + 300) as never)
+          .execute()
       } catch (e) {
+        // uq_shipment_emails (shipment_id, graph_message_id) — a concurrent replace won the race; idempotent
         if (!/unique|duplicate/i.test((e as Error).message)) throw e
       }
     }

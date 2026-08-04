@@ -47,6 +47,7 @@ import * as m0029_shipment_pos_inferred from './kysely-migrations/0029_shipment_
 import * as m0030_shipment_factory_code from './kysely-migrations/0030_shipment_factory_code'
 import * as m0031_shipment_journey from './kysely-migrations/0031_shipment_journey'
 import * as m0032_decision_log from './kysely-migrations/0032_decision_log'
+import * as m0033_shipments_seek_indexes from './kysely-migrations/0033_shipments_seek_indexes'
 
 const MIGRATIONS = {
   '0000_init': m0000_init,
@@ -82,6 +83,7 @@ const MIGRATIONS = {
   '0030_shipment_factory_code': m0030_shipment_factory_code,
   '0031_shipment_journey': m0031_shipment_journey,
   '0032_decision_log': m0032_decision_log,
+  '0033_shipments_seek_indexes': m0033_shipments_seek_indexes,
 }
 
 /** Exported for the registry drift-guard spec — a migration file that is never registered here is

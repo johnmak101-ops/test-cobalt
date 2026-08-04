@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { MasterResolver } from './committer-master-resolver'
+import { aliasMapsFromFacts, MasterResolver } from './committer-master-resolver'
 
 describe('MasterResolver', () => {
   it('resolveCustomer uses canonical then falls back to original code', async () => {
@@ -75,7 +75,21 @@ describe('MasterResolver', () => {
     }
     const out = await r.resolveAll({ pol: 'CHATTOGRAM' }, aliases)
     expect(out.polLink?.id).toBe('port-cgp')
-    expect(masters.portLinkByCodeOrName).toHaveBeenCalledWith('BDCGP')
+    expect(masters.portLinkByCodeOrName).toHaveBeenCalledWith('BDCGP', undefined)
+  })
+
+  it('aliasMapsFromFacts stows the fact rows; resolvePortLink hands them through (no per-call re-fetch)', async () => {
+    const facts = [
+      { kind: 'port_alias', lhs: 'CHATTOGRAM', rhs: 'BDCGP' },
+      { kind: 'port_abbreviation', lhs: 'HKG', rhs: 'HKHKG' },
+      { kind: 'forwarder_alias', lhs: 'VENA SAIL', rhs: 'VENA' },
+    ]
+    const aliases = aliasMapsFromFacts(facts)
+    expect(aliases.portFacts).toBe(facts)
+    const masters = { portLinkByCodeOrName: vi.fn(async () => null) }
+    const r = new MasterResolver(masters as never)
+    await r.resolvePortLink('SOMEWHERE', aliases)
+    expect(masters.portLinkByCodeOrName).toHaveBeenCalledWith('SOMEWHERE', facts)
   })
 
   it('forwarder_alias fact: raw name → code_exact link', async () => {
