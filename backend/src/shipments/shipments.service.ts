@@ -10,6 +10,7 @@ import { deriveRoute } from '../presentation/adapters/derive'
 import { syncIdentityMatchKeys } from './identity-keys'
 import { coerceLegField, DATE_FIELDS } from './coerce-field'
 import { QueueLearningClient } from '../review/queue-learning.client'
+import { queueLearningValue } from '../review/queue-field-value'
 
 /** A human-entered new-shipment form. Every field optional; at least one identity OR a PO is required. */
 export interface ManualShipmentInput {
@@ -276,8 +277,10 @@ export class ShipmentsService {
       await this.queueLearning.postCorrection({
         messageId,
         field: toQueueField(field),
-        agentSaid: asStr(before[field]),
-        humanCorrected: asStr(value),
+        // queueLearningValue, not asStr: LEARNING_IDENTITY_FIELDS carries no date today, but the day it
+        // does, asStr would post an ISO string the parser can never reproduce (see queue-field-value).
+        agentSaid: queueLearningValue(field, before[field]),
+        humanCorrected: queueLearningValue(field, value),
         forwarder,
         note: note || 'edited on shipment detail',
         kind: 'correction',
