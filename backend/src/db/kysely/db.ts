@@ -9,6 +9,7 @@ import type {
   ParsedRecord as GenParsedRecord,
   Customers as GenCustomers,
   Vendors as GenVendors,
+  ShipmentPos as GenShipmentPos,
   Generated,
 } from './db.generated'
 import type {
@@ -79,6 +80,19 @@ export interface Shipments
    *  as `cartons`. Two committer rules read it so they surface rather than act: see
    *  `findPoOnlyDuplicateRisk` and `findManualIdentityClash`. */
   createdManually: Generated<boolean>
+  /** Migration 0030 — the MANUFACTURER (comma-joined list, like item_style_no). BACKEND DATA ONLY by
+   *  decision 2026-08-03: the frontend does not display it, and it is never a fallback for the vendor —
+   *  the labelling ground truth makes a factory a legitimate `vendor_code` in its own right. Same
+   *  codegen caveat as `cartons`. */
+  factoryCode: string | null
+  /** Migration 0031 — the journey chain as JSON (`[{seq,mode,pol,pod,doc},…]`), written by the
+   *  committer from the decision's `journey` (queue groupJourney, latest-carrying-wins). Read by
+   *  journeyRoute() to render `PVG→DEL→LHR`. Same codegen caveat as `cartons`. */
+  journey: string | null
+  /** Migration 0033 — COMPUTED column (`JSON_VALUE(match_keys, '$.conversation_id')` capped at
+   *  nvarchar(450), indexed) so `legsByConversationId` seeks instead of scanning. SQL Server rejects
+   *  writes to a computed column — hence insert/update `never`. Same codegen caveat as `cartons`. */
+  conversationKey: ColumnType<string | null, never, never>
   reviewReasons: Json<string[] | null>
   matchKeys: Json<Record<string, unknown> | null>
   criticReview: Json<CriticReview | null>
@@ -131,6 +145,15 @@ export interface RoutingShadow {
   reasonsJson: Json<string[] | null>
 }
 
+/** 0032 — append-only log of every applied decision (the ReconGroup, verbatim). THE rebuild source:
+ *  replaying these in id order through the committer reproduces the agent path by construction.
+ *  Not in codegen until regenerating after 0032. */
+export interface DecisionLog {
+  id: Generated<number>
+  ingestedAt: Generated<Date>
+  payload: Json<Record<string, unknown>>
+}
+
 export type CalibrationOutcome = 'approved' | 'corrected' | 'dismissed'
 
 /** Append-only critic band vs human outcome (Phase 3 calibration). Not in codegen until regenerating after 0014. */
@@ -162,6 +185,12 @@ export interface Vendors extends GenVendors {
   nameCh: string | null
 }
 
+/** 0029 — was this PO STATED by the email that linked it, or merely swept up with the group? Lets a
+ *  stated claim displace an inferred one on the cross-HAWB guard instead of losing to arrival order. */
+export interface ShipmentPos extends GenShipmentPos {
+  inferred: Generated<boolean>
+}
+
 export interface DB
   extends Omit<
     GeneratedDB,
@@ -178,7 +207,10 @@ export interface DB
     // 0022 name_ch columns (codegen not rerun) — omit then re-add below
     | 'customers'
     | 'vendors'
+    // 0029 inferred column (codegen not rerun) — omit then re-add below
+    | 'shipmentPos'
   > {
+  shipmentPos: ShipmentPos
   shipments: Shipments
   bookings: Bookings
   shipmentMilestones: ShipmentMilestones
@@ -186,6 +218,7 @@ export interface DB
   reviewEmail: ReviewEmail
   parsedRecord: ParsedRecord
   routingShadow: RoutingShadow
+  decisionLog: DecisionLog
   criticCalibration: CriticCalibration
   meshMissAck: MeshMissAck
   customers: Customers

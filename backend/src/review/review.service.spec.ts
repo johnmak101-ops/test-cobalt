@@ -197,7 +197,7 @@ describe('ReviewService.confirm — reviewer note lands in the audit trail', () 
   })
 })
 
-describe('ReviewService.correct — coercion + human-wins locks', () => {
+describe('ReviewService.correct — coercion + field locks', () => {
   it('coerces grossWeight and measurement to numbers', async () => {
     const { svc, shipments } = makeService()
     await svc.correct('leg-1', { fields: { grossWeight: '7.5', measurement: '0.04' } }, 'user-1')
@@ -232,6 +232,25 @@ describe('ReviewService.correct — coercion + human-wins locks', () => {
     expect(queueLearning.postCorrection).toHaveBeenCalledWith(expect.objectContaining({
       field: 'so_no', agentSaid: 'OLD-SO', humanCorrected: 'COSU123', kind: 'correction',
     }))
+  })
+
+  it('posts the five *Raw party/port columns under the PARSER names (pol, not pol_raw)', async () => {
+    // A plain camel→snake gave pol_raw / forwarder_raw / … — field names the parser never emits, so the
+    // queue's re-parse could never reproduce them: fuel that could not burn. The alias map speaks parser.
+    const cases: [string, string][] = [
+      ['polRaw', 'pol'],
+      ['podRaw', 'pod'],
+      ['forwarderRaw', 'forwarder_name'],
+      ['customerRaw', 'customer_code'],
+      ['vendorRaw', 'vendor_code'],
+    ]
+    for (const [column, queueField] of cases) {
+      const { svc, queueLearning } = makeService({ [column]: 'OLD' })
+      await svc.correct('leg-1', { fields: { [column]: 'NEW' }, reason: 'fix party' }, 'user-1')
+      expect(queueLearning.postCorrection).toHaveBeenCalledWith(expect.objectContaining({
+        field: queueField, humanCorrected: 'NEW', kind: 'correction',
+      }))
+    }
   })
 })
 
@@ -406,14 +425,26 @@ describe('ReviewService — skip queue learning when sourceGraphIdFor is null (#
 
 describe('ReviewService — "looks right" confirm-sentinels feed the queue eval', () => {
   it('confirm() emits a confirm-sentinel for each non-null parse field (agentSaid == humanCorrected == frozen value)', async () => {
-    const { svc, queueLearning } = makeService({ soNo: 'COSU123', grossWeight: 5 })
+    const { svc, queueLearning } = makeService({ soNo: 'COSU123', containerNo: 'MSCU1234567' })
     await svc.confirm('leg-1', 'user-1')
     expect(queueLearning.postCorrection).toHaveBeenCalledWith(expect.objectContaining({
       messageId: 'graph-1', field: 'so_no', agentSaid: 'COSU123', humanCorrected: 'COSU123', kind: 'confirm',
     }))
     expect(queueLearning.postCorrection).toHaveBeenCalledWith(expect.objectContaining({
-      field: 'gross_weight', agentSaid: '5', humanCorrected: '5', kind: 'confirm',
+      field: 'container_no', agentSaid: 'MSCU1234567', humanCorrected: 'MSCU1234567', kind: 'confirm',
     }))
+  })
+
+  it('confirm() NEVER emits the four desk-hidden columns — no blind endorsements of values the operator cannot see', async () => {
+    const { svc, queueLearning } = makeService({
+      soNo: 'COSU123', itemStyleNo: 'STYLE-1', grossWeight: 5, measurement: 12.5, htsCode: '6110.20',
+    })
+    await svc.confirm('leg-1', 'user-1')
+    const calls = queueLearning.postCorrection.mock.calls.map((c) => c[0])
+    expect(calls).toContainEqual(expect.objectContaining({ field: 'so_no', kind: 'confirm' }))
+    for (const hidden of ['item_style_no', 'gross_weight', 'measurement', 'hts_code']) {
+      expect(calls).not.toContainEqual(expect.objectContaining({ field: hidden, kind: 'confirm' }))
+    }
   })
 
   it('confirm() freezes a date field as YYYY-MM-DD (the parser format), not a full ISO timestamp', async () => {
@@ -440,6 +471,14 @@ describe('ReviewService — "looks right" confirm-sentinels feed the queue eval'
     expect(calls).not.toContainEqual(expect.objectContaining({ field: 'gross_weight', kind: 'confirm' }))
     // soNo was left untouched → implicitly confirmed.
     expect(calls).toContainEqual(expect.objectContaining({ field: 'so_no', kind: 'confirm' }))
+  })
+
+  it('confirm() NEVER emits cfs_cutoff — the parser cannot reproduce it, a confirm would be a permanent phantom regression', async () => {
+    const { svc, queueLearning } = makeService({ cfsCutoff: new Date('2026-02-10T00:00:00.000Z'), etd: new Date('2026-02-16T00:00:00.000Z') })
+    await svc.confirm('leg-1', 'user-1')
+    const calls = queueLearning.postCorrection.mock.calls.map((c) => c[0])
+    expect(calls).toContainEqual(expect.objectContaining({ field: 'etd', kind: 'confirm' })) // the click still labels real parse fields
+    expect(calls).not.toContainEqual(expect.objectContaining({ field: 'cfs_cutoff' }))
   })
 })
 

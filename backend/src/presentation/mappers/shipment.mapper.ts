@@ -6,7 +6,7 @@
 import type { Band, CriticReview } from '../../decisions/critic-review.types'
 import { isNonPartyName } from '../../decisions/critic-review.types'
 import { stateToUiStatus } from '../adapters/enums'
-import { deriveRoute, portLabel, deriveOriginCountry, poNumbersJson, isoOrNull } from '../adapters/derive'
+import { deriveRoute, journeyRoute, portLabel, deriveOriginCountry, poNumbersJson, isoOrNull } from '../adapters/derive'
 import { normalizeEntityName } from '../hydrate-critic-entity-labels'
 import { filterPortMissReasons } from './port-miss-reasons'
 import { openDecisions } from '../open-decisions'
@@ -112,6 +112,8 @@ export interface ShipmentLegRow {
   vendorRaw: string | null
   grossWeight: number | null
   netWeight?: number | null
+  /** Migration 0026 — same codegen caveat as the db.ts hand-typed override. */
+  cartons?: number | null
   cargoDescription?: string | null
   measurement: number | null
   htsCode: string | null
@@ -216,6 +218,8 @@ export interface UiShipment {
   warehouseAddress: string | null
   quantityShipped: number | null
   quantityUnit: string | null
+  /** Carton count (table-extract writes it) — was committed to the leg but never left the DB. */
+  cartons: number | null
   grossWeight: number | null
   netWeight: number | null
   cargoDescription: string | null
@@ -266,7 +270,8 @@ export function toUiShipment(
     vendorId: booking?.vendorId ?? null,
     forwarderId: leg.forwarderId ?? null,
     mode: leg.mode ?? null,
-    route: deriveRoute(
+    // A stored journey chain wins the route string (`PVG→DEL→LHR`); endpoints-only is the fallback.
+    route: journeyRoute((leg as { journey?: unknown }).journey) ?? deriveRoute(
       portLabel(leg.mode, input.polPort?.unlocode, input.polPort?.iata) ?? leg.polRaw,
       portLabel(leg.mode, input.podPort?.unlocode, input.podPort?.iata) ?? leg.podRaw,
     ),
@@ -319,6 +324,7 @@ export function toUiShipment(
     warehouseAddress: null, // Phase 3 column
     quantityShipped: leg.qty ?? null,
     quantityUnit: leg.qtyUnit ?? null,
+    cartons: leg.cartons ?? null,
     grossWeight: leg.grossWeight ?? null,
     netWeight: leg.netWeight ?? null,
     cargoDescription: leg.cargoDescription ?? null,

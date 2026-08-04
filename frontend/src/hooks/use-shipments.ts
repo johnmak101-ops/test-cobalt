@@ -96,6 +96,7 @@ export interface Shipment {
   quantityUnit: string | null
   grossWeight: number | null
   // optional like the other late-added leg columns: fixtures and older payloads predate them
+  cartons?: number | null
   netWeight?: number | null
   cargoDescription?: string | null
   measurement: number | null
@@ -260,8 +261,9 @@ export function useCreateShipment() {
   })
 }
 
-/** Human edit of shipment fields (detail page). Body is a { dbField: value } map; the backend locks +
- *  audits each change so the parser can never overwrite it. Refetches the detail + history on success. */
+/** Human edit of shipment fields (detail page). Body is a { dbField: value } map; the backend records a
+ *  field lock + audits each change. The lock keeps your value on record — it does not stop a later email
+ *  overwriting the column, which is what surfaces the field as contested. Refetches detail + history. */
 export function useUpdateShipment(id: string) {
   const qc = useQueryClient()
   return useMutation({

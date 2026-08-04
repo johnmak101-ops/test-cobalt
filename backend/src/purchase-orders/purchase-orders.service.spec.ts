@@ -8,6 +8,8 @@ interface Over {
   linkCounts?: { shipments: number; bookings: number }
   customerExists?: boolean
   vendorExists?: boolean
+  /** null = the link id does not belong to this PO. */
+  linkRow?: null
 }
 
 function harness(over: Over = {}) {
@@ -45,6 +47,12 @@ function harness(over: Over = {}) {
     async unlinkShipmentPo(poId: string, linkId: string) {
       log('unlinkShipmentPo', poId, linkId)
       return { id: linkId }
+    },
+    async updateShipmentPo(poId: string, linkId: string, patch: Record<string, unknown>) {
+      log('updateShipmentPo', poId, linkId, patch)
+      return over.linkRow === null
+        ? null
+        : { id: linkId, poId, quantity: 26, quantityUnit: 'pieces', ...patch }
     },
   }
   const masters = {
@@ -121,5 +129,69 @@ describe('PurchaseOrdersService.remove', () => {
   it('404s when the PO does not exist', async () => {
     const { svc } = harness({ poById: null })
     await expect(svc.remove('missing', 'u1')).rejects.toBeInstanceOf(NotFoundException)
+  })
+})
+
+/**
+ * The quantity and its unit lived only on the link, and the link could only be created or deleted —
+ * so fixing "26 pieces" that should read "26 cartons" meant unlink-and-relink, losing the row's id
+ * and its history. The review desk edits it in place.
+ */
+describe('PurchaseOrdersService.updateLink', () => {
+  it('patches only the keys that were sent', async () => {
+    const { svc, calls } = harness()
+    await svc.updateLink('po-1', 'link-1', { quantityUnit: 'cartons' }, 'u1')
+    const call = calls.find((c) => c.method === 'updateShipmentPo')!
+    // No `quantity` key: an untouched quantity must not ride along and overwrite itself.
+    expect(call.args[2]).toEqual({ quantityUnit: 'cartons' })
+  })
+
+  it('treats an explicit null as a clear', async () => {
+    const { svc, calls } = harness()
+    await svc.updateLink('po-1', 'link-1', { quantity: null }, 'u1')
+    expect(calls.find((c) => c.method === 'updateShipmentPo')!.args[2]).toEqual({ quantity: null })
+  })
+
+  it('normalises a blank unit to null rather than storing an empty string', async () => {
+    const { svc, calls } = harness()
+    await svc.updateLink('po-1', 'link-1', { quantityUnit: '  ' }, 'u1')
+    expect(calls.find((c) => c.method === 'updateShipmentPo')!.args[2]).toEqual({
+      quantityUnit: null,
+    })
+  })
+
+  it('refuses a negative or non-numeric quantity', async () => {
+    const { svc } = harness()
+    await expect(svc.updateLink('po-1', 'link-1', { quantity: -3 }, 'u1')).rejects.toBeInstanceOf(
+      BadRequestException,
+    )
+    await expect(
+      svc.updateLink('po-1', 'link-1', { quantity: 'twelve' as never }, 'u1'),
+    ).rejects.toBeInstanceOf(BadRequestException)
+  })
+
+  it('refuses an empty patch', async () => {
+    const { svc } = harness()
+    await expect(svc.updateLink('po-1', 'link-1', {}, 'u1')).rejects.toBeInstanceOf(
+      BadRequestException,
+    )
+  })
+
+  /** `poId` is in the repository predicate, so a link id from another PO simply matches nothing. */
+  it('404s when the link is not this PO\u2019s', async () => {
+    const { svc } = harness({ linkRow: null })
+    await expect(
+      svc.updateLink('po-1', 'link-other', { quantity: 5 }, 'u1'),
+    ).rejects.toBeInstanceOf(NotFoundException)
+  })
+
+  it('writes an audit row naming the new line', async () => {
+    const { svc, calls } = harness()
+    await svc.updateLink('po-1', 'link-1', { quantity: 30, quantityUnit: 'cartons' }, 'u1')
+    const audit = calls.find((c) => c.method === 'audit.write')!.args[0] as Record<string, unknown>
+    expect(audit.entityType).toBe('shipment_po')
+    expect(audit.entityId).toBe('link-1')
+    expect(audit.changeType).toBe('update')
+    expect(String(audit.note)).toMatch(/30 cartons/)
   })
 })

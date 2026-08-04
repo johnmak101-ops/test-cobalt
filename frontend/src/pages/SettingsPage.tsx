@@ -13,7 +13,6 @@ export default function SettingsPage() {
   const { user } = useAuth()
   const { canView } = usePageAccess()
   const isSuper = user?.role === 'SUPERADMIN'
-  const isAdminUp = user?.role === 'ADMIN' || isSuper
   const isAlertsSettings = location.pathname.includes('/settings/alerts')
   const isLifecycle = location.pathname.includes('/settings/lifecycle')
   const isUsersSettings = location.pathname.includes('/settings/users')
@@ -22,11 +21,11 @@ export default function SettingsPage() {
 
   // No empty "General" tab — only real config panels. Superadmin-only vs access-matrix tabs.
   // Vendors (#127), Review Policy (#124), and Resolution Rules settings UIs removed.
-  // Users / Access Control / Mesh misses: SUPERADMIN only (not ADMIN).
+  // Lifecycle / Users / Access Control / Mesh misses: SUPERADMIN only (not ADMIN).
   const navItems = [
     { to: '/settings/alerts', label: 'Alert Rules', end: false, show: canView('alert_rules') },
-    // Lifecycle tunables move state on a clock — governance, so ADMIN+ only (ops 2026-07-24).
-    { to: '/settings/lifecycle', label: 'Lifecycle', end: false, show: isAdminUp },
+    // Lifecycle tunables move state on a clock — narrowed from ADMIN+ to SUPERADMIN only.
+    { to: '/settings/lifecycle', label: 'Lifecycle', end: false, show: isSuper },
     { to: '/settings/users', label: 'Users', end: false, show: isSuper },
     { to: '/settings/access', label: 'Access Control', end: false, show: isSuper },
     { to: '/settings/mesh-misses', label: 'Mesh Misses', end: false, show: isSuper },
@@ -76,7 +75,7 @@ export default function SettingsPage() {
           <UsersSettings />
         ) : isAlertsSettings ? (
           <AlertRulesSettings />
-        ) : isLifecycle && isAdminUp ? (
+        ) : isLifecycle && isSuper ? (
           <LifecycleSettings />
         ) : isMeshMisses ? (
           <AdminMeshMissesPage />

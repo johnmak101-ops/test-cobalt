@@ -28,6 +28,9 @@ export const FUZZY_FORWARDER_TIERS: ReadonlySet<ForwarderLinkTier> = new Set()
 
 export type PortLinkTier = 'unlocode_exact' | 'abbreviation' | 'iata' | 'alias' | 'fragment'
 
+/** One approved+active master_resolution row as the port ladder consumes it (see portLinkByCodeOrName). */
+export type PortFactRow = { kind: string; lhs: string; rhs: string | null }
+
 /**
  * Kysely/SQL Server MastersRepository.
  *
@@ -323,8 +326,14 @@ export class MastersRepository {
   /**
    * Exact + curated facts only (open LIKE fuzzy_name deleted 2026-07-12).
    * Order: UN/LOCODE → abbreviation fact → ports.iata → port_alias/port_iata facts → port_fragment facts.
+   * `prefetchedFacts` — approved+active master_resolution rows the caller already holds (extra kinds are
+   * fine, the ladder filters by kind); omitted → self-fetch. Lets a caller resolving several ports reuse
+   * one fetch instead of re-reading the facts table per call.
    */
-  async portLinkByCodeOrName(code: string): Promise<{ id: string; country: string | null; tier: PortLinkTier } | null> {
+  async portLinkByCodeOrName(
+    code: string,
+    prefetchedFacts?: PortFactRow[],
+  ): Promise<{ id: string; country: string | null; tier: PortLinkTier } | null> {
     const c = code.trim()
     if (!c) return null
     const byUnlocode = async (uloc: string) => {
@@ -334,13 +343,15 @@ export class MastersRepository {
     const byCode = await byUnlocode(c.toUpperCase())
     if (byCode) return { ...byCode, tier: 'unlocode_exact' }
 
-    const portFacts = await this.db
-      .selectFrom('masterResolution')
-      .where('kind', 'in', ['port_abbreviation', 'port_alias', 'port_iata', 'port_fragment'])
-      .where('status', '=', 'approved')
-      .where('active', '=', true)
-      .select(['kind', 'lhs', 'rhs'])
-      .execute()
+    const portFacts =
+      prefetchedFacts ??
+      (await this.db
+        .selectFrom('masterResolution')
+        .where('kind', 'in', ['port_abbreviation', 'port_alias', 'port_iata', 'port_fragment'])
+        .where('status', '=', 'approved')
+        .where('active', '=', true)
+        .select(['kind', 'lhs', 'rhs'])
+        .execute())
     const factMap = (kind: string) =>
       new Map(portFacts.filter((f) => f.kind === kind && f.rhs).map((f) => [f.lhs.toUpperCase(), String(f.rhs).toUpperCase()]))
 

@@ -34,6 +34,8 @@ export interface ReviewShipment {
    */
   openDecisions?: {
     settledFields: string[]
+    /** The conflicts still OPEN — the rows the grid will show. Named on the dashboard row. */
+    openFields?: string[]
     resolvedParties: { slot: string; name: string }[]
     /** What the leg ACTUALLY stores per contested field — the grid's Current column reads this. */
     liveValues?: Record<string, string>
@@ -165,8 +167,9 @@ export function useConfirmShipment() {
 }
 
 /**
- * Correct fields on a provisional shipment and approve it. Each edited field is locked
- * (human-wins — the agent can never overwrite it) and audited with the reviewer's reason.
+ * Correct fields on a provisional shipment and approve it. Each edited field is locked (the reviewer's
+ * value goes on record; a later disagreeing email still overwrites the column and the field then reads
+ * as contested) and audited with the reviewer's reason.
  * Critic snake_case field keys are mapped to camelCase leg columns before POST.
  */
 export function useCorrectShipment() {

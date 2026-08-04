@@ -1,5 +1,5 @@
 {
-  "_comment": "synced copy — source of truth is cobalt-queue src/critic/merge.ts; update BOTH repos in one change.",
+  "_comment": "synced copy \u2014 source of truth is cobalt-queue src/critic/merge.ts; update BOTH repos in one change.",
   "FIELD_CLASS": {
     "customer_po": "po",
     "so_no": "identity",
@@ -35,7 +35,10 @@
     "qty_unit": "text",
     "gross_weight": "text",
     "measurement": "text",
-    "hts_code": "list"
+    "hts_code": "list",
+    "factory_code": "list",
+    "net_weight": "text",
+    "cargo_description": "text"
   },
   "DOC_RANK": {
     "Final B/L": 5,
@@ -46,5 +49,11 @@
     "Invoice/Billing": 1,
     "Customs": 1,
     "Other": 1
+  },
+  "_DOC_FIELD_MASK_comment": "synced snapshot of src/reconcile/merge.ts DOC_FIELD_MASK (Sets encoded as sorted arrays), pinned equal to the queue's. LIVE-ENFORCED by merge-policy-contract.spec.ts.",
+  "DOC_FIELD_MASK": {
+    "Customs": [
+      "atd"
+    ]
   }
 }

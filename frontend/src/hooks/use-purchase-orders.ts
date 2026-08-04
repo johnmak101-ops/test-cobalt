@@ -145,6 +145,36 @@ export function useLinkShipmentToPO() {
   })
 }
 
+/**
+ * Correct what THIS shipment carries of a PO — quantity and unit, in place.
+ *
+ * Send only the keys the operator touched: the backend treats an omitted key as "leave alone" and an
+ * explicit null as "clear", so a unit-only fix must not carry a quantity along with it.
+ */
+export function useUpdateShipmentPoLink() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: ({
+      poId,
+      linkId,
+      ...patch
+    }: {
+      poId: string
+      linkId: string
+      quantity?: number | null
+      quantityUnit?: string | null
+    }) => api.patch(`/purchase-orders/${poId}/link-shipment/${linkId}`, patch),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['purchase-orders'] })
+      queryClient.invalidateQueries({ queryKey: ['shipment'] })
+      queryClient.invalidateQueries({ queryKey: ['purchase-order'] })
+      queryClient.invalidateQueries({ queryKey: ['shipments'] })
+      queryClient.invalidateQueries({ queryKey: ['review-queue'] })
+    },
+  })
+}
+
 export function useUnlinkShipmentFromPO() {
   const queryClient = useQueryClient()
 

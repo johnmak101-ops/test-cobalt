@@ -52,12 +52,47 @@ export const FIELD_CLASS: Record<string, FieldClass> = {
   // evidence path (they never reach the rebuilt shipment). Mirrors cobalt-queue critic/merge FIELD_CLASS coverage.
   vessel_name: 'text', voyage_no: 'text', flight_no: 'text', mawb: 'text', scac_code: 'text', brand: 'text',
   qty_unit: 'text', gross_weight: 'text', measurement: 'text',
+  // net weight is the goods WITHOUT the carton (customs reads net, freight reads gross); a booking sheet
+  // states the two in adjacent columns. In the queue's table since #18 and MISSING here until the
+  // 2026-08-02 audit diffed the two fixtures - each repo's contract test pins only its OWN copy, so the
+  // drift tripped nothing, and a rebuild was silently dropping both fields.
+  net_weight: 'text', cargo_description: 'text',
   item_style_no: 'list', hts_code: 'list',
+  // The MANUFACTURER, split out of `vendor_code` on the queue side by validate.ts. Cobalt Mesh has always
+  // separated the two vendor populations it syncs (563 factory / 465 gmtsupplier / 440 both) in
+  // `master_entity.vendor_type`; flattening them into one field is what let a customs declaration's
+  // 生产销售单位 contest the booking vendor for a single slot.
+  //
+  // 🔴 `list`, NOT `entity`. An LCL consol carries one factory PER SHIPPER, so `entity`'s single
+  // DOC_RANK winner would discard the rest — the same loss this change exists to stop.
+  //
+  // Listed here for CONTRACT PARITY: the queue's critic/merge.ts is the source of truth and
+  // merge-policy.fixture.json pins the two tables EQUAL, so the key must exist on both sides. Since 0030
+  // the merged value lands in `shipments.factory_code` via committer-leg-mapping - BACKEND DATA ONLY, by
+  // decision 2026-08-03: the frontend does not display it, and per the labelling ground truth a factory
+  // is also a legitimate `vendor_code`, so this never competes with the vendor field.
+  factory_code: 'list',
 }
 
 export const DOC_RANK: Record<string, number> = {
   'Final B/L': 5, 'Telex Release': 5, 'Draft B/L': 4, SO: 3, 'Booking Request': 2,
   'Invoice/Billing': 1, Customs: 1, Other: 1,
+}
+
+/**
+ * Doc types that may not assert a field AT ALL - masked out before the merge sees the value.
+ *
+ * A customs declaration restates the SCHEDULED departure; treating it as the ACTUAL one is how an
+ * estimate becomes an `atd` (queue #18 - the mask has existed queue-side since). This rebuild path
+ * was assumed exempt on the theory that it "replays already-committed values, masked upstream" - that
+ * premise is FALSE: `reconcile.service.ts` feeds `mergeShipment` from EvidenceRepository rows, i.e. the
+ * RAW per-record fields, where the Customs atd still sits. Without this mask one rebuild resurrects
+ * exactly the value the queue refused to commit.
+ *
+ * Mirrors the queue's DOC_FIELD_MASK; the fixture pins it (Sets encoded as sorted arrays).
+ */
+export const DOC_FIELD_MASK: Record<string, Set<string>> = {
+  Customs: new Set(['atd']),
 }
 const rank = (t?: string | null): number => DOC_RANK[t ?? ''] ?? 1
 
@@ -119,7 +154,7 @@ export function mergeShipment(emails: CriticEmail[]): MergeResult {
   for (const [field, cls] of Object.entries(FIELD_CLASS)) {
     if (cls === 'po') continue
     let stated = sorted
-      .filter((e) => present(e.fields[field]))
+      .filter((e) => present(e.fields[field]) && !DOC_FIELD_MASK[e.emailType]?.has(field))
       .map((e) => ({ value: e.fields[field], emailType: e.emailType, rank: rank(e.emailType) }))
 
     // a bare ≤3-digit sequence token ('001','002') in an identity slot is a row/line number lifted from a

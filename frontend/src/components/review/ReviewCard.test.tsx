@@ -8,12 +8,26 @@ import type { CriticConflict, CriticReview, CriticReviewCompact } from '../../li
 import type { ReviewShipment } from '../../hooks/use-review-queue'
 import type { LinkedPO } from '../../hooks/use-shipments'
 
+/** Hoisted so the shared-PO tests can assert on the writes the card performs. */
+const unlinkMutateAsync = vi.hoisted(() => vi.fn(async () => undefined))
+const updateLinkMutateAsync = vi.hoisted(() => vi.fn(async () => undefined))
+const updatePoMutateAsync = vi.hoisted(() => vi.fn(async () => undefined))
+
 vi.mock('../../hooks/use-purchase-orders', () => ({
   useCreatePurchaseOrder: () => ({ mutate: vi.fn(), isPending: false }),
-  useUpdatePurchaseOrder: () => ({ mutate: vi.fn(), isPending: false }),
+  useUpdatePurchaseOrder: () => ({
+    mutate: vi.fn(),
+    mutateAsync: updatePoMutateAsync,
+    isPending: false,
+  }),
   useUnlinkShipmentFromPO: () => ({
     mutate: vi.fn(),
-    mutateAsync: vi.fn(),
+    mutateAsync: unlinkMutateAsync,
+    isPending: false,
+  }),
+  useUpdateShipmentPoLink: () => ({
+    mutate: vi.fn(),
+    mutateAsync: updateLinkMutateAsync,
     isPending: false,
   }),
   useLinkShipmentToPO: () => ({
@@ -137,13 +151,13 @@ describe('ReviewCard', () => {
     expect(within(table).getByText('ETA')).toBeInTheDocument()
     // OUR label, not the payload's bare 'HBL' — reviewFieldLabel prefers EDITABLE_FIELDS.
     expect(within(table).getByText('HBL / HAWB / FCR No.')).toBeInTheDocument()
-    // Multi-candidate HBL: every stated value visible in "Other values" (not buried in a datalist)
+    // Multi-candidate HBL: every stated value visible in "AI proposed" (not buried in a datalist)
     expect(within(table).getByText('SE26061400005')).toBeInTheDocument()
     expect(within(table).getByText('SE26061400006')).toBeInTheDocument()
     expect(within(table).getByTestId('multi-candidate-proposed')).toBeInTheDocument()
     // Column headers — default view shows agent proposals; Resolution/Edited only after Edit / changes.
     expect(within(table).getByText('Current')).toBeInTheDocument()
-    expect(within(table).getByTestId('proposed-column-header')).toHaveTextContent('Other values')
+    expect(within(table).getByTestId('proposed-column-header')).toHaveTextContent('AI proposed')
     expect(within(table).queryByText('Resolution')).toBeNull()
     expect(within(table).queryByText('Edited')).toBeNull()
     expect(within(table).queryByText('Recommended')).toBeNull()
@@ -348,11 +362,12 @@ describe('ReviewCard', () => {
     )
     const why = screen.getByTestId('why-review')
     expect(within(why).getByText(/Field values disagree|field\(s\) disagree/i)).toBeInTheDocument()
-    // The field fight leads (it is the sharper question); the NAMED master miss follows under "Also"
-    // — still on the Review desk, because ops can add exactly that company in Mesh.
+    // The field fight leads — it is the sharper question, and the one this card can settle.
     expect(screen.getByTestId('desk-question')).toHaveTextContent(/Which values are correct\?/i)
-    const rest = screen.getByTestId('needs-attention-rest')
-    expect(within(rest).getByText(/A\.P\. Moller - Maersk|Mesh Database/i)).toBeInTheDocument()
+    // The named master miss stays on the Review desk, but under "For information": ops can add that
+    // company in Mesh and nowhere near this card, so it is not a decision waiting on the operator.
+    const info = screen.getByTestId('review-for-information')
+    expect(within(info).getByText(/A\.P\. Moller - Maersk|Mesh Database/i)).toBeInTheDocument()
   })
 
   it('why-review does not repeat a reason a risk flag already explains', () => {
@@ -803,7 +818,7 @@ describe('conflict table — read-only by default, Edit to change values', () =>
         />
       </MemoryRouter>,
     )
-    expect(screen.getByTestId('proposed-column-header')).toHaveTextContent('Other values')
+    expect(screen.getByTestId('proposed-column-header')).toHaveTextContent('AI proposed')
     await user.click(screen.getByRole('button', { name: /^edit$/i }))
     expect(screen.getByTestId('proposed-column-header')).toHaveTextContent('Resolution')
     expect((screen.getByTestId('datetime-date') as HTMLInputElement).value).toBe('2026-07-20')
@@ -963,7 +978,7 @@ describe('conflict table — read-only by default, Edit to change values', () =>
 
       expect(screen.queryByTestId('conflict-override')).toBeNull()
       expect(screen.queryByTestId('discard-edits')).toBeNull()
-      expect(screen.getByTestId('proposed-column-header')).toHaveTextContent('Other values')
+      expect(screen.getByTestId('proposed-column-header')).toHaveTextContent('AI proposed')
     })
   })
 
@@ -1094,17 +1109,107 @@ describe('conflict table — read-only by default, Edit to change values', () =>
 
     it('says nothing until the operator actually takes the new mode', () => {
       renderMode()
-      expect(screen.queryByTestId('mode-carry-over')).toBeNull()
+      expect(screen.queryByTestId('mode-clear-row-mawb')).toBeNull()
+      expect(screen.queryByTestId('mode-clear-row-flightNo')).toBeNull()
     })
 
     it('lists what the switch strands, ticked to clear', async () => {
       const user = userEvent.setup()
       renderMode()
       await user.click(screen.getByTestId('conflict-take'))
-      const panel = screen.getByTestId('mode-carry-over')
-      expect(panel).toHaveTextContent(/Taking Mode\s*SEA also clears 2 fields/i)
       expect(screen.getByTestId('mode-carry-over-flightNo')).toBeChecked()
       expect(screen.getByTestId('mode-carry-over-mawb')).toBeChecked()
+      // The value is struck through, not removed — nothing vanishes before the operator saves.
+      expect(screen.getByTestId('mode-clear-row-mawb')).toHaveTextContent('160-88112233')
+    })
+
+    /**
+     * The clears are ROWS in the decision grid, not a panel beside it. The grid is the list of
+     * writes the button performs; a deletion kept outside it let the operator read the table,
+     * believe they had seen the change set, and press a button that also emptied two fields.
+     */
+    it('renders each clear as a row in the grid, under the section that owns the field', async () => {
+      const user = userEvent.setup()
+      renderMode()
+      await user.click(screen.getByTestId('conflict-take'))
+      const table = screen.getByTestId('mode-clear-row-mawb').closest('table')
+      expect(table).not.toBeNull()
+      // Mode lives under Shipping; MAWB under Cargo & Logistics — so the clear appears in the
+      // section band for its OWN field, which is a band the conflicts alone would never open.
+      const mawbBody = screen.getByTestId('mode-clear-row-mawb').closest('tbody')
+      expect(mawbBody).toHaveTextContent('Cargo & Logistics')
+      expect(mawbBody).toHaveTextContent('1 deleted')
+      expect(screen.getByTestId('mode-clear-row-flightNo').closest('tbody')).toHaveTextContent(
+        'Shipping',
+      )
+    })
+
+    /** The rule, stated so it still reads correctly out of context (history, audit, export). */
+    it('names the field and the mode being taken, not the one stored', async () => {
+      const user = userEvent.setup()
+      renderMode()
+      await user.click(screen.getByTestId('conflict-take'))
+      expect(screen.getByTestId('mode-clear-row-mawb')).toHaveTextContent(
+        'MAWB is not applicable for SEA mode',
+      )
+      expect(screen.getByTestId('mode-clear-row-flightNo')).toHaveTextContent(
+        'Flight No. is not applicable for SEA mode',
+      )
+    })
+
+    /**
+     * The other direction. `offModeFieldsOn` is symmetric, but nothing pinned it from this side —
+     * and sea carries THREE fields air does not, so the vice-versa case is the bigger clear.
+     */
+    it('works the other way round — taking AIR clears the sea fields', async () => {
+      const user = userEvent.setup()
+      const onSave = vi.fn().mockResolvedValue(undefined)
+      render(
+        <MemoryRouter>
+          <ReviewCard
+            shipment={
+              baseShipment({
+                mode: 'SEA',
+                mblNumber: '999-92908152',
+                vesselName: 'MARIBO MAERSK',
+                voyageNumber: '514W',
+                reviewReasons: [],
+              } as never)
+            }
+            criticReview={baseReview({
+              conflicts: [
+                {
+                  ...modeConflict,
+                  candidates: [
+                    { value: 'SEA', source: 'System' },
+                    { value: 'AIR', source: 'Booking Confirmation' },
+                  ],
+                },
+              ],
+              riskFlags: [],
+              reasons: [],
+            })}
+            compact={null}
+            defaultExpanded
+            onSaveAndApprove={onSave}
+          />
+        </MemoryRouter>,
+      )
+      await user.click(screen.getByTestId('conflict-take'))
+      expect(screen.getByTestId('mode-carry-over-mbl')).toBeChecked()
+      expect(screen.getByTestId('mode-carry-over-vesselName')).toBeChecked()
+      expect(screen.getByTestId('mode-carry-over-voyageNo')).toBeChecked()
+      expect(screen.getByTestId('mode-clear-row-mbl')).toHaveTextContent(
+        'MBL is not applicable for AIR mode',
+      )
+      // 1 mode write + 3 clears
+      await user.click(screen.getByRole('button', { name: /^apply 4 changes$/i }))
+      expect(onSave.mock.calls[0][0].fields).toEqual({
+        mode: 'AIR',
+        mbl: '',
+        vesselName: '',
+        voyageNo: '',
+      })
     })
 
     it('counts the clears — the button cannot understate its own reach', async () => {
@@ -1139,9 +1244,10 @@ describe('conflict table — read-only by default, Edit to change values', () =>
       const user = userEvent.setup()
       renderMode()
       await user.click(screen.getByTestId('conflict-take'))
-      expect(screen.getByTestId('mode-carry-over')).toBeInTheDocument()
+      expect(screen.getByTestId('mode-clear-row-mawb')).toBeInTheDocument()
       await user.click(screen.getByTestId('conflict-take'))
-      expect(screen.queryByTestId('mode-carry-over')).toBeNull()
+      expect(screen.queryByTestId('mode-clear-row-mawb')).toBeNull()
+      expect(screen.queryByTestId('mode-clear-row-flightNo')).toBeNull()
       expect(screen.queryByRole('button', { name: /^apply/i })).toBeNull()
     })
   })
@@ -1172,7 +1278,8 @@ describe('conflict table — read-only by default, Edit to change values', () =>
     // Only bag style conflict → no decision grid (same as GW/HTS hide)
     expect(screen.queryByTestId('review-decision-grid')).toBeNull()
     expect(screen.queryByTestId('style-list-editor')).toBeNull()
-    expect(screen.getByTestId('review-judgment-only')).toBeInTheDocument()
+    // The card still states what it wants — the header pill, not a sentence under the prose.
+    expect(screen.getByTestId('needs-attention-status')).toHaveTextContent('needs answer')
   })
 
   it('Cancel leaves edit mode AND backs the edit out', async () => {
@@ -1196,7 +1303,7 @@ describe('conflict table — read-only by default, Edit to change values', () =>
     expect(screen.getByTestId('proposed-column-header')).toHaveTextContent('Resolution')
     await user.click(screen.getByRole('button', { name: /^cancel$/i }))
     // discarded → back to the agent's proposal, not a lingering "Edited" state
-    expect(screen.getByTestId('proposed-column-header')).toHaveTextContent('Other values')
+    expect(screen.getByTestId('proposed-column-header')).toHaveTextContent('AI proposed')
     expect(screen.getByRole('button', { name: /^edit$/i })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /^submit$/i })).toBeNull()
   })
@@ -1755,8 +1862,11 @@ describe('decision desk — ready state (no Critical for sailing band)', () => {
         />
       </MemoryRouter>,
     )
+    // "No field changes to apply — answer above" used to live in here. It is gone: the header pill
+    // says the same thing without pointing the operator at the sentence directly above it.
     const panel = screen.getByTestId('needs-attention')
-    expect(within(panel).getByTestId('review-judgment-only')).toBeInTheDocument()
+    expect(within(panel).queryByTestId('review-judgment-only')).toBeNull()
+    expect(screen.getByTestId('needs-attention-status')).toHaveTextContent('needs answer')
   })
 
   it('names the nothing-to-change confirmation for what it is', () => {
@@ -1804,9 +1914,7 @@ describe('decision desk — ready state (no Critical for sailing band)', () => {
       </MemoryRouter>,
     )
     expect(screen.getByTestId('needs-attention')).toBeInTheDocument()
-    expect(screen.getByTestId('review-judgment-only')).toHaveTextContent(
-      /No field changes|confirm when verified/i,
-    )
+    expect(screen.getByTestId('needs-attention-status')).toHaveTextContent('needs answer')
   })
 })
 
@@ -1836,7 +1944,7 @@ describe('a resolved party stops the desk asking ops to add it', () => {
         resolvedParties: [{ slot: 'customer', name: 'WHISTLES LIMITED' }],
       },
     })
-    expect(screen.queryByText(/advise add in Mesh/i)).toBeNull()
+    expect(screen.queryByText(/no near match in database/i)).toBeNull()
     expect(screen.getByTestId('review-ready-state')).toBeInTheDocument()
   })
 
@@ -1847,12 +1955,12 @@ describe('a resolved party stops the desk asking ops to add it', () => {
    */
   it('a raw name the server did not list is not a link', () => {
     renderLeg({ customer: 'WHISTLES LIMITED' })
-    expect(screen.getByText(/advise add in Mesh/i)).toBeInTheDocument()
+    expect(screen.getByText(/no near match in database/i)).toBeInTheDocument()
   })
 
   it('nothing resolved → the line stays', () => {
     renderLeg({})
-    expect(screen.getByText(/advise add in Mesh/i)).toBeInTheDocument()
+    expect(screen.getByText(/no near match in database/i)).toBeInTheDocument()
   })
 
   it('a DIFFERENT company resolving does not silence this miss', () => {
@@ -1862,7 +1970,7 @@ describe('a resolved party stops the desk asking ops to add it', () => {
         resolvedParties: [{ slot: 'customer', name: 'LIGENTIA ASIA LTD' }],
       },
     })
-    expect(screen.getByText(/advise add in Mesh/i)).toBeInTheDocument()
+    expect(screen.getByText(/no near match in database/i)).toBeInTheDocument()
   })
 })
 
@@ -2195,10 +2303,11 @@ describe('rows the leg already satisfies leave the grid', () => {
         />
       </MemoryRouter>,
     )
+    // The rows leave the grid, and the strip that used to announce them is gone with them: every
+    // value in it agreed with what the leg stores, so it listed correct data on a card about wrong
+    // data. Open Shipment is where those live.
     expect(screen.queryByTestId('review-decision-grid')).toBeNull()
-    expect(screen.getByTestId('review-applied-conflicts')).toHaveTextContent(
-      /2 fields the email proposed are already on the shipment/i,
-    )
+    expect(screen.queryByTestId('review-applied-conflicts')).toBeNull()
     // Nothing to apply → the primary answers the question that IS open, not a phantom diff.
     expect(screen.queryByRole('button', { name: /^apply/i })).toBeNull()
     expect(screen.getByTestId('desk-question')).toHaveTextContent(/Is this the right shipment\?/i)
@@ -2244,8 +2353,8 @@ describe('rows the leg already satisfies leave the grid', () => {
     expect(why.textContent).not.toMatch(/see conflict table/i)
     expect(why.textContent).not.toMatch(/field\(s\) disagree/i)
     expect(why.textContent).not.toMatch(/Email and system differ/i)
-    // The accurate statement is the only one left standing.
-    expect(screen.getByTestId('review-applied-conflicts')).toHaveTextContent(/already on the shipment/i)
+    // …and nothing replaced it: the desk says nothing rather than something inaccurate.
+    expect(screen.queryByTestId('review-applied-conflicts')).toBeNull()
   })
 
   it('counts a qty row the leg literally holds as applied, not as silently dropped', () => {
@@ -2283,12 +2392,23 @@ describe('rows the leg already satisfies leave the grid', () => {
         />
       </MemoryRouter>,
     )
-    // Both are already stored — the qty settle used to swallow its row before it could be reported.
-    expect(screen.getByTestId('review-applied-conflicts')).toHaveTextContent(/2 fields/i)
+    /**
+      * Both are already stored, so neither earns a grid row. The qty settle used to swallow its row
+      * silently; what proves it is counted now is `tableOwnedCount` — with 2 rows owned by the
+      * table, needs-attention must not fall back to "field(s) disagree" prose.
+      */
+    expect(screen.queryByTestId('review-decision-grid')).toBeNull()
+    // With both rows owned by the (now empty) table, the card must not fall back to conflict prose
+    // anywhere — that is what proves the qty row was counted rather than silently dropped.
+    expect(document.body.textContent).not.toMatch(/field\(s\) disagree|see conflict table/i)
   })
 
-  it('the settled rows open up so the operator can verify the claim', async () => {
-    const user = userEvent.setup()
+  /**
+   * The settled rows used to be listed in an openable strip. The desk asked for it gone: every value
+   * in it matched what the leg already stores, so the card spent space on data that is correct and
+   * unchanged. It is not hidden — it is the shipment page, one click away on Open Shipment.
+   */
+  it('does not spend the card on values that already agree', () => {
     render(
       <MemoryRouter>
         <ReviewCard
@@ -2300,10 +2420,9 @@ describe('rows the leg already satisfies leave the grid', () => {
         />
       </MemoryRouter>,
     )
-    const strip = screen.getByTestId('review-applied-conflicts')
-    await user.click(within(strip).getByRole('button'))
-    expect(within(strip).getByText('MARIBO MAERSK')).toBeInTheDocument()
-    expect(within(strip).getByText('631W')).toBeInTheDocument()
+    expect(screen.queryByTestId('review-applied-conflicts')).toBeNull()
+    expect(screen.queryByText('MARIBO MAERSK')).toBeNull()
+    expect(screen.getByRole('link', { name: /Open Shipment/i })).toBeInTheDocument()
   })
 
   /** One or two bare bullets read fine; four turn into a blob, so the group titles come back. */
@@ -2324,6 +2443,8 @@ describe('rows the leg already satisfies leave the grid', () => {
               riskFlags: [
                 { code: 'AMBIGUOUS_MATCH', severity: 'high', message: 'matched more than one leg' },
                 { code: 'MISSING_ATTACHMENT', severity: 'high', message: 'references an attachment' },
+                { code: 'CARGO_SANITY', severity: 'medium', message: 'cargo totals look wrong' },
+                { code: 'MULTI_DESTINATION_SUSPECT', severity: 'medium', message: 'two PODs' },
               ],
             })}
             compact={null}
@@ -2337,6 +2458,39 @@ describe('rows the leg already satisfies leave the grid', () => {
     // At least one group title is printed now (the exact set depends on classification).
     const titles = ['Which Shipment?', 'Real Shipment?', 'Master Miss', 'Incomplete Data', 'Other']
     expect(titles.some((t) => rest.textContent?.includes(t))).toBe(true)
+  })
+
+  /**
+   * The Mesh miss is classed `decision` by `tagDesk` because ops CAN add that master — just not from
+   * here. Masters are ERP-owned and read-only in this app, so the line sat under "Also" reading as
+   * one more thing to settle on a card that could not settle it.
+   */
+  it('a Mesh miss with nothing to pick moves out of the decisions', () => {
+    render(
+      <MemoryRouter>
+        <ReviewCard
+          shipment={baseShipment({
+            reviewReasons: [
+              'forwarder_name "TCI" did not exact-match a master (LLM matcher owns fuzzy; left unlinked)',
+            ],
+          })}
+          criticReview={baseReview({
+            conflicts: [],
+            reasons: [],
+            riskFlags: [
+              { code: 'AMBIGUOUS_MATCH', severity: 'high', message: 'matched more than one leg' },
+            ],
+          })}
+          compact={null}
+          defaultExpanded
+          onApprove={vi.fn()}
+        />
+      </MemoryRouter>,
+    )
+    const info = screen.getByTestId('review-for-information')
+    expect(info).toHaveTextContent(/TCI/)
+    expect(screen.getByTestId('review-for-information-status')).toHaveTextContent('no action')
+    expect(screen.getByTestId('needs-attention').textContent).not.toMatch(/TCI/)
   })
 
   it('two lines stay bare — a title per bullet is pure nesting', () => {
@@ -2402,7 +2556,8 @@ describe('rows the leg already satisfies leave the grid', () => {
     // Current used to print the critic's pre-write snapshot ('630W'); the leg says 631W.
     expect(within(grid).getByText('631W')).toBeInTheDocument()
     expect(within(grid).queryByText('630W')).toBeNull()
-    expect(screen.getByTestId('review-applied-conflicts')).toHaveTextContent(/1 field/i)
+    // The settled Vessel row simply leaves; it is no longer announced in a strip of its own.
+    expect(screen.queryByTestId('review-applied-conflicts')).toBeNull()
   })
 })
 
@@ -3203,5 +3358,575 @@ describe('a per-row Keep current is a ruling, not a no-op', () => {
     const payload = onSave.mock.calls[0]![0] as { fields: Record<string, unknown>; keep: string[] }
     expect(payload.fields).toEqual({ eta: '2026-07-23' })
     expect(payload.keep).toEqual(['vesselName'])
+  })
+})
+
+/**
+ * "This PO is on two shipments" used to be a notification with no answer attached: the card asked
+ * "Is this the right shipment?", the panel said the two readings look alike, and the only buttons
+ * were `Mark Reviewed — No Changes` and `Waiting`. An operator who decided the link was WRONG had no
+ * click that meant it, so the leg parked — and parked again next time.
+ *
+ * Modelled on PO 1570988: an AIR leg carrying 26 pieces against a SEA sibling carrying 207 cartons.
+ */
+describe('shared PO — the answer the panel never had', () => {
+  const sibling = {
+    shipmentId: 'EC1004DB-7C80-4BA5-A20D-01D6A30F4A22',
+    idAnchorAt: '2026-04-20T00:00:00.000Z',
+    bookingNo: 'S2600144827',
+    soNo: null,
+    hblAwbFcrNo: null,
+    mode: 'SEA',
+    etd: '2026-05-04T00:00:00.000Z',
+    atd: '2026-05-08T00:00:00.000Z',
+    state: 'SAILED',
+    legNo: 1,
+    dismissed: false,
+    provisional: false,
+    legQty: 207,
+    legQtyUnit: 'cartons',
+    crossMode: true,
+  }
+  const sharedPos = [
+    {
+      poNumber: '1570988',
+      legQty: 26,
+      legQtyUnit: 'pieces',
+      others: [sibling],
+      anyCrossMode: true,
+    },
+  ]
+
+  /** A card whose ONLY open question is the shared PO — no field conflicts, nothing to apply. */
+  const renderSharedPoCard = (
+    over: Record<string, unknown> = {},
+  ): { onApprove: ReturnType<typeof vi.fn> } => {
+    const onApprove = vi.fn(async () => {})
+    render(
+      <MemoryRouter>
+        <ReviewCard
+          shipment={
+            baseShipment({
+              mode: 'AIR',
+              sharedPos,
+              linkedPOs: [{ id: 'po-1570988', linkId: 'link-1', poNumber: '1570988' }],
+              ...over,
+            } as never)
+          }
+          criticReview={baseReview({ conflicts: [] })}
+          onApprove={onApprove}
+          defaultExpanded
+        />
+      </MemoryRouter>,
+    )
+    return { onApprove }
+  }
+
+  it('offers the removal, names it on the button, and performs it before the confirm', async () => {
+    unlinkMutateAsync.mockClear()
+    const user = userEvent.setup()
+    const { onApprove } = renderSharedPoCard()
+
+    expect(screen.getByTestId('shared-po-1570988')).toHaveTextContent(
+      /PO 1570988 is on 2 shipments/i,
+    )
+    await user.click(
+      within(screen.getByTestId('shared-po-answer-remove-1570988')).getByRole('radio'),
+    )
+
+    // The button says what it does. `Apply 1 Change` would have hidden the one action on this card
+    // that changes what a shipment CONTAINS.
+    const primary = screen.getByRole('button', { name: /^Remove PO 1570988$/ })
+    await user.click(primary)
+
+    expect(unlinkMutateAsync).toHaveBeenCalledWith({ poId: 'po-1570988', linkId: 'link-1' })
+    expect(onApprove).toHaveBeenCalled()
+  })
+
+  it('words the button as the answer when the operator says it was a split, and writes nothing', async () => {
+    unlinkMutateAsync.mockClear()
+    const user = userEvent.setup()
+    const { onApprove } = renderSharedPoCard()
+
+    await user.click(within(screen.getByTestId('shared-po-answer-split-1570988')).getByRole('radio'))
+    await user.click(screen.getByRole('button', { name: /^Confirm — Order Was Split$/ }))
+
+    expect(unlinkMutateAsync).not.toHaveBeenCalled()
+    expect(onApprove).toHaveBeenCalled()
+  })
+
+  /** The line said "No field changes to apply" while a removal sat armed above it. */
+  it('stops claiming there is nothing to apply once a removal is ticked', async () => {
+    const user = userEvent.setup()
+    renderSharedPoCard()
+    expect(screen.queryByTestId('review-judgment-only')).toBeNull()
+    await user.click(
+      within(screen.getByTestId('shared-po-answer-remove-1570988')).getByRole('radio'),
+    )
+    expect(screen.queryByTestId('review-judgment-only')).toBeNull()
+  })
+
+  /** Ticking then discarding must not leave a removal armed behind a button reading "No Changes". */
+  it('discard takes the pending removal back', async () => {
+    unlinkMutateAsync.mockClear()
+    const user = userEvent.setup()
+    renderSharedPoCard()
+    await user.click(
+      within(screen.getByTestId('shared-po-answer-remove-1570988')).getByRole('radio'),
+    )
+    await user.click(screen.getByTestId('discard-edits'))
+    expect(
+      within(screen.getByTestId('shared-po-answer-remove-1570988')).getByRole('radio'),
+    ).not.toBeChecked()
+    expect(screen.queryByRole('button', { name: /^Remove PO 1570988$/ })).toBeNull()
+  })
+
+  /** No link row → no way to write the removal. Offering it anyway is the same dead end, deeper. */
+  it('withholds the removal when the card cannot identify the link to delete', () => {
+    renderSharedPoCard({ linkedPOs: [{ id: 'po-1570988', linkId: null, poNumber: '1570988' }] })
+    expect(screen.getByTestId('shared-po-answer-split-1570988')).toBeInTheDocument()
+    expect(screen.queryByTestId('shared-po-answer-remove-1570988')).toBeNull()
+  })
+})
+
+/**
+ * Radios alone were too narrow an answer. What the desk reaches for first is usually to FIX the line
+ * the parser read — PO number, quantity, unit — and until now that meant leaving the review desk for
+ * the shipment page.
+ */
+describe('shared PO — correcting the line in place', () => {
+  const sharedPos = [
+    {
+      poNumber: '1570988',
+      legQty: 26,
+      legQtyUnit: 'pieces',
+      anyCrossMode: true,
+      others: [
+        {
+          shipmentId: 'EC1004DB-7C80-4BA5-A20D-01D6A30F4A22',
+          idAnchorAt: '2026-04-20T00:00:00.000Z',
+          bookingNo: 'S2600144827',
+          soNo: null,
+          hblAwbFcrNo: null,
+          mode: 'SEA',
+          etd: '2026-05-04T00:00:00.000Z',
+          atd: '2026-05-08T00:00:00.000Z',
+          state: 'SAILED',
+          legNo: 1,
+          dismissed: false,
+          provisional: false,
+          legQty: 207,
+          legQtyUnit: 'cartons',
+          crossMode: true,
+        },
+      ],
+    },
+  ]
+
+  const renderCard = () => {
+    const onApprove = vi.fn(async () => {})
+    render(
+      <MemoryRouter>
+        <ReviewCard
+          shipment={
+            baseShipment({
+              mode: 'AIR',
+              sharedPos,
+              linkedPOs: [{ id: 'po-1570988', linkId: 'link-1', poNumber: '1570988' }],
+            } as never)
+          }
+          criticReview={baseReview({ conflicts: [] })}
+          onApprove={onApprove}
+          defaultExpanded
+        />
+      </MemoryRouter>,
+    )
+    return { onApprove }
+  }
+
+  it('patches the link when the unit was read wrong, and names it on the button', async () => {
+    updateLinkMutateAsync.mockClear()
+    unlinkMutateAsync.mockClear()
+    const user = userEvent.setup()
+    const { onApprove } = renderCard()
+
+    await user.selectOptions(screen.getByLabelText(/Unit on this shipment/i), 'cartons')
+    // Typing IS the answer — the operator does not also have to find the radio that says so.
+    expect(
+      within(screen.getByTestId('shared-po-answer-correct-1570988')).getByRole('radio'),
+    ).toBeChecked()
+
+    await user.click(screen.getByRole('button', { name: /^Correct PO 1570988$/ }))
+    expect(updateLinkMutateAsync).toHaveBeenCalledWith({
+      poId: 'po-1570988',
+      linkId: 'link-1',
+      quantityUnit: 'cartons',
+    })
+    expect(unlinkMutateAsync).not.toHaveBeenCalled()
+    expect(onApprove).toHaveBeenCalled()
+  })
+
+  it('sends only the field that moved', async () => {
+    updateLinkMutateAsync.mockClear()
+    const user = userEvent.setup()
+    renderCard()
+    const qty = screen.getByLabelText(/Quantity on this shipment/i)
+    await user.clear(qty)
+    await user.type(qty, '30')
+    await user.click(screen.getByRole('button', { name: /^Correct PO 1570988$/ }))
+    // No quantityUnit key: an untouched unit must not ride along and overwrite itself.
+    expect(updateLinkMutateAsync).toHaveBeenCalledWith({
+      poId: 'po-1570988',
+      linkId: 'link-1',
+      quantity: 30,
+    })
+  })
+
+  it('renames the purchase order when the PO number itself was misread', async () => {
+    updatePoMutateAsync.mockClear()
+    const user = userEvent.setup()
+    renderCard()
+    const po = screen.getByLabelText(/PO number on this shipment/i)
+    await user.clear(po)
+    await user.type(po, '1570989')
+    await user.click(screen.getByRole('button', { name: /^Correct PO 1570988$/ }))
+    expect(updatePoMutateAsync).toHaveBeenCalledWith({ id: 'po-1570988', poNumber: '1570989' })
+  })
+
+  /** Clicking into a field and back out is not an edit, and must not become a write. */
+  it('writes nothing when the typed values match what is stored', async () => {
+    updateLinkMutateAsync.mockClear()
+    const user = userEvent.setup()
+    const { onApprove } = renderCard()
+    const qty = screen.getByLabelText(/Quantity on this shipment/i)
+    await user.clear(qty)
+    await user.type(qty, '26')
+    expect(screen.queryByRole('button', { name: /^Correct PO/ })).toBeNull()
+    await user.click(screen.getByRole('button', { name: /Mark Reviewed|Confirm/ }))
+    expect(updateLinkMutateAsync).not.toHaveBeenCalled()
+    expect(onApprove).toHaveBeenCalled()
+  })
+
+  it('discard puts the typed corrections back', async () => {
+    const user = userEvent.setup()
+    renderCard()
+    await user.selectOptions(screen.getByLabelText(/Unit on this shipment/i), 'cartons')
+    await user.click(screen.getByTestId('discard-edits'))
+    expect(screen.getByLabelText(/Unit on this shipment/i)).toHaveValue('pieces')
+    expect(screen.queryByRole('button', { name: /^Correct PO/ })).toBeNull()
+  })
+})
+
+/**
+ * The shared-PO block IS the shared-PO question. The `w-po-*` needs-attention lines were classified
+ * before it existed to answer them, so the card opened with a `needs answer` box that restated the
+ * question in prose, offered no control, and printed "No field changes to apply — answer above" —
+ * pointing at itself. The real answers sat two blocks lower under the same question.
+ */
+describe('shared PO — the question is asked once', () => {
+  const sharedPos = [
+    {
+      poNumber: '1570988',
+      legQty: 26,
+      legQtyUnit: 'pieces',
+      anyCrossMode: false,
+      others: [
+        {
+          shipmentId: 'EC1004DB-7C80-4BA5-A20D-01D6A30F4A22',
+          idAnchorAt: '2026-04-20T00:00:00.000Z',
+          bookingNo: 'S2600144827',
+          soNo: null,
+          hblAwbFcrNo: null,
+          mode: 'AIR',
+          etd: null,
+          atd: '2026-05-08T00:00:00.000Z',
+          state: 'SAILED',
+          legNo: 1,
+          dismissed: false,
+          provisional: false,
+          legQty: 207,
+          legQtyUnit: 'pieces',
+          crossMode: false,
+        },
+      ],
+    },
+  ]
+  const poReview = () =>
+    baseReview({
+      conflicts: [],
+      reasons: [],
+      riskFlags: [
+        { code: 'PO_ONLY_WEAK_MATCH', severity: 'medium', message: 'Matched on PO alone' },
+        { code: 'PO_REASSIGN', severity: 'high', message: 'PO belongs to a different shipment' },
+      ],
+    })
+
+  it('drops the prose restatement when the block below carries the answers', () => {
+    render(
+      <MemoryRouter>
+        <ReviewCard
+          shipment={
+            baseShipment({
+              mode: 'AIR',
+              sharedPos,
+              linkedPOs: [{ id: 'po-1570988', linkId: 'link-1', poNumber: '1570988' }],
+            } as never)
+          }
+          criticReview={poReview()}
+          compact={null}
+          defaultExpanded
+          onApprove={vi.fn()}
+        />
+      </MemoryRouter>,
+    )
+    expect(screen.queryByTestId('needs-attention')).toBeNull()
+    expect(document.body.textContent).not.toMatch(/is the order split, or is this the wrong shipment/i)
+    // …because the block that can answer it is the one asking.
+    expect(screen.getByTestId('shared-po-1570988')).toHaveTextContent(/PO 1570988 is on 2 shipments/i)
+    expect(screen.getByTestId('shared-po-1570988-status')).toHaveTextContent('needs answer')
+  })
+
+  /** And the leg must not read as settled while three radios sit unanswered. */
+  it('never says "nothing to decide" over an unanswered shared PO', () => {
+    render(
+      <MemoryRouter>
+        <ReviewCard
+          shipment={
+            baseShipment({
+              mode: 'AIR',
+              sharedPos,
+              linkedPOs: [{ id: 'po-1570988', linkId: 'link-1', poNumber: '1570988' }],
+            } as never)
+          }
+          criticReview={poReview()}
+          compact={null}
+          defaultExpanded
+          onApprove={vi.fn()}
+        />
+      </MemoryRouter>,
+    )
+    expect(screen.queryByTestId('review-ready-state')).toBeNull()
+  })
+
+  /** A queue LIST row carries no sharedPos, so there the line is the only thing saying it. */
+  it('keeps the line when the block is not on screen', () => {
+    render(
+      <MemoryRouter>
+        <ReviewCard
+          shipment={baseShipment()}
+          criticReview={poReview()}
+          compact={null}
+          defaultExpanded
+          onApprove={vi.fn()}
+        />
+      </MemoryRouter>,
+    )
+    expect(screen.getByTestId('desk-question')).toHaveTextContent(/Is this the right shipment\?/i)
+    expect(screen.getByTestId('desk-question-detail')).toHaveTextContent(
+      /is the order split, or is this the wrong shipment/i,
+    )
+  })
+})
+
+/**
+ * `isExpandableMiss` is true of a merely COLLAPSED miss, whose expansion is a list of names and
+ * nothing else. Keying the FYI split on it put "2 parties have no near match in database · Show 2
+ * names" under "Also" inside a `needs answer` box — where expanding it revealed two names and no
+ * control. The split keys on `meshCandidates` now: masters you can actually pick.
+ */
+describe('master misses — only the ones with something to pick are decisions', () => {
+  const twoMisses = () =>
+    baseShipment({
+      reviewReasons: [
+        'forwarder_name "TCI" did not exact-match a master (LLM matcher owns fuzzy; left unlinked)',
+        'vendor_code "WISEKNIT" did not exact-match a master (LLM matcher owns fuzzy; left unlinked)',
+      ],
+    })
+
+  it('sends a collapsed name list to For information, not to the decisions', () => {
+    render(
+      <MemoryRouter>
+        <ReviewCard
+          shipment={twoMisses()}
+          criticReview={baseReview({
+            conflicts: [],
+            reasons: [],
+            riskFlags: [
+              { code: 'AMBIGUOUS_MATCH', severity: 'high', message: 'matched more than one leg' },
+            ],
+          })}
+          compact={null}
+          defaultExpanded
+          onApprove={vi.fn()}
+        />
+      </MemoryRouter>,
+    )
+    const info = screen.getByTestId('review-for-information')
+    expect(info).toHaveTextContent(/no near match in database/i)
+    expect(screen.getByTestId('review-for-information-status')).toHaveTextContent('no action')
+    expect(screen.getByTestId('needs-attention').textContent).not.toMatch(/no near match in database/i)
+  })
+
+  /**
+   * A miss that names Mesh masters is a real pick, so it must never be filed as information. Here it
+   * is promoted further still — into the decision grid as a party row with the branches to choose
+   * from — which is the same point made louder: something to press.
+   */
+  it('never files a miss that offers masters as information', () => {
+    render(
+      <MemoryRouter>
+        <ReviewCard
+          shipment={baseShipment({
+            reviewReasons: [
+              'forwarder_name "LOGWIN" did not exact-match a master (LLM matcher owns fuzzy; left unlinked)',
+            ],
+          })}
+          criticReview={baseReview({
+            conflicts: [],
+            reasons: [],
+            riskFlags: [
+              { code: 'AMBIGUOUS_MATCH', severity: 'high', message: 'matched more than one leg' },
+            ],
+          })}
+          /* Mesh holds five LOGWIN companies, none named just "LOGWIN" — the case the miss line was
+             rewritten for. Five real branches, so the line carries five candidates to pick from. */
+          partyMasters={[
+            'LOGWIN AIR & OCEAN CHINA LTD.SHENZHEN BRANCH',
+            'LOGWIN AIR & OCEAN CHINA  LTD GUANGZHOU BRANCH',
+            'LOGWIN AIR + OCEAN CHINA LTD   SHENZHEN BRANCH',
+            'LOGWIN AIR & OCEAN HONG KONG LTD',
+            'LOGWIN AIR+OCEAN',
+          ].map((name, i) => ({ id: `m${i}`, code: `L${i}`, name, kind: 'forwarder' }) as never)}
+          compact={null}
+          defaultExpanded
+          onApprove={vi.fn()}
+        />
+      </MemoryRouter>,
+    )
+    expect(screen.queryByTestId('review-for-information')?.textContent ?? '').not.toMatch(/LOGWIN/i)
+    // It stayed a decision — the branches are on the card, where they can be picked.
+    expect(document.body.textContent).toMatch(/LOGWIN/i)
+  })
+})
+
+/**
+ * Leg 20260703B3: the queue raised PO_REASSIGN on the EMAIL, the committer then declined to link the
+ * PO ("exclusive to sibling HAWB — not linked"), and the leg ended up carrying no PO at all. So none
+ * of the three panels that normally answer a which-shipment question fired — no candidate picker, no
+ * shared-PO block, and the flags are not the WEAK_IDENTITY / AMBIGUOUS_MATCH that open the search.
+ * The card asked, marked itself `needs answer`, and offered nothing.
+ */
+describe('which shipment? — the answers when no panel carries them', () => {
+  const orphan = (props: Record<string, unknown> = {}) =>
+    render(
+      <MemoryRouter>
+        <ReviewCard
+          shipment={baseShipment({ reviewReasons: [] })}
+          criticReview={baseReview({
+            conflicts: [],
+            reasons: [],
+            riskFlags: [
+              { code: 'PO_REASSIGN', severity: 'high', message: 'PO belongs to a different shipment' },
+            ],
+          })}
+          compact={null}
+          defaultExpanded
+          onApprove={vi.fn()}
+          {...props}
+        />
+      </MemoryRouter>,
+    )
+
+  it('offers yes / no inside the block that asks', () => {
+    orphan({ onIdentify: vi.fn() })
+    expect(screen.getByTestId('needs-attention-status')).toHaveTextContent('needs answer')
+    expect(screen.getByTestId('identity-answer-yes')).toHaveTextContent(/this is the right shipment/i)
+    // Names the action and where it happens, not the goal — the control opens directly below.
+    expect(screen.getByTestId('identity-answer-no')).toHaveTextContent(
+      /manually assign the shipment below/i,
+    )
+  })
+
+  it('names the confirm on the primary button once "yes" is picked', async () => {
+    const user = userEvent.setup()
+    orphan({ onIdentify: vi.fn() })
+    await user.click(within(screen.getByTestId('identity-answer-yes')).getByRole('radio'))
+    expect(screen.getByRole('button', { name: /^Confirm — Right Shipment$/ })).toBeInTheDocument()
+  })
+
+  /** "No" is not a label — it is the search that finds the right leg. */
+  it('opens the identify search when the answer is no', async () => {
+    const user = userEvent.setup()
+    orphan({ onIdentify: vi.fn() })
+    expect(screen.queryByTestId('identify-shipment')).toBeNull()
+    await user.click(within(screen.getByTestId('identity-answer-no')).getByRole('radio'))
+    const assign = screen.getByTestId('identify-shipment')
+    expect(assign).toBeInTheDocument()
+    // Named for the route the operator took: assignment, not identification of this leg.
+    expect(assign).toHaveTextContent(/Assign the right shipment/i)
+    expect(assign).toHaveTextContent(/the shipment it belongs to/i)
+    expect(screen.getByLabelText('Identity value')).toBeInTheDocument()
+  })
+
+  it('withholds "no" when the card has no way to search', () => {
+    orphan()
+    expect(screen.getByTestId('identity-answer-yes')).toBeInTheDocument()
+    expect(screen.queryByTestId('identity-answer-no')).toBeNull()
+  })
+
+  /** A question that already has a panel must not grow a second set of answers. */
+  it('stays out of the way when a panel already carries the answer', () => {
+    render(
+      <MemoryRouter>
+        <ReviewCard
+          shipment={
+            baseShipment({
+              mode: 'AIR',
+              linkedPOs: [{ id: 'po-1', linkId: 'l-1', poNumber: '1570988' }],
+              sharedPos: [
+                {
+                  poNumber: '1570988',
+                  legQty: 26,
+                  legQtyUnit: 'pieces',
+                  anyCrossMode: false,
+                  others: [
+                    {
+                      shipmentId: 'EC1004DB-7C80-4BA5-A20D-01D6A30F4A22',
+                      idAnchorAt: null,
+                      bookingNo: 'S2600144827',
+                      soNo: null,
+                      hblAwbFcrNo: null,
+                      mode: 'AIR',
+                      etd: null,
+                      atd: null,
+                      state: 'BOOKED',
+                      legNo: 1,
+                      dismissed: false,
+                      provisional: false,
+                      legQty: 207,
+                      legQtyUnit: 'pieces',
+                      crossMode: false,
+                    },
+                  ],
+                },
+              ],
+            } as never)
+          }
+          criticReview={baseReview({
+            conflicts: [],
+            reasons: [],
+            riskFlags: [
+              { code: 'PO_REASSIGN', severity: 'high', message: 'PO belongs to a different shipment' },
+            ],
+          })}
+          compact={null}
+          defaultExpanded
+          onApprove={vi.fn()}
+          onIdentify={vi.fn()}
+        />
+      </MemoryRouter>,
+    )
+    expect(screen.queryByTestId('identity-answer')).toBeNull()
+    expect(screen.getByTestId('shared-po-1570988-status')).toHaveTextContent('needs answer')
   })
 })

@@ -65,21 +65,21 @@ export const REVIEW_GROUP_HEADER = `px-3 py-2 text-left ${REVIEW_FS.meta} font-s
  *  but names its own first two columns "PO" / "Item/Style" (#358) — the generic wording never fit
  *  its rows.
  *
- *  `proposed` is a track name, not a claim: nothing in that column is awaiting an apply. Conflicts
- *  the commit settled are stripped upstream (openDecisions), so every value that reaches it is one
- *  the committer read and did not write. "AI Proposed" said the opposite and was wrong.
+ *  `proposed` names the column of alternatives the pipeline read off the thread. Operator's wording
+ *  (2026-07-30), after "AI Proposed" → "Also Seen In Email" → "Other values".
  *
- *  It said "Also Seen In Email", which was true while every value in the column came from an email.
- *  It no longer does: an unlinked party's row offers Mesh MASTERS — five LOGWIN branches that appear
- *  in no email at all — so the header was captioning them as something the sender wrote. "Other
- *  values" is true of both, and each row still shows its own provenance (a master code chip, the
- *  reference email) where the header cannot. */
+ *  Two things the header does NOT assert, both of which the rows show for themselves:
+ *  - nothing in the column is awaiting an apply — conflicts the commit settled are stripped upstream
+ *    (openDecisions), so every value reaching it is one the committer read and declined to write;
+ *  - not every value came off an email — an unlinked party's row offers Mesh MASTERS (five LOGWIN
+ *    branches that appear in no message at all), each carrying its own master-code chip, and the
+ *    reference-email column stays empty for them. */
 export const REVIEW_HEAD = {
   // Just 'Field'. The slash existed because ONE header sat above both the PO section and the field
   // rows; each table names its own columns now, and the PO table says 'PO'.
   label: 'Field',
   existing: 'Current',
-  proposed: 'Other values',
+  proposed: 'AI proposed',
   reference: 'Reference Email',
 } as const
 

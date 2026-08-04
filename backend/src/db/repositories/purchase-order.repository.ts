@@ -107,6 +107,7 @@ export class PurchaseOrderRepository {
         'shipments.bookingNo as bookingNo', 'shipments.hblAwbFcrNo as hbl', 'shipments.soNo as so',
         'shipments.etd as etd', 'shipments.eta as eta', 'shipments.mode as mode',
         'pol.unlocode as polCode', 'pod.unlocode as podCode', 'pol.iata as polIata', 'pod.iata as podIata',
+        'shipments.journey as journey',
         'shipmentPos.createdAt as linkedAt', 'shipments.containerNo as containerNo', 'shipments.mbl as mbl',
         'shipments.scacCode as scacCode', 'shipments.vesselName as vesselName',
         // #350/#354: anchor fields for the derived Shipment ID on the detail's Linked Shipments rows
@@ -132,6 +133,7 @@ export class PurchaseOrderRepository {
         'shipments.hblAwbFcrNo as hbl', 'shipments.mbl as mbl', 'shipments.scacCode as scacCode',
         'shipments.vesselName as vesselName', 'shipments.mode as mode',
         'pol.unlocode as polCode', 'pod.unlocode as podCode', 'pol.iata as polIata', 'pod.iata as podIata',
+        'shipments.journey as journey',
       ])
       .execute()
   }
@@ -262,6 +264,22 @@ export class PurchaseOrderRepository {
     const existing = await this.db.selectFrom('shipmentPos').where('poId', '=', poId).where('shipmentId', '=', shipmentId).select('id').executeTakeFirst()
     if (existing) return null
     const row = await this.db.insertInto('shipmentPos').values({ poId, shipmentId, quantity, quantityUnit }).outputAll('inserted').executeTakeFirst()
+    return row ?? null
+  }
+  /** Correct the quantity / unit on an existing shipment↔PO line. `poId` is in the predicate so a
+   *  link id from one PO can never patch another's row. */
+  async updateShipmentPo(
+    poId: string,
+    linkId: string,
+    patch: { quantity?: number | null; quantityUnit?: string | null },
+  ) {
+    const row = await this.db
+      .updateTable('shipmentPos')
+      .set(patch)
+      .where('id', '=', linkId)
+      .where('poId', '=', poId)
+      .outputAll('inserted')
+      .executeTakeFirst()
     return row ?? null
   }
   async unlinkShipmentPo(poId: string, linkId: string) {

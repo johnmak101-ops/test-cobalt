@@ -180,8 +180,8 @@ describe('pendingReviewAnnotations — a mailbox is not a party either', () => {
       ],
     })
     expect(ann.get('forwarderRaw')?.messages).toEqual([
-      '"鼎赋供应链管理（东莞）有限公司" not found in Mesh Database — advise add in Mesh.',
-      '"TCI" not found in Mesh Database — advise add in Mesh.',
+      '"鼎赋供应链管理（东莞）有限公司" has no near match in database.',
+      '"TCI" has no near match in database.',
     ])
   })
 
@@ -239,7 +239,7 @@ describe('pendingReviewAnnotations — a company already in Mesh is never "add i
       openDecisions: resolved,
     })
     expect(ann.get('forwarderRaw')?.messages).toEqual([
-      '"FAIRATE" not found in Mesh Database — advise add in Mesh.',
+      '"FAIRATE" has no near match in database.',
     ])
   })
 
@@ -531,7 +531,7 @@ describe('pendingReviewAnnotations — "in Mesh five times" is not "not in Mesh"
 
   it('stops telling the operator to add a company Mesh already holds five of', () => {
     const ann = pendingReviewAnnotations(leg, undefined, LOGWIN_MASTERS)
-    expect(ann.get('forwarderRaw')?.messages.join(' ')).not.toMatch(/advise add in Mesh/i)
+    expect(ann.get('forwarderRaw')?.messages.join(' ')).not.toMatch(/no near match in database/i)
   })
 
   it('says how many there are and names them, because the question is WHICH one', () => {
@@ -564,12 +564,12 @@ describe('pendingReviewAnnotations — "in Mesh five times" is not "not in Mesh"
       reviewReasons: ['forwarder_name "KUEHNE NAGEL" did not exact-match a master (LLM matcher owns fuzzy; left unlinked)'],
     }
     const msg = pendingReviewAnnotations(absent, undefined, LOGWIN_MASTERS).get('forwarderRaw')!.messages.join(' ')
-    expect(msg).toMatch(/not found in Mesh Database — advise add in Mesh/i)
+    expect(msg).toMatch(/has no near match in database/i)
   })
 
   it('without the mirror loaded, behaviour is exactly what it was', () => {
     const msg = pendingReviewAnnotations(leg).get('forwarderRaw')!.messages.join(' ')
-    expect(msg).toMatch(/not found in Mesh Database — advise add in Mesh/i)
+    expect(msg).toMatch(/has no near match in database/i)
   })
 
   it('still defers to a RESOLVED party — that line is stale, not a pick-one', () => {

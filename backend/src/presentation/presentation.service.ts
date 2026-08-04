@@ -37,7 +37,7 @@ import { toUiAlertRule } from './mappers/alert-rule.mapper'
 import { SaveAlertRulesDto } from './alert-rules.dto'
 import { ALERT_COUNTRY_CODES } from '../alerts/alert-rule-defaults'
 import { toUiHistoryEntry } from './mappers/history.mapper'
-import { deriveRoute, portLabel, poNumbersJson, isoOrNull } from './adapters/derive'
+import { deriveRoute, journeyRoute, portLabel, poNumbersJson, isoOrNull } from './adapters/derive'
 import { computeFieldConflicts } from './field-conflicts'
 import { openDecisions } from './open-decisions'
 import { sharedPos } from './po-shared-legs'
@@ -131,7 +131,7 @@ export function buildShipmentSummary(
   return {
     id: leg.id,
     poNumbers: poNumbersJson(poNumbers),
-    route: deriveRoute(portLabel(leg.mode, pol?.unlocode, pol?.iata), portLabel(leg.mode, pod?.unlocode, pod?.iata)),
+    route: journeyRoute((leg as { journey?: unknown }).journey) ?? deriveRoute(portLabel(leg.mode, pol?.unlocode, pol?.iata), portLabel(leg.mode, pod?.unlocode, pod?.iata)),
     customer: customer ? { name: customer.name } : null,
     consigneeName: consignee || null,
     // #350: the alert card derives the Shipment ID from these (firstEmailAt ?? createdAt + uuid head).
@@ -395,7 +395,9 @@ export class PresentationService {
         bookingNo: leg.bookingNo ?? null,
         soNumber: leg.soNo ?? null,
         customerName: customer?.name ?? (leg as { customerRaw?: string | null }).customerRaw ?? null,
-        route: deriveRoute(
+        // each leg shows ITS OWN chain — a PO split across an air A→B→C and a sea A→D renders as
+        // two rows, `A→B→C` and `A→D`, never one blended route.
+        route: journeyRoute((leg as { journey?: unknown }).journey) ?? deriveRoute(
           portLabel(leg.mode, pol?.unlocode, pol?.iata) ?? leg.polRaw,
           portLabel(leg.mode, pod?.unlocode, pod?.iata) ?? leg.podRaw,
         ),
@@ -769,15 +771,37 @@ export class PresentationService {
     )
     const visible = view !== 'pending' ? bandVisible : bandVisible.filter((r) => !autoClears(r).clear)
     const clearedIds = new Set(extra.map((r) => r.id))
+
+    /**
+     * The shared-PO evidence for every row on this page, in one query.
+     *
+     * The queue renders the whole card, so it needs this: without it the card asked "is the order
+     * split, or is this the wrong shipment?", marked itself `needs answer`, and offered nothing to
+     * press — the answers live in SharedPoPanel and the panel needs these rows. Batched rather than
+     * per-row so it does not reintroduce an N+1.
+     */
+    const siblingRows = await this.shipmentRepo.poSiblingLegsFor(visible.map((r) => r.id))
+    const siblingsByLeg = new Map<string, typeof siblingRows>()
+    for (const row of siblingRows) {
+      const owner = String(row.ownerShipmentId)
+      const list = siblingsByLeg.get(owner)
+      if (list) list.push(row)
+      else siblingsByLeg.set(owner, [row])
+    }
+
     return {
       shipments: visible.map((r) => ({
         id: r.id,
         bookingNo: r.bookingNo ?? null,
         soNo: r.soNo ?? null,
+        // The frontend's booking-label fallback chain is bookingNo ?? soNo ?? hblAwbFcrNo — the type
+        // declared it but this projection never sent it, so an HBL-only leg rendered '—' on the queue,
+        // the panel and the TopBar all at once.
+        hblAwbFcrNo: r.hblAwbFcrNo ?? null,
         // strings (not objects) — the review-queue table renders these directly; an object here crashes React
         customer: r.customerName ?? null,
         forwarder: r.forwarderName ?? r.forwarderRaw ?? null,
-        route: deriveRoute(
+        route: journeyRoute((r as { journey?: unknown }).journey) ?? deriveRoute(
           portLabel(r.mode, r.polCode, r.polIata) ?? r.polRaw,
           portLabel(r.mode, r.podCode, r.podIata) ?? r.podRaw,
         ),
@@ -804,6 +828,12 @@ export class PresentationService {
         createdAt: isoOrNull(r.createdAt),
         updatedAt: isoOrNull(r.updatedAt),
         poCount: r.poCount ?? 0,
+        /** Same shape the detail payload carries, so the card behaves identically on both surfaces. */
+        sharedPos: sharedPos(siblingsByLeg.get(r.id) ?? [], {
+          mode: r.mode,
+          qty: (r as { qty?: number | null }).qty,
+          qtyUnit: (r as { qtyUnit?: string | null }).qtyUnit,
+        }),
         dismissedAt: isoOrNull(r.dismissedAt),
         // Waiting tab reads both: the stamp orders the list, the reason says who we are waiting on.
         waitingAt: isoOrNull(r.waitingAt),
@@ -819,9 +849,15 @@ export class PresentationService {
          */
         openDecisions: openDecisions(
           { ...r, bookingNo: r.legBookingNo, soNo: r.legSoNo } as Record<string, unknown>,
-          r.criticReview as CriticReview | null | undefined,
+          // Party-mismatch rows included, for the same reason autoClears above uses this payload: they
+          // are rows the desk WILL render, so a leg whose only open question is a stale master link
+          // must not report an empty open set to whoever summarises this row.
+          queueCriticReview(r),
           {
             customer: r.customerId ? r.customerName : null,
+            // Vendor was missing while the detail path passed all three, so a vendor-slot resolution
+            // could not silence the stale "add it in Mesh" line on this surface (see PartiesLinked).
+            vendor: r.vendorId ? r.vendorName : null,
             forwarder: r.forwarderId ? r.forwarderName : null,
           },
         ),

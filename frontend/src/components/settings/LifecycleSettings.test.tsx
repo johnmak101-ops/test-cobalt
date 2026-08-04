@@ -10,7 +10,7 @@ const { getMock, putMock } = vi.hoisted(() => ({
 }))
 vi.mock('../../lib/api', () => ({ api: { get: getMock, put: putMock } }))
 vi.mock('../../hooks/use-auth', () => ({
-  useAuth: () => ({ user: { id: 'u1', role: 'ADMIN' } }),
+  useAuth: () => ({ user: { id: 'u1', role: 'SUPERADMIN' } }),
 }))
 vi.mock('../ui/Toast', () => ({ toast: Object.assign(vi.fn(), { success: vi.fn(), error: vi.fn() }) }))
 

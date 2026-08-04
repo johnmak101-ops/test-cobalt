@@ -11,6 +11,19 @@ COPY backend/package.json backend/
 RUN pnpm install --frozen-lockfile
 
 COPY . .
+
+# Which port the browser should call the API on. Vite INLINES this at build time, so it cannot be
+# changed by a runtime env var — it must be a build arg.
+#
+# Why it matters: frontend/src/lib/api.ts treats only ports 5173 and 3000 as "same origin as the
+# backend"; served from any OTHER local port it emits an absolute http://localhost:<this>/api. So an
+# image published on host port 3100 with the default 3000 makes the browser call the DEV backend on
+# :3000, which fails CORS — and if CORS were widened it would silently read the DEV database instead
+# of this container's. Set this to the HOST port the image is published on:
+#     docker build --build-arg VITE_BACKEND_PORT=3100 -t shiptrack:demo ...
+ARG VITE_BACKEND_PORT=3000
+ENV VITE_BACKEND_PORT=$VITE_BACKEND_PORT
+
 RUN pnpm --filter backend build \
  && pnpm --filter frontend build
 

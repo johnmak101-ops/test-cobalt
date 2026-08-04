@@ -15,6 +15,18 @@ export class CreateDecisionDto {
 
   @IsOptional() @IsArray() @IsString({ each: true }) pos?: string[]
 
+  /** POs the agent's B/L-anchored records STATE without committing them as contents (queue: `posStated`,
+   *  from `matchKeys.po_list_stated`). MATCHING ONLY — it widens candidate lookup and findExistingLeg so an
+   *  AWB reaches the sibling legs holding its other POs; it is NEVER written to shipment_pos. Omitted by
+   *  legacy callers → matching behaves exactly as before. Must be declared here or the whitelist
+   *  ValidationPipe (main.ts) strips it off the wire. */
+  @IsOptional() @IsArray() @IsString({ each: true }) posStated?: string[]
+
+  /** The subset of `pos` the agent swept up rather than stated (queue `posInferred`). Persisted per link
+   *  (0029) as claim STRENGTH, so a later email that names the PO displaces this weak claim instead of
+   *  losing the cross-HAWB guard on arrival order. Omitted by legacy callers → all claims stated. */
+  @IsOptional() @IsArray() @IsString({ each: true }) posInferred?: string[]
+
   /** Per-PO unambiguous shipped qty, keyed by normalized po_no. Present only when a real qty can be attributed
    *  to an individual PO; absent (or a PO omitted) when the qty is a broadcast total. Omitted by legacy callers. */
   @IsOptional()
@@ -34,8 +46,9 @@ export class CreateDecisionDto {
   /** Human-readable disagreement notes the Matcher surfaced (GENUINE conflicts only). */
   @IsOptional() @IsArray() @IsString({ each: true }) conflicts?: string[]
 
-  /** Lifecycle identity supersedes (Draft → Final B/L etc.) — recorded for history, not penalized. */
-  @IsOptional() @IsArray() @IsString({ each: true }) supersedes?: string[]
+  // `supersedes` was declared here for years and consumed by NOTHING — a dead contract prop that only
+  // misled readers. It stays QUEUE-INTERNAL (their risk pass reads it off the draft); the queue stopped
+  // sending it the same day this line was removed. Re-declare ONLY together with a real consumer.
 
   /** Every value each identity field ever held (current + alternates) — persisted as searchable history. */
   @IsOptional()
@@ -72,6 +85,26 @@ export class CreateDecisionDto {
    *  committed leg is marked leg_status='CANCELLED' and the UI surfaces it as Cancelled rather than an
    *  active Booking Request. Omitted by legacy callers → treated as not cancelled (unchanged). */
   @IsOptional() @IsBoolean() cancelled?: boolean
+
+  /** The journey CHAIN of the latest queue record that states one (queue `fields.legs`, MERGE_EXEMPT,
+   *  lifted by groupJourney). Every stop has survived the queue's two validate guards: air legs end at
+   *  air gateways, and every endpoint is VISIBLE in the email that stated it — so this is extraction,
+   *  never lane-knowledge invention. Rendered into the route string (`PVG->DEL->LHR`); stored on
+   *  `shipments.journey` as JSON. Omitted by legacy callers -> no journey (unchanged). */
+  @IsOptional()
+  @IsArray()
+  @Type(() => Object)
+  journey?: { seq: number; mode: string; pol: string; pod: string; doc: string | null }[]
+
+  /** DIVISION statements the queue's matcher acted on (`注：PO28739;PO28740 改为 07-Feb 入仓` — cargo
+   *  stated as moved off a booking). The committer's evidence for removing a stated shipment_pos link:
+   *  a PO both named here AND absent from `pos` left this leg, audited with the quote. A PARTIAL
+   *  division (counted cartons) keeps its PO in `pos` queue-side, so it never qualifies. Omitted by
+   *  legacy callers → no links removed (unchanged). */
+  @IsOptional()
+  @IsArray()
+  @Type(() => Object)
+  divisions?: { pos: string[]; direction?: string; target?: string; quote?: string; statedAt?: string }[]
 
   /** The Critic's per-shipment confidence, 0-100. Routes to confirmed/provisional vs the threshold. */
   @IsInt() @Min(0) @Max(100) confidence!: number

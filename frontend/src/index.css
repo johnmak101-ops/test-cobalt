@@ -17,6 +17,16 @@
   --color-status-info: #3B82F6;
   --color-status-success: #22C55E;
 
+  /* A stored value this Apply will EMPTY — the mode-change clears on the review grid.
+     Deliberately NOT --color-status-critical: that red means blocked/broken (a party missing from
+     Mesh, where nothing proceeds until someone acts). A clear the operator asked for is neither, and
+     wearing the alarm red made a routine tick read as a failure. Soft rose keeps the DIRECTION —
+     red takes away, blue writes — without the alarm.
+     `-fill` is the darker one, used where white sits on top (the ticked checkbox: 4.26:1). Both
+     darken in the light theme below — keep the two in sync. */
+  --color-remove: #F0908A;
+  --color-remove-fill: #C9564E;
+
   /* A value an email stated that the leg does NOT store — the review grid's third column.
      It was `--color-ai-proposed`, amber, sharing the "apply me" weight of the status colours. That
      was a misread of what reaches the column: openDecisions (presentation/open-decisions.ts) has
@@ -102,6 +112,10 @@
   --color-text-primary: #0A0A0A;
   --color-text-secondary: #3F3F46;
   --color-text-muted: #71717A;
+
+  /* see @theme: same rose, darkened for contrast on white (#F0908A on #FFF is ~2.1:1) */
+  --color-remove: #B3413A;
+  --color-remove-fill: #B3413A;
 
   /* see @theme: same slate, darkened for contrast on white (#8FA0C0 on #FFF is ~2.4:1) */
   --color-review-seen: #55617A;

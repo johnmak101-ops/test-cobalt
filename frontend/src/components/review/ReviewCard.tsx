@@ -1,7 +1,21 @@
 import { useCallback, useMemo, useState } from 'react'
 // Action-bar buttons are text-only — the only icon left in the bar is the busy spinner, which is
 // state, not decoration. ExternalLink/Mail still mark the source-email affordances.
-import { Check, ChevronDown, ChevronRight, ExternalLink, Loader2, Mail, NotebookPen, Undo2 } from 'lucide-react'
+import {
+  Check,
+  ChevronDown,
+  ChevronRight,
+  ExternalLink,
+  HelpCircle,
+  Info,
+  Loader2,
+  Mail,
+  Forward,
+  NotebookPen,
+  Search,
+  Undo2,
+} from 'lucide-react'
+import { ReviewBlock } from './ReviewBlock'
 import { Badge } from '../ui/Badge'
 import {
   ConflictRow,
@@ -11,9 +25,10 @@ import {
   proposedValueOf,
   splitCandidates,
 } from './ConflictRow'
+import { ModeClearRow } from './ModeClearRow'
 import {
   fieldUnit,
-  groupConflictFields,
+  groupReviewRows,
   isPortColumn,
   mapCriticFieldToColumn,
   reviewFieldLabel,
@@ -39,16 +54,26 @@ import {
   type CriticReviewCompact,
 } from '../../lib/critic-review'
 import { CandidateLegsPanel } from './CandidateLegsPanel'
-import { SharedPoPanel } from './SharedPoPanel'
+import { SharedPoPanel, type SharedPoAnswer, type SharedPoEdit } from './SharedPoPanel'
 import { EvidencePanel } from './EvidencePanel'
 import { ReviewPoStylesSection, alsoSeenStyleForPo } from './ReviewPoStylesSection'
 import type { PoStylePlan } from '../../lib/po-style-plan'
-import { useUpdatePurchaseOrder } from '../../hooks/use-purchase-orders'
+import {
+  useUpdatePurchaseOrder,
+  useUnlinkShipmentFromPO,
+  useUpdateShipmentPoLink,
+} from '../../hooks/use-purchase-orders'
 import type { ReviewShipment } from '../../hooks/use-review-queue'
 import type { LinkedPO, ShipmentDetail } from '../../hooks/use-shipments'
 import { cn, formatDateTime } from '../../lib/utils'
 import { parseSender } from '../../lib/email-sender'
-import { buildNeedsAttentionGroups, isExpandableMiss, portsLinkedFromRoute } from './needs-attention'
+import {
+  buildNeedsAttentionGroups,
+  isExpandableMiss,
+  portsLinkedFromRoute,
+  type NeedsAttentionGroup,
+  type NeedsAttentionItem,
+} from './needs-attention'
 import {
   NO_CHANGE_VERDICT,
   candidateDeskQuestion,
@@ -64,7 +89,6 @@ import {
   REVIEW_FS,
   REVIEW_GROUP_HEADER,
   REVIEW_HEAD,
-  REVIEW_PANEL,
   REVIEW_PANEL_DOT,
   REVIEW_PANEL_ITEM,
   REVIEW_PANEL_LIST,
@@ -72,6 +96,7 @@ import {
   REVIEW_TH,
 } from './review-table-layout'
 import { ReviewColGroup } from './ReviewColGroup'
+import { meshMissText } from '../../lib/review-reasons'
 
 /**
  * ONE geometry for every button in the card's action bar; variants change COLOUR only, never size,
@@ -279,6 +304,78 @@ const LEG_IDENTIFIER_FIELDS = [
   { field: 'hblNumber', label: 'B/L number' },
 ] as const
 
+/**
+ * The secondary needs-attention lines, grouped.
+ *
+ * Shared by the two blocks that show them — "Also" inside the question (things still to decide) and
+ * "For information" (things this desk cannot act on). One renderer so the two never drift into
+ * looking like different kinds of list, which is the whole point of the shell.
+ *
+ * Grouping is real and ordered; the TITLE is earned rather than automatic. One or two lines read fine
+ * bare — the item text names its own subject ("Customer not in master — …") and a title per bullet
+ * was pure nesting. Past three the bare list turns into a blob, so the titles come back.
+ */
+function renderRestGroups(groups: NeedsAttentionGroup[], withTitles: boolean) {
+  return (
+    <div className="space-y-1">
+      {groups.map((g) => (
+        <div key={g.groupId} data-testid={`needs-group-${g.groupId}`} aria-label={g.title}>
+          {withTitles && (
+            <p className={`${REVIEW_FS.meta} font-semibold text-text-secondary`}>{g.title}</p>
+          )}
+          <ul className={REVIEW_PANEL_LIST}>
+            {g.items.map((r) =>
+              isExpandableMiss(r) ? (
+                <NeedsAttentionMeshMiss key={r.key} item={r} />
+              ) : (
+                <li
+                  key={r.key}
+                  className={REVIEW_PANEL_ITEM}
+                  title={r.evidence?.join(' · ') || undefined}
+                >
+                  <span
+                    className={cn(
+                      REVIEW_PANEL_DOT,
+                      r.severity === 'high'
+                        ? 'bg-status-critical'
+                        : r.severity === 'medium'
+                          ? 'bg-status-warning'
+                          : 'bg-surface-600',
+                    )}
+                  />
+                  <span className="min-w-0">{r.text}</span>
+                </li>
+              ),
+            )}
+          </ul>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+/**
+ * A line this desk can state but not act on.
+ *
+ * `tagDesk` classes a NAMED Mesh party miss as a decision because ops CAN add that master — but not
+ * from here: masters are ERP-owned and read-only in this app, which is why the Resolution Rules UI
+ * was removed. `"TCI" has no near match in database` is a finding to pass on, not a question, and
+ * sitting in the decision list it read as one more thing to settle on a card that could not settle
+ * it.
+ *
+ * A miss that OFFERS MASTERS TO PICK is the opposite — picking one is a real action on this card.
+ * That, specifically, is where the line falls: `meshCandidates`, not `isExpandableMiss`.
+ *
+ * The two are not the same and the difference showed. `isExpandableMiss` is also true of a merely
+ * COLLAPSED miss, whose expansion is a list of names and nothing else — so `2 parties have no near
+ * match in database · Show 2 names` counted as a decision, sat under "Also" inside a `needs answer`
+ * box, and expanded to reveal… two names. Nothing to pick, nothing to press.
+ */
+function isInfoOnlyLine(i: NeedsAttentionItem): boolean {
+  if (i.groupId !== 'master_miss' && !i.lineId.startsWith('m-')) return false
+  return Object.keys(i.meshCandidates ?? {}).length === 0
+}
+
 export function ReviewCard({
   shipment,
   criticReview,
@@ -328,7 +425,13 @@ export function ReviewCard({
   const hasCandidateLegs = !identityPinned && (matchAmbiguity?.candidates?.length ?? 0) >= 2
   // Identify/link: weak-identity fold OR ambiguous-match (which real shipment?) — #146
   // Still show Identify when ambiguous but no candidate payload (legacy legs) or as fallback under panel
-  const showIdentify = !readOnly && !!onIdentify && (isWeakIdentity || isAmbiguousMatch)
+  /**
+   * The operator answered "no, wrong shipment" to a which-shipment question that had no picker —
+   * so the search that finds the right one is what "no" means, and it opens on demand.
+   */
+  const [wrongShipment, setWrongShipment] = useState(false)
+  const showIdentify =
+    !readOnly && !!onIdentify && (isWeakIdentity || isAmbiguousMatch || wrongShipment)
   const [identField, setIdentField] = useState<'booking_no' | 'so_no' | 'hbl_awb_fcr_no'>('booking_no')
   const [identValue, setIdentValue] = useState('')
   const [identResult, setIdentResult] = useState<IdentifyResult | null>(null)
@@ -568,7 +671,6 @@ export function ReviewCard({
    */
   const tableOwnedCount = conflicts.length + appliedConflicts.length
   /** Operator asked to see the settled rows. */
-  const [appliedOpen, setAppliedOpen] = useState(false)
   /** Threshold at which the "Also" list stops reading as a list and starts reading as a blob. */
   const ALSO_TITLE_THRESHOLD = 3
   /** Newest first: "which statement is the latest?" is the question a reviewer actually has, and a
@@ -684,6 +786,102 @@ export function ReviewCard({
   )
 
   /**
+   * The operator's answer to each shared PO ("split" / "remove"), and the write that answer implies.
+   *
+   * The panel used to end on a question and offer nothing, so an operator who concluded the PO was
+   * mis-linked had no click that said so — the honest move was `Waiting`, and the leg parked forever.
+   * The decision is recorded here and committed by the primary button, alongside the field edits and
+   * the PO style plans, because one leg leaving the desk should be one commit.
+   */
+  const [sharedPoAnswers, setSharedPoAnswers] = useState<Record<string, SharedPoAnswer>>({})
+  /** PO number → the link row this card would delete. Absent for a PO the payload cannot identify. */
+  const poLinkByNumber = useMemo(() => {
+    const map = new Map<string, { poId: string; linkId: string }>()
+    for (const p of linkedPOs) {
+      const num = String(p.poNumber ?? '').trim()
+      const linkId = String(p.linkId ?? '').trim()
+      if (num !== '' && linkId !== '' && p.id) map.set(num, { poId: p.id, linkId })
+    }
+    return map
+  }, [linkedPOs])
+  /** Which shared POs can be offered a "remove" at all — a choice we cannot write is not a choice. */
+  const sharedPoRemovable = useMemo(
+    () =>
+      Object.fromEntries(
+        sharedPoGroups.map((g) => [g.poNumber, poLinkByNumber.has(g.poNumber)] as const),
+      ),
+    [sharedPoGroups, poLinkByNumber],
+  )
+  /** Answered "does not belong here" AND writable — what the primary button will actually unlink. */
+  const sharedPoRemovals = useMemo(
+    () =>
+      sharedPoGroups
+        .filter((g) => sharedPoAnswers[g.poNumber] === 'remove')
+        .map((g) => ({ poNumber: g.poNumber, ...poLinkByNumber.get(g.poNumber)! }))
+        .filter((r) => r.linkId != null),
+    [sharedPoGroups, sharedPoAnswers, poLinkByNumber],
+  )
+  const sharedPoSplits = useMemo(
+    () => sharedPoGroups.filter((g) => sharedPoAnswers[g.poNumber] === 'split').length,
+    [sharedPoGroups, sharedPoAnswers],
+  )
+
+  /**
+   * Corrections typed onto this leg's own line of a shared PO — the PO number, the quantity, the unit.
+   *
+   * Radios alone were too narrow an answer: what the desk reaches for first is usually to FIX the
+   * line (the parser read cartons as pieces) and then say it belongs, and until now that meant
+   * leaving the review desk for the shipment page. Held here rather than in the panel because the
+   * write rides the card's primary button with everything else.
+   */
+  const [sharedPoEdits, setSharedPoEdits] = useState<Record<string, SharedPoEdit>>({})
+  /**
+   * What the typed corrections actually CHANGE, against what the leg stores. A field the operator
+   * clicked into and left alone is not an edit, and a "correct" answer with nothing different under
+   * it writes nothing — it is then just a confirmation, which is the truthful outcome.
+   */
+  const sharedPoCorrections = useMemo(() => {
+    return sharedPoGroups.flatMap((g) => {
+      if (sharedPoAnswers[g.poNumber] !== 'correct') return []
+      const link = poLinkByNumber.get(g.poNumber)
+      if (!link) return []
+      const e = sharedPoEdits[g.poNumber] ?? {}
+      const poNumber = e.poNumber?.trim()
+      const qtyRaw = e.qty?.trim()
+      const unit = e.qtyUnit?.trim()
+      const nextQty = qtyRaw == null ? undefined : qtyRaw === '' ? null : Number(qtyRaw)
+      const out: {
+        poNumber: string
+        poId: string
+        linkId: string
+        renameTo?: string
+        quantity?: number | null
+        quantityUnit?: string | null
+      } = { poNumber: g.poNumber, ...link }
+      let touched = false
+      if (poNumber != null && poNumber !== '' && poNumber !== g.poNumber) {
+        out.renameTo = poNumber
+        touched = true
+      }
+      // NaN is a typo, not a clear — dropped rather than written, and the row keeps what it had.
+      if (nextQty !== undefined && !(typeof nextQty === 'number' && Number.isNaN(nextQty))) {
+        if (nextQty !== (g.legQty ?? null)) {
+          out.quantity = nextQty
+          touched = true
+        }
+      }
+      if (unit != null && unit !== (g.legQtyUnit ?? '').trim()) {
+        out.quantityUnit = unit === '' ? null : unit
+        touched = true
+      }
+      return touched ? [out] : []
+    })
+  }, [sharedPoGroups, sharedPoAnswers, sharedPoEdits, poLinkByNumber])
+
+  const unlinkPo = useUnlinkShipmentFromPO()
+  const updatePoLink = useUpdateShipmentPoLink()
+
+  /**
    * The leading open question + the words that answer it (see desk-question.ts).
    *
    * The TABLE wins when it has rows. It has to: the conflict-class needs-attention lines are dropped
@@ -774,7 +972,7 @@ export function ReviewCard({
               // the ones still here rather than left overstating what this line is about.
               text:
                 left.length === 1 && !withCandidates
-                  ? `"${left[0]}" not found in Mesh Database — advise add in Mesh.`
+                  ? meshMissText(left[0])
                   : `${left.length} ${left.length === 1 ? 'party' : 'parties'} not linked to Mesh${
                       withCandidates ? ' — expand to pick or add.' : ' — advise add in Mesh.'
                     }`,
@@ -784,7 +982,48 @@ export function ReviewCard({
       }))
       .filter((g) => g.items.length > 0)
   }, [needsAttentionGroups, rowedPartyNames])
-  const naPick = useMemo(() => pickDeskQuestion(deskGroups), [deskGroups])
+  /**
+   * The shared-PO block IS the shared-PO question, so nothing above it may ask it again.
+   *
+   * `w-po-*` lines ("Only the PO number links this email to this shipment, and that PO is on another
+   * shipment too") were classified before SharedPoPanel existed to answer them. Left in, the card
+   * opened with a `needs answer` box that restated the question in prose, offered no control, and
+   * then printed "No field changes to apply — answer above" — pointing at itself. The real answers
+   * (split / take it off / keep with corrections) sat two blocks lower, in a box titled with the same
+   * question.
+   *
+   * Dropped only when the panel is actually on screen. A queue LIST row carries no `sharedPos`, so
+   * there the line is the only thing saying it and it stays.
+   */
+  const deskGroupsAsked = useMemo(() => {
+    const panelOwnsPo = !readOnly && sharedPoGroups.length > 0
+    return deskGroups
+      .map((g) => ({
+        ...g,
+        items: g.items.filter(
+          (i) => !isInfoOnlyLine(i) && !(panelOwnsPo && i.lineId.startsWith('w-po-')),
+        ),
+      }))
+      .filter((g) => g.items.length > 0)
+  }, [deskGroups, sharedPoGroups, readOnly])
+
+  /**
+   * The lines this desk cannot act on, wherever they sit in the ordering.
+   *
+   * Split out BEFORE the question is picked, not after. Filtering only the secondary list left the
+   * primary slot open to them, and on the TCI leg that is exactly what happened: once the shared-PO
+   * line moved to its own block, the Mesh miss was the only line left, so it was promoted to the
+   * headline — the card asked "Who are these parties? · needs answer" about a company nobody reading
+   * it can add.
+   */
+  const deskInfoGroups = useMemo(
+    () =>
+      deskGroups
+        .map((g) => ({ ...g, items: g.items.filter(isInfoOnlyLine) }))
+        .filter((g) => g.items.length > 0),
+    [deskGroups],
+  )
+  const naPick = useMemo(() => pickDeskQuestion(deskGroupsAsked), [deskGroupsAsked])
   const contestedFields = useMemo(
     () =>
       conflicts.map((c) => {
@@ -815,7 +1054,7 @@ export function ReviewCard({
         },
         detailText: `Its ${junkIdentifier.label} is “${junkIdentifier.value}” — a column heading, not a number. This leg was most likely parsed out of a spreadsheet's header row.`,
         detailItem: null,
-        rest: deskGroups,
+        rest: deskGroupsAsked,
       }
     }
     /**
@@ -834,7 +1073,7 @@ export function ReviewCard({
           question: fromCandidates.question,
           detailText: fromCandidates.detail,
           detailItem: null,
-          rest: deskGroups,
+          rest: deskGroupsAsked,
         }
       }
     }
@@ -849,7 +1088,7 @@ export function ReviewCard({
         question: { ...fromTable.question, reject: naPick?.question.reject ?? null },
         detailText: fromTable.detail,
         detailItem: null,
-        rest: deskGroups,
+        rest: deskGroupsAsked,
       }
     }
     if (!naPick) return null
@@ -862,7 +1101,7 @@ export function ReviewCard({
   }, [
     contestedFields,
     naPick,
-    deskGroups,
+    deskGroupsAsked,
     junkIdentifier,
     hasCandidateLegs,
     matchAmbiguity,
@@ -882,10 +1121,57 @@ export function ReviewCard({
         : { ...deskPick, question: forWorkingCard(deskPick.question) },
     [deskPick, cardShape],
   )
+  /**
+   * Which of the secondary lines the operator can actually DO something about, here, now.
+   *
+   * `desk.rest` is decision-class by construction — the queue builds its groups with
+   * `desk: 'decision'`, so rule A has already dropped the pure FYI. That classification is about
+   * WHICH SCREEN the line belongs on, though, not about whether this card can act on it, and the two
+   * came apart on the Mesh misses. `tagDesk` calls a NAMED party miss a decision because ops can add
+   * exactly that master — but they cannot add it from here: masters are ERP-owned and read-only in
+   * this app (the Resolution Rules UI was removed for that reason). So `"TCI" not found in Mesh —
+   * advise add in Mesh` sat in the same list as the questions the card can answer, under a heading
+   * that said "Also", and read as a fourth thing to decide.
+   *
+   * A miss that OFFERS candidates is different — the expansion is where the picks live, and picking
+   * one is a real action on this card. That is the line the split follows.
+   */
+  const restSplit = useMemo(
+    () => ({ decide: desk?.rest ?? [], info: deskInfoGroups }),
+    [desk, deskInfoGroups],
+  )
+
+  /**
+   * A "which shipment?" question with nowhere to answer it.
+   *
+   * Three panels normally carry the answer — the candidate picker, the shared-PO block, the identify
+   * search — and each renders on its own trigger. When none of them fires the question is still
+   * asked, still flagged `needs answer`, and the card offers nothing: leg 20260703B3 sat like that,
+   * because the queue raised PO_REASSIGN on the EMAIL and the committer then declined to link the PO
+   * ("PO 222930: exclusive to sibling HAWB — not linked"), so the leg carries no PO for a panel to
+   * be about, and the flags are not the WEAK_IDENTITY / AMBIGUOUS_MATCH that open the search.
+   *
+   * The question is still real — an email was matched to this leg on thin evidence and somebody has
+   * to say whether that was right. So the answers go in the block itself: yes, or no-and-find-it.
+   *
+   * Not solved by suppressing the line. The committer's reasoning is a decision the desk may
+   * disagree with, and the de-correction rule says the desk surfaces what the pipeline produced and
+   * lets a human rule on it — it does not quietly decide the question is moot.
+   */
+  const [rightShipment, setRightShipment] = useState<'yes' | 'no' | null>(null)
+  const identityQuestionHasNoAnswer =
+    !readOnly &&
+    desk?.detailItem?.groupId === 'which_shipment' &&
+    !hasCandidateLegs &&
+    sharedPoGroups.length === 0 &&
+    // These two already open the identify search on their own, so the block is not answer-less.
+    !isWeakIdentity &&
+    !isAmbiguousMatch
+
   const restNeedsTitles = useMemo(
     () =>
-      (desk?.rest.reduce((n, g) => n + g.items.length, 0) ?? 0) >= ALSO_TITLE_THRESHOLD,
-    [desk],
+      (restSplit.decide.reduce((n, g) => n + g.items.length, 0) ?? 0) >= ALSO_TITLE_THRESHOLD,
+    [restSplit],
   )
   /** Note starts collapsed; it opens itself the moment a note is actually owed (see showNoteField). */
   const [noteOpen, setNoteOpen] = useState(false)
@@ -950,12 +1236,33 @@ export function ReviewCard({
     () => conflicts.find((c) => mapCriticFieldToColumn(c.field) === 'mode') ?? null,
     [conflicts],
   )
-  const modeCarryOver = useMemo(() => {
-    if (!modeConflict) return []
+  /**
+   * The Mode the operator has actually TAKEN — '' while the row is untouched, or while the pick
+   * matches what the leg already stores. Hoisted out of `modeCarryOver` because the clear rows name
+   * it ("MAWB is not applicable for SEA mode") and must say the mode being taken, never the stored
+   * one: on those rows the two are always different, and printing the wrong one inverts the sentence.
+   */
+  const takenMode = useMemo(() => {
+    if (!modeConflict) return ''
     const taken = (resolutions[modeConflict.field] ?? '').trim()
-    if (taken === '' || !changesStoredValue(modeConflict, taken, liveValueFor(modeConflict))) return []
-    return offModeFieldsOn({ ...(shipment as ModeFieldLeg), mode: taken })
-  }, [modeConflict, resolutions, liveValueFor, shipment])
+    if (taken === '' || !changesStoredValue(modeConflict, taken, liveValueFor(modeConflict))) return ''
+    return taken
+  }, [modeConflict, resolutions, liveValueFor])
+  const modeCarryOver = useMemo(
+    () =>
+      takenMode === ''
+        ? []
+        : offModeFieldsOn({ ...(shipment as ModeFieldLeg), mode: takenMode }),
+    [takenMode, shipment],
+  )
+  /** Is there anything for the "For information" block to hold? Four sources, one box — and no box
+   *  at all when none of them has something to say. */
+  const hasInfoOnly =
+    restSplit.info.length > 0 ||
+    criticReview == null ||
+    modeCarryOver.length > 0 ||
+    (!hasCandidateLegs && (criticReview?.refusedCandidates?.length ?? 0) > 0)
+
   /** Exceptions only — absent means "clear it", the default the operator asked for. */
   const [keepOnModeSwitch, setKeepOnModeSwitch] = useState<Record<string, boolean>>({})
   const willClearOnSwitch = useCallback(
@@ -1036,6 +1343,12 @@ export function ReviewCard({
   const cancelEditing = () => {
     setResolutions(initialResolutions(conflicts, existingValue))
     setKeptFields(new Set())
+    // A pending PO removal or a typed correction is a change like any other — Discard means all.
+    setSharedPoAnswers({})
+    setSharedPoEdits({})
+    // …including the which-shipment answer, which also closes the search "no" opened.
+    setRightShipment(null)
+    setWrongShipment(false)
     setEditing(false)
   }
 
@@ -1200,10 +1513,8 @@ export function ReviewCard({
   /**
    * Column 3 label tracks state: what the thread said → edit mode → human-applied values.
    *
-   * Idle used to read "AI Proposed", which claimed something the pipeline does not do. Conflicts the
-   * commit settled are stripped upstream (openDecisions), so every value reaching this column is one
-   * the committer read and declined to write — nothing there is queued for an apply. REVIEW_HEAD
-   * says "Also Seen In Email"; once the operator is editing, the column IS their resolution and says so.
+   * Idle wording lives in REVIEW_HEAD (see the note there on what it does and does not claim). Once
+   * the operator is editing, the column IS their resolution and says so.
    */
   const proposedColumnLabel = editing
     ? 'Resolution'
@@ -1227,8 +1538,24 @@ export function ReviewCard({
           /* A PO's style list is ONE field and one write, however many boxes moved to compose it —
              counting ticks would say "4 changes" for two rows of work and would not match the field
              grid, where one contested field is one change. */
-          poPlans.length,
-    [conflicts, resolutions, liveValueFor, cardShape, poPlans, clearedColumns],
+          poPlans.length +
+          /* Taking a PO off the shipment is a write like any other, and the button has to name it —
+             a removal that rode along under "No Changes" would be the least announced and most
+             consequential thing on the card. */
+          sharedPoRemovals.length +
+          /* One corrected PO line is one change, however many of its three fields moved — same rule
+             the style plans follow, and it matches what the operator sees: one row, one fix. */
+          sharedPoCorrections.length,
+    [
+      conflicts,
+      resolutions,
+      liveValueFor,
+      cardShape,
+      poPlans,
+      clearedColumns,
+      sharedPoRemovals,
+      sharedPoCorrections,
+    ],
   )
   /**
    * What the primary button will WRITE, when that is one nameable thing. A bare "Approve" made the
@@ -1250,6 +1577,35 @@ export function ReviewCard({
     if (!raw || raw.length > 14) return null
     return raw
   }, [fieldsToApply, changeCount])
+  /**
+   * The primary button, worded as the answer the operator just gave about a shared PO.
+   *
+   * Only when that answer is the WHOLE of what the click does — the moment the card also has fields
+   * to write, the apply is the bigger fact and keeps the label. Without this the two answers came out
+   * as `Apply 1 Change` and `Mark Reviewed — No Changes`, which is how the panel's plain-language
+   * question ("does this PO belong here?") got handed back in the vocabulary it was written to avoid.
+   */
+  const sharedPoVerdictLabel = useMemo(() => {
+    if (sharedPoRemovals.length > 0 && changeCount === sharedPoRemovals.length) {
+      return sharedPoRemovals.length === 1
+        ? `Remove PO ${sharedPoRemovals[0]!.poNumber}`
+        : `Remove ${sharedPoRemovals.length} POs`
+    }
+    if (sharedPoCorrections.length > 0 && changeCount === sharedPoCorrections.length) {
+      return sharedPoCorrections.length === 1
+        ? `Correct PO ${sharedPoCorrections[0]!.poNumber}`
+        : `Correct ${sharedPoCorrections.length} PO lines`
+    }
+    // "Split" writes nothing, so it never competes with an apply — but it is still an answer, and
+    // `Mark Reviewed — No Changes` is not the words the operator just read.
+    if (sharedPoRemovals.length === 0 && sharedPoSplits > 0 && changeCount === 0) {
+      return sharedPoSplits === 1 ? 'Confirm — Order Was Split' : 'Confirm — Orders Were Split'
+    }
+    /* The answer to "is this the right shipment?" when the block had to carry it itself. "No" gets
+       no label here — its action is the identify search, which has its own Apply identity button. */
+    if (rightShipment === 'yes' && changeCount === 0) return 'Confirm — Right Shipment'
+    return null
+  }, [sharedPoRemovals, sharedPoCorrections, sharedPoSplits, changeCount, rightShipment])
   /** Nothing is stored on any contested row, so "keep what is there" means leaving it blank — say so.
    *  Reads the LIVE value: a leg storing MACFUN with no critic System candidate was offering to
    *  "Leave Blank" a field that is not blank. */
@@ -1288,8 +1644,13 @@ export function ReviewCard({
     ((conflicts.length > 0 && !allConflictsSelfServe) || poNeedsReview)
   /** Edit mode as the GRID sees it — read-only history never edits, whatever `editing` says. */
   const gridEditing = editing && !readOnly
-  const deskEmpty = deskGroups.length === 0 && conflicts.length === 0
-  const judgmentOnly = deskGroups.length > 0 && conflicts.length === 0
+  /**
+   * Nothing left to decide. Counts the shared-PO block too: its question is filtered out of
+   * `deskGroupsAsked` because the panel owns it, and without this a leg whose ONLY open item is a
+   * shared PO would show "Nothing to decide — ready" directly above three unanswered radio buttons.
+   */
+  const deskEmpty =
+    deskGroupsAsked.length === 0 && conflicts.length === 0 && sharedPoGroups.length === 0
   // Multi-candidate: require a real target before primary CTAs; use onLink path.
   const multiCandNeedsTarget = hasCandidateLegs && !!onLink
   const canSave =
@@ -1302,8 +1663,6 @@ export function ReviewCard({
       ? linkTargetReady
       : !!(onSaveAndApprove || onApprove))
 
-  // Collapsed on open — expand only when the operator needs the email.
-  const [emailsOpen, setEmailsOpen] = useState(false)
 
   /**
    * Run a verdict, holding the card busy for its duration.
@@ -1361,6 +1720,45 @@ export function ReviewCard({
     }
   }
 
+  /**
+   * Take the POs the operator answered "does not belong here" off THIS shipment.
+   *
+   * Sequential and before the leg confirm, for the same reasons `applyPoPlans` is: a partial failure
+   * must leave the removals already done intact, and a 400 here has to surface as itself rather than
+   * be masked by a confirm that succeeded — the leg then stays on the desk, which is the honest state.
+   *
+   * Deletes the shipment↔PO LINK only. The purchase order survives, and so does the other shipment's
+   * claim on it, which is exactly what the panel promises the click will do.
+   */
+  const applySharedPoRemovals = async (): Promise<void> => {
+    for (const r of sharedPoRemovals) {
+      await unlinkPo.mutateAsync({ poId: r.poId, linkId: r.linkId })
+    }
+  }
+
+  /**
+   * Write the corrections typed onto a shared PO's line.
+   *
+   * Two different writes behind one row, deliberately kept apart. Quantity and unit belong to the
+   * LINK (what this shipment carries), so they patch `shipment_pos`. The PO NUMBER belongs to the
+   * order itself, so it renames the purchase order — the same thing the PO grid's number field has
+   * always done. Only the keys the operator moved are sent: the backend leaves an omitted key alone
+   * and clears an explicit null, so a unit-only fix must not carry a quantity with it.
+   */
+  const applySharedPoCorrections = async (): Promise<void> => {
+    for (const c of sharedPoCorrections) {
+      const patch: { quantity?: number | null; quantityUnit?: string | null } = {}
+      if ('quantity' in c) patch.quantity = c.quantity
+      if ('quantityUnit' in c) patch.quantityUnit = c.quantityUnit
+      if (Object.keys(patch).length > 0) {
+        await updatePoLink.mutateAsync({ poId: c.poId, linkId: c.linkId, ...patch })
+      }
+      if (c.renameTo) {
+        await updatePo.mutateAsync({ id: c.poId, poNumber: c.renameTo })
+      }
+    }
+  }
+
   const handleSaveAndApprove = () => {
     if (busy) return
     if (noteRequired) {
@@ -1392,6 +1790,10 @@ export function ReviewCard({
     const commit = (fn: () => Promise<void>) =>
       void run(async () => {
         await applyPoPlans()
+        // Corrections BEFORE removals: a card that both fixes one PO's line and takes another off
+        // should not lose the fix if the unlink 400s.
+        await applySharedPoCorrections()
+        await applySharedPoRemovals()
         await fn()
         setEditing(false)
       })
@@ -1423,6 +1825,8 @@ export function ReviewCard({
     if (!onApprove) return
     // Same bulk decline as the expanded "Leave All As Is" — it clears rulings, never applies them.
     setKeptFields(new Set())
+    setSharedPoAnswers({})
+    setSharedPoEdits({})
     void run(() => onApprove())
   }
 
@@ -1504,8 +1908,11 @@ export function ReviewCard({
           {(hasCandidateLegs ||
             criticReview?.multiBookingOrigin ||
             criticReview?.splitAudit) && (
-            <div
-              className="rounded-md border border-border/80 bg-surface-800/80 px-2.5 py-1.5 text-[11px] text-text-secondary"
+            <ReviewBlock
+              title="This email"
+              icon={Forward}
+              status="none"
+              className="text-sm text-text-secondary"
               data-testid="multi-leg-trust-strip"
             >
               {criticReview?.splitAudit ? (
@@ -1534,7 +1941,7 @@ export function ReviewCard({
                   internal only).
                 </span>
               )}
-            </div>
+            </ReviewBlock>
           )}
 
           {/* Needs attention is a triage PROMPT — once the item is resolved (Approved/Rejected views,
@@ -1544,31 +1951,25 @@ export function ReviewCard({
           {/* Also renders for a conflicts-only leg now: the headline comes from the table there, and
               without this the card would show a grid with no statement of what it is asking. */}
           {!readOnly && desk != null && (
-            <div
-              className={cn(
-                REVIEW_PANEL,
-                editing && 'border-status-warning/40 bg-status-warning/5',
-              )}
+            <ReviewBlock
+              /*
+                The open QUESTION is the title (see desk-question.ts). It replaced the old
+                `Needs Attention` heading plus the group title above the leading line — two headings
+                for what was often a single bullet — and the verdict buttons are worded as its
+                answers. Now it is also the block's own title, so the shell's header row carries it
+                and the body holds only the line it speaks for.
+              */
+              title={desk?.question.question ?? 'Needs Attention'}
+              icon={HelpCircle}
+              status="answer"
+              className={cn(editing && 'border-status-warning/40')}
               data-testid="needs-attention"
-              data-editing={editing ? 'true' : 'false'}
+              /* The block's headline IS the question, so `desk-question` names the header's own text
+                 rather than a hidden copy of it — a duplicate would have the card asking twice. */
+              titleTestId="desk-question"
             >
-              {/* data-testid why-review kept for legacy tests — same shell as Critical band */}
-              <div data-testid="why-review">
-                {/*
-                  The open QUESTION is the headline (see desk-question.ts). It replaces both the old
-                  `Needs Attention` title and the group title that used to sit above the leading line —
-                  two headings for what was often a single bullet — and the verdict buttons below are
-                  worded as its answers. The line the headline speaks for becomes its subtext; anything
-                  else the leg asks follows under "Also", flat, because a group title per bullet was
-                  the nesting that made this card hard to read.
-                */}
-                <p
-                  className={`${REVIEW_FS.topic} font-semibold text-text-primary`}
-                  data-testid="desk-question"
-                >
-                  {desk?.question.question ?? 'Needs Attention'}
-                </p>
-
+              {/* data-testid why-review kept: every test and the focus page reach for it. */}
+              <div data-testid="why-review" data-editing={editing ? 'true' : 'false'}>
                 {desk?.detailItem &&
                   (isExpandableMiss(desk.detailItem) ? (
                     <ul className="mt-1">
@@ -1593,107 +1994,78 @@ export function ReviewCard({
                   </p>
                 )}
 
-                {(desk?.rest.length ?? 0) > 0 && (
-                  <div className="mt-2.5 border-t border-border pt-2" data-testid="needs-attention-rest">
-                    <p className={`${REVIEW_FS.meta} font-semibold text-text-muted`}>Also</p>
-                    <div className="space-y-1">
-                      {desk!.rest.map((g) => (
-                        /* Grouping is real and ordered; the TITLE is earned rather than automatic.
-                           One or two lines read fine bare — the item text names its own subject
-                           ("Customer not in master — …") and a title per bullet was pure nesting. Past
-                           three the bare list turns into a blob, so the titles come back. */
-                        <div key={g.groupId} data-testid={`needs-group-${g.groupId}`} aria-label={g.title}>
-                          {restNeedsTitles && (
-                            <p className={`${REVIEW_FS.meta} font-semibold text-text-secondary`}>
-                              {g.title}
-                            </p>
-                          )}
-                          <ul className={REVIEW_PANEL_LIST}>
-                            {g.items.map((r) =>
-                              isExpandableMiss(r) ? (
-                                <NeedsAttentionMeshMiss key={r.key} item={r} />
-                              ) : (
-                                <li
-                                  key={r.key}
-                                  className={REVIEW_PANEL_ITEM}
-                                  title={r.evidence?.join(' · ') || undefined}
-                                >
-                                  <span
-                                    className={cn(
-                                      REVIEW_PANEL_DOT,
-                                      r.severity === 'high'
-                                        ? 'bg-status-critical'
-                                        : r.severity === 'medium'
-                                          ? 'bg-status-warning'
-                                          : 'bg-surface-600',
-                                    )}
-                                  />
-                                  <span className="min-w-0">{r.text}</span>
-                                </li>
-                              ),
-                            )}
-                          </ul>
-                        </div>
-                      ))}
-                    </div>
+                {/* The answers, when no panel below carries them — see identityQuestionHasNoAnswer. */}
+                {identityQuestionHasNoAnswer && (
+                  <div
+                    className="mt-2 grid gap-1"
+                    role="radiogroup"
+                    aria-label="Is this the right shipment?"
+                    data-testid="identity-answer"
+                  >
+                    {(
+                      [
+                        { key: 'yes' as const, label: 'Yes — this is the right shipment' },
+                        ...(onIdentify
+                          ? [
+                              {
+                                key: 'no' as const,
+                                /* Says what the operator will DO and where. "Find the shipment it
+                                   belongs to" named a goal and left them looking for the control. */
+                                label: 'No — manually assign the shipment below',
+                              },
+                            ]
+                          : []),
+                      ]
+                    ).map((c) => (
+                      <label
+                        key={c.key}
+                        className={cn(
+                          'flex cursor-pointer items-center gap-2.5 rounded-md border px-3 py-2 text-sm transition-colors',
+                          rightShipment === c.key
+                            ? 'border-cobalt-primary bg-cobalt-primary/10'
+                            : 'border-border bg-surface-800 hover:bg-surface-700',
+                        )}
+                        data-testid={`identity-answer-${c.key}`}
+                      >
+                        <input
+                          type="radio"
+                          name="identity-answer"
+                          className="h-4 w-4 shrink-0"
+                          checked={rightShipment === c.key}
+                          onChange={() => {
+                            setRightShipment(c.key)
+                            // "No" IS the search: picking it opens the block that finds the right leg.
+                            setWrongShipment(c.key === 'no')
+                          }}
+                          aria-label={c.label}
+                        />
+                        <span className="min-w-0 text-text-primary">{c.label}</span>
+                      </label>
+                    ))}
+                    <p className={`${REVIEW_FS.meta} text-text-muted`}>
+                      Not sure? Press{' '}
+                      <span className="font-medium text-text-secondary">Waiting</span> below and come
+                      back to it.
+                    </p>
                   </div>
                 )}
-                {/* Kept for the case the headline cannot cover: the table has nothing to apply, so the
-                    operator is being asked for a judgement, not a diff. One line, inside the prompt it
-                    belongs to — it used to float between panels captioning whichever box followed. */}
-                {judgmentOnly && (
-                  <p
-                    className="mt-2.5 border-t border-border pt-2 text-xs text-text-muted"
-                    data-testid="review-judgment-only"
-                  >
-                    No field changes to apply — answer above, or park it if you need to go and ask.
-                  </p>
+
+                {restSplit.decide.length > 0 && (
+                  <div className="mt-2.5 border-t border-border pt-2" data-testid="needs-attention-rest">
+                    <p className={`${REVIEW_FS.meta} font-semibold text-text-muted`}>Also</p>
+                    {renderRestGroups(restSplit.decide, restNeedsTitles)}
+                  </div>
                 )}
+                {/*
+                  "No field changes to apply — answer above, or park it if you need to go and ask."
+                  used to sit here. It was written when the block had no pill and no controls, to
+                  explain why there was nothing to press. Both of those are gone: the header says
+                  `needs answer`, the answers are controls, and the line's own "answer above" pointed
+                  at the sentence directly over it. Deleted, not moved — it described a state the
+                  card no longer has.
+                */}
               </div>
-            </div>
-          )}
-
-          {deskEmpty && !readOnly && (
-            <div
-              data-testid="review-ready-state"
-              className="rounded-lg border border-status-success/25 bg-status-success/10 px-3 py-2 text-xs text-status-success"
-            >
-              {/* Name what settled it. "Ready to confirm" alone left the operator wondering what
-                  happened to the five-way pick the card used to open with. */}
-              {identityPinned ? (
-                <>
-                  This email updated an existing shipment — the committer matched it, so there is no
-                  shipment to pick. Nothing to decide.
-                </>
-              ) : (
-                'Ready to confirm — no open decisions'
-              )}
-            </div>
-          )}
-
-          {/* Hiding a control on an inference needs a way back. */}
-          {identityPinned && !readOnly && (matchAmbiguity?.candidates?.length ?? 0) >= 2 && (
-            <button
-              type="button"
-              onClick={() => setPinOverridden(true)}
-              data-testid="review-pin-override"
-              className="text-xs font-medium text-cobalt-primary-light hover:underline"
-            >
-              Not the right shipment? Choose another
-            </button>
-          )}
-
-          {/* The picker vanishing must not be silent. These are legs the queue proposed and the
-              committer's own rule refuses — a different B/L is a different shipment — so offering them
-              would invite writing one shipment's data onto another. 54 of 62 offered candidates were in
-              that state. */}
-          {!readOnly && !hasCandidateLegs && (criticReview?.refusedCandidates?.length ?? 0) > 0 && (
-            <p className="text-[11px] text-text-muted" data-testid="refused-candidates">
-              {criticReview!.refusedCandidates!.length} similar shipment
-              {criticReview!.refusedCandidates!.length === 1 ? '' : 's'} matched, but{' '}
-              {criticReview!.refusedCandidates!.length === 1 ? 'it states' : 'they state'} a different{' '}
-              {FIELD_WORD[criticReview!.refusedCandidates![0]!.onKey] ?? 'identifier'} — not offered.
-            </p>
+            </ReviewBlock>
           )}
 
           {/* Directly under the question it answers. This used to sit below the source emails and a
@@ -1709,101 +2081,26 @@ export function ReviewCard({
             />
           )}
 
-          {/* The reference under "this PO is already on another shipment". Directly beneath the
-              question, for the same reason the candidate picker is: the reason line named a problem
-              and the evidence for it lived nowhere, so the card fell back to offering PO editing. */}
-          {!readOnly && sharedPoGroups.length > 0 && (
-            <SharedPoPanel
-              sharedPos={sharedPoGroups}
-              mode={(shipment as Partial<ShipmentDetail>).mode ?? null}
-            />
-          )}
-
-          {criticReview == null && (
-            <p className="text-[11px] text-text-muted" data-testid="no-critic-note">
-              No agent analysis on this leg (committed before the critic payload, or created manually) — open the full shipment to compare values.
-            </p>
-          )}
-
-          {/* Source emails under Needs attention — evidence while picking leg + fields */}
-          {emails.length > 0 && (
-            <div className="rounded-lg border border-border" data-testid="source-emails">
-              <button
-                type="button"
-                onClick={() => setEmailsOpen((v) => !v)}
-                aria-expanded={emailsOpen}
-                className="flex w-full items-center gap-2 px-3 py-2.5 text-left transition-colors hover:bg-surface-700/40"
-              >
-                {emailsOpen ? (
-                  <ChevronDown size={14} className="shrink-0 text-text-muted" />
-                ) : (
-                  <ChevronRight size={14} className="shrink-0 text-text-muted" />
-                )}
-                <Mail size={14} className="shrink-0 text-text-muted" />
-                <h4 className="text-xs font-semibold text-text-primary">
-                  Source Emails
-                  <span className="ml-2 text-xs font-normal text-text-muted">
-                    · {emails.length}
-                  </span>
-                </h4>
-              </button>
-              {emailsOpen && (
-                <div className="space-y-1.5 border-t border-border p-2.5" data-testid="source-emails-list">
-                  {sortedEmails.map((e) => {
-                    const openable = e.id != null && !e.bodyMissing
-                    return (
-                      <button
-                        key={e.id ?? `orphan-${e.subject}-${e.receivedAt ?? ''}-${e.sender ?? ''}`}
-                        type="button"
-                        onClick={() => openEmailWindow(e)}
-                        disabled={!openable}
-                        aria-label={
-                          openable
-                            ? `Open source email: ${e.subject || '(no subject)'}`
-                            : `Email body not stored: ${e.subject || '(no subject)'}`
-                        }
-                        title={openable ? undefined : 'Email body is not in the store (link only)'}
-                        className={
-                          openable
-                            ? 'flex w-full items-center gap-2.5 rounded-md bg-surface-900 px-2.5 py-2 text-left transition-colors hover:bg-surface-700'
-                            : 'flex w-full cursor-default items-center gap-2.5 rounded-md bg-surface-900/60 px-2.5 py-2 text-left opacity-80'
-                        }
-                      >
-                        <Mail size={14} className="shrink-0 text-text-muted" />
-                        <div className="min-w-0 flex-1">
-                          <p className="truncate text-sm text-text-primary">
-                            {e.subject || '(no subject)'}
-                          </p>
-                          <p className="text-xs leading-tight text-text-muted">
-                            {!openable
-                              ? 'Body not stored — re-ingest to open'
-                              : (
-                                  <>
-                                    {parseSender(e.sender).name} ·{' '}
-                                    <span className="font-mono">{formatDateTime(e.receivedAt)}</span>
-                                  </>
-                                )}
-                          </p>
-                        </div>
-                        {openable && (
-                          <ExternalLink size={12} className="shrink-0 text-text-muted opacity-60" />
-                        )}
-                      </button>
-                    )
-                  })}
-                </div>
-              )}
-            </div>
-          )}
-
           {showIdentify && (
-            <div className="rounded-lg border border-border bg-surface-900 px-3 py-2 space-y-2" data-testid="identify-shipment">
-              <p className="text-[11px] font-medium text-text-muted">
-                {hasCandidateLegs
-                  ? 'Not in the list above? Search by booking / SO / B/L.'
-                  : isAmbiguousMatch && !isWeakIdentity
-                    ? 'Multiple matching shipments — identify the real one and fold this leg into it if it is a duplicate.'
-                    : 'Identify this shipment — type its booking / SO / B/L; if it already exists you can link into it.'}
+            <ReviewBlock
+              /* One block, two jobs — and the operator arrived by two different routes, so it names
+                 the one they are on. Reached from "No, wrong shipment" it is an ASSIGNMENT (find the
+                 leg this belongs to); reached from a weak identity it is an IDENTIFICATION (this leg
+                 has no booking number of its own). Same fields, opposite intents. */
+              title={wrongShipment ? 'Assign the right shipment' : 'Identify this shipment'}
+              icon={Search}
+              status="answer"
+              className="space-y-2"
+              data-testid="identify-shipment"
+            >
+              <p className="text-sm text-text-secondary">
+                {wrongShipment
+                  ? 'Type the booking / SO / B/L of the shipment it belongs to — if it already exists you can link into it.'
+                  : hasCandidateLegs
+                    ? 'Not in the list above? Search by booking / SO / B/L.'
+                    : isAmbiguousMatch && !isWeakIdentity
+                      ? 'Multiple matching shipments — identify the real one and fold this leg into it if it is a duplicate.'
+                      : 'Identify this shipment — type its booking / SO / B/L; if it already exists you can link into it.'}
               </p>
               <div className="flex flex-wrap items-center gap-1.5">
                 <select
@@ -1867,49 +2164,39 @@ export function ReviewCard({
                   </button>
                 </div>
               )}
-            </div>
+            </ReviewBlock>
           )}
 
-          {/* Rows the email asked for and the leg already stores. One line, not N grid rows pretending
-              to be open questions — but openable, because "the email agreed with what we have" is a
-              claim the operator should be able to check. */}
-          {appliedConflicts.length > 0 && (
-            <div className="rounded-lg border border-border" data-testid="review-applied-conflicts">
-              <button
-                type="button"
-                onClick={() => setAppliedOpen((v) => !v)}
-                aria-expanded={appliedOpen}
-                className="flex w-full min-w-0 items-center gap-2 px-3 py-2 text-left text-xs transition-colors hover:bg-surface-700/40"
-              >
-                {appliedOpen ? (
-                  <ChevronDown size={13} className="shrink-0 text-text-muted" />
-                ) : (
-                  <ChevronRight size={13} className="shrink-0 text-text-muted" />
-                )}
-                <Check size={13} className="shrink-0 text-status-success" />
-                <span className="min-w-0 text-text-secondary">
-                  <span className="font-semibold text-text-primary">
-                    {appliedConflicts.length} field{appliedConflicts.length === 1 ? '' : 's'}
-                  </span>{' '}
-                  the email proposed {appliedConflicts.length === 1 ? 'is' : 'are'} already on the
-                  shipment — nothing to apply
-                </span>
-              </button>
-              {appliedOpen && (
-                <ul className="space-y-1.5 border-t border-border px-3 py-2.5">
-                  {appliedConflicts.map((c) => (
-                    <li key={c.field} className="flex min-w-0 flex-wrap items-baseline gap-x-2 text-sm">
-                      <span className="w-40 shrink-0 font-medium text-text-secondary">
-                        {reviewFieldLabel(c.field, c.label)}
-                      </span>
-                      <span className="field-value min-w-0 font-mono text-status-success">
-                        {liveValues[c.field] ?? proposedValueOf(c) ?? '—'}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
+          {/* The reference under "this PO is already on another shipment". Directly beneath the
+              question, for the same reason the candidate picker is: the reason line named a problem
+              and the evidence for it lived nowhere, so the card fell back to offering PO editing. */}
+          {/* `atd` here is the leg's `actualDeparture` column — the sibling rows call the same date
+              `atd` because that is what po-shared-legs.ts emits. Two payload names, one date. */}
+          {!readOnly && sharedPoGroups.length > 0 && (
+            <SharedPoPanel
+              sharedPos={sharedPoGroups}
+              mode={(shipment as Partial<ShipmentDetail>).mode ?? null}
+              etd={(shipment as Partial<ShipmentDetail>).etd ?? null}
+              atd={(shipment as Partial<ShipmentDetail>).actualDeparture ?? null}
+              answers={sharedPoAnswers}
+              onAnswer={(poNumber, answer) =>
+                setSharedPoAnswers((prev) => ({ ...prev, [poNumber]: answer }))
+              }
+              edits={sharedPoEdits}
+              onEdit={(poNumber, patch) => {
+                setSharedPoEdits((prev) => ({
+                  ...prev,
+                  [poNumber]: { ...prev[poNumber], ...patch },
+                }))
+                /* Typing IS the answer. Making the operator fix the line and then also find the
+                   radio that says "I fixed the line" is the ceremony this panel keeps removing. */
+                setSharedPoAnswers((prev) =>
+                  prev[poNumber] ? prev : { ...prev, [poNumber]: 'correct' },
+                )
+              }}
+              removable={sharedPoRemovable}
+              readOnly={readOnly}
+            />
           )}
 
           {/* One decision grid: POs + field conflicts share colgroup, headers, and border. */}
@@ -1994,7 +2281,7 @@ export function ReviewCard({
                           </th>
                         </tr>
                       </thead>
-                    {groupConflictFields(conflicts).map(({ group, conflicts: rows }) => {
+                    {groupReviewRows(conflicts, readOnly ? [] : modeCarryOver).map(({ group, conflicts: rows, clears }) => {
                       /**
                        * Count what would actually be WRITTEN, not how many rows are contested.
                        * `rows.length` called every contested row a "change", so a leg whose one
@@ -2005,6 +2292,22 @@ export function ReviewCard({
                       const groupChanges = rows.filter((c) =>
                         changesStoredValue(c, resolutions[c.field] ?? '', liveValueFor(c)),
                       ).length
+                      /**
+                       * Counted apart, and named apart. A clear IS a write, so folding it into
+                       * "2 changes" would be arithmetically fine and read as a lie — the group that
+                       * most often carries clears carries NOTHING else (taking Mode under Shipping
+                       * empties MAWB under Cargo & Logistics), so that band would announce "1 change"
+                       * over a single struck-through row that is being deleted.
+                       */
+                      const groupClears = clears.filter((cf) => willClearOnSwitch(cf.column)).length
+                      const groupSummary =
+                        [
+                          groupChanges > 0 &&
+                            `${groupChanges} ${groupChanges === 1 ? 'change' : 'changes'}`,
+                          groupClears > 0 && `${groupClears} deleted`,
+                        ]
+                          .filter(Boolean)
+                          .join(' · ') || 'nothing to apply'
                       return (
                       <tbody key={group}>
                         <tr className="border-b border-border">
@@ -2013,9 +2316,7 @@ export function ReviewCard({
                           <td colSpan={4} className={REVIEW_GROUP_HEADER}>
                             {group}
                             <span className="ml-2 font-normal text-text-muted">
-                              ({groupChanges > 0
-                                ? `${groupChanges} ${groupChanges === 1 ? 'change' : 'changes'}`
-                                : 'nothing to apply'})
+                              ({groupSummary})
                             </span>
                           </td>
                         </tr>
@@ -2051,6 +2352,24 @@ export function ReviewCard({
                             />
                           )
                         })}
+                        {/* After the contested rows: a clear is a CONSEQUENCE of a decision taken
+                            above, not a decision competing with them. */}
+                        {clears.map((cf) => (
+                          <ModeClearRow
+                            key={cf.column}
+                            column={cf.column}
+                            label={cf.label}
+                            value={cf.value}
+                            takingMode={takenMode}
+                            clearing={willClearOnSwitch(cf.column)}
+                            onToggle={() =>
+                              setKeepOnModeSwitch((k) => ({
+                                ...k,
+                                [cf.column]: willClearOnSwitch(cf.column),
+                              }))
+                            }
+                          />
+                        ))}
                       </tbody>
                     )})}
                   </table>
@@ -2058,6 +2377,158 @@ export function ReviewCard({
               </div>
             )
           })()}
+
+          {deskEmpty && !readOnly && (
+            <ReviewBlock
+              title="Nothing to decide"
+              icon={Check}
+              statusLabel="ready"
+              className="text-sm text-status-success"
+              data-testid="review-ready-state"
+            >
+              {/* Name what settled it. "Ready to confirm" alone left the operator wondering what
+                  happened to the five-way pick the card used to open with. */}
+              {identityPinned
+                ? 'This email updated an existing shipment — the committer matched it, so there is no shipment to pick.'
+                : 'Ready to confirm — no open decisions'}
+            </ReviewBlock>
+          )}
+
+          {/* Hiding a control on an inference needs a way back. */}
+          {identityPinned && !readOnly && (matchAmbiguity?.candidates?.length ?? 0) >= 2 && (
+            <button
+              type="button"
+              onClick={() => setPinOverridden(true)}
+              data-testid="review-pin-override"
+              className="text-xs font-medium text-cobalt-primary-light hover:underline"
+            >
+              Not the right shipment? Choose another
+            </button>
+          )}
+
+          {/*
+            Everything true about this leg that this desk cannot act on.
+
+            These four lines used to be naked paragraphs scattered between the bordered panels —
+            `text-[11px]` grey sentences that belonged, visually, to whichever box happened to sit
+            above them. Two of them (a Mesh party Mesh does not have; a leg with no agent analysis)
+            read as a fourth and fifth thing to decide on a card that had two.
+
+            One box, one label, and the pill says `no action` — so the operator can see, without
+            reading a word of it, that nothing here is waiting on them.
+          */}
+          {!readOnly && hasInfoOnly && (
+            <ReviewBlock
+              title="For information"
+              icon={Info}
+              status="none"
+              data-testid="review-for-information"
+            >
+              {restSplit.info.length > 0 && renderRestGroups(restSplit.info, restSplit.info.length > 1)}
+
+              {/* The picker vanishing must not be silent. These are legs the queue proposed and the
+                  committer's own rule refuses — a different B/L is a different shipment — so offering
+                  them would invite writing one shipment's data onto another. 54 of 62 offered
+                  candidates were in that state. */}
+              {!hasCandidateLegs && (criticReview?.refusedCandidates?.length ?? 0) > 0 && (
+                <p className="mt-1 text-sm text-text-secondary" data-testid="refused-candidates">
+                  {criticReview!.refusedCandidates!.length} similar shipment
+                  {criticReview!.refusedCandidates!.length === 1 ? '' : 's'} matched, but{' '}
+                  {criticReview!.refusedCandidates!.length === 1 ? 'it states' : 'they state'} a
+                  different{' '}
+                  {FIELD_WORD[criticReview!.refusedCandidates![0]!.onKey] ?? 'identifier'} — not
+                  offered.
+                </p>
+              )}
+
+              {criticReview == null && (
+                <p className="mt-1 text-sm text-text-secondary" data-testid="no-critic-note">
+                  No agent analysis on this leg (committed before the critic payload, or created
+                  manually) — open the full shipment to compare values.
+                </p>
+              )}
+
+              {/* Was a stray line under the grid. It is reassurance, which is information. */}
+              {modeCarryOver.length > 0 && (
+                <p className="mt-1 text-sm text-text-secondary" data-testid="mode-carry-over-note">
+                  Deleted values stay in the shipment history — open the leg to see them.
+                </p>
+              )}
+            </ReviewBlock>
+          )}
+
+          {/*
+            "N fields the email proposed are already on the shipment" used to render here, openable,
+            on the reasoning that the claim was worth being able to check.
+
+            Removed at the desk's request (2026-07-31): the operator has nothing to do with it. Every
+            row in it agreed with what the leg already stores, so it listed values that were correct
+            and unchanged, on a card whose whole job is the values that are NOT. It is still exactly
+            what the shipment page shows, one click away on Open Shipment.
+
+            `appliedConflicts` itself stays — `tableOwnedCount` needs it, or the needs-attention prose
+            ("6 field(s) disagree — see the conflict table") comes back the moment settling empties
+            the grid, pointing the operator at a table that is no longer there.
+          */}
+
+          {/* Source emails under Needs attention — evidence while picking leg + fields */}
+          {emails.length > 0 && (
+            <ReviewBlock
+              title="Source emails"
+              count={emails.length}
+              collapsible
+              status="none"
+              data-testid="source-emails"
+              flush
+            >
+              {(
+                <div className="space-y-1.5 p-2.5" data-testid="source-emails-list">
+                  {sortedEmails.map((e) => {
+                    const openable = e.id != null && !e.bodyMissing
+                    return (
+                      <button
+                        key={e.id ?? `orphan-${e.subject}-${e.receivedAt ?? ''}-${e.sender ?? ''}`}
+                        type="button"
+                        onClick={() => openEmailWindow(e)}
+                        disabled={!openable}
+                        aria-label={
+                          openable
+                            ? `Open source email: ${e.subject || '(no subject)'}`
+                            : `Email body not stored: ${e.subject || '(no subject)'}`
+                        }
+                        title={openable ? undefined : 'Email body is not in the store (link only)'}
+                        className={
+                          openable
+                            ? 'flex w-full items-center gap-2.5 rounded-md bg-surface-900 px-2.5 py-2 text-left transition-colors hover:bg-surface-700'
+                            : 'flex w-full cursor-default items-center gap-2.5 rounded-md bg-surface-900/60 px-2.5 py-2 text-left opacity-80'
+                        }
+                      >
+                        <Mail size={14} className="shrink-0 text-text-muted" />
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm text-text-primary">
+                            {e.subject || '(no subject)'}
+                          </p>
+                          <p className="text-xs leading-tight text-text-muted">
+                            {!openable
+                              ? 'Body not stored — re-ingest to open'
+                              : (
+                                  <>
+                                    {parseSender(e.sender).name} ·{' '}
+                                    <span className="font-mono">{formatDateTime(e.receivedAt)}</span>
+                                  </>
+                                )}
+                          </p>
+                        </div>
+                        {openable && (
+                          <ExternalLink size={12} className="shrink-0 text-text-muted opacity-60" />
+                        )}
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
+            </ReviewBlock>
+          )}
 
           {/*
             Put everything back — one click, next to the table it undoes.
@@ -2101,58 +2572,13 @@ export function ReviewCard({
           )}
 
           {/*
-            The consequence of taking a different Mode, stated next to the grid that offers it and
-            committed by the same button. Ticked by default — clearing is filing, not deletion: every
-            write goes through the shipment history, and a sea leg still reporting a flight number is
-            wrong in every downstream consumer.
-
-            Below the grid rather than nested inside the Mode row: the row's cell is the decision, and
-            burying a second set of ticks inside it would put two different kinds of choice in one
-            box. The count on Apply already carries these, so nothing here is silent.
+            The mode-change clears used to live here, in their own amber panel below the grid. They
+            are rows IN the grid now (ModeClearRow) — see that file for why. What the panel carried
+            and the rows do not is the reassurance that a clear is recoverable, so it stays, once,
+            under the table that performs them.
           */}
-          {!readOnly && modeCarryOver.length > 0 && (
-            <div
-              data-testid="mode-carry-over"
-              className="rounded-lg border border-status-warning/35 bg-status-warning/[0.06] px-3 py-2.5"
-            >
-              <p className={`${REVIEW_FS.body} font-semibold text-text-primary`}>
-                Taking Mode{' '}
-                <span className="field-value font-mono">{resolutions[modeConflict!.field]}</span> also
-                clears {modeCarryOver.length}{' '}
-                {modeCarryOver.length === 1 ? 'field' : 'fields'} from the old mode
-              </p>
-              <div className="mt-2 grid gap-1.5">
-                {modeCarryOver.map((cf) => (
-                  <label key={cf.column} className="flex cursor-pointer items-start gap-2 text-sm">
-                    <input
-                      type="checkbox"
-                      checked={willClearOnSwitch(cf.column)}
-                      onChange={() =>
-                        setKeepOnModeSwitch((k) => ({ ...k, [cf.column]: willClearOnSwitch(cf.column) }))
-                      }
-                      data-testid={`mode-carry-over-${cf.column}`}
-                      aria-label={`Clear ${cf.label} when taking this mode`}
-                      className="mt-[3px] h-3.5 w-3.5 shrink-0 cursor-pointer rounded border-border accent-status-critical"
-                    />
-                    <span className="min-w-0 text-text-secondary">
-                      Clear <span className="font-medium text-text-primary">{cf.label}</span>{' '}
-                      <span
-                        className={cn(
-                          'field-value font-mono',
-                          willClearOnSwitch(cf.column) ? 'text-text-muted line-through' : 'text-text-primary',
-                        )}
-                      >
-                        {cf.value}
-                      </span>
-                    </span>
-                  </label>
-                ))}
-              </div>
-              <p className="mt-2 text-[11px] text-text-muted">
-                Cleared values stay in the shipment history — open the leg to see them.
-              </p>
-            </div>
-          )}
+          {/* The reassurance moved into "For information" — it is information, and down here it was
+              another naked grey line captioning whichever box followed it. */}
 
           {/* Directly under the grid whose ✉ opened it, so the row and its evidence read together. */}
           {evidence && (
@@ -2318,6 +2744,9 @@ export function ReviewCard({
                        * the most rows. A ruling comes from the row, or it does not exist.
                        */
                       setKeptFields(new Set())
+                      // Same reasoning for a pending PO removal or correction: this means "not now".
+                      setSharedPoAnswers({})
+                      setSharedPoEdits({})
                       if (onApprove) void run(() => onApprove())
                     }}
                     disabled={busy || (multiCandNeedsTarget && !linkTargetReady)}
@@ -2366,13 +2795,31 @@ export function ReviewCard({
                         ? linkTargetReady
                           ? `Link into ${selectedJobLabel ?? 'selected shipment'} and apply field decisions`
                           : 'Select a shipment above first'
-                        : changeCount > 0
-                          ? `Apply ${changeCount} change${changeCount === 1 ? '' : 's'} — the leg leaves the desk`
-                          : keptRows.length > 0
-                            ? `Record that the stored ${keptRows.map((r) => r.label).join(', ')} ${
-                                keptRows.length === 1 ? 'is' : 'are'
-                              } right — no value is written, but a later email that disagrees will be flagged`
-                            : 'Mark reviewed — nothing is written, the leg leaves the desk'
+                        : sharedPoRemovals.length > 0
+                          ? /* Spelled out, because it is the one action on this card that changes
+                               what a shipment CONTAINS rather than what it says. */
+                            `Take PO ${sharedPoRemovals
+                              .map((r) => r.poNumber)
+                              .join(', ')} off this shipment — the purchase order and the other shipment are untouched${
+                              changeCount > sharedPoRemovals.length
+                                ? `, and ${changeCount - sharedPoRemovals.length} field change${
+                                    changeCount - sharedPoRemovals.length === 1 ? '' : 's'
+                                  } are applied`
+                                : ''
+                            }`
+                          : sharedPoCorrections.length > 0
+                            ? `Correct the PO line${
+                                sharedPoCorrections.length === 1 ? '' : 's'
+                              } on this shipment — the purchase order's own record is unchanged except where you retyped its number`
+                            : changeCount > 0
+                            ? `Apply ${changeCount} change${changeCount === 1 ? '' : 's'} — the leg leaves the desk`
+                            : sharedPoSplits > 0
+                              ? 'Mark reviewed — the PO stays on both shipments and nothing is written'
+                              : keptRows.length > 0
+                                ? `Record that the stored ${keptRows.map((r) => r.label).join(', ')} ${
+                                    keptRows.length === 1 ? 'is' : 'are'
+                                  } right — no value is written, but a later email that disagrees will be flagged`
+                                : 'Mark reviewed — nothing is written, the leg leaves the desk'
                     }
                     className={cn(ACTION_BTN, ACTION_VARIANT.primary)}
                   >
@@ -2398,7 +2845,10 @@ export function ReviewCard({
                     */}
                     {editing
                       ? 'Submit'
-                      : multiCandNeedsTarget
+                      : /* The shared-PO answer, when it is the whole of the click — see
+                           `sharedPoVerdictLabel`. */
+                        (sharedPoVerdictLabel ??
+                        (multiCandNeedsTarget
                         ? changeCount > 0
                           ? `Link — Apply ${changeCount} Change${changeCount === 1 ? '' : 's'}`
                           : /* "Link & Apply" with nothing to apply named an action that does not
@@ -2421,7 +2871,7 @@ export function ReviewCard({
                             : /* A question with a real answer keeps it ("Track it" under "Is this a
                                  real shipment?"); the eleven generic fall-throughs now say what the
                                  click does instead of naming a ceremony. */
-                              (desk?.question.affirm ?? NO_CHANGE_VERDICT)}
+                              (desk?.question.affirm ?? NO_CHANGE_VERDICT)))}
                   </button>
                 )}
                 {/* F11: multi-candidate escape hatch — genuinely new shipment (e.g. 拼櫃) without linking */}

@@ -15,6 +15,7 @@ import { UsersRepository } from '../src/db/repositories/users.repository'
 import { SettingsRepository } from '../src/db/repositories/settings.repository'
 import { IngestRepository } from '../src/db/repositories/ingest.repository'
 import { RoutingShadowRepository } from '../src/db/repositories/routing-shadow.repository'
+import { DecisionLogRepository } from '../src/db/repositories/decision-log.repository'
 import { CriticCalibrationRepository } from '../src/db/repositories/critic-calibration.repository'
 
 const TEST_URL =
@@ -41,12 +42,15 @@ export async function getTestDb(): Promise<{ db: TestDB }> {
 }
 
 /** Wipe every row (all tables, FK-safe via NOCHECK, identity reseeded) except the migration ledger —
- *  the SQL Server analogue of the old `truncate … restart identity cascade`. */
+ *  the SQL Server analogue of the old `truncate … restart identity cascade`.
+ *  The DELETE batch must SET QUOTED_IDENTIFIER ON explicitly: sp_MSforeachtable's dynamic SQL compiles
+ *  with system-proc settings (OFF), and DML on `shipments` requires ON since its indexed computed
+ *  column (0033 `conversation_key`). */
 export async function resetDb(db: TestDB) {
   await sql.raw(`EXEC sp_MSforeachtable 'ALTER TABLE ? NOCHECK CONSTRAINT ALL'`).execute(db)
   await sql
     .raw(
-      `EXEC sp_MSforeachtable @command1='IF OBJECT_NAME(object_id(''?'')) NOT IN (''kysely_migration'',''kysely_migration_lock'') DELETE FROM ?'`,
+      `EXEC sp_MSforeachtable @command1='SET QUOTED_IDENTIFIER ON; IF OBJECT_NAME(object_id(''?'')) NOT IN (''kysely_migration'',''kysely_migration_lock'') DELETE FROM ?'`,
     )
     .execute(db)
   await sql.raw(`EXEC sp_MSforeachtable 'ALTER TABLE ? WITH CHECK CHECK CONSTRAINT ALL'`).execute(db)
@@ -79,6 +83,7 @@ export function repos(db: TestDB) {
     settings: new SettingsRepository(db),
     ingest: new IngestRepository(db),
     routingShadow: new RoutingShadowRepository(db),
+    decisionLog: new DecisionLogRepository(db),
     criticCalibration: new CriticCalibrationRepository(db),
   }
 }

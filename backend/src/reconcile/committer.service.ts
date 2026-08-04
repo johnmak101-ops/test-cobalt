@@ -26,10 +26,12 @@ import type { CriticReview } from '../decisions/critic-review.types'
 import { mapFieldsToLegColumns, scheduleRetractionColumns } from './committer-leg-mapping'
 import {
   findExistingLeg,
+  findPoOnlyAmbiguity,
   findAdoptableZeroIdLeg,
   findSupersededByIdentityCorrection,
   findManualIdentityClash,
   findPoOnlyDuplicateRisk,
+  findUnabsorbedStatedSiblings,
   findSiblingBooking,
   strongKeysConflict,
 } from './committer-match'
@@ -71,6 +73,17 @@ function matchCandidateCount(criticReview: unknown): number | null {
 export interface ReconGroup {
   fields: Record<string, unknown>
   pos: string[]
+  /** POs the agent STATED on a B/L-anchored record without committing them as this shipment's contents
+   *  (queue's `posStated`). Used ONLY to widen candidate lookup + findExistingLeg, so an AWB email reaches
+   *  the sibling legs holding its other POs instead of minting a booking each. Never written to
+   *  shipment_pos, never counted as this leg's cargo — see `matchPos` below and statedPosOf in the queue.
+   *  Empty/undefined on the legacy path → matching is byte-identical to before. */
+  posStated?: string[]
+  /** The subset of `pos` the agent SWEPT UP rather than stated (queue `posInferred`) — typically rows
+   *  from a programme-wide attachment that inherited the email's B/L. Stored on each link (0029) so a
+   *  later email that NAMES the PO can displace this weak claim instead of losing to arrival order.
+   *  Omitted → every PO is a stated claim, and the cross-HAWB guard behaves exactly as before. */
+  posInferred?: string[]
   /** Per-PO unambiguous shipped qty, keyed by normalized po_no (normKey). Present only when the Matcher can
    *  attribute a real qty to an individual PO; absent (or a PO omitted) when the qty is a broadcast total. */
   poQty?: Record<string, number>
@@ -86,6 +99,15 @@ export interface ReconGroup {
   /** The booking was cancelled — the committed leg's leg_status becomes 'CANCELLED' instead of 'ACTIVE'.
    *  Undefined/false on the legacy path → leg stays 'ACTIVE' (unchanged). */
   cancelled?: boolean
+  /** The journey chain (queue groupJourney, latest-carrying-wins). Stored as JSON on
+   *  `shipments.journey`; the route string renders it as `PVG->DEL->LHR`. Null/absent = no statement —
+   *  applyFields skips nulls, so a later decision without a chain never erases an earlier one, which
+   *  matches the queue's latest-CARRYING-wins lift exactly. */
+  journey?: { seq: number; mode: string; pol: string; pod: string; doc: string | null }[] | null
+  /** DIVISION statements riding the decision (queue `groupDivisions` — dedup'd events, verbatim quotes).
+   *  Evidence for the stated-link removal in `apply`: a PO named here AND absent from `pos` leaves the
+   *  matched leg's shipment_pos, audited with the statement's own words. Never merged as a field. */
+  divisions?: { pos: string[]; direction?: string; target?: string; quote?: string; statedAt?: string }[]
   /** True when EVERY source email was sent by the CVP/TradeLinkOne notification platform — the leg is a
    *  vendor/PO notification, not a booked move (drives classifyKind rule (c)). Set on the rebuild path
    *  (senders known); undefined on the agent path, where the committer resolves it from the source emails. */
@@ -279,6 +301,9 @@ export class CommitterService {
       originCountry,
       // persist the conversationId so a zero-identity (keyless, PO-less) leg has a cross-run handle (A2).
       matchKeys: g.conversationId ? { ...g.matchKeys, conversation_id: g.conversationId } : g.matchKeys,
+      // the journey chain, as JSON (migration 0031). One site covers both create paths and the
+      // applyFields update path, exactly like every other legValues column.
+      journey: g.journey?.length ? JSON.stringify(g.journey).slice(0, 2000) : null,
     }
 
     // matching / idempotency. A leg matches when:
@@ -287,7 +312,16 @@ export class CommitterService {
     //    first id, or a PO-only follow-up/re-POST. This stops Option A's strong-id-less legs from spawning a
     //    duplicate on the next email. It deliberately does NOT match by PO when BOTH carry DIFFERENT strong
     //    ids — that is a PO reassignment the gate reviews, never a silent merge here.
+    // RANK lives in findExistingLeg: identity beats shared-PO, live beats dismissed, and a PO-only group
+    // facing ≥2 live legs matches nothing (split-PO ambiguity → the (iv) reason below names them).
     const groupPos = new Set(g.pos.map((p) => normKey(p)).filter(Boolean))
+    // MATCHING set = the POs we commit ∪ the POs a B/L-anchored record merely STATED (g.posStated). The two
+    // are deliberately different sets: `groupPos` is this leg's CARGO and drives shipment_pos, poQty and the
+    // duplicate-risk checks below; `matchPos` only answers "which existing leg is this email about".
+    // Without the widening, an AWB email that states POs 28739/28747/28740 but anchors on 28739 cannot see
+    // the legs holding the other two, so each mints its own booking (prod: JOB-2026-0009/0010). The queue
+    // only fills posStated for records carrying an hbl/mbl, so this can never glue PO-to-PO on subject text.
+    const matchPos = new Set([...groupPos, ...(g.posStated ?? []).map((p) => normKey(p)).filter(Boolean)])
     // Candidate SUPERSET instead of an allLegs() full-scan: the strong-key index (shipment_match_keys, 0003)
     // ∪ the shared-PO index (purchase_orders.po_number_norm, 0004). Same normalization + source as
     // findExistingLeg, so it provably contains every leg the strong-overlap / shared-PO branches could match.
@@ -295,13 +329,13 @@ export class CommitterService {
     // fires when the group has NO strong key AND NO PO; in that rare orphan-thread case we keep the full scan.
     const strongPairs = [...gk].map((k) => ({ type: k.slice(0, k.indexOf(':')), value: k.slice(k.indexOf(':') + 1) }))
     const legs =
-      gk.size > 0 || groupPos.size > 0
-        ? await this.shipments.candidateLegs(strongPairs, [...groupPos])
+      gk.size > 0 || matchPos.size > 0
+        ? await this.shipments.candidateLegs(strongPairs, [...matchPos])
         : await this.shipments.allLegs()
     // ONE bulk load of the candidate bookings' PO numbers (bookingId -> [poNumber]) — the PO data findExistingLeg
     // sees is byte-identical to the old per-leg poNumbersFor; the matching itself is the pure, unit-tested fn.
     const posByBooking = await this.bookings.poNumbersByBooking(legs.map((l) => l.bookingId))
-    let existing = findExistingLeg(legs, posByBooking, gk, groupPos, g.conversationId)
+    let existing = findExistingLeg(legs, posByBooking, gk, matchPos, g.conversationId)
 
     // #173 C1.5: dual-auto pin — honor target after verify (never silent first-match when pin present)
     if (g.dualAutoTarget?.shipmentId) {
@@ -530,6 +564,32 @@ export class CommitterService {
         (l) => ({ leg: l, kind: 'shared_po' as const }),
       ),
     ]
+    // Same REPORT-don't-settle contract, third case: this B/L names POs that are sitting on OTHER nascent
+    // legs. findExistingLeg joined ONE of them and stopped, so the rest go unmentioned unless we say so.
+    //
+    // Keyed on matchPos, NOT posStated. A healthy parse puts every PO the B/L names into `pos` — Set 5's
+    // AWB email yields pos=[28739,28740,28747] with posStated EMPTY — so keying on posStated silently
+    // disabled this flag in exactly the case it exists for (three nascent legs, one absorbed, two orphaned
+    // with nobody told). posStated only fills in when a parse degrades and drops the sibling records.
+    //
+    // Gated on the group carrying a B/L: posStated implied one (statedPosOf requires hbl/mbl), matchPos
+    // does not, and without that gate every PO-only email would flag every nascent leg sharing a PO —
+    // which is the ordinary early-thread shape, not a duplicate.
+    const groupBl = str(f.hbl_awb_fcr_no) ?? str(f.mbl)
+    if (groupBl) {
+      for (const l of findUnabsorbedStatedSiblings(legs, posByBooking, matchPos, shipmentId)) {
+        if (seenRisk.has(l.id)) continue
+        seenRisk.add(l.id)
+        const bk = await this.bookings.findById(l.bookingId)
+        const shared = (posByBooking.get(l.bookingId) ?? []).find((p) => matchPos.has(normKey(p)))
+        duplicateRiskReasons.push(
+          `likely the same shipment as ${bk?.jobNo ?? l.id} — ${groupBl} also covers PO ${
+            shared ?? '(unknown)'
+          }, which has no identity of its own yet; kept both`,
+        )
+      }
+    }
+
     for (const { leg: l, kind } of riskLegs) {
       if (seenRisk.has(l.id)) continue
       seenRisk.add(l.id)
@@ -543,6 +603,23 @@ export class CommitterService {
         const shared = (posByBooking.get(l.bookingId) ?? []).find((p) => groupPos.has(normKey(p)))
         duplicateRiskReasons.push(
           `possible duplicate of ${other} — shares PO ${shared ?? '(unknown)'} but states a different booking/SO/HBL; one of the two was entered by hand`,
+        )
+      }
+    }
+
+    // (iv) PO-ONLY AMBIGUITY — the split-PO shape. This decision carried no identity, only PO(s) that
+    // sit on ≥2 live shipments, so findExistingLeg deliberately matched NONE (any pick is a coin flip
+    // on candidate order — probe-measured) and this commit minted a fresh provisional leg instead.
+    // Name the candidates; the desk's link action settles it. Recomputed each commit like the other
+    // duplicate risks, so the warning clears once the operator folds the leg.
+    if (gk.size === 0) {
+      for (const l of findPoOnlyAmbiguity(legs, posByBooking, gk, matchPos, g.conversationId ?? null)) {
+        if (l.id === shipmentId || seenRisk.has(l.id)) continue
+        seenRisk.add(l.id)
+        const bk = await this.bookings.findById(l.bookingId)
+        const shared = (posByBooking.get(l.bookingId) ?? []).find((p) => matchPos.has(normKey(p)))
+        duplicateRiskReasons.push(
+          `PO ${shared ?? '(unknown)'} also ships on ${bk?.jobNo ?? l.id} — this email named no booking/SO/HBL, so it could belong to either shipment; link it to the right leg`,
         )
       }
     }
@@ -574,7 +651,16 @@ export class CommitterService {
           if (!hbl) continue
           const legMode = str((leg as { mode?: unknown }).mode) ?? str(mk.mode)
           for (const p of posByShipment.get(leg.id) ?? []) {
-            if (p.poNumber) siblingPoHbls.push({ po: p.poNumber, hbl, mode: legMode })
+            if (!p.poNumber) continue
+            siblingPoHbls.push({
+              po: p.poNumber,
+              hbl,
+              mode: legMode,
+              // 0029: how strongly that leg claims it, + the row to drop if a stated claim takes over
+              inferred: p.inferred === true,
+              linkId: p.linkId,
+              shipmentId: leg.id,
+            })
           }
         }
       }
@@ -582,8 +668,9 @@ export class CommitterService {
 
     // PoQtyReconciler: pure plan (qty/unit/enrichment flags) then side-effect links. Reasons stay byte-stable
     // with the pre-extract loop (see committer-po-reconciler.spec).
-    const { links, poQtyIssues, poFlagReasons } = planPoReconcile({
+    const { links, poQtyIssues, poFlagReasons, displaced } = planPoReconcile({
       pos: g.pos,
+      posInferred: g.posInferred,
       // f (=g.fields) is the Matcher's consolidated field bag — it does NOT carry mode; mode is a
       // separate top-level decision field (dto.mode / g.mode), applied to this leg's own shipment row
       // via normMode() above (legValues.mode). Mirror that same normalization here so the cross-mode
@@ -595,10 +682,65 @@ export class CommitterService {
       gk,
       siblingPoHbls,
     })
+    // 0029 displacement: a sibling held this PO only because its group SWEPT it up; this email STATES it.
+    // Drop the weak link FIRST so the insert below does not collide with the cross-HAWB invariant, and
+    // audit it on the losing leg — a PO leaving a shipment must never be silent, even when it is right.
+    for (const d of displaced) {
+      await this.shipments.unlinkPoById(d.linkId)
+      await this.audit.write({
+        entityType: 'shipment',
+        entityId: d.shipmentId,
+        field: 'shipment_pos',
+        oldValue: d.po,
+        newValue: null,
+        changeType: 'delete',
+        sourceType: 'system',
+        actorUserId: null,
+        note: `PO ${d.po} moved to ${str(f.hbl_awb_fcr_no) ?? str(f.mbl) ?? 'another B/L'} — ${d.fromHbl} swept it up without stating it (0029)`,
+      })
+    }
+    // DIVISION removal — the one evidence-backed way a STATED link leaves a leg. Two conditions, BOTH
+    // required: a division statement on this decision names the PO as moved (the factory's own words,
+    // audited below), AND the decision's PO list no longer carries it. Each protects against the other's
+    // failure mode: absence alone never removes (a thin reparse must not strip cargo), and a statement
+    // alone never removes (the queue keeps a PARTIAL division's PO in `pos` — a 3-carton urgent split
+    // keeps its trunk link). Only the amend path — a fresh leg has no stale links — and never on a
+    // hand-typed leg, like every automatic rule.
+    if (existing && g.divisions?.length && !(existing as { manualEntry?: unknown }).manualEntry) {
+      const movedAway = new Map<string, { quote?: string; target?: string }>()
+      for (const d of g.divisions) {
+        for (const p of d.pos ?? []) {
+          const n = normKey(p)
+          if (n && !groupPos.has(n)) movedAway.set(n, { quote: d.quote, target: d.target })
+        }
+      }
+      for (const linked of movedAway.size ? await this.shipments.linkedPosForShipment(shipmentId) : []) {
+        const div = movedAway.get(normKey(linked.poNumber))
+        if (!div) continue
+        await this.shipments.unlinkPoByShipmentAndPo(shipmentId, linked.id)
+        await this.audit.write({
+          entityType: 'shipment',
+          entityId: shipmentId,
+          field: 'shipment_pos',
+          oldValue: linked.poNumber,
+          newValue: null,
+          changeType: 'delete',
+          sourceType: 'system',
+          actorUserId: null,
+          note: `PO ${linked.poNumber} moved off this booking by a stated division${div.target ? ` (→ ${div.target})` : ''}${div.quote ? ` — "${div.quote}"` : ''}`.slice(0, 400),
+        })
+      }
+    }
     for (const link of links) {
       const poId = await this.purchaseOrders.upsertPo(link.poNo, customerId, effVendorId, link.enr ?? undefined)
       await this.bookings.linkPo(bookingId, poId)
-      await this.shipments.linkPo(shipmentId, poId, link.perPoQty, link.perPoUnit)
+      await this.shipments.linkPo(
+        shipmentId,
+        poId,
+        link.perPoQty,
+        link.perPoUnit,
+        (g.posInferred ?? []).some((p) => normKey(p) === normKey(link.poNo)),
+      )
     }
     // Data-completeness escalations route the shipment to human review.
     // Recomputed each commit (not accumulated): brand/style conflicts, PO qty issues, cargo-missing.

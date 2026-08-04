@@ -54,6 +54,36 @@ describe('openDecisions — the advice minus what the commit settled', () => {
       {},
     )
     expect(r.settledFields).toEqual(['vessel_name', 'voyage_no', 'qty', 'consignee_address'])
+    // Nothing left for a human: the summary line on the dashboard must not claim four fields disagree.
+    expect(r.openFields).toEqual([])
+  })
+
+  it('openFields is what the table will show — the unsettled conflicts', () => {
+    const r = openDecisions(
+      REAL_LEG,
+      review(
+        conflict('vessel_name', 'MARIBO MAERSK', 'EVER GIVEN'),
+        conflict('voyage_no', '630W', '631W'),
+        conflict('etd', '', '2026-08-10'),
+      ),
+      {},
+    )
+    expect(r.openFields).toEqual(['vessel_name', 'etd'])
+  })
+
+  it('drops fields the desk renders no row for — a summary must not promise one', () => {
+    const r = openDecisions(
+      REAL_LEG,
+      review(
+        conflict('gross_weight', '100', '8667.68'),
+        conflict('measurement', '1', '2'),
+        conflict('hts_code', 'a', 'b'),
+        conflict('item_style_no', 'a', 'b'),
+        conflict('etd', '', '2026-08-10'),
+      ),
+      {},
+    )
+    expect(r.openFields).toEqual(['etd'])
   })
 
   it('a genuine disagreement stays open', () => {

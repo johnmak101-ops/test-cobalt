@@ -149,10 +149,8 @@ describe('ReviewPoStylesSection — page-level Edit', () => {
     renderSection({ reviewReasons: PROPOSAL })
     expect(screen.getByRole('columnheader', { name: 'PO' })).toBeInTheDocument()
     expect(screen.getByRole('columnheader', { name: 'Item/Style' })).toBeInTheDocument()
-    // third column tracks the card's state label; default = the shared wording. NOT "AI Proposed":
-    // openDecisions strips settled conflicts upstream, so what lands here is what the committer
-    // read and declined to write.
-    expect(screen.getByTestId('po-proposed-column-header')).toHaveTextContent('Other values')
+    // Third column tracks the card's state label; default = the shared wording (REVIEW_HEAD).
+    expect(screen.getByTestId('po-proposed-column-header')).toHaveTextContent('AI proposed')
   })
 
   /** One box per style, never a comma blob — and every stored one opens TICKED, because what the

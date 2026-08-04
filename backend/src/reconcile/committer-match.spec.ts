@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   findExistingLeg,
+  findPoOnlyAmbiguity,
   findAdoptableZeroIdLeg,
   findSupersededByIdentityCorrection,
   findManualIdentityClash,
@@ -166,6 +167,94 @@ describe('findExistingLeg (committer leg-matching, pure + N+1-free)', () => {
 type AdoptLeg = Leg & { dismissedAt?: Date | null; linkedShipmentId?: string | null }
 const aleg = (id: string, bookingId: string, matchKeys: Record<string, unknown>, over: Partial<AdoptLeg> = {}): AdoptLeg =>
   ({ id, bookingId, matchKeys, dismissedAt: null, linkedShipmentId: null, ...over })
+
+describe('🔴 findExistingLeg RANK — candidate order must never decide (the operator lifecycle probe)', () => {
+  // The measured coin flip: operator dismisses a thin PO-shell ("not a shipment"), hand-types the real
+  // shipment, and the forwarder's next email — naming the manual leg's EXACT booking+SO — landed on
+  // whichever row the unordered SQL returned first. Half the time that was the dismissed husk, which
+  // absorbed the data invisibly (it stays dismissed; no warning fires; the manual leg never updates).
+  const husk = { id: 'HUSK', bookingId: 'B_H', matchKeys: {}, dismissedAt: new Date() }
+  const manual = { id: 'MANUAL', bookingId: 'B_M', matchKeys: { booking_no: 'BK-1', so_no: 'SO-1' } }
+  const posByBooking = new Map([['B_H', ['PO-X']], ['B_M', ['PO-X']]])
+
+  it('identity outranks shared PO: the keyed email lands on the manual leg in BOTH orders', () => {
+    const gk = gkOf({ booking_no: 'BK-1', so_no: 'SO-1' })
+    expect(findExistingLeg([husk, manual], posByBooking, gk, posSet('PO-X'), null)?.id).toBe('MANUAL')
+    expect(findExistingLeg([manual, husk], posByBooking, gk, posSet('PO-X'), null)?.id).toBe('MANUAL')
+  })
+
+  it('live outranks dismissed: the PO-only follow-up lands on the manual leg in BOTH orders', () => {
+    expect(findExistingLeg([husk, manual], posByBooking, new Set(), posSet('PO-X'), null)?.id).toBe('MANUAL')
+    expect(findExistingLeg([manual, husk], posByBooking, new Set(), posSet('PO-X'), null)?.id).toBe('MANUAL')
+  })
+
+  it('a SINGLE dismissed husk with no live alternative still matches (#146 re-ingest, unchanged)', () => {
+    expect(findExistingLeg([husk], posByBooking, new Set(), posSet('PO-X'), null)?.id).toBe('HUSK')
+  })
+
+  it('two dismissed husks and nothing live = the same guess twice — match neither', () => {
+    const husk2 = { id: 'HUSK2', bookingId: 'B_H2', matchKeys: {}, dismissedAt: new Date() }
+    const pos = new Map([...posByBooking, ['B_H2', ['PO-X']]])
+    expect(findExistingLeg([husk, husk2], pos, new Set(), posSet('PO-X'), null)).toBeUndefined()
+  })
+
+  it('🔴 a KEYED group never resurrects a keyless dismissed husk — the manual create mints a LIVE leg', () => {
+    // The operator dismissed the thin PO shell, then hand-typed the real shipment (booking+SO+PO).
+    // The old PO branch matched their create onto the husk they had JUST retired — resurrected it
+    // invisibly (still dismissed) and their "new" shipment never appeared in the tracker.
+    const gk = gkOf({ booking_no: 'BK-1', so_no: 'SO-1' })
+    expect(findExistingLeg([husk], posByBooking, gk, posSet('PO-X'), null)).toBeUndefined()
+  })
+})
+
+describe('🔴 findExistingLeg — the split-PO shape (one PO, two live shipments)', () => {
+  const legAC = { id: 'AC', bookingId: 'B_C', matchKeys: { booking_no: 'BK-C' } }
+  const legAB = { id: 'AB', bookingId: 'B_B', matchKeys: { booking_no: 'BK-B' } }
+  const posByBooking = new Map([['B_C', ['PO-X']], ['B_B', ['PO-X']]])
+
+  it('an email citing one booking lands on that leg — the conflict guard keeps it off the other', () => {
+    const gk = gkOf({ booking_no: 'BK-C' })
+    expect(findExistingLeg([legAC, legAB], posByBooking, gk, posSet('PO-X'), null)?.id).toBe('AC')
+    expect(findExistingLeg([legAB, legAC], posByBooking, gk, posSet('PO-X'), null)?.id).toBe('AC')
+  })
+
+  it('a PO-ONLY email matches NEITHER — genuine ambiguity, in BOTH orders (was a measured coin flip)', () => {
+    expect(findExistingLeg([legAC, legAB], posByBooking, new Set(), posSet('PO-X'), 'conv-new')).toBeUndefined()
+    expect(findExistingLeg([legAB, legAC], posByBooking, new Set(), posSet('PO-X'), 'conv-new')).toBeUndefined()
+  })
+
+  it('…except its OWN thread-leg: a re-POST / rebuild replay lands back on the leg it minted', () => {
+    const own = { id: 'OWN', bookingId: 'B_O', matchKeys: { conversation_id: 'conv-p' } }
+    const pos = new Map([...posByBooking, ['B_O', ['PO-X']]])
+    expect(findExistingLeg([legAC, own, legAB], pos, new Set(), posSet('PO-X'), 'conv-p')?.id).toBe('OWN')
+  })
+
+  it('…and when the desk FOLDED that own leg, the replay follows its link to the successor', () => {
+    const own = { id: 'OWN', bookingId: 'B_O', matchKeys: { conversation_id: 'conv-p' }, linkedShipmentId: 'AC', dismissedAt: new Date() }
+    const pos = new Map([...posByBooking, ['B_O', ['PO-X']]])
+    expect(findExistingLeg([legAC, own, legAB], pos, new Set(), posSet('PO-X'), 'conv-p')?.id).toBe('AC')
+  })
+
+  it('a KEYED group still absorbs the first nascent PO shell (the pinned GZL behaviour, unchanged)', () => {
+    const shellA = { id: 'SH_A', bookingId: 'B_SA', matchKeys: {} }
+    const shellB = { id: 'SH_B', bookingId: 'B_SB', matchKeys: {} }
+    const pos = new Map([['B_SA', ['PO-1']], ['B_SB', ['PO-2']]])
+    const r = findExistingLeg([shellA, shellB], pos, gkOf({ hbl_awb_fcr_no: 'GZL1' }), posSet('PO-1', 'PO-2'), null)
+    expect(r?.id).toBe('SH_A')
+  })
+
+  it('findPoOnlyAmbiguity names the two live candidates — and excludes husks, folds, and the own leg', () => {
+    const own = { id: 'OWN', bookingId: 'B_O', matchKeys: { conversation_id: 'conv-p' } }
+    const husk = { id: 'HUSK', bookingId: 'B_H', matchKeys: {}, dismissedAt: new Date() }
+    const pos = new Map([...posByBooking, ['B_O', ['PO-X']], ['B_H', ['PO-X']]])
+    const named = findPoOnlyAmbiguity([legAC, legAB, own, husk], pos, new Set(), posSet('PO-X'), 'conv-p')
+    expect(named.map((l) => l.id).sort()).toEqual(['AB', 'AC'])
+    // one candidate is not an ambiguity
+    expect(findPoOnlyAmbiguity([legAC], posByBooking, new Set(), posSet('PO-X'), null)).toEqual([])
+    // a keyed group never reports it — pass 1 owns that world
+    expect(findPoOnlyAmbiguity([legAC, legAB], posByBooking, gkOf({ booking_no: 'BK-C' }), posSet('PO-X'), null)).toEqual([])
+  })
+})
 
 describe('findAdoptableZeroIdLeg (thread gains its first identity → adopt, never duplicate)', () => {
   it('adopts the single zero-identity leg of the same thread', () => {

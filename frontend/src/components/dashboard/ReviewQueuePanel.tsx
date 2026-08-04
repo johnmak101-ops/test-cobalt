@@ -2,12 +2,43 @@ import { useNavigate } from 'react-router-dom'
 import { Badge } from '../ui/Badge'
 import { cn, formatRelativeTime, formatShipmentId } from '../../lib/utils'
 import { interactiveProps } from '../../lib/interactive'
-import { humanizeReason, isSilentOpsReason } from '../../lib/review-reasons'
+import { isHiddenOpsField } from '../../lib/review-reasons'
+import { reviewFieldLabel } from '../../lib/review-fields'
+import {
+  buildNeedsAttention,
+  portsLinkedFromRoute,
+  type NeedsAttentionGroupId,
+} from '../review/needs-attention'
 import { DESK_ROW_BODY, DESK_ROW_HEAD, DESK_ROW_META, DESK_ROW_TIME } from './desk-row'
 import type { ReviewShipment } from '../../hooks/use-review-queue'
 
 /** How many rows before the dashboard defers to the Review Queue page. */
 const MAX_ROWS = 3
+
+/** Fields named on one row before the line stops reading as a sentence. */
+const MAX_NAMED_FIELDS = 3
+
+/** What the row needs to state its own reason — a queue list row carries all of it. */
+export type SummarizableRow = Pick<
+  ReviewShipment,
+  'reviewReasons' | 'openDecisions' | 'route' | 'poCount'
+>
+
+/**
+ * The fields the conflict table will show as rows, named the way that table names them.
+ *
+ * The count comes from the BACKEND (openDecisions.openFields) — conflicts minus the ones the commit
+ * already settled. The queue gate's own wording cannot be used here: it counts the conflicts as they
+ * stood before the committer wrote anything, which is how this card came to read "9 field(s) received
+ * different values" over a desk that had two rows left.
+ */
+function conflictLine(openFields: string[]): string | null {
+  if (openFields.length === 0) return null
+  const labels = openFields.map((f) => reviewFieldLabel(f, f.replace(/_/g, ' ')))
+  const shown = labels.slice(0, MAX_NAMED_FIELDS).join(', ')
+  const more = labels.length > MAX_NAMED_FIELDS ? ` +${labels.length - MAX_NAMED_FIELDS} more` : ''
+  return `Emails disagree about: ${shown}${more} — open to compare`
+}
 
 /** Confidence band → the same left-edge weight AlertCard gives severity (low is the loud one). */
 const bandBorder: Record<string, string> = {
@@ -19,12 +50,54 @@ const bandBorder: Record<string, string> = {
 /**
  * Why this leg is on the desk, in one line — the review row's answer to an alert's `message`.
  *
- * Ops-internal chatter is skipped (isSilentOpsReason): those lines exist for the pipeline's own
- * audit trail, not for an operator, and leading a card with one says nothing about what to do.
+ * This was `humanizeReason(reviewReasons[0])`: the one place in the app that rendered a review reason
+ * without the review desk's pipeline. Three things followed, all on screen together on 2026-07-30:
+ *
+ * 1. RAW AUDIT TEXT. `humanizeReason` falls through to the original string when no translation matches,
+ *    so leg 202601556A led with `identity-dispose: demoted 进仓-labelled 'GZL26258522' out of b…`,
+ *    clamped mid-word. The desk classifies that same string as FYI and never shows it.
+ * 2. PRE-COMMIT COUNTS. "9 field(s) received different values" is the queue gate's `9 field conflict(s)`
+ *    passed straight through, while the card strips settled rows and drops conflict prose entirely once
+ *    the table owns the comparison.
+ * 3. ARBITRARY PICK. `reasons[0]` is array order, not priority, and nothing dropped a port or party miss
+ *    that had since resolved.
+ *
+ * So it runs the same builder the card runs, keeps only `decision` lines, and picks between them in the
+ * card's headline order (desk-question.ts QUESTION_PRIORITY): is it freight, is it the right shipment,
+ * then the field grid, then everything else. Returns null when the leg's only lines are FYI — the row
+ * then says it is held for review, which is true, instead of quoting the pipeline's notebook.
  */
-export function primaryReason(reasons: string[] | undefined): string | null {
-  const first = (reasons ?? []).map((r) => String(r ?? '').trim()).find((r) => r && !isSilentOpsReason(r))
-  return first ? humanizeReason(first) : null
+export function primaryReason(row: SummarizableRow): string | null {
+  const openFields = (row.openDecisions?.openFields ?? []).filter((f) => !isHiddenOpsField(f))
+  const settled = row.openDecisions?.settledFields ?? []
+  const items = buildNeedsAttention({
+    reviewReasons: row.reviewReasons,
+    /**
+     * What the conflict TABLE speaks for: rows still open plus the rows it resolved (ReviewCard's
+     * tableOwnedCount). Passing it here is what suppresses the gate's conflict prose on this row for
+     * exactly the legs where the card suppresses it too.
+     */
+    conflictsCount: openFields.length + settled.length,
+    hasPo: (row.poCount ?? 0) > 0,
+    portsLinked: portsLinkedFromRoute(row.route),
+    partiesLinked: Object.fromEntries(
+      (row.openDecisions?.resolvedParties ?? []).map((p) => [p.slot, p.name]),
+    ),
+  }).filter((i) => i.desk === 'decision')
+
+  // buildNeedsAttention already sorted by severity, so the first hit in a group is its loudest line.
+  const inGroup = (g: NeedsAttentionGroupId): string | null =>
+    items.find((i) => i.groupId === g)?.text ?? null
+
+  return (
+    inGroup('real_shipment') ??
+    inGroup('which_shipment') ??
+    conflictLine(openFields) ??
+    inGroup('fields_disagree') ??
+    inGroup('master_miss') ??
+    inGroup('incomplete_data') ??
+    inGroup('other')
+  )
 }
 
 /**
@@ -78,7 +151,7 @@ export function ReviewQueuePanel({ shipments }: { shipments: ReviewShipment[] })
             const label = formatShipmentId(s.id, s.firstEmailAt ?? s.createdAt)
             const identifier = (s.bookingNo ?? '').trim() || (s.soNo ?? '').trim() || (s.hblAwbFcrNo ?? '').trim()
             const who = [s.customer, s.forwarder, s.route].filter(Boolean).join(' · ')
-            const reason = primaryReason(s.reviewReasons)
+            const reason = primaryReason(s)
             return (
               <div
                 key={s.id}

@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest'
 import { getTestDb, resetDb, closeTestDb, repos, type TestDB } from './setup-db'
 import { CommitterService, type ReconGroup } from '../src/reconcile/committer.service'
+import { journeyRoute } from '../src/presentation/adapters/derive'
 
 let db: TestDB
 let committer: CommitterService
@@ -28,6 +29,156 @@ afterAll(closeTestDb)
 beforeEach(() => resetDb(db))
 
 describe('CommitterService (integration, real SQL Server)', () => {
+  it('🔴 a PO split keeps its shipments on DIFFERENT IDs, each with its OWN journey', async () => {
+    // John's scenario, pinned end-to-end (2026-08-03): one PO, two movements —
+    //   ① A→B→C on one air waybill (a transit chain)   ② A→D by sea on its own bill (direct)
+    // The two groups share ONLY the PO; their strong keys are their own documents. They must land on
+    // two distinct shipment ids, and the air chain must never bleed onto the sea leg's route.
+    const air = await committer.apply(group({
+      pos: ['PO-5000'],
+      matchKeys: { hbl_awb_fcr_no: 'AWB-777' },
+      mode: 'Air',
+      emailTypes: ['SO'],
+      fields: { hbl_awb_fcr_no: 'AWB-777', pol: 'A', pod: 'C' },
+      journey: [
+        { seq: 1, mode: 'Air', pol: 'A', pod: 'B', doc: 'AWB-777' },
+        { seq: 2, mode: 'Air', pol: 'B', pod: 'C', doc: null },
+      ],
+      conversationId: 'conv-air',
+      evidenceIds: ['ev-air'],
+    }))
+    const sea = await committer.apply(group({
+      pos: ['PO-5000'],
+      matchKeys: { mbl: 'MBL-888' },
+      mode: 'Sea-FCL',
+      emailTypes: ['SO'],
+      fields: { mbl: 'MBL-888', pol: 'A', pod: 'D' },
+      // a direct A→D is ONE movement — the queue's normalizeLegs nulls a single-leg array upstream,
+      // so no journey rides this decision at all
+      conversationId: 'conv-sea',
+      evidenceIds: ['ev-sea'],
+    }))
+
+    expect(sea.shipmentId).not.toBe(air.shipmentId)
+
+    const legAir = await db.selectFrom('shipments').where('id', '=', air.shipmentId).selectAll().executeTakeFirstOrThrow()
+    const legSea = await db.selectFrom('shipments').where('id', '=', sea.shipmentId).selectAll().executeTakeFirstOrThrow()
+    // the chain lives on the AIR leg only, and renders as the multi-stop route
+    expect(journeyRoute((legAir as { journey?: unknown }).journey)).toBe('A→B→C')
+    // the SEA leg has no journey — its route falls back to plain pol→pod (A→D)
+    expect((legSea as { journey?: string | null }).journey ?? null).toBeNull()
+    expect(legSea.mbl).toBe('MBL-888')
+    expect(legAir.hblAwbFcrNo).toBe('AWB-777')
+  })
+
+  it('🔴 a stated division removes the moved PO from the leg it left — audited, never silent', async () => {
+    // Day-10 of the regroup lifecycle: C,D booked on Osaka; a later email states D moved to the London
+    // booking. The queue's decision for the Osaka leg now carries pos=[C] AND the division naming D —
+    // the two together are the committer's licence to drop D's stated link. Absence alone must not.
+    const osaka = group({
+      pos: ['PO-C', 'PO-D'],
+      matchKeys: { booking_no: 'BK-OSA' },
+      fields: { booking_no: 'BK-OSA', pod: 'Osaka' },
+      conversationId: 'conv-osa',
+    })
+    const a = await committer.apply(osaka)
+    const linked = (id: string) => db.selectFrom('shipmentPos')
+      .innerJoin('purchaseOrders', 'shipmentPos.poId', 'purchaseOrders.id')
+      .where('shipmentPos.shipmentId', '=', id)
+      .select('purchaseOrders.poNumber as poNumber').execute()
+    expect((await linked(a.shipmentId)).map((r) => r.poNumber).sort()).toEqual(['PO-C', 'PO-D'])
+
+    const b = await committer.apply(group({
+      ...osaka,
+      pos: ['PO-C'],
+      divisions: [{ pos: ['PO-D'], direction: 'to', target: 'BK-LON', quote: 'PO D 改到伦敦 booking' }],
+      events: [{ emailType: 'Booking Request', receivedAt: '2026-01-10T00:00:00Z' }],
+    }))
+    expect(b.shipmentId).toBe(a.shipmentId) // same leg amended, not a new one
+    expect((await linked(a.shipmentId)).map((r) => r.poNumber)).toEqual(['PO-C'])
+    // the removal is audited with the statement's own words — a PO leaving a leg is never silent
+    const audit = await db.selectFrom('changeLog').selectAll().execute()
+    const row = audit.find((x) => x.field === 'shipment_pos' && x.changeType === 'delete' && x.oldValue === 'PO-D')
+    expect(row?.note).toContain('改到伦敦')
+  })
+
+  it('🔴 operator lifecycle: dismiss the thin leg, hand-type the real one — the next email finds the REAL one', async () => {
+    // Measured before the rank fix: the keyed email landed on whichever row the unordered SQL returned
+    // first — half the time the dismissed husk, absorbing the data invisibly.
+    const thin = await committer.apply(group({
+      pos: ['PO-77'], matchKeys: {}, fields: {}, conversationId: 'conv-thin', evidenceIds: ['ev-thin'],
+    }))
+    await db.updateTable('shipments').set({ dismissedAt: new Date() }).where('id', '=', thin.shipmentId).execute()
+
+    const manual = await committer.apply(group({
+      pos: ['PO-77'],
+      matchKeys: { booking_no: 'BK-M', so_no: 'SO-M' },
+      fields: { booking_no: 'BK-M', so_no: 'SO-M', pol: 'SZX', pod: 'LHR' },
+      conversationId: null, createdManually: true, reviewStatus: 'provisional', evidenceIds: [],
+    }))
+    expect(manual.shipmentId).not.toBe(thin.shipmentId)
+
+    // the forwarder's next email names the manual leg's exact booking + SO
+    const keyed = await committer.apply(group({
+      pos: ['PO-77'],
+      matchKeys: { booking_no: 'BK-M', so_no: 'SO-M' },
+      fields: { booking_no: 'BK-M', etd: '2026-06-20' },
+      conversationId: 'conv-fwd', evidenceIds: ['ev-fwd'],
+    }))
+    expect(keyed.shipmentId).toBe(manual.shipmentId)
+
+    // and a PO-only follow-up prefers the LIVE manual leg over the dismissed husk
+    const poOnly = await committer.apply(group({
+      pos: ['PO-77'], matchKeys: {}, fields: {}, conversationId: 'conv-follow', evidenceIds: ['ev-follow'],
+    }))
+    expect(poOnly.shipmentId).toBe(manual.shipmentId)
+  })
+
+  it('🔴 split PO on two live shipments: a PO-only email matches NEITHER — it lands provisional, naming both', async () => {
+    const ac = await committer.apply(group({
+      pos: ['PO-88'], matchKeys: { booking_no: 'BK-C' }, fields: { booking_no: 'BK-C', pod: 'C' },
+      conversationId: 'conv-c', evidenceIds: ['ev-c'],
+    }))
+    const ab = await committer.apply(group({
+      pos: ['PO-88'], matchKeys: { booking_no: 'BK-B' }, fields: { booking_no: 'BK-B', pod: 'B' },
+      conversationId: 'conv-b', evidenceIds: ['ev-b'],
+    }))
+    expect(ab.shipmentId).not.toBe(ac.shipmentId)
+
+    const poOnly = await committer.apply(group({
+      pos: ['PO-88'], matchKeys: {}, fields: {}, conversationId: 'conv-p', evidenceIds: ['ev-p'],
+    }))
+    expect([ac.shipmentId, ab.shipmentId]).not.toContain(poOnly.shipmentId)
+    const leg = await db.selectFrom('shipments').where('id', '=', poOnly.shipmentId).selectAll().executeTakeFirstOrThrow()
+    expect(leg.reviewStatus).toBe('provisional')
+    // the desk sees BOTH candidates by job number, and the phrase tells it what to do
+    expect(String(leg.reviewReasons)).toContain('could belong to either shipment')
+    expect(String(leg.reviewReasons)).toContain('PO-88')
+
+    // idempotency: a re-POST (or rebuild replay) of the same decision lands back on its own leg
+    const again = await committer.apply(group({
+      pos: ['PO-88'], matchKeys: {}, fields: {}, conversationId: 'conv-p', evidenceIds: ['ev-p'],
+    }))
+    expect(again.shipmentId).toBe(poOnly.shipmentId)
+    expect(await db.selectFrom('shipments').selectAll().execute()).toHaveLength(3)
+  })
+
+  it('a thin decision WITHOUT a division never strips cargo — absence alone is not evidence', async () => {
+    const osaka = group({
+      pos: ['PO-C', 'PO-D'],
+      matchKeys: { booking_no: 'BK-OSA2' },
+      fields: { booking_no: 'BK-OSA2' },
+      conversationId: 'conv-osa2',
+    })
+    const a = await committer.apply(osaka)
+    await committer.apply(group({ ...osaka, pos: ['PO-C'] })) // e.g. a partial reparse — no statement
+    const pos = await db.selectFrom('shipmentPos')
+      .innerJoin('purchaseOrders', 'shipmentPos.poId', 'purchaseOrders.id')
+      .where('shipmentPos.shipmentId', '=', a.shipmentId)
+      .select('purchaseOrders.poNumber as poNumber').execute()
+    expect(pos.map((r) => r.poNumber).sort()).toEqual(['PO-C', 'PO-D'])
+  })
+
   it('creates a booking + leg from a group, mapping fields and deriving state', async () => {
     const res = await committer.apply(group({ fields: { so_no: 'SO-1', hbl_awb_fcr_no: 'H-1' }, emailTypes: ['SO'] }))
     expect(res.action).toBe('create_booking')

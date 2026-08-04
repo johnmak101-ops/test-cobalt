@@ -14,22 +14,45 @@ type SourceEvent = { emailType: string; receivedAt: string; graphId?: string | n
 
 /** Milestone rows for a leg: one per source-email type (dated by receivedAt), plus field-derived milestones
  *  (warehouse_start_date→AT_WAREHOUSE, atd→SAILED) and a SAILED etd-fallback. Idempotent per milestone type. */
+/** States at or past physical departure — the SAILED etd-backfill applies to every one of them,
+ *  because deriveState can OVERSHOOT straight to RELEASED/DELIVERED (transit-allowance fallback)
+ *  without ever resting on SAILED. */
+const DEPARTED_OR_BEYOND = new Set(['SAILED', 'RELEASED', 'DELIVERED'])
+
 export function deriveMilestoneRows(
   shipmentId: string,
   events: SourceEvent[],
   fields: Record<string, unknown>,
   state: string,
+  /** System clock — injectable for tests. The etd-backfill may only assume a departure that the
+   *  calendar says already happened. */
+  now: Date = new Date(),
 ): MilestoneRow[] {
   const seen = new Set<string>()
   const rows: MilestoneRow[] = []
-  for (const ev of [...events].sort((a, b) => a.receivedAt.localeCompare(b.receivedAt))) {
+  for (const ev of [...events].sort((a, b) => String(a.receivedAt ?? '').localeCompare(String(b.receivedAt ?? '')))) {
     const mt = MILESTONE_OF[ev.emailType]
     if (!mt || seen.has(mt)) continue
+    // 🔴 `new Date(null)` is EPOCH ZERO, not an error — so a source event with no receivedAt used to
+    // write a milestone dated 1970-01-01. Measured on a real commit run: 9 of 38 milestones landed on
+    // 1970-01-01, all of them email-derived (BOOKING_SENT / SO_RECEIVED / DRAFT_BL_RECEIVED /
+    // FINAL_BL_RECEIVED). The field-derived loop below never had this bug because `date()` returns null
+    // and it does `if (!occurredAt) continue` — this loop simply lacked the same guard.
+    //
+    // It is not cosmetic. A phantom `DRAFT_BL_RECEIVED@1970` on a leg carrying NO hbl/mbl made
+    // `has.draftBl = !!draftBlAt` true, so the alert evaluator judged the draft-B/L watch SATISFIED and
+    // suppressed the "No Draft B/L" warning on a shipment that had never received one. A fabricated
+    // timeline entry silenced a real chase.
+    //
+    // Skip rather than substitute: an absent milestone is honest, and every consumer already treats a
+    // missing milestone as "not yet". Inventing `now` would be a second fabricated date.
+    const occurredAt = ev.receivedAt ? new Date(ev.receivedAt) : null
+    if (!occurredAt || Number.isNaN(occurredAt.getTime())) continue
     seen.add(mt)
     rows.push({
       shipmentId,
       milestoneType: mt as MilestoneRow['milestoneType'],
-      occurredAt: new Date(ev.receivedAt),
+      occurredAt,
       senderType: 'forwarder',
       emailMessageId: ev.graphId ?? null, // graph id → "view original" re-fetch
     })
@@ -55,9 +78,16 @@ export function deriveMilestoneRows(
   // atd→SAILED derived milestone above never fires and the timeline shows a blank departure. When the committed
   // state IS SAILED but no SAILED milestone was emitted (neither email- nor atd-derived) and atd is absent,
   // emit one dated by etd. Idempotent via `seen`; never double-emits when atd already produced a SAILED row.
-  if (state === 'SAILED' && !seen.has('SAILED') && !date(fields.atd)) {
+  //
+  // Extended (2026-08-03): the same blank departure reappeared one state further along — deriveState's
+  // no-arrival-data transit allowance OVERSHOOTS straight to DELIVERED, skipping SAILED, so the
+  // `state === 'SAILED'` guard never held. Measured on a real AIR leg (ETD 7/18, judged DELIVERED on
+  // 8/3): six-stage story, no departure row, the ETD sitting right on the leg. Any state at or past
+  // departure now backfills — but ONLY when the etd has PASSED on the system clock: the stamp is an
+  // assumption, and a future ETD must never mint a departure that has not happened yet.
+  if (DEPARTED_OR_BEYOND.has(state) && !seen.has('SAILED') && !date(fields.atd)) {
     const etd = date(fields.etd)
-    if (etd) {
+    if (etd && etd.getTime() <= now.getTime()) {
       seen.add('SAILED')
       rows.push({
         shipmentId,

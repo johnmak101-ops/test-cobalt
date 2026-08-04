@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { deriveRoute, portLabel, deriveOriginCountry, poNumbersJson, isoOrNull } from './derive'
+import { journeyRoute, deriveRoute, portLabel, deriveOriginCountry, poNumbersJson, isoOrNull } from './derive'
 
 describe('deriveRoute — POL/POD -> "POL→POD", both sides always shown (#115)', () => {
   it('joins both ends with an arrow (unchanged)', () => {
@@ -82,5 +82,42 @@ describe('isoOrNull — date -> ISO string for the UI', () => {
   it('returns null for null/undefined', () => {
     expect(isoOrNull(null)).toBeNull()
     expect(isoOrNull(undefined)).toBeNull()
+  })
+})
+
+describe('journeyRoute — the chain wins the route string', () => {
+  const DEL = JSON.stringify([
+    { seq: 1, mode: 'Air', pol: 'PVG', pod: 'DEL', doc: '098-32230085' },
+    { seq: 2, mode: 'Air', pol: 'DEL', pod: 'LHR', doc: null },
+  ])
+
+  it('renders every stop of a stored chain', () => {
+    expect(journeyRoute(DEL)).toBe('PVG→DEL→LHR')
+  })
+
+  it('renders a four-stop sea relay', () => {
+    const relay = JSON.stringify([
+      { seq: 1, mode: 'Sea', pol: 'PNH', pod: 'VUT', doc: null },
+      { seq: 2, mode: 'Sea', pol: 'VUT', pod: 'TPP', doc: null },
+      { seq: 3, mode: 'Sea', pol: 'TPP', pod: 'LGP', doc: null },
+    ])
+    expect(journeyRoute(relay)).toBe('PNH→VUT→TPP→LGP')
+  })
+
+  it('🔴 accepts the ALREADY-PARSED array the kysely JSON plugin actually hands back', () => {
+    // The integration test read null from a real row while the string-in unit case was green: the
+    // column is nvarchar JSON but arrives pre-parsed. Fourth sighting of the wire-type trap.
+    expect(journeyRoute([
+      { seq: 1, mode: 'Air', pol: 'PVG', pod: 'DEL', doc: null },
+      { seq: 2, mode: 'Air', pol: 'DEL', pod: 'LHR', doc: null },
+    ])).toBe('PVG→DEL→LHR')
+  })
+
+  it('null on absent, malformed, or sub-chain input — every caller falls back to deriveRoute', () => {
+    expect(journeyRoute(null)).toBeNull()
+    expect(journeyRoute(undefined)).toBeNull()
+    expect(journeyRoute('not json')).toBeNull()
+    expect(journeyRoute('{}')).toBeNull()
+    expect(journeyRoute(JSON.stringify([{ pol: 'PVG', pod: 'LHR' }]))).toBeNull() // one leg = endpoints only
   })
 })

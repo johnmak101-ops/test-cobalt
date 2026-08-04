@@ -16,7 +16,18 @@ async function bootstrap() {
   // Agent→tracking decision payloads bundle every evidence row + conflict for a shipment
   // group; deeply threaded multi-PO shipments (e.g. the merged WYSE MACFUN air bookings)
   // exceed Express's default 100kb JSON limit. Raise it for the decisions/* ingest path.
-  app.useBodyParser('json', { limit: '25mb' })
+  //
+  // 🔴 25mb is not enough for OFFLINE-ingested mail. The queue strips `rawBytesB64` only when an
+  // attachment carries a `graphAttachmentId` (ShipTrack can then re-fetch it) — see
+  // `stripDecisionAttachmentBytes` in cobalt-queue. Mail ingested from .eml/.msg on disk has NO Graph
+  // id, so NOTHING is strippable and the full attachment bytes ride in the POST body. A 63-record
+  // consignment from the .eml corpus (MAGF / WEB9CIPC7633) blew past 25mb and came back as
+  // `PayloadTooLargeError` — surfaced to the caller as an opaque 500 via DbExceptionFilter, which is
+  // why it read as a server crash rather than a size limit.
+  //
+  // Env-overridable so this does not need another rebuild to tune. Stripping the bytes instead is NOT
+  // the fix: without a Graph id they are unrecoverable, so a reviewer would lose the document entirely.
+  app.useBodyParser('json', { limit: process.env.JSON_BODY_LIMIT ?? '200mb' })
   app.setGlobalPrefix('api')
   // Trust exactly ONE proxy hop — the intranet nginx that terminates TLS on 443 and forwards to the
   // app on :3000. This lets X-Forwarded-Proto drive req.secure (→ the `secure` session cookie) and

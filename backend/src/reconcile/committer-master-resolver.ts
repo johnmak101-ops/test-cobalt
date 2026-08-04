@@ -6,7 +6,12 @@
  * Optional curated alias maps (loaded once per apply) pre-translate raw → rhs before exact resolution.
  * Exact-only: no substring/fuzzy on the alias step (#145).
  */
-import { MastersRepository, type ForwarderLinkTier, type PortLinkTier } from '../db/repositories/masters.repository'
+import {
+  MastersRepository,
+  type ForwarderLinkTier,
+  type PortFactRow,
+  type PortLinkTier,
+} from '../db/repositories/masters.repository'
 import { str } from './match-keys'
 
 export type ForwarderLink = { id: string | null; tier: ForwarderLinkTier | null }
@@ -16,17 +21,23 @@ export type PortLink = { id: string; country: string | null; tier: PortLinkTier 
 export type CuratedAliasMaps = {
   portAlias: Map<string, string>
   forwarderAlias: Map<string, string>
+  /** The approved+active fact rows the maps were built from — handed to portLinkByCodeOrName so the
+   *  port ladder reuses them instead of re-reading master_resolution per pol/pod. undefined
+   *  (emptyAliasMaps) → the ladder self-fetches the same rows. */
+  portFacts?: PortFactRow[]
 }
 
 export function emptyAliasMaps(): CuratedAliasMaps {
   return { portAlias: new Map(), forwarderAlias: new Map() }
 }
 
-/** Build alias maps from approved master_resolution rows (port_alias + forwarder_alias). */
+/** Build alias maps from approved+active master_resolution rows (port_alias + forwarder_alias).
+ *  Also stows the rows themselves on `portFacts` for the port ladder's fact tiers. */
 export function aliasMapsFromFacts(
   facts: Array<{ kind: string; lhs: string; rhs: string | null }>,
 ): CuratedAliasMaps {
   const maps = emptyAliasMaps()
+  maps.portFacts = facts
   for (const f of facts) {
     if (!f.lhs || !f.rhs) continue
     const lhs = f.lhs.trim().toUpperCase()
@@ -73,7 +84,7 @@ export class MasterResolver {
     if (!c) return Promise.resolve(null)
     // Curated exact alias: raw → UN/LOCODE (also covered by portLinkByCodeOrName facts; pre-map is explicit for batch load)
     const aliased = aliases.portAlias.get(c.toUpperCase())
-    return this.masters.portLinkByCodeOrName(aliased ?? c)
+    return this.masters.portLinkByCodeOrName(aliased ?? c, aliases.portFacts)
   }
 
   /** Parallel resolve of the five party/route links the committer needs for a group. */

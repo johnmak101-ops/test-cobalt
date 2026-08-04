@@ -47,6 +47,46 @@ const fieldLabel = (raw: string): string =>
   FIELD_WORDS[raw] ?? raw.replace(/_/g, ' ')
 
 /**
+ * The one wording for "Mesh does not have this company", used by every surface that says it.
+ *
+ * It read `"TCI" not found in Mesh Database — advise add in Mesh.` and was generated independently
+ * at ten call sites. Two problems, both raised by the desk (2026-07-31):
+ *
+ * - it names a system and an instruction ("advise add in Mesh") rather than a finding, and the
+ *   instruction is for someone else — masters are ERP-owned and read-only in this app, so nobody
+ *   reading this card can act on it. It belongs under "For information", stated as what was
+ *   actually established;
+ * - "not found" overstates a lookup. What the matcher did was fail to find a NEAR match, which is
+ *   the honest claim and the one an operator can check.
+ *
+ * Ten copies of a sentence is also how the desk ended up with seven ways of saying the same thing,
+ * so this is the only place the words live now.
+ */
+export function meshMissText(name?: string | null, slot?: string | null): string {
+  const who = slot ? fieldLabel(slot).replace(/\s*name$/i, '') : ''
+  const nameStr = String(name ?? '').trim()
+  const subject = nameStr
+    ? `${who ? `${who.charAt(0).toUpperCase()}${who.slice(1)} ` : ''}"${nameStr}"`
+    : who
+      ? `${who.charAt(0).toUpperCase()}${who.slice(1)}`
+      : 'Party'
+  return `${subject} has no near match in database.`
+}
+
+/** Party LIST name as the matcher's reasons spell it → the leg column FIELD_WORDS knows. */
+export const PARTY_LIST_FIELD: Record<string, string> = {
+  forwarder: 'forwarder_name',
+  customer: 'customer_code',
+  vendor: 'vendor_code',
+  consignee: 'consignee_name',
+}
+
+/** The collapsed form, when several parties missed at once. */
+export function meshMissCountText(count: number): string {
+  return `${count} parties have no near match in database.`
+}
+
+/**
  * Fields removed from Order Details + review conflict table — never list them in flag / reason copy.
  * Operators cannot "choose" these values on the card anymore.
  */
@@ -231,17 +271,18 @@ const TRANSLATIONS: Translation[] = [
     text: () => 'Port not in UN/LOCODE masters — add or alias, then rematch',
   },
   {
-    match: /Cannot match "([^"]+)" in the (?:forwarder|customer|vendor|consignee) list/i,
-    text: (m) => `"${m[1]}" not found in Mesh Database — advise add in Mesh.`,
+    match: /Cannot match "([^"]+)" in the (forwarder|customer|vendor|consignee) list/i,
+    /* The reason names the LIST ("the forwarder list"); FIELD_WORDS is keyed by the leg column, and
+       two of the four do not follow the `_name` pattern (customer_code, vendor_code). */
+    text: (m) => meshMissText(m[1], PARTY_LIST_FIELD[m[2]!.toLowerCase()]),
   },
   {
     match: /Cannot match .+ Cobalt Fashion Data Mesh System/i,
-    text: () =>
-      'Party not found in Mesh Database — advise add in Mesh.',
+    text: () => meshMissText(),
   },
   {
     match: /^(\w+)\s+"([^"]+)"\s+did not exact-match a master/i,
-    text: (m) => `"${m[2]}" not found in Mesh Database — advise add in Mesh.`,
+    text: (m) => meshMissText(m[2], m[1]),
   },
   {
     match: /Cannot match .+ masters catalog is empty/i,
@@ -285,7 +326,7 @@ const TRANSLATIONS: Translation[] = [
   {
     // Port-specific handled above; party master miss uses Mesh copy (earlier rule also matches).
     match: /^(\w+)\s+"([^"]+)"\s+did not exact-match a master/i,
-    text: (m) => `"${m[2]}" not found in Mesh Database — advise add in Mesh.`,
+    text: (m) => meshMissText(m[2], m[1]),
   },
   {
     match: /did not exact(?:\/curated)?-match a port master/i,
@@ -293,7 +334,7 @@ const TRANSLATIONS: Translation[] = [
   },
   {
     match: /did not exact-match a master/i,
-    text: () => 'Party not found in Mesh Database — advise add in Mesh.',
+    text: () => meshMissText(),
   },
   {
     // "PO 2605358: total_quantity 692 looks like a broadcast total …"

@@ -36,6 +36,24 @@ export class PurchaseOrdersWriteController {
     return this.svc.link(poId, body.shipmentId, body.quantity ?? null, user.id)
   }
 
+  /**
+   * Correct what a shipment ships of a PO.
+   *
+   * The quantity and its unit lived only on the LINK, and the link could only be created or deleted —
+   * so an operator who saw "26 pieces" where the packing list said "26 cartons" had to unlink and
+   * relink to fix one word, which loses the row's history and its id. The review desk needs to change
+   * it in place (the shared-PO block edits this row directly), hence a Patch.
+   */
+  @Roles('EDITOR', 'ADMIN')
+  @Patch(':poId/link-shipment/:linkId') updateLink(
+    @Param('poId') poId: string,
+    @Param('linkId') linkId: string,
+    @Body() body: { quantity?: number | null; quantityUnit?: string | null },
+    @CurrentUser() user: Actor,
+  ) {
+    return this.svc.updateLink(poId, linkId, body, user.id)
+  }
+
   @Roles('EDITOR', 'ADMIN')
   @Delete(':poId/link-shipment/:linkId') unlink(
     @Param('poId') poId: string,

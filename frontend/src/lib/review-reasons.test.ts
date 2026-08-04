@@ -193,7 +193,7 @@ describe('humanizeReason — engineering audit strings → ops language', () => 
     ).toBe('Referenced attachment is missing from this thread — data may be incomplete')
     expect(
       humanizeReason('forwarder_name "Expeditors" did not exact-match a master (LLM matcher owns fuzzy; left unlinked)'),
-    ).toBe('"Expeditors" not found in Mesh Database — advise add in Mesh.')
+    ).toBe('Forwarder "Expeditors" has no near match in database.')
     expect(humanizeReason('pod "USLGB" did not exact/curated-match a port master — left unlinked')).toBe(
       'Port of Discharge "USLGB" did not match a known port — left unlinked',
     )
@@ -244,7 +244,7 @@ describe('humanizeReason — engineering audit strings → ops language', () => 
     expect(list.map((x) => x.text)).toEqual([
       'Model output was cut short — some POs or fields may be missing; verify the extract',
       'Referenced attachment is missing from this thread — data may be incomplete',
-      '"Expeditors" not found in Mesh Database — advise add in Mesh.',
+      'Forwarder "Expeditors" has no near match in database.',
       'Port of Discharge "USLGB" did not match a known port — left unlinked',
     ])
   })

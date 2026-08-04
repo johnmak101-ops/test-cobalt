@@ -60,11 +60,16 @@ function sharesBillOfLadingKey(a: Set<string>, b: Set<string>): boolean {
 
 /**
  * Given candidate legs, a bookingId→[poNumber] map, and the group's keys, return the existing leg this
- * group amends — or undefined (→ new leg). A leg matches when:
- *   - it shares a STRONG key with the group AND is PO-consistent (never when their strong keys CONFLICT) —
- *     except that a shared B/L identifier (hbl_awb_fcr_no / mbl) matches even when the PO sets differ,
- *     since one B/L legitimately carries many POs and each email cites only the ones it is about; OR
- *   - they share a PO and at least ONE side has no strong id (a nascent PO-only leg gaining its first id).
+ * group amends — or undefined (→ new leg). TWO PASSES, in strict rank order (candidate ORDER from the
+ * unordered SQL must never decide — probe-measured doing exactly that before the split):
+ *   1. IDENTITY: a leg sharing a STRONG key with the group, PO-consistent (never when their strong keys
+ *      CONFLICT) — except that a shared B/L identifier (hbl_awb_fcr_no / mbl) matches even when the PO
+ *      sets differ, since one B/L legitimately carries many POs and each email cites only its own;
+ *   2. SHARED PO where at least ONE side has no strong id (a nascent leg gaining its first id, or a
+ *      PO-only follow-up). LIVE legs outrank dismissed husks; a PO-ONLY group facing ≥2 live candidates
+ *      is the split-PO shape and matches NOTHING (the desk decides), except its own thread's earlier
+ *      keyless leg — or, when folded, that leg's successor — which keeps re-POSTs and rebuild replays
+ *      idempotent.
  * A2 fallback: a zero-identity group (no strong key AND no PO) matches another zero-identity leg of the same
  * thread by the conversationId persisted in match_keys — so a re-ingest UPDATES the provisional row.
  *
@@ -75,23 +80,38 @@ function sharesBillOfLadingKey(a: Set<string>, b: Set<string>): boolean {
  * stops updating. Note this is NOT a dismissed-leg guard: a dismissed-but-unlinked leg (portal echo, "not
  * a shipment") MUST still match, or every re-ingest mints a duplicate and the queue refills.
  */
-export function findExistingLeg<L extends { bookingId: string; matchKeys: unknown; linkedShipmentId?: string | null }>(
+export function findExistingLeg<
+  L extends {
+    id?: string
+    bookingId: string
+    matchKeys: unknown
+    linkedShipmentId?: string | null
+    dismissedAt?: Date | string | null
+  },
+>(
   legs: L[],
   posByBooking: Map<string, string[]>,
   gk: Set<string>,
   groupPos: Set<string>,
   conversationId: string | null,
 ): L | undefined {
-  let existing: L | undefined
+  const bkPosOf = (l: L): Set<string> =>
+    new Set((posByBooking.get(l.bookingId) ?? []).map((p) => normKey(p)).filter(Boolean))
+
+  // PASS 1 — IDENTITY. A candidate sharing a strong-key VALUE with the group outranks every shared-PO
+  // reading, whatever order the query returned the rows in. This used to be one pass with the PO branch
+  // below, and the winner was whichever candidate the (unordered) SQL listed first: a dismissed keyless
+  // husk sharing the PO could absorb an email naming the operator's manual leg's exact booking + SO —
+  // probe-measured as a literal coin flip on GUID order.
   for (const l of legs) {
     if (l.linkedShipmentId != null) continue // folded into another shipment — match its successor, not it
     const legStrong = strongKeys(l.matchKeys as Record<string, unknown>)
     // BUG 4: a group whose strong key states a DIFFERENT value for a type the leg already carries is a
     // DIFFERENT shipment — never a match here, on ANY path (strong-overlap, PO, or conversationId).
     if (strongKeysConflict(gk, legStrong)) continue
-    const bkPos = new Set((posByBooking.get(l.bookingId) ?? []).map((p) => normKey(p)).filter(Boolean))
-    const sharePo = groupPos.size > 0 && setsOverlap(groupPos, bkPos)
     if (gk.size > 0 && keysOverlap(legStrong, gk)) {
+      const bkPos = bkPosOf(l)
+      const sharePo = groupPos.size > 0 && setsOverlap(groupPos, bkPos)
       // A shared BILL-OF-LADING identifier settles it: an HBL/AWB/FCR or MBL names ONE physical
       // shipment, and its POs are its CONTENTS — two emails about the same B/L routinely cite
       // different subsets of them. Letting a non-overlapping PO set veto that match is what split
@@ -100,19 +120,63 @@ export function findExistingLeg<L extends { bookingId: string; matchKeys: unknow
       // For weaker overlaps (so_no / booking_no / container_no alone) the PO clash still vetoes:
       // those identifiers get reused and restated across shipments far more freely than a B/L number.
       if (bkPos.size && !sharePo && !sharesBillOfLadingKey(legStrong, gk)) continue
-      existing = l
-      break
-    }
-    if (sharePo && (legStrong.size === 0 || gk.size === 0)) {
-      existing = l
-      break
+      return l
     }
   }
+
+  // PASS 2 — SHARED PO (a nascent leg gaining its first id, or a PO-only follow-up/re-POST).
+  const qualifies = (l: L): boolean => {
+    if (l.linkedShipmentId != null) return false
+    const legStrong = strongKeys(l.matchKeys as Record<string, unknown>)
+    if (strongKeysConflict(gk, legStrong)) return false
+    const sharePo = groupPos.size > 0 && setsOverlap(groupPos, bkPosOf(l))
+    return sharePo && (legStrong.size === 0 || gk.size === 0)
+  }
+  const isOwnThread = (l: L): boolean => {
+    const mk = (l.matchKeys ?? {}) as Record<string, unknown>
+    return (
+      strongKeys(mk).size === 0 &&
+      !!conversationId &&
+      normKey(mk.conversation_id) === normKey(conversationId)
+    )
+  }
+  const live = legs.filter((l) => l.dismissedAt == null && qualifies(l))
+  if (gk.size === 0 && live.length >= 2) {
+    // 🔴 A PO-ONLY group matching TWO OR MORE live legs is the split-PO shape (A→C and A→B both carry
+    // the PO). Any pick is a guess about physical cargo — probe-measured, the old first-match picked a
+    // different leg per candidate order. Two exceptions, then nobody wins and the committer mints a
+    // provisional leg naming the candidates (the desk's link action decides):
+    //  · this thread's OWN earlier keyless leg is not an alternative — it IS this decision's prior
+    //    commit, and a re-POST / rebuild replay must land back on it, not mint a sibling each time;
+    //  · if that own leg was FOLDED by the desk, follow its link — the replay lands where the
+    //    operator put it, preserving their judgement across rebuilds.
+    const own = live.filter(isOwnThread)
+    if (own.length === 1) return own[0]
+    const ownFolded = legs.filter((l) => l.linkedShipmentId != null && isOwnThread(l))
+    if (ownFolded.length === 1) {
+      const successor = legs.find((x) => x.id != null && x.id === ownFolded[0]!.linkedShipmentId)
+      if (successor && successor.linkedShipmentId == null) return successor
+    }
+    return undefined
+  }
+  if (live.length) return live[0]
+  // Dismissed husks LAST, only unambiguously, and only for a KEYLESS group. A dismissed-but-unlinked
+  // leg must stay reachable (portal-echo re-ingest, #146 — or every re-ingest mints a duplicate and the
+  // queue refills), and an echo is keyless — a keyed re-ingest reaches its husk through PASS 1, because
+  // the husk carries those keys. But a KEYED group falling back onto a keyless husk is not a re-ingest,
+  // it is new evidence being buried in a row a human retired: the operator's hand-typed shipment
+  // (booking+SO+PO) matched the husk they had JUST dismissed, resurrected it invisibly — it stays
+  // dismissed — and their "new" shipment never appeared. Mint a live leg instead.
+  if (gk.size === 0) {
+    const husks = legs.filter((l) => l.dismissedAt != null && qualifies(l))
+    if (husks.length === 1) return husks[0]
+  }
+
   // A2: zero-identity group → match another zero-identity leg of the same thread by conversationId. The
   // leg-strong==0 guard keeps it strictly zero-identity, so conversationId can never bridge two legs.
-  if (!existing && gk.size === 0 && groupPos.size === 0 && conversationId) {
+  if (gk.size === 0 && groupPos.size === 0 && conversationId) {
     const conv = normKey(conversationId)
-    existing = legs.find((l) => {
+    return legs.find((l) => {
       if (l.linkedShipmentId != null) return false // folded away — never re-adopt the husk
       const mk = (l.matchKeys ?? {}) as Record<string, unknown>
       const legStrong = strongKeys(mk)
@@ -121,7 +185,35 @@ export function findExistingLeg<L extends { bookingId: string; matchKeys: unknow
       return normKey(mk.conversation_id) === conv
     })
   }
-  return existing
+  return undefined
+}
+
+/**
+ * The live legs a PO-ONLY group ambiguously matches — the candidates `findExistingLeg` just declined
+ * to coin-flip between. The committer names them as a review reason on the fresh provisional leg it
+ * mints instead, and the desk's link action settles it. Same report-don't-settle contract as
+ * `findPoOnlyDuplicateRisk`; recomputed each commit, so the warning clears once the leg is folded.
+ * The group's own thread-leg (same conversation, keyless) is excluded — it is this decision's prior
+ * commit, not an alternative reading.
+ */
+export function findPoOnlyAmbiguity<
+  L extends {
+    id?: string
+    bookingId: string
+    matchKeys: unknown
+    linkedShipmentId?: string | null
+    dismissedAt?: Date | string | null
+  },
+>(legs: L[], posByBooking: Map<string, string[]>, gk: Set<string>, groupPos: Set<string>, conversationId: string | null): L[] {
+  if (gk.size !== 0 || groupPos.size === 0) return []
+  const out = legs.filter((l) => {
+    if (l.linkedShipmentId != null || l.dismissedAt != null) return false
+    const mk = (l.matchKeys ?? {}) as Record<string, unknown>
+    if (strongKeys(mk).size === 0 && conversationId && normKey(mk.conversation_id) === normKey(conversationId)) return false
+    const bkPos = new Set((posByBooking.get(l.bookingId) ?? []).map((p) => normKey(p)).filter(Boolean))
+    return setsOverlap(groupPos, bkPos)
+  })
+  return out.length >= 2 ? out : []
 }
 
 /**
@@ -295,6 +387,43 @@ export function findPoOnlyDuplicateRisk<
     if (strongKeysConflict(gk, legStrong)) return false // different values, same type → different shipments
     const bkPos = new Set((posByBooking.get(l.bookingId) ?? []).map((p) => normKey(p)).filter(Boolean))
     return setsOverlap(groupPos, bkPos)
+  })
+}
+
+/**
+ * The nascent siblings this commit could NOT absorb.
+ *
+ * `findExistingLeg` returns the FIRST match and stops — one commit joins one leg. So when a B/L covers three
+ * POs already sitting on three separate identity-less legs (Set 5's AWB GZL26261147 over POs 28739 / 28747 /
+ * 28740, which prod committed as JOB-2026-0008 / 0010 / 0009), matching absorbs one and leaves the other two
+ * standing with nobody told. Consolidating them is a judgement about physical cargo — the same reason
+ * findPoOnlyDuplicateRisk REPORTS rather than settles — and the desk already has the link action. So name
+ * them instead of folding them silently.
+ *
+ * `matchPos` is the caller's FULL matching set (`pos` ∪ `posStated`), not the stated remainder: a healthy
+ * parse puts every PO the B/L names into `pos` and leaves `posStated` empty, so keying on the remainder
+ * disables this in precisely the case it exists for. The caller gates on the group carrying a B/L.
+ *
+ * Only strictly nascent legs qualify (no strong id of their own): a leg that carries its own B/L is a
+ * different shipment that happens to share a PO, which is routine and must not raise a warning.
+ */
+export function findUnabsorbedStatedSiblings<
+  L extends {
+    id: string
+    bookingId: string
+    matchKeys: unknown
+    dismissedAt?: Date | string | null
+    linkedShipmentId?: string | null
+  },
+>(legs: L[], posByBooking: Map<string, string[]>, matchPos: Set<string>, committedLegId: string): L[] {
+  if (matchPos.size === 0) return []
+  return legs.filter((l) => {
+    if (l.id === committedLegId) return false // the leg this commit just joined
+    if (l.linkedShipmentId != null) return false // already folded into another shipment
+    if (l.dismissedAt != null) return false // a human already retired it
+    if (strongKeys(l.matchKeys as Record<string, unknown>).size > 0) return false // has its own identity
+    const bkPos = new Set((posByBooking.get(l.bookingId) ?? []).map((p) => normKey(p)).filter(Boolean))
+    return setsOverlap(matchPos, bkPos)
   })
 }
 

@@ -151,12 +151,29 @@ export class AlertEvaluatorService {
         }
       }
     }
-    fired += await this.evaluateCrdRevisions(legs, now)
+    // 🔴 A7 is a BUILT-IN check, but it is still a row in `alert_rules` — the settings page renders it
+    // and an operator can switch it off. The threshold rules honour that through `isFiring()`'s
+    // `!rule.enabled` guard; this bespoke path never read the flag, so an A7 left DISABLED kept raising
+    // WARNING alerts. Observed live: the Alert Rules screen showed two enabled rules while a third,
+    // switched off, was posting "Cargo-ready revision ... confirm the new date with the forwarder".
+    const a7Enabled = allRulesById.get('A7')?.enabled !== false
+    if (a7Enabled) fired += await this.evaluateCrdRevisions(legs, now)
 
     // Auto-resolve ACTIVE threshold alerts that no longer fire (threshold change / milestone arrived).
     let resolved = 0
     const active = await this.alerts.list('ACTIVE')
     for (const alert of active) {
+      // A7 is not a threshold rule, so the checks below cannot judge it — but a DISABLED rule must not
+      // leave live alerts on screen. Without this, switching A7 off in settings silenced future fires
+      // while every alert it had already raised stayed ACTIVE indefinitely.
+      if (alert.ruleId === 'A7' && !a7Enabled) {
+        await this.alerts.setStatus(alert.id, 'RESOLVED', {
+          resolvedAt: now,
+          dedupKey: `${alert.dedupKey ?? alert.id}:resolved:${alert.id}`,
+        })
+        resolved++
+        continue
+      }
       if (!THRESHOLD_RULE_IDS.has(alert.ruleId)) continue
       if (!alert.shipmentId) continue
       const rule = allRulesById.get(alert.ruleId)

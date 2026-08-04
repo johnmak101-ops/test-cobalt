@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
 import { X, PlusCircle, Loader2 } from 'lucide-react'
@@ -22,7 +22,8 @@ import { PartyPicker } from './PartyPicker'
 /**
  * Manually create a shipment the pipeline never saw (e.g. the original booking email / attachment was
  * never ingested). The backend mints it through the committer, so a later agent email upserts into it by
- * booking/SO/… (no duplicate) and every field entered here is locked (human-wins). Lands in the Review
+ * booking/SO/… (no duplicate) and every field entered here is locked — your value goes on record, and a
+ * later email that disagrees overwrites the column and marks the field contested. Lands in the Review
  * queue — on success we jump straight to it to finish the details.
  *
  * ONE FORM. Every field, label, editor, picker, enum and mode rule is generated from `EDITABLE_FIELDS`,
@@ -57,11 +58,49 @@ export function NewShipmentModal({ onClose }: { onClose: () => void }) {
   const [form, setForm] = useState<Record<string, string>>({})
   const [note, setNote] = useState('')
 
+  /** Anything typed yet? Guards every dismissal path so a long form is never lost to one stray input. */
+  const isDirty = useMemo(
+    () => Object.values(form).some((v) => (v ?? '').trim() !== '') || note.trim() !== '',
+    [form, note],
+  )
+
+  /**
+   * Every dismissal goes through here. An empty form closes silently (the common case — opened by
+   * mistake); a form with anything in it asks first. Three separate bugs were throwing away a
+   * part-filled form with no warning, and this is the backstop for all of them.
+   */
+  const requestClose = useCallback(() => {
+    if (isDirty && !window.confirm('Discard this new shipment? Everything you have entered will be lost.')) return
+    onClose()
+  }, [isDirty, onClose])
+
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return
+      // 🔴 Escape inside a native <select> is the browser dismissing THAT DROPDOWN. The keydown then
+      // bubbles to window, and this handler used to tear the whole modal down with it — so closing the
+      // UOM or Mode picker silently destroyed the form. A <select> owns its own Escape; leave it alone.
+      // `e.target` is not always an Element — a keydown with nothing focused targets `window`/`document`,
+      // which has no `.closest`. Narrow before touching DOM methods or the handler throws and Escape
+      // stops working entirely.
+      const el = e.target instanceof Element ? e.target : null
+      if (el && (el.tagName === 'SELECT' || el.closest('select'))) return
+      requestClose()
+    }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [onClose])
+  }, [requestClose])
+
+  /**
+   * 🔴 The backdrop closed on `onClick`, and a click fires on MOUSE-UP at the common ancestor of the
+   * press and the release. So selecting text in a field and releasing the mouse past the panel edge —
+   * or dragging the panel's scrollbar — landed the click on the backdrop and wiped the form. The panel
+   * stopping propagation cannot help: the click never originated inside it.
+   *
+   * Fix: only treat it as a backdrop dismissal when the press ALSO started on the backdrop. The panel
+   * stops mousedown, so this ref can only be set by a genuine click on the dimmed area.
+   */
+  const pressedOnBackdrop = useRef(false)
 
   const set = (k: string, v: string) => setForm((f) => ({ ...f, [k]: v }))
   const has = (k: string) => (form[k] ?? '').trim() !== ''
@@ -220,9 +259,20 @@ export function NewShipmentModal({ onClose }: { onClose: () => void }) {
   )
 
   return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={onClose}>
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+      onMouseDown={(e) => {
+        pressedOnBackdrop.current = e.target === e.currentTarget
+      }}
+      onClick={(e) => {
+        const backdropClick = e.target === e.currentTarget && pressedOnBackdrop.current
+        pressedOnBackdrop.current = false
+        if (backdropClick) requestClose()
+      }}
+    >
       <div
         className="flex max-h-[88vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl border border-border bg-surface-800 shadow-2xl"
+        onMouseDown={(e) => e.stopPropagation()}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-start justify-between gap-3 border-b border-border p-4">
@@ -236,7 +286,7 @@ export function NewShipmentModal({ onClose }: { onClose: () => void }) {
               </p>
             </div>
           </div>
-          <button type="button" onClick={onClose} className="shrink-0 rounded-lg p-1.5 text-text-muted hover:bg-surface-700 hover:text-text-primary" aria-label="Close">
+          <button type="button" onClick={requestClose} className="shrink-0 rounded-lg p-1.5 text-text-muted hover:bg-surface-700 hover:text-text-primary" aria-label="Close">
             <X size={18} />
           </button>
         </div>
@@ -284,7 +334,7 @@ export function NewShipmentModal({ onClose }: { onClose: () => void }) {
                     : ''}
           </span>
           <div className="flex items-center gap-2">
-            <button type="button" onClick={onClose} className="rounded-lg bg-surface-700 px-3 py-1.5 text-xs font-medium text-text-secondary hover:bg-surface-600 hover:text-text-primary">
+            <button type="button" onClick={requestClose} className="rounded-lg bg-surface-700 px-3 py-1.5 text-xs font-medium text-text-secondary hover:bg-surface-600 hover:text-text-primary">
               Cancel
             </button>
             <button

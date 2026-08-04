@@ -51,22 +51,42 @@ export const CORRECTABLE_COLUMNS = new Set([
 
 const toStr = (v: unknown): string | null => (v == null ? null : v instanceof Date ? v.toISOString() : String(v))
 
-/** Leg (camelCase) column → the queue's snake_case parse-field name (booking_no, hbl_awb_fcr_no, …). The
- *  track DB columns ARE the queue parse fields, so a plain camel→snake conversion is exact. Without this the
- *  learning feed posted leg columns (`soNo`) that never matched the parser's fields (`so_no`) — the queue's
- *  eval could not score them. */
-const toQueueField = (col: string): string => col.replace(/([a-z0-9])([A-Z])/g, '$1_$2').toLowerCase()
+/** Leg (camelCase) column → the queue's snake_case parse-field name (booking_no, hbl_awb_fcr_no, …).
+ *  MOSTLY a plain camel→snake conversion — EXCEPT the five party/port columns, whose leg names carry a
+ *  `Raw` suffix the parser never had. Without the alias map the feed posted `pol_raw`/`forwarder_raw`/…
+ *  — names the queue's re-parse can never reproduce, so every such correction was fuel that could not
+ *  burn: it counted toward the batch trigger, taught the refiner a nonexistent vocabulary, and was a
+ *  guaranteed holdout miss for BOTH candidate souls. The aliases speak the parser's own names. */
+const QUEUE_FIELD_ALIAS: Record<string, string> = {
+  polRaw: 'pol',
+  podRaw: 'pod',
+  forwarderRaw: 'forwarder_name',
+  customerRaw: 'customer_code',
+  vendorRaw: 'vendor_code',
+}
+const toQueueField = (col: string): string =>
+  QUEUE_FIELD_ALIAS[col] ?? col.replace(/([a-z0-9])([A-Z])/g, '$1_$2').toLowerCase()
 
 /** The parse-derived leg columns a reviewer can accept ("looks right") — the same set the review UI edits
  *  (frontend review-fields.ts). `isDate` cols are frozen as YYYY-MM-DD to match the parser's date format so
- *  the confirm actually matches on the queue's re-parse. */
+ *  the confirm actually matches on the queue's re-parse.
+ *
+ *  `cfsCutoff` is deliberately NOT confirmable: the parser structurally cannot emit it (absent from the
+ *  soul and the queue's field registry), so its values are always human-entered. A confirm would freeze a
+ *  value the re-parse can never reproduce — a PERMANENT phantom "regression" that trips the queue's
+ *  confirm-regression scan (threshold 2) every night, forever. It stays correctable/editable.
+ *
+ *  The four DESK-HIDDEN columns (`itemStyleNo`, `grossWeight`, `measurement`, `htsCode` — suppressed by
+ *  DESK_HIDDEN_FIELDS on the queue card and HIDDEN_FIELD_LABELS on the detail page) are NOT confirmable
+ *  either: a one-click confirm was emitting "this is right" labels for values the operator never saw —
+ *  blind endorsements feeding the learning eval. Rule: never confirm what the desk does not show.
+ *  All four stay correctable (they are edited on other surfaces). */
 const CONFIRMABLE_FIELDS: { column: string; isDate: boolean }[] = [
-  { column: 'bookingNo', isDate: false }, { column: 'soNo', isDate: false }, { column: 'itemStyleNo', isDate: false },
-  { column: 'qty', isDate: false }, { column: 'qtyUnit', isDate: false }, { column: 'grossWeight', isDate: false },
-  { column: 'measurement', isDate: false }, { column: 'htsCode', isDate: false }, { column: 'hblAwbFcrNo', isDate: false },
+  { column: 'bookingNo', isDate: false }, { column: 'soNo', isDate: false },
+  { column: 'qty', isDate: false }, { column: 'qtyUnit', isDate: false }, { column: 'hblAwbFcrNo', isDate: false },
   { column: 'mbl', isDate: false }, { column: 'containerNo', isDate: false }, { column: 'scacCode', isDate: false },
   { column: 'vesselName', isDate: false }, { column: 'voyageNo', isDate: false }, { column: 'consigneeName', isDate: false },
-  { column: 'consigneeAddress', isDate: false }, { column: 'cargoReadyDate', isDate: true }, { column: 'cfsCutoff', isDate: true },
+  { column: 'consigneeAddress', isDate: false }, { column: 'cargoReadyDate', isDate: true },
   { column: 'etd', isDate: true }, { column: 'atd', isDate: true }, { column: 'eta', isDate: true }, { column: 'ata', isDate: true },
   { column: 'warehouseStartDate', isDate: true }, { column: 'warehouseEndDate', isDate: true },
 ]
@@ -86,8 +106,10 @@ function confirmValue(isDate: boolean, value: unknown): string | null {
 
 /**
  * The human review workflow over the commit-first model: provisional shipments are listed here,
- * and a reviewer either confirms them as-is or corrects fields. A correction LOCKS each edited field
- * (human-wins) so the agent can never overwrite it, records the reason, and audits every change.
+ * and a reviewer either confirms them as-is or corrects fields. A correction LOCKS each edited field —
+ * which keeps the reviewer's value on record rather than blocking the agent (latest-email-wins since
+ * PR #232; a later disagreeing email overwrites the column and the field reads CONTESTED) — records the
+ * reason, and audits every change.
  */
 @Injectable()
 export class ReviewService {
@@ -243,7 +265,8 @@ export class ReviewService {
     }
   }
 
-  /** One human field write with the full review guarantees: column + human-wins lock + audit + learning feed. */
+  /** One human field write with the full review guarantees: column + lock (the value on record, contested
+   *  if a later email disagrees) + audit + learning feed. */
   private async applyHumanFieldWrite(
     shipmentId: string,
     current: Record<string, unknown>,

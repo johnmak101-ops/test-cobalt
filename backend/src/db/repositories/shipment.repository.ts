@@ -133,11 +133,14 @@ export class ShipmentRepository {
   }
 
   /** Live legs of one email thread — the adoption candidate set (A2's index can't cover this:
-   *  a zero-identity leg has no strong keys, so it only exists in match_keys JSON). */
+   *  a zero-identity leg has no strong keys, so it only exists in match_keys JSON).
+   *  Seeks `ix_shipments_conversation_key` (computed column, 0033); the JSON_VALUE residual re-checks
+   *  full equality because the indexed key is capped at nvarchar(450). */
   legsByConversationId(conversationId: string) {
     return this.db
       .selectFrom('shipments')
       .selectAll()
+      .where('conversationKey', '=', conversationId.slice(0, 450))
       .where(sql<boolean>`JSON_VALUE(match_keys, '$.conversation_id') = ${conversationId}`)
       .execute()
   }
@@ -327,6 +330,7 @@ export class ShipmentRepository {
       'vendors.code as vendorCode', 'vendors.nameCh as vendorNameCh',
       'forwarders.id as forwarderId', 'forwarders.name as forwarderName',
       'shipments.forwarderRaw as forwarderRaw', 'shipments.mode as mode', 'pol.unlocode as polCode', 'pod.unlocode as podCode',
+        'shipments.journey as journey',
       'pol.iata as polIata', 'pod.iata as podIata', 'shipments.polRaw as polRaw', 'shipments.podRaw as podRaw',
       sql<number>`(select count(*) from booking_pos bp where bp.booking_id = ${sql.ref('shipments.bookingId')})`.as('poCount'),
       // #350: beginning email — anchors the derived Shipment ID the queue's first column shows
@@ -534,7 +538,27 @@ export class ShipmentRepository {
         'purchaseOrders.itemStyleNo as itemStyleNo', 'purchaseOrders.brand as brand',
         'vendors.name as vendorName',
         'shipmentPos.id as linkId', 'shipmentPos.quantity as legQty', 'shipmentPos.quantityUnit as legQtyUnit',
+        'shipmentPos.inferred as inferred',
       ])
+      .execute()
+  }
+
+  /** Drop a PO link by its shipment_pos id — the displacement half of the claim-strength rule (0029).
+   *  Only ever called for a link stored `inferred = 1`; a stated link's one removal path is the
+   *  division rule below. */
+  async unlinkPoById(linkId: string) {
+    await this.db.deleteFrom('shipmentPos').where('id', '=', linkId).execute()
+  }
+
+  /** Division removal: drop THIS leg's link to a PO a stated division moved off it — the one path that
+   *  removes a STATED link, and only with the statement as evidence (the caller audits its quote).
+   *  By (shipmentId, poId) because the caller reads links via linkedPosForShipment, whose `id` is the
+   *  purchase order's, not the link row's. */
+  async unlinkPoByShipmentAndPo(shipmentId: string, poId: string) {
+    await this.db
+      .deleteFrom('shipmentPos')
+      .where('shipmentId', '=', shipmentId)
+      .where('poId', '=', poId)
       .execute()
   }
 
@@ -569,6 +593,7 @@ export class ShipmentRepository {
         'shipmentPos.id as linkId',
         'shipmentPos.quantity as legQty',
         'shipmentPos.quantityUnit as legQtyUnit',
+        'shipmentPos.inferred as inferred',
       ])
       .execute()
     for (const r of rows) {
@@ -595,6 +620,52 @@ export class ShipmentRepository {
    * "7 POs are also on other shipments" where all seven pointed at the SAME rejected header-row leg
    * (`PO # :`), i.e. seven alarms about a row someone had already thrown away.
    */
+  /**
+   * The same rows for a WHOLE PAGE of the queue, in one round trip.
+   *
+   * The review queue renders the full card per row, so it needs the shared-PO block too — without it
+   * the card asked "is the order split, or is this the wrong shipment?", flagged itself `needs
+   * answer`, and offered no control, because the evidence and the answers only existed on the detail
+   * payload. Calling `poSiblingLegs` per row would have put an N+1 back into a service that had all
+   * of them removed, so the page's ids go in together and the caller groups the result.
+   */
+  poSiblingLegsFor(shipmentIds: string[]) {
+    if (shipmentIds.length === 0) return Promise.resolve([])
+    return this.db
+      .selectFrom('shipmentPos as mine')
+      .innerJoin('shipmentPos as theirs', (join) =>
+        join.onRef('theirs.poId', '=', 'mine.poId').onRef('theirs.shipmentId', '!=', 'mine.shipmentId'),
+      )
+      .innerJoin('purchaseOrders', 'purchaseOrders.id', 'mine.poId')
+      .innerJoin('shipments', 'shipments.id', 'theirs.shipmentId')
+      .where('mine.shipmentId', 'in', shipmentIds)
+      .where('shipments.kind', '=', 'SHIPMENT')
+      .where('shipments.dismissedAt', 'is', null)
+      .select([
+        // Which of the requested legs this sibling belongs to — the grouping key.
+        'mine.shipmentId as ownerShipmentId',
+        'purchaseOrders.poNumber as poNumber',
+        'shipments.id as shipmentId',
+        'shipments.bookingNo as bookingNo',
+        'shipments.soNo as soNo',
+        'shipments.hblAwbFcrNo as hblAwbFcrNo',
+        'shipments.mode as mode',
+        'shipments.etd as etd',
+        'shipments.atd as atd',
+        'shipments.state as state',
+        'shipments.legNo as legNo',
+        'shipments.dismissedAt as dismissedAt',
+        'shipments.reviewStatus as reviewStatus',
+        'shipments.qty as legQty',
+        'shipments.qtyUnit as legQtyUnit',
+        'shipments.createdAt as shipmentCreatedAt',
+        sql<Date | null>`(select min(se.received_at) from shipment_emails se where se.shipment_id = shipments.id)`.as(
+          'firstEmailAt',
+        ),
+      ])
+      .execute()
+  }
+
   poSiblingLegs(shipmentId: string) {
     return this.db
       .selectFrom('shipmentPos as mine')
@@ -674,18 +745,36 @@ export class ShipmentRepository {
   // --- shipment_pos ---
 
   /** Idempotently link a shipment to a PO (the `uq_shipment_pos` unique absorbs replays). */
-  async linkPo(shipmentId: string, poId: string, quantity: number | null, unit: string | null) {
+  /** `inferred` (0029): the group SWEPT this PO up rather than stating it — a weaker claim that a
+   *  later stated one may displace. Defaults false, so every existing caller keeps writing a strong link. */
+  async linkPo(
+    shipmentId: string,
+    poId: string,
+    quantity: number | null,
+    unit: string | null,
+    inferred = false,
+  ) {
     const existing = await this.db
       .selectFrom('shipmentPos')
       .where('shipmentId', '=', shipmentId)
       .where('poId', '=', poId)
-      .select('id')
+      .select(['id', 'inferred'])
       .executeTakeFirst()
-    if (existing) return null
+    if (existing) {
+      // 0029: claim strength is relative to the B/L that OWNS the leg now, so a re-link restates it.
+      // A nascent leg's links are written by the pre-B/L booking request, which states the whole
+      // programme — Set 5's 2026-01-16 email states all nine POs before any AWB exists. When an AWB
+      // later ADOPTS that leg, its own view is the one that counts: the POs it merely swept off an
+      // attachment become inferred, and a later email that names them can take them back.
+      if (existing.inferred !== inferred) {
+        await this.db.updateTable('shipmentPos').set({ inferred }).where('id', '=', existing.id).execute()
+      }
+      return null
+    }
     try {
       const row = await this.db
         .insertInto('shipmentPos')
-        .values({ shipmentId, poId, quantity, quantityUnit: unit })
+        .values({ shipmentId, poId, quantity, quantityUnit: unit, inferred })
         .outputAll('inserted')
         .executeTakeFirst()
       return row ?? null
@@ -759,20 +848,23 @@ export class ShipmentRepository {
   async replaceEmails(shipmentId: string, rows: Record<string, unknown>[]) {
     if (!rows.length) return
     await this.db.deleteFrom('shipmentEmails').where('shipmentId', '=', shipmentId).execute()
-    // insert idempotently on (shipment_id, graph_message_id) — check-then-insert per row
-    for (const r of rows) {
+    // the delete cleared the set, so only in-payload duplicates can collide — dedupe here, insert batched
+    const seen = new Set<string>()
+    const unique = rows.filter((r) => {
       const graphMessageId = r.graphMessageId as string | null
-      if (!graphMessageId) continue
-      const existing = await this.db
-        .selectFrom('shipmentEmails')
-        .where('shipmentId', '=', shipmentId)
-        .where('graphMessageId', '=', graphMessageId)
-        .select('id')
-        .executeTakeFirst()
-      if (existing) continue
+      if (!graphMessageId || seen.has(graphMessageId)) return false
+      seen.add(graphMessageId)
+      return true
+    })
+    // 300 rows × ~6 columns stays under the 2100-parameter cap
+    for (let i = 0; i < unique.length; i += 300) {
       try {
-        await this.db.insertInto('shipmentEmails').values(r as never).execute()
+        await this.db
+          .insertInto('shipmentEmails')
+          .values(unique.slice(i, i + 300) as never)
+          .execute()
       } catch (e) {
+        // uq_shipment_emails (shipment_id, graph_message_id) — a concurrent replace won the race; idempotent
         if (!/unique|duplicate/i.test((e as Error).message)) throw e
       }
     }
