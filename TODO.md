@@ -1,7 +1,11 @@
 # ShipTrack — deferred / open work
 
 Fabric SQL migration and Kysely ports are **done** (see `docs/architecture/fabric-sql-migration.md`,
-`docs/architecture/adr-database-platform.md`).
+`docs/architecture/adr-database-platform.md`). Day-to-day T-SQL guidance moved to
+`docs/reference/sql-server-gotchas.md`; the API surface is `docs/reference/api.md`.
+
+**Baseline (2026-08-05):** migrations head `0033` · backend **1,440** tests (160 files, 1 skipped) ·
+frontend **1,129** (68 files) · both suites green locally.
 
 ## Active themes
 
@@ -130,8 +134,9 @@ unclassified leg is never called contradictory.
 
 ## Review desk — picked up 2026-07-29 (after PRs #407–#412)
 
-All six merged to `main` (`d50a1cc`). frontend 1064 · backend 1312 · typecheck clean.
-CI has been blocked on GitHub billing all along — everything below rests on local
+All six merged to `main` (`d50a1cc`). frontend 1064 · backend 1312 · typecheck clean
+(counts as of 2026-07-29; see the current baseline at the top of this file).
+CI had been blocked on GitHub billing at the time — everything below rests on local
 verification plus browser walkthroughs.
 
 ### 1. Lost writes — DISPROVED (2026-07-29)
@@ -188,7 +193,12 @@ commonest row on the desk. Left alone rather than guessed at.
 email — it wins and flags CONTESTED. So the observable effect is more contested flags, and
 nobody has counted how many. 85 locks exist on the dev DB today for comparison.
 
-### 3. Prod migrations — DONE, Fabric is at 0028 (2026-07-29)
+### 3. Prod migrations — Fabric was brought to 0028 (2026-07-29); repo has since moved to 0033
+
+**Open again.** `0029`–`0033` landed after that run (`shipment_pos_inferred`, `shipment_factory_code`,
+`shipment_journey`, `decision_log`, `shipments_seek_indexes`), so prod is five behind unless someone
+has applied them since. Read the ledger before assuming either way — the whole point of the note
+below is that the last guess about prod's state was wrong by two migrations.
 
 The "no Fabric connection string on the dev box" note was wrong: the string is
 assemblable from `backend/.env` — the Entra SP is the SAME app registration as the

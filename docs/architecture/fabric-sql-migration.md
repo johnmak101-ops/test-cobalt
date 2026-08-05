@@ -105,7 +105,11 @@ the deploy targets — verified later.)
 - The **LLM-matcher spec's `pg_trgm`** retrieval → a SQL Server approach (Full-Text Search, or a similarity
   UDF / candidate pre-filter). The matcher isn't built yet → this is a **spec edit, not a blocker**. Update
   `LLM-MASTER-MATCHER-SPEC.md` §5/§8.
+  → **Done (2026-07-10):** `pg_trgm` was replaced by an in-app trigram implementation
+  (`backend/src/masters/trigram.ts` + `cjk-fold.ts`) behind `POST /api/masters/candidates`. No
+  Full-Text Search dependency.
 - Index/perf pass (the N+1 fixes carry over; re-tune for SQL Server plans).
+  → **Done:** all backend N+1s killed (PRs #26–#33); scan→seek indexes added in `0033`.
 
 ---
 

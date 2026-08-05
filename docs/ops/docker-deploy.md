@@ -1,5 +1,10 @@
 # Docker deploy / smoke (ShipTrack)
 
+Compose substitutes `${VAR}` from the **repo-root** `.env` (see `../../.env.example`), not
+`backend/.env`. Every backend variable and its default is documented in
+[`../../backend/.env.example`](../../backend/.env.example); this page covers only the ones that
+change how a deploy behaves.
+
 ## Bring-up
 
 ```bash
@@ -75,15 +80,41 @@ Image tag: `shiptrack:latest`, built locally by `build: .`. Set `SHIPTRACK_IMAGE
 only when you actually want to publish to or pull from a registry — the default stays local so a
 `pull` / `push` from any checkout can't reach a registry nobody agreed on.
 
+## Serving over HTTP, and body size
+
+| Env | Default | Why you would touch it |
+|-----|---------|------------------------|
+| `COOKIE_SECURE` | Secure when `NODE_ENV=production` | Set `false` on an **HTTP-only** intranet host. A `Secure` cookie over plain HTTP silently never sets, and login fails with no error anywhere. |
+| `SESSION_TTL_HOURS` | `12` | Session + JWT lifetime (one knob drives both). |
+| `CORS_ORIGINS` | localhost:5173, localhost:3000, statustrack.cobaltknitwear.com | Set explicitly in prod. Never reflect any origin. |
+| `JSON_BODY_LIMIT` | `200mb` | Decision payloads carry attachment bytes for mail with no Graph id — nothing is strippable, so the whole attachment rides in the POST. A 63-record consignment blew past 25mb and surfaced as an opaque 500. |
+
+The app trusts exactly **one** proxy hop (the intranet nginx terminating TLS). Revisit that if a CDN
+or a second proxy is ever put in front — both `X-Forwarded-Proto` (which drives the Secure cookie)
+and `X-Forwarded-For` (which drives throttling) would then read the wrong hop.
+
 ## Dual-stack with cobalt-queue
 
-On the queue host `.env`:
+Two links, in opposite directions. Both are needed for the full loop.
+
+**Queue → ShipTrack (decisions).** On the queue host `.env`:
 
 ```env
 TRACKING_API_BASE=http://host.docker.internal:3000/api
 TRACKING_AGENT_EMAIL=agent@cobalt.hk
 TRACKING_AGENT_PASSWORD=cobalt
 ```
+
+**ShipTrack → queue (the learning feed).** Human review corrections are pushed back to the queue's
+Iterator as the TRAIN signal. On **this** stack:
+
+```env
+QUEUE_API_BASE=http://host.docker.internal:3100/api
+QUEUE_API_PASSWORD=<the queue's VIEWER_PASSWORD>
+```
+
+Leave `QUEUE_API_BASE` unset and the TRAIN signal is **off** — logged loudly once, then silent. The
+push is best-effort by design: a queue outage never fails a review save.
 
 Ingest DEMO mail from the private corpus repo (not seed):
 
@@ -101,6 +132,7 @@ pnpm cli match --all --force
 | Empty inbox / no legs | before queue match — seed left no demo emails |
 | Mesh boot log | `Mesh masters sync every …` (if `MESH_*` set) |
 | Ports boot log | `Ports master sync every …` |
+| Learning feed | no `QUEUE_API_BASE` warning in the log (or accept that TRAIN is off) |
 | After queue rematch | DEMO **5** spines |
 
 ## Reset DB volume

@@ -1,6 +1,8 @@
 # ShipTrack — DEMO script (Email Sets 1 / 5 / 6)
 
-_Refreshed 2026-07-21. Gold topology = **5 shipments**. Login: `admin@cobalt.hk` / `cobalt` (or Superadmin)._
+_Refreshed 2026-08-05. Gold topology = **5 shipments**. Login: `admin@cobalt.hk` (or `super@cobalt.hk`)
+with `SEED_INITIAL_PASSWORD` — dev/Docker default `cobalt-change-me`. Both are seeded `mustReset`, so
+set a real password on first login **before** the demo, not in front of the customer._
 
 ## Before you start
 
@@ -30,8 +32,11 @@ Same PO `1570988` on sea **and** air is correct (mode split).
 4. **Set1 GZOSA** — sea HBL + SO on one leg; milestone / related emails.
 5. **Set6 pair** — sea vs air same customer PO; no double-count on sibling HAWB exclusivity.
 6. **Review Queue** — residual field conflicts (forwarder Mesh misses, qty) as honest review — not topology bugs.
+   Four views: Active / Waiting / Rejected / Approved. On a conflict card, *AI proposed* is what the
+   committer read and declined to write — nothing there is waiting to be applied.
 
 ## Ops notes
 
-- Booking mail that never hit the Graph inbox cannot be recovered by poll alone — see `docs/ops/booking-ingestion-gap.md`.
-- Docker smoke: `docs/ops/docker-deploy.md`.
+- Booking mail that never hit the Graph inbox cannot be recovered by poll alone — see `../ops/booking-ingestion-gap.md`.
+- Docker smoke: `../ops/docker-deploy.md`.
+- Alert text on the dashboard is generated live from the leg's own facts — `../reference/alert-rules-and-messages.md`.
