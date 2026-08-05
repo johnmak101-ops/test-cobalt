@@ -1,6 +1,6 @@
 # Cobalt ShipTrack
 
-Shipment-tracking app for Cobalt Knitwear. An upstream AI agent reads logistics email and posts scored
+Shipment-tracking app for Cobalt Knitwear! An upstream AI agent reads logistics email and posts scored
 decisions to this app, which turns them into a tracked **PO → Booking → Shipment** picture with alerts and
 a human review queue.
 
