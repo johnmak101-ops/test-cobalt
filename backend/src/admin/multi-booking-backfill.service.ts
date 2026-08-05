@@ -139,6 +139,7 @@ export class MultiBookingBackfillService {
   async apply(opts: {
     limit?: number
     shipmentIds?: string[]
+    /** A user GUID (`AuthUser.id`) or undefined — `change_log.actor_user_id` is a uniqueidentifier. */
     actor?: string
   }): Promise<{
     dryRun: false
@@ -189,7 +190,9 @@ export class MultiBookingBackfillService {
         newValue: 'hybrid-c-backfill-stamp',
         changeType: 'update',
         sourceType: 'manual',
-        actorUserId: opts.actor?.slice(0, 200) ?? null,
+        // No length cap: the target column is a uniqueidentifier, so `.slice(0, 200)` only ever bought
+        // false comfort — a 200-char string fails exactly as hard as a 201-char one.
+        actorUserId: opts.actor ?? null,
         note: 'admin: hybrid-c backfill stamp',
       })
       applied++

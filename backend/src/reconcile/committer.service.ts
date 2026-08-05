@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common'
+import { Injectable, Logger } from '@nestjs/common'
 import type { Insertable } from 'kysely'
 import type { DB } from '../db/kysely/db'
 import { strongKeys, keysOverlap, normKey, str, date } from './match-keys'
@@ -21,7 +21,7 @@ import { loadEtdFallback } from '../settings/etd-fallback'
 import { AuditRepository } from '../db/repositories/audit.repository'
 import { EvidenceRepository } from '../db/repositories/evidence.repository'
 import { resolvePoEnrichment, unattributedBrandStyle } from './po-enrichment'
-import { needsHumanReview } from './committer-helpers'
+import { needsHumanReview, serializeJourney, JOURNEY_MAX_CHARS } from './committer-helpers'
 import type { CriticReview } from '../decisions/critic-review.types'
 import { mapFieldsToLegColumns, scheduleRetractionColumns } from './committer-leg-mapping'
 import {
@@ -168,6 +168,7 @@ export interface CommitResult {
  */
 @Injectable()
 export class CommitterService {
+  private readonly log = new Logger(CommitterService.name)
   private readonly mastersResolver: MasterResolver
   private readonly milestones: MilestoneSynchronizer
 
@@ -290,6 +291,15 @@ export class CommitterService {
       return all.length ? all : null
     })()
 
+    const journeyJson = serializeJourney(g.journey)
+    if (g.journey?.length && journeyJson === null) {
+      // Not silent: a dropped chain is the one outcome `serializeJourney` cannot express in its return
+      // value, and an unreported drop is how "the route just disappeared" becomes unexplainable.
+      this.log.warn(
+        `journey chain too long for shipments.journey (${g.journey.length} legs, ${JSON.stringify(g.journey).length} chars > ${JOURNEY_MAX_CHARS}) — storing null; route falls back to resolved pol/pod`,
+      )
+    }
+
     const legValues: Record<string, unknown> = {
       ...mapFieldsToLegColumns(f), // direct field→column mapping (raws, cargo, dates, scac fallback, CSV dedupe)
       mode: normMode(g.mode),
@@ -302,8 +312,9 @@ export class CommitterService {
       // persist the conversationId so a zero-identity (keyless, PO-less) leg has a cross-run handle (A2).
       matchKeys: g.conversationId ? { ...g.matchKeys, conversation_id: g.conversationId } : g.matchKeys,
       // the journey chain, as JSON (migration 0031). One site covers both create paths and the
-      // applyFields update path, exactly like every other legValues column.
-      journey: g.journey?.length ? JSON.stringify(g.journey).slice(0, 2000) : null,
+      // applyFields update path, exactly like every other legValues column. `serializeJourney` returns
+      // null rather than a truncated chain — see its comment for why a short chain is worse than none.
+      journey: journeyJson,
     }
 
     // matching / idempotency. A leg matches when:

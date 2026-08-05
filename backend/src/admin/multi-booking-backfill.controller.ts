@@ -49,9 +49,14 @@ export class MultiBookingBackfillController {
       }
     }
     return this.backfill.apply({
-      limit: dto.limit,
-      shipmentIds: dto.shipmentIds,
-      actor: actor?.email ?? actor?.id,
+      // 🔴 `change_log.actor_user_id` is a uniqueidentifier, NOT nvarchar — the id, never the email.
+      // This used to read `actor?.email ?? actor?.id`, and since `AuthUser.email` is non-optional the
+      // fallback could never fire: every authenticated apply sent an address into a GUID column, which
+      // SQL Server rejects with 8169 AFTER the shipment row was already stamped (the two writes are not
+      // one transaction) — so the stamp landed, `applied` stayed 0 and the call 500'd. Every other
+      // audit.write caller in the repo passes `actor.id` or null; see the PO write controller, which
+      // types its param as `{ id: string }` precisely so `.email` is not reachable.
+      actor: actor?.id,
     })
   }
 }
