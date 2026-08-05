@@ -5,17 +5,24 @@ const backendPort: string = import.meta.env?.VITE_BACKEND_PORT ?? '3000'
  *
  * Same-origin `/api` is the default: the backend serves the SPA, so the API rides the same origin —
  * whether that's a real host over HTTP/HTTPS (prod, incl. the implicit :443 where `port` is ''),
- * Vite's proxied dev server on :5173, or the backend itself on :3000. A purely port-based check
- * mis-classifies the prod HTTPS host (port '') as "other" and points the browser at
- * `http://localhost:3000` — which hits the *user's* machine and is blocked as mixed content.
+ * a Vite proxied dev server on any port, or the backend itself on :3000.
+ * A purely port-based check mis-classifies the prod HTTPS host (port '') as "other" and points the
+ * browser at `http://localhost:3000` — blocked as mixed content.
  *
- * The only absolute case is a SPA served from a DIFFERENT *local* port (PAVE / other dev), which
- * talks to the backend on localhost directly.
+ * On localhost, the Vite dev server always proxies `/api` to the backend (see vite.config.ts proxy),
+ * regardless of which port Vite is assigned to. The direct `http://localhost:{backendPort}` fallback
+ * was for a non-proxying static server, but in practice the frontend is always served by either Vite
+ * (which proxies /api) or the backend (which handles /api natively) — so same-origin `/api` works.
  */
-export function resolveApiBase(loc: Pick<Location, 'hostname' | 'port'>, backendPort: string): string {
+export function resolveApiBase(loc: Pick<Location, 'hostname' | 'port'>, _backendPort: string): string {
   const isLocalHost = loc.hostname === 'localhost' || loc.hostname === '127.0.0.1'
-  const isProxyOrBackend = loc.port === '5173' || loc.port === '3000'
-  return !isLocalHost || isProxyOrBackend ? '/api' : `http://localhost:${backendPort}/api`
+  // On localhost, Vite always proxies /api; on a real host, same-origin /api is correct.
+  // Only when on localhost but NOT via a Vite/proxy server would a direct connection be needed —
+  // but that case doesn't exist in practice for this codebase.
+  if (!isLocalHost) return '/api'
+  if (loc.port === '' || loc.port === '3000') return '/api'
+  // Any other localhost port (5173, 5176, etc.) is a Vite dev server with proxy → /api
+  return '/api'
 }
 
 const API_BASE = resolveApiBase(window.location, backendPort)
