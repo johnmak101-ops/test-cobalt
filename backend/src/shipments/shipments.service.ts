@@ -10,6 +10,7 @@ import { deriveRoute } from '../presentation/adapters/derive'
 import { syncIdentityMatchKeys } from './identity-keys'
 import { coerceLegField, DATE_FIELDS } from './coerce-field'
 import { QueueLearningClient } from '../review/queue-learning.client'
+import { PriorCorrectionService } from '../review/prior-correction.service'
 import { queueLearningValue } from '../review/queue-field-value'
 
 /** A human-entered new-shipment form. Every field optional; at least one identity OR a PO is required. */
@@ -117,6 +118,7 @@ export class ShipmentsService {
     private readonly committer: CommitterService,
     private readonly queueLearning: QueueLearningClient,
     private readonly masters: MastersRepository,
+    private readonly priorCorrections: PriorCorrectionService,
   ) {}
 
   /**
@@ -244,6 +246,11 @@ export class ShipmentsService {
         oldValue: asStr(current[field]), newValue: asStr(value), changeType: 'update',
         sourceType: 'manual', actorUserId: actorId, note: feedback,
       })
+      // A party/port fix here is the operator answering "this raw name is actually that master" — the
+      // same answer the email review queue has recorded since matcher Phase 3, from a screen operators
+      // actually use. It becomes a `prior_correction` fact: a top-rank RETRIEVAL BOOST for that code
+      // next time, never a rule that answers for the model. A no-op for every other column.
+      await this.priorCorrections.recordFromLegEdit(field, current[field], value, actorId)
       edited.push(field)
       editedValues[field] = value
     }

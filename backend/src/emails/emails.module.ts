@@ -5,9 +5,10 @@ import { GraphService } from './graph.service'
 import { ReviewQueueController } from './review-queue.controller'
 import { ReviewQueueService } from './review-queue.service'
 import { ShipmentsModule } from '../shipments/shipments.module'
+import { ReviewModule } from '../review/review.module'
 
 @Module({
-  imports: [ShipmentsModule], // ShipmentsService — review-queue apply-back re-applies corrections to the leg
+  imports: [ShipmentsModule, ReviewModule], // ShipmentsService — review-queue apply-back re-applies corrections to the leg
   controllers: [EmailsController, ReviewQueueController],
   providers: [EmailsService, GraphService, ReviewQueueService],
 })

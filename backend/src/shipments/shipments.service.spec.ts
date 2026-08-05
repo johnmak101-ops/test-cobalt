@@ -8,6 +8,7 @@ import type { AuditRepository } from '../db/repositories/audit.repository'
 import type { CommitterService } from '../reconcile/committer.service'
 import type { QueueLearningClient, CorrectionPayload } from '../review/queue-learning.client'
 import type { MastersRepository } from '../db/repositories/masters.repository'
+import type { PriorCorrectionService } from '../review/prior-correction.service'
 
 function makeService(legOverride: Record<string, unknown> = {}, graphId: string | null = 'graph-1') {
   const shipments = {
@@ -33,6 +34,9 @@ function makeService(legOverride: Record<string, unknown> = {}, graphId: string 
     apply: vi.fn(async () => ({ shipmentId: 'new-leg', jobNo: 'J1', state: 'provisional', action: 'created' })),
   }
   const queueLearning = { postCorrection: vi.fn(async (_p: CorrectionPayload) => undefined) }
+  // The prior_correction writer is injected so a unit test never reaches master_resolution. Tests that
+  // assert ON it pass their own spy; the rest inject silence.
+  const priorCorrections = { recordFromLegEdit: vi.fn(async () => 'skipped' as const), recordFromExtraction: vi.fn(async () => undefined) }
   const masters = {
     portIdByUnlocode: vi.fn(async (): Promise<string | null> => null),
     vendorIdExact: vi.fn(async (): Promise<string | null> => null),
@@ -48,6 +52,7 @@ function makeService(legOverride: Record<string, unknown> = {}, graphId: string 
     committer as unknown as CommitterService,
     queueLearning as unknown as QueueLearningClient,
     masters as unknown as MastersRepository,
+    priorCorrections as unknown as PriorCorrectionService,
   )
   return { svc, shipments, bookings, fieldLocks, audit, committer, queueLearning, masters }
 }
