@@ -56,7 +56,7 @@ describe('MastersRepository (SQL Server)', () => {
   })
 
   it('listCustomers / insertCustomers / updateCustomer round-trip with country + contactEmail', async () => {
-    await repo.insertCustomers([{ code: 'WYSE', name: 'Wyse Co', country: 'Hong Kong', contactEmail: 'ops@wyse.com', address: 'KT', erpSyncedAt: new Date() }])
+    await repo.insertCustomers([{ code: 'WYSE', name: 'Wyse Co', country: 'Hong Kong', contactEmail: 'ops@wyse.com', address: 'KT', nameCh: null, erpSyncedAt: new Date() }])
     const rows = await repo.listCustomers()
     expect(rows.map((r) => r.code)).toContain('WYSE')
     const wyse = rows.find((r) => r.code === 'WYSE')!
@@ -69,7 +69,7 @@ describe('MastersRepository (SQL Server)', () => {
   })
 
   it('customerIdByCode / customerByCode resolve by exact code (uppercase)', async () => {
-    await repo.insertCustomers([{ code: 'COLE', name: 'Cole Ltd', country: null, contactEmail: null, address: null, erpSyncedAt: new Date() }])
+    await repo.insertCustomers([{ code: 'COLE', name: 'Cole Ltd', country: null, contactEmail: null, address: null, nameCh: null, erpSyncedAt: new Date() }])
     const byId = await repo.customerIdByCode('cole')
     expect(byId).toBeTruthy()
     const byObj = await repo.customerByCode('COLE')

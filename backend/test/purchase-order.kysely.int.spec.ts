@@ -6,6 +6,9 @@ import { PurchaseOrderRepository } from '../src/db/repositories/purchase-order.r
 import { join } from 'node:path'
 import type { Kysely } from 'kysely'
 import type { DB } from '../src/db/kysely/db'
+import type { Insertable } from 'kysely'
+
+type ShipmentState = NonNullable<Insertable<DB['shipments']>['state']>
 
 const URL =
   process.env.SQL_SERVER_TEST_URL ??
@@ -44,7 +47,7 @@ async function seedVendor(code = 'VND', name = 'Vnd') {
 async function seedBooking(jobNo = 'J1') {
   return (await db.insertInto('bookings').values({ jobNo }).output('inserted.id').executeTakeFirstOrThrow()).id
 }
-async function seedShipment(bookingId: string, state = 'BOOKED', legNo = 1) {
+async function seedShipment(bookingId: string, state: ShipmentState = 'BOOKED', legNo = 1) {
   return (await db.insertInto('shipments').values({ bookingId, state, legNo }).output('inserted.id').executeTakeFirstOrThrow()).id
 }
 

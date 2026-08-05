@@ -55,14 +55,14 @@ const ALL_TABLES = Object.values(EXPECTED).flat()
 describe('Foundation — 0000_init creates all 29 tables', () => {
   for (const table of ALL_TABLES) {
     it(`creates dbo.${table}`, async () => {
-      const result = await sql`SELECT CASE WHEN OBJECT_ID(${sql.lit(table)}) IS NOT NULL THEN 1 ELSE 0 END AS cnt`
+      const result = await sql<{ cnt: number }>`SELECT CASE WHEN OBJECT_ID(${sql.lit(table)}) IS NOT NULL THEN 1 ELSE 0 END AS cnt`
         .execute(db)
       expect(Number(result.rows[0]?.cnt)).toBe(1)
     })
   }
 
   it('creates all 29 tables (count check)', async () => {
-    const result = await sql`
+    const result = await sql<{ cnt: number }>`
       SELECT count(*) AS cnt FROM sys.tables t
       JOIN sys.schemas s ON t.schema_id = s.schema_id
       WHERE s.name = 'dbo' AND t.name IN (${sql.join(ALL_TABLES.map((t) => sql.lit(t)), sql.raw(','))})`.execute(db)

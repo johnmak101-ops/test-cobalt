@@ -35,7 +35,7 @@ afterAll(async () => {
   await db.destroy()
 })
 
-async function seedRule(id = 'A1', severity = 'CRITICAL') {
+async function seedRule(id = 'A1', severity: 'CRITICAL' | 'WARNING' | 'INFO' = 'CRITICAL') {
   await repo.ensureRule({
     id, name: `Rule ${id}`, description: `desc ${id}`,
     triggerType: 'days_after', triggerReference: 'etd', watchFor: 'final_bl',

@@ -7,6 +7,7 @@ import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import type { Kysely } from 'kysely'
 import type { DB } from '../src/db/kysely/db'
+import type { Insertable } from 'kysely'
 
 const URL =
   process.env.SQL_SERVER_TEST_URL ??
@@ -43,23 +44,11 @@ async function seedBooking(opts: { customerId?: string | null; forwarderId?: str
     jobNo: `J-${mark}-${Math.random()}`, customerId: opts.customerId ?? null, forwarderId: opts.forwarderId ?? null,
   }).output('inserted.id').executeTakeFirstOrThrow()).id
 }
-async function seedLeg(opts: {
-  bookingId: string
-  state?: string
-  legStatus?: string
-  reviewStatus?: string
-  kind?: string
-  confidence?: number | null
-  linkedShipmentId?: string | null
-  dismissedAt?: Date | null
-  mode?: string | null
-  forwarderId?: string | null
-  polId?: string | null
-  podId?: string | null
-  legNo?: number
-  qty?: number | null
-  qtyUnit?: string | null
-}) {
+// Column types come FROM the schema, not restated as `string`: `state`/`legStatus`/`reviewStatus`/
+// `kind`/`mode`/`qtyUnit` are enums, and a widened fixture lets a typo like 'BOKED' reach the database
+// and fail there instead of here.
+type LegSeed = Partial<Insertable<DB['shipments']>> & { bookingId: string }
+async function seedLeg(opts: LegSeed) {
   const row = await db.insertInto('shipments').values({
     bookingId: opts.bookingId, state: opts.state ?? 'BOOKED', legStatus: opts.legStatus ?? 'ACTIVE',
     reviewStatus: opts.reviewStatus ?? 'confirmed', kind: opts.kind ?? 'SHIPMENT',
@@ -105,7 +94,9 @@ describe('ShipmentRepository (SQL Server)', () => {
     expect(confirmed.every((l) => l.legStatus === 'ACTIVE' && l.reviewStatus === 'confirmed')).toBe(true)
     const prov = await repo.provisionalLegs()
     expect(prov.length).toBeGreaterThanOrEqual(2)
-    expect(prov[0].confidence).toBeLessThanOrEqual(prov[1].confidence) // lowest confidence first
+    // both seeded rows carry a confidence; a null here would be the bug, so assert it rather than coalesce
+    expect(prov[0]!.confidence).not.toBeNull()
+    expect(Number(prov[0]!.confidence)).toBeLessThanOrEqual(Number(prov[1]!.confidence)) // lowest first
   })
 
   it('reviewQueue views + reviewQueueCounts (pending vs dismissed vs approved)', async () => {

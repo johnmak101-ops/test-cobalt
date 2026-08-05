@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest'
 import { getTestDb, resetDb, closeTestDb, repos, type TestDB } from './setup-db'
 import { MastersSyncService } from '../src/masters/mesh/masters-sync.service'
-import type { MeshMasterSource } from '../src/masters/mesh/mesh.types'
+import type { MeshMasterSource, MeshCustomerRow, MeshVendorRow } from '../src/masters/mesh/mesh.types'
 
 let db: TestDB
 let repo: ReturnType<typeof repos>['masters']
@@ -14,6 +14,13 @@ beforeAll(async () => {
 afterAll(closeTestDb)
 beforeEach(() => resetDb(db))
 
+// Mesh rows built from the real types, not literals: every column Mesh has gained (country /
+// contactEmail / address, then nameCh in 0022) silently invalidated six hand-written fixtures at once.
+const custRow = (code: string, name: string, over: Partial<MeshCustomerRow> = {}): MeshCustomerRow =>
+  ({ code, name, country: null, contactEmail: null, address: null, nameCh: null, ...over })
+const vend = (code: string, name: string, type: MeshVendorRow['type'], over: Partial<MeshVendorRow> = {}): MeshVendorRow =>
+  ({ code, name, type, location: 'CN', contactEmail: null, contactPhone: null, nameCh: null, ...over })
+
 const source = (over: Partial<MeshMasterSource> = {}): MeshMasterSource => ({
   customers: async () => [],
   vendors: async () => [],
@@ -25,7 +32,7 @@ describe('MastersSyncService (integration)', () => {
   it('inserts new, updates changed, and NEVER deletes a local row missing from the pull', async () => {
     await db.insertInto('customers').values([{ code: 'OLD', name: 'Old Name' }, { code: 'GONE', name: 'Not In ERP' }]).execute()
     const svc = new MastersSyncService(source({
-      customers: async () => [{ code: 'OLD', name: 'New Name' }, { code: 'NEW', name: 'Fresh' }],
+      customers: async () => [custRow('OLD', 'New Name'), custRow('NEW', 'Fresh')],
     }), repo)
     const [cust] = await svc.sync()
     expect(cust).toMatchObject({ type: 'customers', fetched: 2, inserted: 1, updated: 1 })
@@ -34,14 +41,14 @@ describe('MastersSyncService (integration)', () => {
   })
 
   it('is idempotent — a second sync with the same data changes nothing', async () => {
-    const svc = new MastersSyncService(source({ customers: async () => [{ code: 'A', name: 'Acme' }] }), repo)
+    const svc = new MastersSyncService(source({ customers: async () => [custRow('A', 'Acme')] }), repo)
     await svc.sync()
     const [second] = await svc.sync()
     expect(second).toMatchObject({ inserted: 0, updated: 0 })
   })
 
   it('persists + refreshes customer country/contactEmail/address (matcher Phase 0 enrichment)', async () => {
-    const v1 = { code: 'ENR', name: 'Enriched Ltd', country: 'Hong Kong', contactEmail: 'ops@enriched.hk', address: '9 Queen Rd' }
+    const v1 = custRow('ENR', 'Enriched Ltd', { country: 'Hong Kong', contactEmail: 'ops@enriched.hk', address: '9 Queen Rd' })
     const svc1 = new MastersSyncService(source({ customers: async () => [v1] }), repo)
     await svc1.sync()
     let row = await db.selectFrom('customers').selectAll().where('code', '=', 'ENR').executeTakeFirstOrThrow()
@@ -62,8 +69,8 @@ describe('MastersSyncService (integration)', () => {
   it('lands factories + gmtsuppliers in vendors with the right type', async () => {
     const svc = new MastersSyncService(source({
       vendors: async () => [
-        { code: 'F1', name: 'Fac', type: 'factory', location: 'CN', contactEmail: null, contactPhone: null },
-        { code: 'G1', name: 'Sup', type: 'agent', location: 'CN', contactEmail: null, contactPhone: null },
+        vend('F1', 'Fac', 'factory'),
+        vend('G1', 'Sup', 'agent'),
       ],
     }), repo)
     await svc.sync()
@@ -73,7 +80,7 @@ describe('MastersSyncService (integration)', () => {
 
   it('isolates a per-type failure — customers still sync when vendors throws', async () => {
     const svc = new MastersSyncService(source({
-      customers: async () => [{ code: 'A', name: 'Acme' }],
+      customers: async () => [custRow('A', 'Acme')],
       vendors: async () => { throw new Error('mesh 500') },
     }), repo)
     const summary = await svc.sync()

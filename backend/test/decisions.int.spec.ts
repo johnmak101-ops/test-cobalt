@@ -14,7 +14,7 @@ beforeAll(async () => {
   db = t.db
   const r = repos(db)
   const committer = new CommitterService(r.masters, r.booking, r.shipment, r.fieldLock, r.audit, r.evidence, r.purchaseOrder, r.settings)
-  settings = new SettingsService(r.settings)
+  settings = new SettingsService(r.settings, r.routingShadow, r.criticCalibration)
   decisions = new DecisionsService(committer, settings, r.ingest, r.routingShadow, r.decisionLog)
 })
 afterAll(closeTestDb)

@@ -17,7 +17,7 @@ beforeAll(async () => {
   const r = repos(db)
   const envConfig = { get: (k: string) => process.env[k] } as any
   review = new ReviewService(r.shipment, r.booking, r.fieldLock, r.audit, new QueueLearningClient(envConfig), r.criticCalibration, r.masters, r.priorCorrections)
-  settings = new SettingsService(r.settings)
+  settings = new SettingsService(r.settings, r.routingShadow, r.criticCalibration)
 })
 afterAll(closeTestDb)
 beforeEach(async () => {
