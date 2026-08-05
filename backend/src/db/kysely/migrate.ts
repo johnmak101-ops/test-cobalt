@@ -13,9 +13,12 @@ import type { Kysely } from 'kysely'
  * A custom `import` is passed so Windows bare paths (`D:\…`) are converted to `file://` URLs (Node's ESM
  * loader rejects bare Windows paths); on Linux this is a no-op. Returns the applied migration names.
  */
-export async function runMigrations(db: Kysely<unknown>, migrationsFolder: string): Promise<string[]> {
+/** Generic in the schema: a caller holding a typed `Kysely<DB>` is not assignable to `Kysely<unknown>`
+ *  (Kysely's `fn.any` signature makes the type parameter invariant), and every integration spec holds
+ *  exactly that. Migrations run raw SQL, so the schema type is irrelevant here. */
+export async function runMigrations<T>(db: Kysely<T>, migrationsFolder: string): Promise<string[]> {
   const migrator = new Migrator({
-    db,
+    db: db as Kysely<unknown>,
     provider: new FileMigrationProvider({
       fs: { readdir: (p) => fs.readdir(p) },
       path: { join },

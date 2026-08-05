@@ -6,6 +6,9 @@ import { ReviewEmailRepository } from '../src/db/repositories/review-email.repos
 import { join } from 'node:path'
 import type { Kysely } from 'kysely'
 import type { DB } from '../src/db/kysely/db'
+import type { Insertable } from 'kysely'
+
+type ShipmentState = NonNullable<Insertable<DB['shipments']>['state']>
 
 const URL =
   process.env.SQL_SERVER_TEST_URL ??
@@ -61,7 +64,7 @@ async function seedReviewEmail(opts: {
   return row
 }
 
-async function seedBookingShipment(state = 'BOOKED') {
+async function seedBookingShipment(state: ShipmentState = 'BOOKED') {
   const bookingId = (await db.insertInto('bookings').values({ jobNo: `J-${Math.random()}` }).output('inserted.id').executeTakeFirstOrThrow()).id
   const shipmentId = (await db.insertInto('shipments').values({ bookingId, state }).output('inserted.id').executeTakeFirstOrThrow()).id
   return { bookingId, shipmentId }
